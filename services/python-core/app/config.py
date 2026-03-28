@@ -8,9 +8,11 @@ from pathlib import Path
 class AppConfig:
     project_root: Path
     data_dir: Path
+    config_dir: Path
 
     @classmethod
     def from_cwd(cls, cwd: Path | None = None) -> "AppConfig":
         project_root = (cwd or Path.cwd()).resolve()
         data_dir = project_root / ".local-data"
-        return cls(project_root=project_root, data_dir=data_dir)
+        config_dir = data_dir / "config"
+        return cls(project_root=project_root, data_dir=data_dir, config_dir=config_dir)

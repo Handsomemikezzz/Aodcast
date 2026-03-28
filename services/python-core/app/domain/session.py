@@ -28,11 +28,19 @@ class SessionRecord:
     state: SessionState = SessionState.TOPIC_DEFINED
     llm_provider: str = ""
     tts_provider: str = ""
+    last_error: str = ""
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
 
     def transition(self, new_state: SessionState) -> None:
         self.state = new_state
+        if new_state != SessionState.FAILED:
+            self.last_error = ""
+        self.updated_at = utc_now_iso()
+
+    def set_error(self, message: str) -> None:
+        self.state = SessionState.FAILED
+        self.last_error = message
         self.updated_at = utc_now_iso()
 
     def to_dict(self) -> dict[str, Any]:
@@ -49,6 +57,7 @@ class SessionRecord:
             state=SessionState(payload["state"]),
             llm_provider=payload.get("llm_provider", ""),
             tts_provider=payload.get("tts_provider", ""),
+            last_error=payload.get("last_error", ""),
             created_at=payload.get("created_at", utc_now_iso()),
             updated_at=payload.get("updated_at", utc_now_iso()),
         )

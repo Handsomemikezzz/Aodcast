@@ -1,0 +1,46 @@
+# Script Generation
+
+## Purpose
+
+This document describes the current Milestone 3 script generation flow.
+
+## Flow
+
+The Python core now supports a draft-generation path after the interview reaches `ready_to_generate`.
+
+1. Load the persisted session project.
+2. Load the active LLM configuration from local config storage.
+3. Build a provider adapter from the configured provider name.
+4. Generate a draft from the transcript.
+5. Persist the draft and transition the session to `script_generated`.
+
+## Provider Layer
+
+Current LLM providers:
+
+- `mock`: deterministic local provider used for bootstrap and tests
+- `openai_compatible`: configurable adapter for remote chat-completions style APIs
+
+## Local Configuration
+
+The active LLM configuration is stored under:
+
+```text
+.local-data/
+└── config/
+    └── llm.json
+```
+
+The config contains:
+
+- provider
+- model
+- base_url
+- api_key_env
+
+## Failure Behavior
+
+- generation failures preserve transcript and script records
+- session state moves to `failed`
+- the error message is stored in `session.last_error`
+- failed sessions can be retried through the same generation path after configuration is fixed

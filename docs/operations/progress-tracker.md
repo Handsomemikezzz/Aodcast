@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Milestone 3 - Script Generation`
+Active milestone: `Milestone 4 - Desktop Editing Flow`
 
 ## Status Summary
 
@@ -34,12 +34,17 @@ Active milestone: `Milestone 3 - Script Generation`
 - prompt assembly inputs defined for interview turns
 - CLI command handlers added for interview start, reply, and finish
 - Milestone 2 exit criteria functionally satisfied
+- LLM provider abstraction added
+- local LLM configuration storage added
+- draft script generation workflow implemented
+- script generation failure path preserves session data and records an error
+- Milestone 3 exit criteria functionally satisfied
 
 ### In Progress
 
-- Milestone 3 script generation planning handoff
-- LLM provider interface design
-- draft script generation workflow
+- desktop session and detail screen integration planning
+- draft review and direct editing flow design
+- backend-to-desktop contract review for generated scripts
 
 ### Blockers
 
@@ -74,6 +79,16 @@ Active milestone: `Milestone 3 - Script Generation`
 | Define prompt assembly inputs | `schema-steward` | done | Prompt input object includes topic, intent, missing dimensions, and strategy layers |
 | Expose orchestration interface | `orchestration-builder` | done | CLI handlers exist for start, reply, finish, and session inspection |
 | Validate interview loop | `quality-runner` | done | Tests and CLI validation confirm looped questioning and ready-to-generate transitions |
+
+## Milestone 3 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Define LLM provider interface | `provider-integrator` | done | Provider base, factory, mock adapter, and OpenAI-compatible adapter are in place |
+| Add local provider configuration | `provider-integrator` | done | LLM config persists under `.local-data/config/llm.json` and is editable through CLI |
+| Implement draft generation workflow | `orchestration-builder` | done | Sessions now move from `ready_to_generate` to `script_generated` through the generation service |
+| Preserve failure state and retry path | `orchestration-builder` | done | Generation failures mark the session as `failed` and preserve transcript/script data |
+| Validate script generation flow | `quality-runner` | done | Tests cover success, failure, and invalid-state paths; CLI flow produces a draft |
 
 ## Update Rules
 
