@@ -47,8 +47,10 @@ Current environment note:
 
 - The Python runner script prefers `services/python-core/.venv/bin/python` when it exists.
 - Use `./scripts/dev/run-python-core.sh --show-local-tts-capability` before selecting `local_mlx`.
-- The repository includes a placeholder local model directory only for capability and workflow validation. It is not a real speech model bundle.
-- After installing `mlx` into the project venv and pointing `local_model_path` at the placeholder directory, the local provider path is executable for workflow validation in this repository.
+- Install the full local stack with `uv pip install --python .venv/bin/python '.[local-mlx]'` so both `mlx` and `mlx-audio` are available.
+- The default local model target is `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit`.
+- Use `./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx --clear-tts-local-model-path` to switch from a stale local path back to the default Hugging Face repo-id mode.
+- A local model directory must now look like a real MLX export and include at least one `.safetensors` file. The placeholder sample directory is useful for docs and path examples, but it is not treated as an executable model bundle anymore.
 
 ## Maintenance
 

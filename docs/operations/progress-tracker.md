@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Post-MVP slice - Real Tauri bridge`
+Active milestone: `Post-MVP slice - MLX Qwen3 runner`
 
 ## Status Summary
 
@@ -65,10 +65,14 @@ Active milestone: `Post-MVP slice - Real Tauri bridge`
 - real desktop bridge interface extracted from the mock implementation
 - Python CLI now supports machine-readable bridge envelopes plus list/create/save-script actions
 - Tauri Rust command gateway added for Python orchestration calls
+- local MLX provider now uses a real `mlx-audio` runner shape instead of placeholder waveform generation
+- default macOS model target is now `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit`
+- project `.venv` now has `mlx_audio` installed and capability checks can resolve the Hugging Face repo-id path
 
 ### In Progress
 
 - real Tauri bridge validation handoff
+- actual Qwen3-TTS model download and first full render have not been executed in this environment
 - native runtime compile blocked on missing Rust toolchain
 
 ### Blockers
@@ -162,6 +166,15 @@ Active milestone: `Post-MVP slice - Real Tauri bridge`
 | Add machine-readable Python CLI bridge mode | `orchestration-builder` | done | `--bridge-json`, `--list-projects`, `--create-session`, and `--save-script` are implemented |
 | Add Rust command gateway | `desktop-builder` | done | Tauri commands now call the Python runner through `python_bridge.rs` |
 | Validate bridge protocol and desktop types | `quality-runner` | in_progress | Python bridge tests and `pnpm check` pass; native Tauri compile still blocked by missing `cargo` |
+
+## Post-MVP Slice: MLX Qwen3 Runner
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Replace placeholder local waveform generation | `provider-integrator` | done | Local MLX now routes through `runner.py` and `mlx_audio.tts.generate` |
+| Add model preset and capability resolution | `provider-integrator` | done | Default repo-id target is `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` |
+| Validate capability and mocked runner flow | `quality-runner` | done | Python tests pass and capability now resolves the repo-id path with `mlx_audio` installed |
+| Run first real model render | `quality-runner` | pending | Not executed yet because it would require pulling the actual model weights |
 
 ## Update Rules
 

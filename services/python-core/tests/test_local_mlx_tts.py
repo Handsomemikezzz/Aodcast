@@ -8,12 +8,14 @@ from unittest.mock import patch
 from app.domain.tts_config import TTSProviderConfig
 from app.providers.tts_api.base import TTSGenerationRequest
 from app.providers.tts_local_mlx.provider import LocalMLXTTSProvider
+from app.providers.tts_local_mlx.runner import LocalMLXRunResult, MLXAudioQwenRunner
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 
 
 class LocalMLXRuntimeTests(unittest.TestCase):
     def test_capability_reports_available_when_runtime_and_model_path_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
+            Path(tmp_dir, "model.safetensors").write_bytes(b"test")
             config = TTSProviderConfig(
                 provider="local_mlx",
                 model="mlx-voice",
@@ -25,6 +27,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
 
         self.assertTrue(capability.available)
         self.assertTrue(capability.mlx_installed)
+        self.assertTrue(capability.mlx_audio_installed)
         self.assertTrue(capability.model_path_exists)
         self.assertEqual(capability.reasons, [])
 
@@ -66,6 +69,15 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                 (),
                 {"available": True, "reasons": [], "fallback_provider": "mock_remote"},
             )(),
+        ), patch.object(
+            provider.runner,
+            "synthesize",
+            return_value=LocalMLXRunResult(
+                audio_bytes=b"runner-bytes",
+                file_extension="wav",
+                model_name="mlx-voice",
+                output_path="/tmp/render.wav",
+            ),
         ):
             response = provider.synthesize(
                 TTSGenerationRequest(
@@ -78,7 +90,27 @@ class LocalMLXRuntimeTests(unittest.TestCase):
 
         self.assertEqual(response.provider_name, "local_mlx")
         self.assertEqual(response.file_extension, "wav")
-        self.assertTrue(len(response.audio_bytes) > 0)
+        self.assertEqual(response.audio_bytes, b"runner-bytes")
+
+    def test_runner_uses_mlx_audio_cli_and_reads_output(self) -> None:
+        config = TTSProviderConfig(
+            provider="local_mlx",
+            model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+        )
+        runner = MLXAudioQwenRunner(config)
+
+        def fake_run(command: list[str], **_: object):
+            prefix = Path(command[command.index("--file_prefix") + 1])
+            output_path = prefix.with_suffix(".wav")
+            output_path.write_bytes(b"wav-bytes")
+            return type("Completed", (), {"returncode": 0, "stderr": "", "stdout": ""})()
+
+        with patch("app.providers.tts_local_mlx.runner.subprocess.run", side_effect=fake_run):
+            result = runner.synthesize("Runner test", audio_format="wav")
+
+        self.assertEqual(result.audio_bytes, b"wav-bytes")
+        self.assertEqual(result.file_extension, "wav")
+        self.assertEqual(result.model_name, config.model)
 
 
 if __name__ == "__main__":

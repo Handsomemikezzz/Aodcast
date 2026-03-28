@@ -7,7 +7,10 @@ requires-python = ">=3.13"
 dependencies = []
 
 [project.optional-dependencies]
-local-mlx = ["mlx; sys_platform == 'darwin'"]
+local-mlx = [
+  "mlx; sys_platform == 'darwin'",
+  "mlx-audio>=0.3.0; sys_platform == 'darwin'",
+]
 
 [project.scripts]
 aodcast-python-core = "app.main:run"

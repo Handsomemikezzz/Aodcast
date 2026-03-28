@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document describes the current Milestone 6 local MLX TTS path.
+This document describes the current local MLX TTS path.
 
 ## Current Design
 
@@ -11,8 +11,8 @@ The local provider is isolated under `services/python-core/app/providers/tts_loc
 It is responsible for:
 
 - checking whether the current runtime is macOS
-- checking whether the Python `mlx` package is installed
-- checking whether a local model path is configured and exists
+- checking whether the Python `mlx` and `mlx_audio` packages are installed
+- resolving either a local model path or a supported `mlx-community/Qwen3-TTS` repo id
 - exposing a capability report before audio rendering is attempted
 
 ## Current Behavior
@@ -25,21 +25,20 @@ If the local MLX capability check fails:
 
 If the capability check succeeds:
 
-- the current bootstrap implementation renders a deterministic local WAV artifact
-- this validates the local execution path, artifact flow, and failure handling
-- the repository's sample placeholder model directory can be used for capability and workflow validation only
+- the provider invokes `mlx_audio.tts.generate`
+- the generated audio artifact is read back into the existing provider response shape
+- artifact export and failure handling stay inside the existing orchestration flow
 
-## Why This Is Still Useful
+## Current Model Strategy
 
-The exact MLX speech model runner is not locked in yet. The current implementation deliberately proves:
+The default model target is:
 
-- provider selection
-- capability detection
-- model-path validation
-- local artifact generation path
-- fallback messaging
+- `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit`
 
-without forcing premature lock-in to a specific model invocation contract.
+The runtime also accepts:
+
+- another supported `mlx-community/Qwen3-TTS` repo id
+- a local model path via `local_model_path`
 
 ## Runtime Requirements
 
@@ -47,7 +46,8 @@ The local MLX path currently expects:
 
 - macOS
 - Python `mlx` installed
-- a configured local model path
+- Python `mlx_audio` installed
+- either a supported `mlx-community/Qwen3-TTS` repo id or a valid local model path
 
 The CLI exposes `--show-local-tts-capability` so the environment can be checked before attempting audio rendering.
 
@@ -56,7 +56,7 @@ The CLI exposes `--show-local-tts-capability` so the environment can be checked 
 In this repository, local MLX validation currently works through:
 
 - `services/python-core/.venv`
-- `mlx` installed into that virtual environment
+- `mlx` and `mlx_audio` installed into that virtual environment
 - `examples/sample-models/local-mlx-placeholder`
 
-This is sufficient to validate the local provider workflow, capability checks, and artifact output path without committing to a final speech-model invocation contract.
+The placeholder directory is still useful for path-validation tests, but the real local generation path now targets `mlx_audio` and the Qwen3-TTS model family.

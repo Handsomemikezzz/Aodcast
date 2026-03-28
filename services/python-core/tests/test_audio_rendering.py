@@ -123,6 +123,18 @@ class AudioRenderingTests(unittest.TestCase):
                 (),
                 {"available": True, "reasons": [], "fallback_provider": "mock_remote"},
             )(),
+        ), patch(
+            "app.providers.tts_local_mlx.provider.MLXAudioQwenRunner.synthesize",
+            return_value=type(
+                "RunResult",
+                (),
+                {
+                    "audio_bytes": b"runner-wav",
+                    "file_extension": "wav",
+                    "model_name": "mlx-voice",
+                    "output_path": "/tmp/render.wav",
+                },
+            )(),
         ):
             result = service.render_audio(session.session_id)
 

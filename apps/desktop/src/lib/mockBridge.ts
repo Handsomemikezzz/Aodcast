@@ -210,6 +210,7 @@ export function createMockBridge(): DesktopBridge {
       runtime: "mlx",
       platform: "darwin",
       mlx_installed: false,
+      mlx_audio_installed: false,
       model_path_configured: false,
       model_path_exists: false,
       available: false,
@@ -218,6 +219,8 @@ export function createMockBridge(): DesktopBridge {
         "Configure a local model path and install the Python mlx package before switching to the real bridge.",
       ],
       model_path: "",
+      model_source: "mock",
+      resolved_model: "",
       fallback_provider: "mock_remote",
     };
   }

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from app.domain.tts_config import TTSProviderConfig
-from app.providers.audio_utils import synthesize_sine_wave_bytes
 from app.providers.tts_api.base import TTSGenerationRequest, TTSGenerationResponse
+from app.providers.tts_local_mlx.runner import MLXAudioQwenRunner
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 
 
@@ -11,6 +11,7 @@ class LocalMLXTTSProvider:
 
     def __init__(self, config: TTSProviderConfig) -> None:
         self.config = config
+        self.runner = MLXAudioQwenRunner(config)
 
     def synthesize(self, request: TTSGenerationRequest) -> TTSGenerationResponse:
         capability = detect_local_mlx_capability(self.config)
@@ -20,10 +21,13 @@ class LocalMLXTTSProvider:
                 f"Local MLX TTS is unavailable. {joined} Fallback provider: {capability.fallback_provider}."
             )
 
-        duration_seconds = min(max(len(request.script_text) // 140, 1), 4)
+        result = self.runner.synthesize(
+            request.script_text,
+            audio_format=self.config.audio_format or request.audio_format,
+        )
         return TTSGenerationResponse(
-            audio_bytes=synthesize_sine_wave_bytes(duration_seconds, frequency=523.25),
-            file_extension=self.config.audio_format or request.audio_format,
+            audio_bytes=result.audio_bytes,
+            file_extension=result.file_extension,
             provider_name=self.provider_name,
-            model_name=self.config.model,
+            model_name=result.model_name,
         )

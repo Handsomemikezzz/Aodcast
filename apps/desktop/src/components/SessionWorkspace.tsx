@@ -274,6 +274,7 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
                       ? "Local MLX TTS is available."
                       : `Local MLX TTS unavailable. Fallback provider: ${localCapability.fallback_provider}.`}
                   </p>
+                  <p>Target: {localCapability.resolved_model || "Not configured yet."}</p>
                 </div>
                 {!localCapability.available ? (
                   <ul className="capability-list">

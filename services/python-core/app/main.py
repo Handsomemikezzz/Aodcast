@@ -19,6 +19,7 @@ from app.orchestration.script_generation import (
     build_generation_context,
 )
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
@@ -178,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--tts-local-model-path",
         default="",
         help="Local model path for MLX TTS configuration updates.",
+    )
+    parser.add_argument(
+        "--clear-tts-local-model-path",
+        action="store_true",
+        help="Clear the configured local model path for MLX TTS.",
     )
     return parser
 
@@ -351,6 +357,12 @@ def run(argv: list[str] | None = None) -> int:
         if args.configure_tts_provider:
             tts_config = config_store.load_tts_config()
             tts_config.provider = args.configure_tts_provider
+            if (
+                args.configure_tts_provider == "local_mlx"
+                and tts_config.model in {"", "mock-voice"}
+                and not args.tts_model
+            ):
+                tts_config.model = DEFAULT_QWEN3_TTS_MODEL
             if args.tts_model:
                 tts_config.model = args.tts_model
             if args.tts_base_url:
@@ -361,6 +373,8 @@ def run(argv: list[str] | None = None) -> int:
                 tts_config.voice = args.tts_voice
             if args.tts_audio_format:
                 tts_config.audio_format = args.tts_audio_format
+            if args.clear_tts_local_model_path:
+                tts_config.local_model_path = ""
             if args.tts_local_model_path:
                 tts_config.local_model_path = args.tts_local_model_path
             path = config_store.save_tts_config(tts_config)

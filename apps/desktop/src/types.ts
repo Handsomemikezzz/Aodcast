@@ -106,10 +106,13 @@ export type TTSCapability = {
   runtime: string;
   platform: string;
   mlx_installed: boolean;
+  mlx_audio_installed: boolean;
   model_path_configured: boolean;
   model_path_exists: boolean;
   available: boolean;
   reasons: string[];
   model_path: string;
+  model_source: string;
+  resolved_model: string;
   fallback_provider: string;
 };
