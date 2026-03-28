@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 
 import { DesktopBridge } from "../lib/mockBridge";
 import { formatTimestamp } from "../lib/time";
-import { GenerationResult, InterviewTurnResult, SessionProject } from "../types";
+import {
+  AudioRenderResult,
+  GenerationResult,
+  InterviewTurnResult,
+  SessionProject,
+} from "../types";
 import { StatusBadge } from "./StatusBadge";
 
 type Props = {
@@ -34,11 +39,13 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
 
   const currentProject = project;
 
-  async function runAction(action: () => Promise<InterviewTurnResult | GenerationResult | SessionProject>) {
+  async function runAction(
+    action: () => Promise<InterviewTurnResult | GenerationResult | AudioRenderResult | SessionProject>,
+  ) {
     const result = await action();
     if ("project" in result) {
       onProjectChange(result.project);
-      if ("provider" in result) {
+      if ("provider" in result && !("audio_path" in result)) {
         setDraftText(result.project.script?.final || result.project.script?.draft || "");
       }
     } else {
@@ -80,6 +87,11 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
     setActivityNote("Edited script saved.");
   }
 
+  async function handleRenderAudio() {
+    await runAction(() => bridge.renderAudio(currentProject.session.session_id));
+    setActivityNote("Audio rendered.");
+  }
+
   const turns = currentProject.transcript?.turns ?? [];
   const canStartInterview = turns.length === 0;
   const canGenerate =
@@ -87,6 +99,7 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
   const canEdit =
     currentProject.session.state === "script_generated" ||
     currentProject.session.state === "script_edited";
+  const canRenderAudio = canEdit || currentProject.session.state === "failed";
 
   return (
     <section className="workspace">
@@ -213,6 +226,39 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
                 ? `Script updated ${formatTimestamp(currentProject.script.updated_at)}`
                 : "No script saved yet."}
             </span>
+          </div>
+
+          <div className="artifact-box">
+            <div>
+              <h3>Final Audio</h3>
+              <p>
+                Render the current final script into an audio artifact once the
+                draft is ready.
+              </p>
+            </div>
+            <div className="button-row">
+              <button
+                className="primary-button"
+                disabled={!canRenderAudio}
+                onClick={handleRenderAudio}
+                type="button"
+              >
+                Render Audio
+              </button>
+              <span className="muted-text">
+                TTS {currentProject.session.tts_provider || "not selected"}
+              </span>
+            </div>
+            <div className="artifact-list">
+              <div>
+                <strong>Transcript</strong>
+                <p>{currentProject.artifact?.transcript_path || "Not generated yet."}</p>
+              </div>
+              <div>
+                <strong>Audio</strong>
+                <p>{currentProject.artifact?.audio_path || "Not generated yet."}</p>
+              </div>
+            </div>
           </div>
         </section>
       </div>

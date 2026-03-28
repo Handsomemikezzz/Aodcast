@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Milestone 5 - Remote TTS Path`
+Active milestone: `Milestone 6 - Local MLX TTS Path`
 
 ## Status Summary
 
@@ -45,12 +45,18 @@ Active milestone: `Milestone 5 - Remote TTS Path`
 - desktop bridge contract documented
 - frontend dependency install, typecheck, and web build validation completed
 - Milestone 4 exit criteria functionally satisfied
+- remote TTS provider abstraction added
+- TTS configuration storage added
+- artifact export storage implemented
+- remote audio rendering workflow implemented
+- desktop workspace now surfaces artifact status and render action
+- Milestone 5 exit criteria functionally satisfied
 
 ### In Progress
 
-- Milestone 5 TTS provider interface planning
-- remote TTS configuration and generation workflow design
-- desktop integration planning for final audio status
+- local MLX TTS provider planning
+- cross-platform TTS abstraction review
+- Milestone 6 architecture handoff
 
 ### Blockers
 
@@ -105,6 +111,16 @@ Active milestone: `Milestone 5 - Remote TTS Path`
 | Add direct draft editing flow | `desktop-builder` | done | The workspace supports draft generation and direct script editing |
 | Review backend-to-desktop contract | `schema-steward` | done | Desktop types and bridge interface are aligned with the current backend shapes |
 | Validate desktop implementation | `quality-runner` | done | `pnpm check` and `pnpm build:web` both pass after installing desktop dependencies |
+
+## Milestone 5 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Define TTS provider interface | `provider-integrator` | done | Remote TTS base, factory, mock adapter, and OpenAI-compatible adapter are in place |
+| Add TTS configuration storage | `provider-integrator` | done | TTS config persists under `.local-data/config/tts.json` and is editable through CLI |
+| Implement audio rendering workflow | `orchestration-builder` | done | Sessions now move through `audio_rendering` into `completed` with local artifact exports |
+| Surface audio status in desktop shell | `desktop-builder` | done | Desktop workspace shows artifact paths and supports mock-backed audio rendering |
+| Validate remote TTS flow | `quality-runner` | done | Python tests, CLI flow, frontend typecheck, and web build all pass |
 
 ## Update Rules
 

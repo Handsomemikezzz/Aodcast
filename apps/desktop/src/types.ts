@@ -93,3 +93,10 @@ export type GenerationResult = {
   model: string;
 };
 
+export type AudioRenderResult = {
+  project: SessionProject;
+  provider: string;
+  model: string;
+  audio_path: string;
+  transcript_path: string;
+};

@@ -335,6 +335,32 @@ h1 {
   min-height: 420px;
 }
 
+.artifact-box {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(239, 246, 255, 0.76);
+  border: 1px solid rgba(191, 219, 254, 0.85);
+}
+
+.artifact-box h3,
+.artifact-list strong {
+  margin: 0;
+}
+
+.artifact-box p,
+.artifact-list p {
+  margin: 4px 0 0;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.artifact-list {
+  display: grid;
+  gap: 10px;
+}
+
 .status-chip {
   display: inline-flex;
   align-items: center;

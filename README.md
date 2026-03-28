@@ -27,6 +27,8 @@ Run from the repository root:
 - `./scripts/dev/run-python-core.sh --reply-session <session-id> --message "your answer"`
 - `./scripts/dev/run-python-core.sh --configure-llm-provider mock`
 - `./scripts/dev/run-python-core.sh --generate-script <session-id>`
+- `./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote`
+- `./scripts/dev/run-python-core.sh --render-audio <session-id>`
 - `./scripts/dev/run-desktop.sh`
 
 Current environment note:

@@ -4,6 +4,7 @@ import { appendTurn, evaluateReadiness, nextQuestion, transcriptToText } from ".
 import { nowIso } from "./time";
 import { seededProjects } from "./mockData";
 import {
+  AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
   PromptInput,
@@ -24,6 +25,7 @@ export interface DesktopBridge {
   submitReply(sessionId: string, message: string, userRequestedFinish?: boolean): Promise<InterviewTurnResult>;
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
   generateScript(sessionId: string): Promise<GenerationResult>;
+  renderAudio(sessionId: string): Promise<AudioRenderResult>;
   saveEditedScript(sessionId: string, finalText: string): Promise<SessionProject>;
 }
 
@@ -181,6 +183,42 @@ export function createMockBridge(): DesktopBridge {
     return cloneProject(project);
   }
 
+  async function renderAudio(sessionId: string) {
+    const project = getProject(sessionId);
+    if (
+      project.session.state !== "script_generated" &&
+      project.session.state !== "script_edited" &&
+      project.session.state !== "failed"
+    ) {
+      throw new Error("Audio rendering requires a generated or edited script.");
+    }
+
+    const now = nowIso();
+    project.session.state = "audio_rendering";
+    project.session.updated_at = now;
+    const basePath = `exports/${sessionId}`;
+    project.artifact = {
+      ...project.artifact!,
+      provider: "mock_remote",
+      transcript_path: `${basePath}/transcript.txt`,
+      audio_path: `${basePath}/audio.wav`,
+      created_at: now,
+    };
+    project.session.tts_provider = "mock_remote";
+    project.session.last_error = "";
+    project.session.state = "completed";
+    project.session.updated_at = nowIso();
+    store.set(sessionId, project);
+
+    return {
+      project: cloneProject(project),
+      provider: "mock_remote",
+      model: "mock-voice",
+      audio_path: project.artifact.audio_path,
+      transcript_path: project.artifact.transcript_path,
+    };
+  }
+
   return {
     listProjects,
     createSession,
@@ -188,6 +226,7 @@ export function createMockBridge(): DesktopBridge {
     submitReply,
     requestFinish,
     generateScript,
+    renderAudio,
     saveEditedScript,
   };
 

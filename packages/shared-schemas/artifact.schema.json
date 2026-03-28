@@ -3,7 +3,7 @@
   "$id": "https://aodcast.dev/schemas/artifact.schema.json",
   "title": "Artifact",
   "type": "object",
-  "required": ["session_id", "transcript_path", "audio_path", "created_at"],
+  "required": ["session_id", "transcript_path", "audio_path", "provider", "created_at"],
   "properties": {
     "session_id": { "type": "string" },
     "transcript_path": { "type": "string" },

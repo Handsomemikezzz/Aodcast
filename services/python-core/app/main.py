@@ -10,13 +10,16 @@ from app.domain.project import SessionProject
 from app.domain.provider_config import LLMProviderConfig
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord
+from app.domain.tts_config import TTSProviderConfig
 from app.domain.transcript import Speaker, TranscriptRecord
+from app.orchestration.audio_rendering import AudioRenderResult, AudioRenderingService
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import (
     ScriptGenerationResult,
     ScriptGenerationService,
     build_generation_context,
 )
+from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 
@@ -103,6 +106,51 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Temporarily override the configured LLM provider for script generation.",
     )
+    parser.add_argument(
+        "--render-audio",
+        default="",
+        help="Render final audio for a session id.",
+    )
+    parser.add_argument(
+        "--configure-tts-provider",
+        default="",
+        help="Persist the active TTS provider name.",
+    )
+    parser.add_argument(
+        "--tts-model",
+        default="",
+        help="TTS model value for configuration updates.",
+    )
+    parser.add_argument(
+        "--tts-base-url",
+        default="",
+        help="Base URL for an OpenAI-compatible TTS provider.",
+    )
+    parser.add_argument(
+        "--tts-api-key-env",
+        default="",
+        help="Environment variable name that stores the TTS API key.",
+    )
+    parser.add_argument(
+        "--tts-voice",
+        default="",
+        help="Voice identifier for TTS configuration updates.",
+    )
+    parser.add_argument(
+        "--tts-audio-format",
+        default="",
+        help="Audio format for TTS output, for example wav or mp3.",
+    )
+    parser.add_argument(
+        "--show-tts-config",
+        action="store_true",
+        help="Print the persisted TTS configuration.",
+    )
+    parser.add_argument(
+        "--tts-provider-override",
+        default="",
+        help="Temporarily override the configured TTS provider for audio rendering.",
+    )
     return parser
 
 
@@ -142,16 +190,29 @@ def serialize_generation_result(result: ScriptGenerationResult) -> dict[str, obj
     }
 
 
+def serialize_audio_result(result: AudioRenderResult) -> dict[str, object]:
+    return {
+        "project": serialize_project(result.project),
+        "provider": result.provider,
+        "model": result.model,
+        "audio_path": result.audio_path,
+        "transcript_path": result.transcript_path,
+    }
+
+
 def run(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     config = AppConfig.from_cwd(args.cwd)
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
+    artifact_store = ArtifactStore(config.data_dir)
     orchestrator = InterviewOrchestrator(store)
     script_generation = ScriptGenerationService(store, config_store)
+    audio_rendering = AudioRenderingService(store, config_store, artifact_store)
     store.bootstrap()
     config_store.bootstrap()
+    artifact_store.bootstrap()
 
     print(f"Aodcast Python core ready at: {config.data_dir}")
 
@@ -188,8 +249,25 @@ def run(argv: list[str] | None = None) -> int:
             llm_config.api_key_env = args.llm_api_key_env
         path = config_store.save_llm_config(llm_config)
         print(json.dumps({"path": str(path), "llm_config": llm_config.to_dict()}, indent=2))
+    elif args.configure_tts_provider:
+        tts_config = config_store.load_tts_config()
+        tts_config.provider = args.configure_tts_provider
+        if args.tts_model:
+            tts_config.model = args.tts_model
+        if args.tts_base_url:
+            tts_config.base_url = args.tts_base_url
+        if args.tts_api_key_env:
+            tts_config.api_key_env = args.tts_api_key_env
+        if args.tts_voice:
+            tts_config.voice = args.tts_voice
+        if args.tts_audio_format:
+            tts_config.audio_format = args.tts_audio_format
+        path = config_store.save_tts_config(tts_config)
+        print(json.dumps({"path": str(path), "tts_config": tts_config.to_dict()}, indent=2))
     elif args.show_llm_config:
         print(json.dumps(config_store.load_llm_config().to_dict(), indent=2))
+    elif args.show_tts_config:
+        print(json.dumps(config_store.load_tts_config().to_dict(), indent=2))
     elif args.start_interview:
         result = orchestrator.start_interview(args.start_interview)
         print(json.dumps(serialize_turn_result(result), indent=2))
@@ -211,6 +289,12 @@ def run(argv: list[str] | None = None) -> int:
             override_provider=args.llm_provider_override,
         )
         print(json.dumps(serialize_generation_result(result), indent=2))
+    elif args.render_audio:
+        result = audio_rendering.render_audio(
+            args.render_audio,
+            override_provider=args.tts_provider_override,
+        )
+        print(json.dumps(serialize_audio_result(result), indent=2))
     elif args.show_session:
         project = store.load_project(args.show_session)
         print(json.dumps(serialize_project(project), indent=2))
