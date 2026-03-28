@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Milestone 0 - Repository Bootstrap`
+Active milestone: `Milestone 2 - Interview Orchestration Core`
 
 ## Status Summary
 
@@ -23,10 +23,18 @@ Active milestone: `Milestone 0 - Repository Bootstrap`
 - bootstrap scripts added
 - README bootstrap notes added
 - desktop bootstrap script fail-fast path verified
+- Milestone 0 repository bootstrap is functionally complete
+- full project persistence for transcript, script, and artifact records
+- recovery loading path for interrupted sessions
+- shared schema contracts documented
+- Milestone 1 exit criteria functionally satisfied
+- Milestone 1 documentation closeout complete
 
 ### In Progress
 
-- repository bootstrap milestone closeout
+- Milestone 2 interview state machine implementation
+- prompt assembly inputs for interview turns
+- orchestration interface shape for desktop integration
 
 ### Blockers
 
@@ -42,6 +50,15 @@ Active milestone: `Milestone 0 - Repository Bootstrap`
 | Scaffold Python core | `orchestration-builder` | done | App config, session model, storage, and boot entrypoint created |
 | Add dev scripts | lead/coordinator | done | Toolchain check, Python boot, and desktop boot scripts added |
 | Verify local boot paths | `quality-runner` | in_progress | Python verified and tested; desktop script now fails fast with a clear Rust toolchain message |
+
+## Milestone 1 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Harden shared schemas | `schema-steward` | done | Session, Transcript, Script, and Artifact contracts are aligned with current Python models |
+| Persist full project records | `orchestration-builder` | done | Session, transcript, script, and artifact records now persist under each session directory |
+| Add recovery loading path | `orchestration-builder` | done | Store can rebuild a full `SessionProject` from disk |
+| Validate storage round trips | `quality-runner` | done | Python tests now cover full project recovery and session listing |
 
 ## Update Rules
 

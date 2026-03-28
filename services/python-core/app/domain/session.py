@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
+
+from app.domain.common import utc_now_iso
 
 
 class SessionState(StrEnum):
@@ -17,10 +18,6 @@ class SessionState(StrEnum):
     AUDIO_RENDERING = "audio_rendering"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-def utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 @dataclass(slots=True)
