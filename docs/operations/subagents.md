@@ -1,8 +1,90 @@
-# Maintenance Subagents
+# Subagents
 
 ## Purpose
 
-These subagents exist to keep the repository maintainable under long-term agent-driven development.
+These subagents exist to make Aodcast sustainable under long-term agent-driven development. They are split into delivery roles and maintenance roles.
+
+## Delivery Roles
+
+### `desktop-builder`
+
+Mission:
+Implement and evolve the Tauri app shell, screen flow, configuration UI, script editor, and desktop-facing interaction states.
+
+Owned areas:
+
+- `apps/desktop`
+
+Outputs:
+
+- UI implementation changes
+- frontend state wiring
+- desktop interaction refinements
+
+### `orchestration-builder`
+
+Mission:
+Implement the Python interview workflow, readiness evaluation, script generation flow, task lifecycle, and failure recovery.
+
+Owned areas:
+
+- `services/python-core/app/orchestration`
+- `services/python-core/app/domain`
+- `services/python-core/app/storage`
+
+Outputs:
+
+- orchestration logic
+- domain state changes
+- persistence flow updates
+
+### `provider-integrator`
+
+Mission:
+Implement and maintain external model and audio adapters without leaking vendor-specific logic into orchestration.
+
+Owned areas:
+
+- `services/python-core/app/providers`
+
+Outputs:
+
+- provider adapters
+- provider configuration support
+- provider capability notes
+
+### `schema-steward`
+
+Mission:
+Define and update shared contracts between the desktop shell and Python core.
+
+Owned areas:
+
+- `packages/shared-schemas`
+
+Outputs:
+
+- schema definitions
+- contract changes
+- compatibility notes
+
+### `quality-runner`
+
+Mission:
+Own test coverage for orchestration, persistence, adapter boundaries, and critical user flows.
+
+Owned areas:
+
+- `services/python-core/tests`
+- frontend test areas when introduced
+
+Outputs:
+
+- test plans
+- regression checks
+- risk reports
+
+## Maintenance Roles
 
 ## Roles
 
@@ -63,7 +145,7 @@ Outputs:
 
 ## Invocation Guidance
 
-- Use these roles as maintenance agents, not feature agents.
-- Trigger them after major structural or contract changes.
-- Run them periodically to prevent silent repository decay.
-
+- Use delivery agents for bounded implementation work.
+- Use maintenance agents to control repository entropy.
+- Trigger maintenance agents after major structural or contract changes.
+- Run maintenance agents periodically to prevent silent repository decay.

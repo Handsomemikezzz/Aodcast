@@ -17,6 +17,7 @@ If implementation changes invalidate this file, update `AGENTS.md` in the same c
 ## Product Scope
 
 Current source of truth: [docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
+Implementation plan: [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md)
 
 Current MVP:
 
@@ -98,3 +99,15 @@ Minimum maintenance roles:
 
 Maintenance cadence and triggers live in [docs/operations/maintenance-playbook.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/maintenance-playbook.md).
 
+## Delivery Workflow
+
+Feature delivery should follow the staged plan in [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md).
+
+When using multiple agents:
+
+- assign one bounded area per agent
+- treat schema and governance updates as first-class tasks
+- merge contract changes before dependent implementation work
+- run maintenance agents after structural or cross-boundary changes
+
+Feature and maintenance role definitions live in [docs/operations/subagents.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/subagents.md).
