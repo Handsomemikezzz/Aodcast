@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.config import AppConfig
 from app.domain.artifact import ArtifactRecord
@@ -95,6 +96,40 @@ class AudioRenderingTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             service.render_audio(session.session_id)
+
+    def test_render_audio_uses_draft_when_final_is_empty(self) -> None:
+        store, config_store, artifact_store, service = self.build_environment()
+        config_store.save_tts_config(
+            TTSProviderConfig(
+                provider="local_mlx",
+                model="mlx-voice",
+                local_model_path="/tmp/model",
+            )
+        )
+        session = SessionRecord(topic="Draft fallback", creation_intent="Render without final edit")
+        session.transition(SessionState.SCRIPT_GENERATED)
+        script = ScriptRecord(
+            session_id=session.session_id,
+            draft="Draft script body should be rendered.",
+            final="",
+        )
+        artifact = ArtifactRecord(session_id=session.session_id)
+        store.save_project(SessionProject(session=session, script=script, artifact=artifact))
+
+        with patch(
+            "app.providers.tts_local_mlx.provider.detect_local_mlx_capability",
+            return_value=type(
+                "Capability",
+                (),
+                {"available": True, "reasons": [], "fallback_provider": "mock_remote"},
+            )(),
+        ):
+            result = service.render_audio(session.session_id)
+
+        transcript_text = Path(result.transcript_path).read_text(encoding="utf-8")
+        self.assertEqual(transcript_text, script.draft + "\n")
+        self.assertTrue(Path(result.audio_path).exists())
+        self.assertTrue(Path(artifact_store.exports_dir / session.session_id).exists())
 
 
 if __name__ == "__main__":

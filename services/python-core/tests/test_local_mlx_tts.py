@@ -12,6 +12,22 @@ from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 
 
 class LocalMLXRuntimeTests(unittest.TestCase):
+    def test_capability_reports_available_when_runtime_and_model_path_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = TTSProviderConfig(
+                provider="local_mlx",
+                model="mlx-voice",
+                local_model_path=tmp_dir,
+            )
+            with patch("app.providers.tts_local_mlx.runtime.platform.system", return_value="Darwin"):
+                with patch("app.providers.tts_local_mlx.runtime.importlib.util.find_spec", return_value=object()):
+                    capability = detect_local_mlx_capability(config)
+
+        self.assertTrue(capability.available)
+        self.assertTrue(capability.mlx_installed)
+        self.assertTrue(capability.model_path_exists)
+        self.assertEqual(capability.reasons, [])
+
     def test_capability_reports_missing_mlx_in_current_environment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = TTSProviderConfig(

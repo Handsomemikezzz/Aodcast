@@ -32,10 +32,10 @@ Maintenance runs should produce:
 - a short report in `.agent/reports/`
 - proposed doc updates when drift is found
 - narrowly scoped cleanup changes instead of broad rewrite sweeps
+- use `./scripts/maintenance/run-repo-hygiene-check.sh` as the default local sweep before writing the report
 
 ## Cleanup Guardrails
 
 - do not remove files without confirming they are unused or superseded
 - do not rewrite governance docs without checking current architecture docs
 - prefer incremental cleanup over large disruptive refactors
-

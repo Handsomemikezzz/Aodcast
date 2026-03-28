@@ -33,6 +33,7 @@ Run from the repository root:
 - `./scripts/dev/run-python-core.sh --show-local-tts-capability`
 - `./scripts/dev/run-python-core.sh --render-audio <session-id>`
 - `./scripts/dev/run-desktop.sh`
+- `./scripts/maintenance/run-repo-hygiene-check.sh`
 
 Current environment note:
 
@@ -46,3 +47,8 @@ Current environment note:
 - Use `./scripts/dev/run-python-core.sh --show-local-tts-capability` before selecting `local_mlx`.
 - The repository includes a placeholder local model directory only for capability and workflow validation. It is not a real speech model bundle.
 - After installing `mlx` into the project venv and pointing `local_model_path` at the placeholder directory, the local provider path is executable for workflow validation in this repository.
+
+## Maintenance
+
+- Use `./scripts/maintenance/run-repo-hygiene-check.sh` for the default Milestone 7 maintenance sweep.
+- Store maintenance outcomes in `.agent/reports/`.

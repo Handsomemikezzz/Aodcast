@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Milestone 7 - Hardening and Repository Hygiene`
+Active milestone: `MVP baseline complete`
 
 ## Status Summary
 
@@ -58,12 +58,14 @@ Active milestone: `Milestone 7 - Hardening and Repository Hygiene`
 - workspace-local Python venv created for MLX validation
 - local MLX capability is now available through the project venv and placeholder model path
 - Milestone 6 exit criteria functionally satisfied
+- Milestone 7 hygiene script and hardening report added
+- maintenance docs now point to a repeatable local sweep
+- high-risk coverage expanded around local MLX capability and draft fallback rendering
+- Milestone 7 exit criteria functionally satisfied
 
 ### In Progress
 
-- hardening pass for tests, cleanup, and operational docs
-- repository hygiene review
-- Milestone 7 validation handoff
+- next roadmap slice not started
 
 ### Blockers
 
@@ -138,6 +140,15 @@ Active milestone: `Milestone 7 - Hardening and Repository Hygiene`
 | Integrate local provider into render flow | `orchestration-builder` | done | Audio rendering can select `local_mlx` and fails cleanly with preserved session state |
 | Surface local capability in desktop shell | `desktop-builder` | done | Desktop workspace shows local MLX availability and fallback reasons |
 | Validate local path and fallback | `quality-runner` | done | Tests pass; failure and success paths were both validated through the project venv and placeholder model path |
+
+## Milestone 7 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Add high-risk regression coverage | `quality-runner` | done | Audio rendering and local MLX capability coverage now include draft fallback and available-runtime success cases |
+| Add repeatable repo hygiene script | `repo-curator` | done | Maintenance sweep now runs through `scripts/maintenance/run-repo-hygiene-check.sh` |
+| Sync maintenance docs with implemented workflow | `doc-syncer` | done | README and maintenance playbook now point to the maintenance sweep and report location |
+| Publish hardening report | `spec-keeper` | done | Report stored at `.agent/reports/2026-03-28-milestone-7-hardening-pass.md` |
 
 ## Update Rules
 
