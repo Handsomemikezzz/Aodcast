@@ -1,4 +1,5 @@
 import { createId } from "./id";
+import { CreateSessionInput, DesktopBridge } from "./desktopBridge";
 import { generateMockDraft } from "./generateDraft";
 import { appendTurn, evaluateReadiness, nextQuestion, transcriptToText } from "./readiness";
 import { nowIso } from "./time";
@@ -10,26 +11,8 @@ import {
   PromptInput,
   Readiness,
   SessionProject,
-  SessionState,
   TTSCapability,
 } from "../types";
-
-export type CreateSessionInput = {
-  topic: string;
-  creationIntent: string;
-};
-
-export interface DesktopBridge {
-  listProjects(): Promise<SessionProject[]>;
-  createSession(input: CreateSessionInput): Promise<SessionProject>;
-  startInterview(sessionId: string): Promise<InterviewTurnResult>;
-  submitReply(sessionId: string, message: string, userRequestedFinish?: boolean): Promise<InterviewTurnResult>;
-  requestFinish(sessionId: string): Promise<InterviewTurnResult>;
-  generateScript(sessionId: string): Promise<GenerationResult>;
-  renderAudio(sessionId: string): Promise<AudioRenderResult>;
-  saveEditedScript(sessionId: string, finalText: string): Promise<SessionProject>;
-  getLocalTTSCapability(): Promise<TTSCapability>;
-}
 
 function cloneProject(project: SessionProject): SessionProject {
   return JSON.parse(JSON.stringify(project)) as SessionProject;

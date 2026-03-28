@@ -55,6 +55,9 @@ Out of scope for the current MVP:
 - provider-specific logic belongs only under `services/python-core/app/providers`.
 - interview state logic belongs only under `services/python-core/app/orchestration`.
 - operational rules belong in `docs/operations` and `AGENTS.md`, not in scattered ad hoc notes.
+- desktop bridge calls must flow through `apps/desktop/src/lib/*Bridge.ts -> src-tauri commands -> python_bridge`, not from React components directly to shell commands.
+- machine-readable Python bridge calls must keep stdout as a single JSON envelope when `--bridge-json` is set.
+- model-specific runtime logic belongs inside provider runner/runtime modules, not in orchestration or desktop files.
 
 ## Change Protocol
 
@@ -122,3 +125,4 @@ Feature and maintenance role definitions live in [docs/operations/subagents.md](
 - 2026-03-28: The local MLX TTS path is runtime-gated. Before trying `local_mlx`, check `--show-local-tts-capability`. The project now uses `services/python-core/.venv` for local MLX validation, and `./scripts/dev/run-python-core.sh` prefers that interpreter automatically. Do not assume bare system `python3` has the same MLX availability as the project venv.
 - 2026-03-28: Git writes may be sandbox-restricted even when normal file edits succeed. If `git commit` fails with `.git/index.lock: Operation not permitted`, rerun the commit with escalated permissions instead of treating it as a repository corruption issue.
 - 2026-03-28: Transcript exports intentionally normalize to a trailing newline. When validating `transcript.txt`, compare normalized content or include the newline in expectations; this is storage behavior, not an audio-rendering regression.
+- 2026-03-28: `git add .` may appear to succeed in the sandbox without actually staging changes. If `git status --short` still shows unstaged files after `git add .`, rerun the staging step with escalated permissions before assuming git is inconsistent.

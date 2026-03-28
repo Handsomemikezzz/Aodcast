@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `MVP baseline complete`
+Active milestone: `Post-MVP slice - Real Tauri bridge`
 
 ## Status Summary
 
@@ -62,10 +62,14 @@ Active milestone: `MVP baseline complete`
 - maintenance docs now point to a repeatable local sweep
 - high-risk coverage expanded around local MLX capability and draft fallback rendering
 - Milestone 7 exit criteria functionally satisfied
+- real desktop bridge interface extracted from the mock implementation
+- Python CLI now supports machine-readable bridge envelopes plus list/create/save-script actions
+- Tauri Rust command gateway added for Python orchestration calls
 
 ### In Progress
 
-- next roadmap slice not started
+- real Tauri bridge validation handoff
+- native runtime compile blocked on missing Rust toolchain
 
 ### Blockers
 
@@ -149,6 +153,15 @@ Active milestone: `MVP baseline complete`
 | Add repeatable repo hygiene script | `repo-curator` | done | Maintenance sweep now runs through `scripts/maintenance/run-repo-hygiene-check.sh` |
 | Sync maintenance docs with implemented workflow | `doc-syncer` | done | README and maintenance playbook now point to the maintenance sweep and report location |
 | Publish hardening report | `spec-keeper` | done | Report stored at `.agent/reports/2026-03-28-milestone-7-hardening-pass.md` |
+
+## Post-MVP Slice: Real Tauri Bridge
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Extract frontend bridge contract from mock implementation | `desktop-builder` | done | `desktopBridge.ts`, `bridgeFactory.ts`, and `tauriBridge.ts` now own the bridge boundary |
+| Add machine-readable Python CLI bridge mode | `orchestration-builder` | done | `--bridge-json`, `--list-projects`, `--create-session`, and `--save-script` are implemented |
+| Add Rust command gateway | `desktop-builder` | done | Tauri commands now call the Python runner through `python_bridge.rs` |
+| Validate bridge protocol and desktop types | `quality-runner` | in_progress | Python bridge tests and `pnpm check` pass; native Tauri compile still blocked by missing `cargo` |
 
 ## Update Rules
 

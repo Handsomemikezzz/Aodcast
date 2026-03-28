@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from app.config import AppConfig
 from app.domain.artifact import ArtifactRecord
 from app.domain.project import SessionProject
-from app.domain.provider_config import LLMProviderConfig
 from app.domain.script import ScriptRecord
-from app.domain.session import SessionRecord
-from app.domain.tts_config import TTSProviderConfig
-from app.domain.transcript import Speaker, TranscriptRecord
+from app.domain.session import SessionRecord, SessionState
+from app.domain.transcript import TranscriptRecord
 from app.orchestration.audio_rendering import AudioRenderResult, AudioRenderingService
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import (
@@ -19,10 +18,10 @@ from app.orchestration.script_generation import (
     ScriptGenerationService,
     build_generation_context,
 )
+from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
-from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,12 +30,15 @@ def build_parser() -> argparse.ArgumentParser:
         description="Bootstrap utility for the Aodcast Python orchestration core.",
     )
     parser.add_argument("--cwd", type=Path, default=Path.cwd(), help="Project root")
+    parser.add_argument("--bridge-json", action="store_true", help="Emit a JSON envelope for desktop bridge calls.")
     parser.add_argument("--topic", default="A new podcast topic", help="Topic seed")
     parser.add_argument(
         "--intent",
         default="Validate bootstrap wiring",
         help="Short creation intent",
     )
+    parser.add_argument("--list-projects", action="store_true", help="List all known projects.")
+    parser.add_argument("--create-session", action="store_true", help="Create a new session project.")
     parser.add_argument(
         "--create-demo-session",
         action="store_true",
@@ -46,6 +48,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-session",
         default="",
         help="Print a recovered session project as JSON.",
+    )
+    parser.add_argument(
+        "--save-script",
+        default="",
+        help="Persist a user-edited final script for a session id.",
+    )
+    parser.add_argument(
+        "--script-final-text",
+        default="",
+        help="Final script text for --save-script.",
+    )
+    parser.add_argument(
+        "--script-final-file",
+        default="",
+        help="Optional file path containing the final script text for --save-script.",
     )
     parser.add_argument(
         "--start-interview",
@@ -211,6 +228,68 @@ def serialize_audio_result(result: AudioRenderResult) -> dict[str, object]:
     }
 
 
+def create_project(topic: str, intent: str, *, demo: bool = False) -> SessionProject:
+    session = SessionRecord(topic=topic, creation_intent=intent)
+    transcript = TranscriptRecord(session_id=session.session_id)
+    script = ScriptRecord(
+        session_id=session.session_id,
+        draft="Draft script pending real generation." if demo else "",
+        final="",
+    )
+    artifact = ArtifactRecord(
+        session_id=session.session_id,
+        transcript_path=f"sessions/{session.session_id}/transcript.json",
+        audio_path="",
+        provider="",
+    )
+    return SessionProject(
+        session=session,
+        transcript=transcript,
+        script=script,
+        artifact=artifact,
+    )
+
+
+def load_final_script_text(args: argparse.Namespace) -> str:
+    if args.script_final_file:
+        return Path(args.script_final_file).read_text(encoding="utf-8")
+    return args.script_final_text
+
+
+def output_payload(args: argparse.Namespace, payload: dict[str, object]) -> int:
+    if args.bridge_json:
+        print(json.dumps({"ok": True, "data": payload}, indent=2))
+    else:
+        print(json.dumps(payload, indent=2))
+    return 0
+
+
+def output_error(
+    args: argparse.Namespace,
+    *,
+    code: str,
+    message: str,
+    details: dict[str, object] | None = None,
+) -> int:
+    if args.bridge_json:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": code,
+                        "message": message,
+                        "details": details or {},
+                    },
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(message, file=sys.stderr)
+    return 1
+
+
 def run(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -225,103 +304,126 @@ def run(argv: list[str] | None = None) -> int:
     config_store.bootstrap()
     artifact_store.bootstrap()
 
-    print(f"Aodcast Python core ready at: {config.data_dir}")
+    if not args.bridge_json:
+        print(f"Aodcast Python core ready at: {config.data_dir}")
 
-    if args.create_demo_session:
-        session = SessionRecord(topic=args.topic, creation_intent=args.intent)
-        transcript = TranscriptRecord(session_id=session.session_id)
-        script = ScriptRecord(
-            session_id=session.session_id,
-            draft="Draft script pending real generation.",
-            final="",
-        )
-        artifact = ArtifactRecord(
-            session_id=session.session_id,
-            transcript_path=f"sessions/{session.session_id}/transcript.json",
-            audio_path="",
-            provider="",
-        )
-        project = SessionProject(
-            session=session,
-            transcript=transcript,
-            script=script,
-            artifact=artifact,
-        )
-        store.save_project(project)
-        print(f"Created demo session {session.session_id} at {store.session_dir(session.session_id)}")
-    elif args.configure_llm_provider:
-        llm_config = config_store.load_llm_config()
-        llm_config.provider = args.configure_llm_provider
-        if args.llm_model:
-            llm_config.model = args.llm_model
-        if args.llm_base_url:
-            llm_config.base_url = args.llm_base_url
-        if args.llm_api_key_env:
-            llm_config.api_key_env = args.llm_api_key_env
-        path = config_store.save_llm_config(llm_config)
-        print(json.dumps({"path": str(path), "llm_config": llm_config.to_dict()}, indent=2))
-    elif args.configure_tts_provider:
-        tts_config = config_store.load_tts_config()
-        tts_config.provider = args.configure_tts_provider
-        if args.tts_model:
-            tts_config.model = args.tts_model
-        if args.tts_base_url:
-            tts_config.base_url = args.tts_base_url
-        if args.tts_api_key_env:
-            tts_config.api_key_env = args.tts_api_key_env
-        if args.tts_voice:
-            tts_config.voice = args.tts_voice
-        if args.tts_audio_format:
-            tts_config.audio_format = args.tts_audio_format
-        if args.tts_local_model_path:
-            tts_config.local_model_path = args.tts_local_model_path
-        path = config_store.save_tts_config(tts_config)
-        print(json.dumps({"path": str(path), "tts_config": tts_config.to_dict()}, indent=2))
-    elif args.show_llm_config:
-        print(json.dumps(config_store.load_llm_config().to_dict(), indent=2))
-    elif args.show_tts_config:
-        print(json.dumps(config_store.load_tts_config().to_dict(), indent=2))
-    elif args.show_local_tts_capability:
-        print(
-            json.dumps(
-                detect_local_mlx_capability(config_store.load_tts_config()).to_dict(),
-                indent=2,
+    try:
+        if args.list_projects:
+            projects = sorted(
+                store.list_projects(),
+                key=lambda project: project.session.updated_at,
+                reverse=True,
             )
-        )
-    elif args.start_interview:
-        result = orchestrator.start_interview(args.start_interview)
-        print(json.dumps(serialize_turn_result(result), indent=2))
-    elif args.reply_session:
-        if not args.message.strip():
-            parser.error("--message is required when using --reply-session")
-        result = orchestrator.submit_user_response(
-            args.reply_session,
-            args.message,
-            user_requested_finish=args.user_requested_finish,
-        )
-        print(json.dumps(serialize_turn_result(result), indent=2))
-    elif args.finish_session:
-        result = orchestrator.request_finish(args.finish_session)
-        print(json.dumps(serialize_turn_result(result), indent=2))
-    elif args.generate_script:
-        result = script_generation.generate_draft(
-            args.generate_script,
-            override_provider=args.llm_provider_override,
-        )
-        print(json.dumps(serialize_generation_result(result), indent=2))
-    elif args.render_audio:
-        result = audio_rendering.render_audio(
-            args.render_audio,
-            override_provider=args.tts_provider_override,
-        )
-        print(json.dumps(serialize_audio_result(result), indent=2))
-    elif args.show_session:
-        project = store.load_project(args.show_session)
-        print(json.dumps(serialize_project(project), indent=2))
-    else:
-        print(f"Known sessions: {len(store.list_projects())}")
+            return output_payload(args, {"projects": [serialize_project(project) for project in projects]})
 
-    return 0
+        if args.create_session or args.create_demo_session:
+            project = create_project(args.topic, args.intent, demo=args.create_demo_session)
+            store.save_project(project)
+            if args.create_demo_session and not args.bridge_json:
+                print(f"Created demo session {project.session.session_id} at {store.session_dir(project.session.session_id)}")
+                return 0
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.save_script:
+            final_text = load_final_script_text(args)
+            if not final_text.strip():
+                raise ValueError("--script-final-text or --script-final-file is required when using --save-script")
+            project = store.load_project(args.save_script)
+            if project.script is None:
+                raise ValueError("Cannot save an edited script without a script record.")
+            project.script.update_final(final_text)
+            project.session.transition(SessionState.SCRIPT_EDITED)
+            store.save_project(project)
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.configure_llm_provider:
+            llm_config = config_store.load_llm_config()
+            llm_config.provider = args.configure_llm_provider
+            if args.llm_model:
+                llm_config.model = args.llm_model
+            if args.llm_base_url:
+                llm_config.base_url = args.llm_base_url
+            if args.llm_api_key_env:
+                llm_config.api_key_env = args.llm_api_key_env
+            path = config_store.save_llm_config(llm_config)
+            return output_payload(args, {"path": str(path), "llm_config": llm_config.to_dict()})
+
+        if args.configure_tts_provider:
+            tts_config = config_store.load_tts_config()
+            tts_config.provider = args.configure_tts_provider
+            if args.tts_model:
+                tts_config.model = args.tts_model
+            if args.tts_base_url:
+                tts_config.base_url = args.tts_base_url
+            if args.tts_api_key_env:
+                tts_config.api_key_env = args.tts_api_key_env
+            if args.tts_voice:
+                tts_config.voice = args.tts_voice
+            if args.tts_audio_format:
+                tts_config.audio_format = args.tts_audio_format
+            if args.tts_local_model_path:
+                tts_config.local_model_path = args.tts_local_model_path
+            path = config_store.save_tts_config(tts_config)
+            return output_payload(args, {"path": str(path), "tts_config": tts_config.to_dict()})
+
+        if args.show_llm_config:
+            return output_payload(args, {"llm_config": config_store.load_llm_config().to_dict()})
+
+        if args.show_tts_config:
+            return output_payload(args, {"tts_config": config_store.load_tts_config().to_dict()})
+
+        if args.show_local_tts_capability:
+            capability = detect_local_mlx_capability(config_store.load_tts_config()).to_dict()
+            return output_payload(args, {"tts_capability": capability})
+
+        if args.start_interview:
+            result = orchestrator.start_interview(args.start_interview)
+            return output_payload(args, serialize_turn_result(result))
+
+        if args.reply_session:
+            if not args.message.strip():
+                raise ValueError("--message is required when using --reply-session")
+            result = orchestrator.submit_user_response(
+                args.reply_session,
+                args.message,
+                user_requested_finish=args.user_requested_finish,
+            )
+            return output_payload(args, serialize_turn_result(result))
+
+        if args.finish_session:
+            result = orchestrator.request_finish(args.finish_session)
+            return output_payload(args, serialize_turn_result(result))
+
+        if args.generate_script:
+            result = script_generation.generate_draft(
+                args.generate_script,
+                override_provider=args.llm_provider_override,
+            )
+            return output_payload(args, serialize_generation_result(result))
+
+        if args.render_audio:
+            result = audio_rendering.render_audio(
+                args.render_audio,
+                override_provider=args.tts_provider_override,
+            )
+            return output_payload(args, serialize_audio_result(result))
+
+        if args.show_session:
+            project = store.load_project(args.show_session)
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.bridge_json:
+            return output_payload(args, {"projects": []})
+
+        print(f"Known sessions: {len(store.list_projects())}")
+        return 0
+    except Exception as exc:
+        return output_error(
+            args,
+            code="python_core_error",
+            message=str(exc),
+            details={"exception_type": exc.__class__.__name__},
+        )
 
 
 if __name__ == "__main__":

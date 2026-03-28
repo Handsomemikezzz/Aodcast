@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { DesktopBridge } from "../lib/mockBridge";
+import { DesktopBridge } from "../lib/desktopBridge";
 import { formatTimestamp } from "../lib/time";
 import {
   AudioRenderResult,

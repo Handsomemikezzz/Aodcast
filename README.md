@@ -10,6 +10,8 @@ The MVP is scoped to a local-first workflow:
 4. The user edits the script directly.
 5. The system renders final audio through a remote TTS API or a local MLX-backed TTS provider.
 
+When the UI runs inside Tauri, desktop actions are routed into the Python orchestration core through a Tauri command bridge. Browser-only runs still fall back to the mock bridge for UI iteration.
+
 The repository is organized for long-term multi-agent collaboration. Start with:
 
 - [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)
@@ -52,3 +54,9 @@ Current environment note:
 
 - Use `./scripts/maintenance/run-repo-hygiene-check.sh` for the default Milestone 7 maintenance sweep.
 - Store maintenance outcomes in `.agent/reports/`.
+
+## Desktop Bridge
+
+- The real desktop path is `React -> Tauri invoke -> Rust commands -> scripts/dev/run-python-core.sh -> app.main`.
+- Python bridge calls should use `--bridge-json` so stdout remains a single JSON envelope for Rust to parse.
+- If native Tauri validation is blocked by missing `cargo`, keep validating the Python bridge and frontend types independently until the Rust toolchain is available.

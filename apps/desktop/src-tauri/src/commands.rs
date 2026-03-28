@@ -1,0 +1,73 @@
+use serde_json::Value;
+
+use crate::errors::BridgeError;
+use crate::python_bridge::run_python_bridge;
+
+#[tauri::command]
+pub fn list_projects() -> Result<Value, BridgeError> {
+    run_python_bridge(&["--list-projects".to_string()])
+}
+
+#[tauri::command]
+pub fn create_session(topic: String, creation_intent: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&[
+        "--create-session".to_string(),
+        "--topic".to_string(),
+        topic,
+        "--intent".to_string(),
+        creation_intent,
+    ])
+}
+
+#[tauri::command]
+pub fn start_interview(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--start-interview".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn submit_reply(
+    session_id: String,
+    message: String,
+    user_requested_finish: bool,
+) -> Result<Value, BridgeError> {
+    let mut args = vec![
+        "--reply-session".to_string(),
+        session_id,
+        "--message".to_string(),
+        message,
+    ];
+    if user_requested_finish {
+        args.push("--user-requested-finish".to_string());
+    }
+    run_python_bridge(&args)
+}
+
+#[tauri::command]
+pub fn request_finish(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--finish-session".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn generate_script(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--generate-script".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn save_edited_script(session_id: String, final_text: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&[
+        "--save-script".to_string(),
+        session_id,
+        "--script-final-text".to_string(),
+        final_text,
+    ])
+}
+
+#[tauri::command]
+pub fn render_audio(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--render-audio".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn show_local_tts_capability() -> Result<Value, BridgeError> {
+    run_python_bridge(&["--show-local-tts-capability".to_string()])
+}

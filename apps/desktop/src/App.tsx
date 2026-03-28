@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import { CreateSessionForm } from "./components/CreateSessionForm";
 import { ProjectSidebar } from "./components/ProjectSidebar";
 import { SessionWorkspace } from "./components/SessionWorkspace";
-import { createMockBridge } from "./lib/mockBridge";
+import { createDesktopBridge } from "./lib/bridgeFactory";
 import { SessionProject } from "./types";
 
 export default function App() {
-  const [bridge] = useState(() => createMockBridge());
+  const [bridge] = useState(() => createDesktopBridge());
   const [projects, setProjects] = useState<SessionProject[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -49,8 +49,9 @@ export default function App() {
           <p className="summary">
             The desktop shell now mirrors the core workflow: create a session,
             interview for raw material, move into draft generation, and edit the
-            script directly. The current bridge is intentionally mock-backed so
-            the UI can stabilize before the real Tauri bridge replaces it.
+            script directly. Tauri now routes those actions into the Python
+            orchestration core, while browser-only runs still fall back to the
+            mock bridge for isolated UI iteration.
           </p>
         </section>
 
