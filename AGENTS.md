@@ -1,0 +1,100 @@
+# AGENTS.md
+
+## Purpose
+
+This file is the root collaboration contract for Aodcast. It exists to keep multi-agent development coherent as the repository, architecture, and workflows evolve.
+
+`AGENTS.md` is a living governance file. It must be updated whenever one of the following changes:
+
+- repository structure or ownership boundaries
+- shared contracts between frontend and backend
+- core product flow or state machine
+- maintenance and cleanup workflow
+- subagent roles, responsibilities, or triggers
+
+If implementation changes invalidate this file, update `AGENTS.md` in the same change set.
+
+## Product Scope
+
+Current source of truth: [docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
+
+Current MVP:
+
+- platform: macOS desktop app
+- frontend: Tauri app shell
+- backend: local Python orchestration core
+- input: text topic only
+- output: solo podcast script plus final audio
+- LLM: user-configured API provider
+- TTS: remote API provider or local MLX-backed provider
+
+Out of scope for the current MVP:
+
+- speech-to-text input
+- long-term user memory
+- multi-host podcast formats
+- cloud backend dependency
+- voice cloning
+
+## Repository Map
+
+- `apps/desktop`: Tauri UI and app shell
+- `services/python-core`: interview orchestration, script generation, provider dispatch, storage
+- `packages/shared-schemas`: shared data contracts and schemas
+- `docs/product`: product-facing docs
+- `docs/architecture`: architecture and repository layout docs
+- `docs/operations`: agent governance, maintenance playbooks, subagent definitions
+- `.agent`: prompts, checklists, templates, and reports used by agents
+
+## Ownership Rules
+
+- UI-focused agents should work inside `apps/desktop` unless a schema change is required.
+- backend-focused agents should work inside `services/python-core` unless a schema change is required.
+- cross-boundary changes must update shared contracts first in `packages/shared-schemas`.
+- provider-specific logic belongs only under `services/python-core/app/providers`.
+- interview state logic belongs only under `services/python-core/app/orchestration`.
+- operational rules belong in `docs/operations` and `AGENTS.md`, not in scattered ad hoc notes.
+
+## Change Protocol
+
+Before substantial implementation work:
+
+1. confirm the relevant source-of-truth doc
+2. identify the owned directory boundary
+3. update shared schema or governance docs first if the change crosses boundaries
+4. implement the smallest complete change set
+5. update affected docs before closing the task
+
+When a change affects the product flow, architecture, or repo governance, update:
+
+- [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)
+- the active spec or architecture doc under `docs/`
+
+## Code Generation Rules
+
+- Prefer small, single-purpose files.
+- Do not duplicate provider logic across orchestration or UI layers.
+- Avoid adding framework glue where a simple interface will do.
+- Keep internal domain models separate from external provider payloads.
+- Favor explicit interfaces and replaceable adapters over vendor-coupled logic.
+
+## Documentation Rules
+
+- Treat docs as maintained assets, not one-time output.
+- If code changes behavior, state shape, directory ownership, or operator workflow, update the related docs in the same task.
+- Add new operational conventions to `docs/operations` and summarize cross-cutting ones here.
+
+## Maintenance Subagents
+
+The repository should be maintained continuously by specialized cleanup-oriented subagents. Their definitions live in [docs/operations/subagents.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/subagents.md).
+
+Minimum maintenance roles:
+
+- `spec-keeper`
+- `code-pruner`
+- `contract-guard`
+- `doc-syncer`
+- `repo-curator`
+
+Maintenance cadence and triggers live in [docs/operations/maintenance-playbook.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/maintenance-playbook.md).
+
