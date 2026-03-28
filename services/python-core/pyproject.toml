@@ -6,6 +6,9 @@ readme = "../../README.md"
 requires-python = ">=3.13"
 dependencies = []
 
+[project.optional-dependencies]
+local-mlx = ["mlx; sys_platform == 'darwin'"]
+
 [project.scripts]
 aodcast-python-core = "app.main:run"
 

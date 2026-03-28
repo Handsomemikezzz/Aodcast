@@ -22,6 +22,7 @@ from app.orchestration.script_generation import (
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -151,6 +152,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Temporarily override the configured TTS provider for audio rendering.",
     )
+    parser.add_argument(
+        "--show-local-tts-capability",
+        action="store_true",
+        help="Print the current local MLX TTS capability report.",
+    )
+    parser.add_argument(
+        "--tts-local-model-path",
+        default="",
+        help="Local model path for MLX TTS configuration updates.",
+    )
     return parser
 
 
@@ -262,12 +273,21 @@ def run(argv: list[str] | None = None) -> int:
             tts_config.voice = args.tts_voice
         if args.tts_audio_format:
             tts_config.audio_format = args.tts_audio_format
+        if args.tts_local_model_path:
+            tts_config.local_model_path = args.tts_local_model_path
         path = config_store.save_tts_config(tts_config)
         print(json.dumps({"path": str(path), "tts_config": tts_config.to_dict()}, indent=2))
     elif args.show_llm_config:
         print(json.dumps(config_store.load_llm_config().to_dict(), indent=2))
     elif args.show_tts_config:
         print(json.dumps(config_store.load_tts_config().to_dict(), indent=2))
+    elif args.show_local_tts_capability:
+        print(
+            json.dumps(
+                detect_local_mlx_capability(config_store.load_tts_config()).to_dict(),
+                indent=2,
+            )
+        )
     elif args.start_interview:
         result = orchestrator.start_interview(args.start_interview)
         print(json.dumps(serialize_turn_result(result), indent=2))

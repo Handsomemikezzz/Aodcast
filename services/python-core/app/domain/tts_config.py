@@ -12,6 +12,8 @@ class TTSProviderConfig:
     api_key_env: str = ""
     voice: str = "alloy"
     audio_format: str = "wav"
+    local_runtime: str = "mlx"
+    local_model_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -21,6 +23,8 @@ class TTSProviderConfig:
             "api_key_env": self.api_key_env,
             "voice": self.voice,
             "audio_format": self.audio_format,
+            "local_runtime": self.local_runtime,
+            "local_model_path": self.local_model_path,
         }
 
     @classmethod
@@ -32,4 +36,6 @@ class TTSProviderConfig:
             api_key_env=str(payload.get("api_key_env", "")),
             voice=str(payload.get("voice", "alloy")),
             audio_format=str(payload.get("audio_format", "wav")),
+            local_runtime=str(payload.get("local_runtime", "mlx")),
+            local_model_path=str(payload.get("local_model_path", "")),
         )

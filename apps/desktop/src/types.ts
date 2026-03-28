@@ -100,3 +100,16 @@ export type AudioRenderResult = {
   audio_path: string;
   transcript_path: string;
 };
+
+export type TTSCapability = {
+  provider: string;
+  runtime: string;
+  platform: string;
+  mlx_installed: boolean;
+  model_path_configured: boolean;
+  model_path_exists: boolean;
+  available: boolean;
+  reasons: string[];
+  model_path: string;
+  fallback_provider: string;
+};

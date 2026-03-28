@@ -11,6 +11,7 @@ import {
   Readiness,
   SessionProject,
   SessionState,
+  TTSCapability,
 } from "../types";
 
 export type CreateSessionInput = {
@@ -27,6 +28,7 @@ export interface DesktopBridge {
   generateScript(sessionId: string): Promise<GenerationResult>;
   renderAudio(sessionId: string): Promise<AudioRenderResult>;
   saveEditedScript(sessionId: string, finalText: string): Promise<SessionProject>;
+  getLocalTTSCapability(): Promise<TTSCapability>;
 }
 
 function cloneProject(project: SessionProject): SessionProject {
@@ -219,6 +221,24 @@ export function createMockBridge(): DesktopBridge {
     };
   }
 
+  async function getLocalTTSCapability() {
+    return {
+      provider: "local_mlx",
+      runtime: "mlx",
+      platform: "darwin",
+      mlx_installed: false,
+      model_path_configured: false,
+      model_path_exists: false,
+      available: false,
+      reasons: [
+        "Mock bridge is active, so no native MLX runtime is attached yet.",
+        "Configure a local model path and install the Python mlx package before switching to the real bridge.",
+      ],
+      model_path: "",
+      fallback_provider: "mock_remote",
+    };
+  }
+
   return {
     listProjects,
     createSession,
@@ -228,6 +248,7 @@ export function createMockBridge(): DesktopBridge {
     generateScript,
     renderAudio,
     saveEditedScript,
+    getLocalTTSCapability,
   };
 
   function getProject(sessionId: string) {

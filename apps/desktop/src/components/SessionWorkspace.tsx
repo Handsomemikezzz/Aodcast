@@ -7,6 +7,7 @@ import {
   GenerationResult,
   InterviewTurnResult,
   SessionProject,
+  TTSCapability,
 } from "../types";
 import { StatusBadge } from "./StatusBadge";
 
@@ -20,6 +21,7 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
   const [reply, setReply] = useState("");
   const [draftText, setDraftText] = useState("");
   const [activityNote, setActivityNote] = useState("Select a session to begin.");
+  const [localCapability, setLocalCapability] = useState<TTSCapability | null>(null);
 
   useEffect(() => {
     setDraftText(project?.script?.final || project?.script?.draft || "");
@@ -27,6 +29,10 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
       setActivityNote("Session loaded.");
     }
   }, [project?.session.session_id, project?.script?.draft, project?.script?.final]);
+
+  useEffect(() => {
+    void bridge.getLocalTTSCapability().then(setLocalCapability);
+  }, [bridge]);
 
   if (!project) {
     return (
@@ -259,6 +265,25 @@ export function SessionWorkspace({ bridge, project, onProjectChange }: Props) {
                 <p>{currentProject.artifact?.audio_path || "Not generated yet."}</p>
               </div>
             </div>
+            {localCapability ? (
+              <div className="capability-box">
+                <div>
+                  <strong>Local MLX Capability</strong>
+                  <p>
+                    {localCapability.available
+                      ? "Local MLX TTS is available."
+                      : `Local MLX TTS unavailable. Fallback provider: ${localCapability.fallback_provider}.`}
+                  </p>
+                </div>
+                {!localCapability.available ? (
+                  <ul className="capability-list">
+                    {localCapability.reasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </section>
       </div>

@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Milestone 6 - Local MLX TTS Path`
+Active milestone: `Milestone 7 - Hardening and Repository Hygiene`
 
 ## Status Summary
 
@@ -51,12 +51,19 @@ Active milestone: `Milestone 6 - Local MLX TTS Path`
 - remote audio rendering workflow implemented
 - desktop workspace now surfaces artifact status and render action
 - Milestone 5 exit criteria functionally satisfied
+- local MLX TTS provider abstraction added
+- local MLX capability detection added
+- desktop workspace now surfaces local MLX capability and fallback messaging
+- local MLX path is validated through tests and explicit failure-path CLI checks
+- workspace-local Python venv created for MLX validation
+- local MLX capability is now available through the project venv and placeholder model path
+- Milestone 6 exit criteria functionally satisfied
 
 ### In Progress
 
-- local MLX TTS provider planning
-- cross-platform TTS abstraction review
-- Milestone 6 architecture handoff
+- hardening pass for tests, cleanup, and operational docs
+- repository hygiene review
+- Milestone 7 validation handoff
 
 ### Blockers
 
@@ -121,6 +128,16 @@ Active milestone: `Milestone 6 - Local MLX TTS Path`
 | Implement audio rendering workflow | `orchestration-builder` | done | Sessions now move through `audio_rendering` into `completed` with local artifact exports |
 | Surface audio status in desktop shell | `desktop-builder` | done | Desktop workspace shows artifact paths and supports mock-backed audio rendering |
 | Validate remote TTS flow | `quality-runner` | done | Python tests, CLI flow, frontend typecheck, and web build all pass |
+
+## Milestone 6 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Define local MLX provider path | `provider-integrator` | done | Local MLX provider, runtime detector, and capability report are implemented |
+| Add local provider config fields | `provider-integrator` | done | TTS config now includes local runtime and model path fields |
+| Integrate local provider into render flow | `orchestration-builder` | done | Audio rendering can select `local_mlx` and fails cleanly with preserved session state |
+| Surface local capability in desktop shell | `desktop-builder` | done | Desktop workspace shows local MLX availability and fallback reasons |
+| Validate local path and fallback | `quality-runner` | done | Tests pass; failure and success paths were both validated through the project venv and placeholder model path |
 
 ## Update Rules
 
