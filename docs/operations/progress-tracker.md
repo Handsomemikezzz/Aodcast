@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Milestone 2 - Interview Orchestration Core`
+Active milestone: `Milestone 3 - Script Generation`
 
 ## Status Summary
 
@@ -29,12 +29,17 @@ Active milestone: `Milestone 2 - Interview Orchestration Core`
 - shared schema contracts documented
 - Milestone 1 exit criteria functionally satisfied
 - Milestone 1 documentation closeout complete
+- interview state machine implemented in Python core
+- readiness evaluation implemented for the four MVP dimensions
+- prompt assembly inputs defined for interview turns
+- CLI command handlers added for interview start, reply, and finish
+- Milestone 2 exit criteria functionally satisfied
 
 ### In Progress
 
-- Milestone 2 interview state machine implementation
-- prompt assembly inputs for interview turns
-- orchestration interface shape for desktop integration
+- Milestone 3 script generation planning handoff
+- LLM provider interface design
+- draft script generation workflow
 
 ### Blockers
 
@@ -59,6 +64,16 @@ Active milestone: `Milestone 2 - Interview Orchestration Core`
 | Persist full project records | `orchestration-builder` | done | Session, transcript, script, and artifact records now persist under each session directory |
 | Add recovery loading path | `orchestration-builder` | done | Store can rebuild a full `SessionProject` from disk |
 | Validate storage round trips | `quality-runner` | done | Python tests now cover full project recovery and session listing |
+
+## Milestone 2 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Implement interview state machine | `orchestration-builder` | done | Sessions now move between `interview_in_progress`, `readiness_evaluation`, and `ready_to_generate` |
+| Add readiness evaluation | `orchestration-builder` | done | Heuristic covers topic context, viewpoint, detail, and conclusion |
+| Define prompt assembly inputs | `schema-steward` | done | Prompt input object includes topic, intent, missing dimensions, and strategy layers |
+| Expose orchestration interface | `orchestration-builder` | done | CLI handlers exist for start, reply, finish, and session inspection |
+| Validate interview loop | `quality-runner` | done | Tests and CLI validation confirm looped questioning and ready-to-generate transitions |
 
 ## Update Rules
 

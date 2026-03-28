@@ -22,6 +22,8 @@ Run from the repository root:
 
 - `./scripts/dev/check-toolchain.sh`
 - `./scripts/dev/run-python-core.sh --create-demo-session`
+- `./scripts/dev/run-python-core.sh --start-interview <session-id>`
+- `./scripts/dev/run-python-core.sh --reply-session <session-id> --message "your answer"`
 - `./scripts/dev/run-desktop.sh`
 
 Current environment note:
