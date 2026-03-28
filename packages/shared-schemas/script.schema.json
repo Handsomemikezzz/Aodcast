@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/script.schema.json",
+  "title": "Script",
+  "type": "object",
+  "required": ["session_id", "draft", "final", "updated_at"],
+  "properties": {
+    "session_id": { "type": "string" },
+    "draft": { "type": "string" },
+    "final": { "type": "string" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

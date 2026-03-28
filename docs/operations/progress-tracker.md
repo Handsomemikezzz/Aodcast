@@ -1,0 +1,50 @@
+# Progress Tracker
+
+## Current Phase
+
+Active milestone: `Milestone 0 - Repository Bootstrap`
+
+## Status Summary
+
+### Completed
+
+- MVP design spec written and committed
+- repository governance docs written and committed
+- implementation plan written and committed
+- multi-agent workflow and subagent roles defined
+- root `AGENTS.md` established as a living governance file
+- repository initialized under git
+- local environment toolchain probed
+- desktop scaffold file layout created
+- Python core scaffold created
+- shared schema stubs created
+- Python bootstrap path verified
+- Python storage tests passing
+- bootstrap scripts added
+- README bootstrap notes added
+- desktop bootstrap script fail-fast path verified
+
+### In Progress
+
+- repository bootstrap milestone closeout
+
+### Blockers
+
+- Rust toolchain is not currently available on `PATH`, so native Tauri boot verification cannot run yet
+
+## Milestone 0 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Probe toolchain and repo state | lead/coordinator | done | `pnpm`, `node`, `uv`, `python3` available; `cargo` missing |
+| Add persistent progress tracking | lead/coordinator | done | This file is the active bootstrap tracker |
+| Scaffold desktop workspace | `desktop-builder` | done | Vite/Tauri file layout created; native runtime still blocked by missing Rust toolchain |
+| Scaffold Python core | `orchestration-builder` | done | App config, session model, storage, and boot entrypoint created |
+| Add dev scripts | lead/coordinator | done | Toolchain check, Python boot, and desktop boot scripts added |
+| Verify local boot paths | `quality-runner` | in_progress | Python verified and tested; desktop script now fails fast with a clear Rust toolchain message |
+
+## Update Rules
+
+- Update this file when a task changes status.
+- If a blocker or recurring mistake is discovered, add the short operational note to `AGENTS.md` and summarize the impact here.
+- Keep entries short and incremental; do not rewrite the full history on every update.

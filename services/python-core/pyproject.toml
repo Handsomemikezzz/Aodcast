@@ -1,0 +1,13 @@
+[project]
+name = "aodcast-python-core"
+version = "0.1.0"
+description = "Python orchestration core for Aodcast"
+readme = "../../README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+aodcast-python-core = "app.main:run"
+
+[tool.uv]
+package = true

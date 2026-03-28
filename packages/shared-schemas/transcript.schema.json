@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/transcript.schema.json",
+  "title": "Transcript",
+  "type": "object",
+  "required": ["session_id", "turns"],
+  "properties": {
+    "session_id": { "type": "string" },
+    "turns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["speaker", "content", "created_at"],
+        "properties": {
+          "speaker": { "type": "string", "enum": ["agent", "user"] },
+          "content": { "type": "string", "minLength": 1 },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/session.schema.json",
+  "title": "Session",
+  "type": "object",
+  "required": [
+    "session_id",
+    "topic",
+    "creation_intent",
+    "state",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "session_id": { "type": "string" },
+    "topic": { "type": "string", "minLength": 1 },
+    "creation_intent": { "type": "string", "minLength": 1 },
+    "state": {
+      "type": "string",
+      "enum": [
+        "topic_defined",
+        "interview_in_progress",
+        "readiness_evaluation",
+        "ready_to_generate",
+        "script_generated",
+        "script_edited",
+        "audio_rendering",
+        "completed",
+        "failed"
+      ]
+    },
+    "llm_provider": { "type": "string" },
+    "tts_provider": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

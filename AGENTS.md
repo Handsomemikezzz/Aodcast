@@ -109,5 +109,11 @@ When using multiple agents:
 - treat schema and governance updates as first-class tasks
 - merge contract changes before dependent implementation work
 - run maintenance agents after structural or cross-boundary changes
+- if teammate spawning is unavailable in the current runtime, the lead agent must still follow the same task boundaries and keep status updates in `docs/operations/progress-tracker.md`
 
 Feature and maintenance role definitions live in [docs/operations/subagents.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/subagents.md).
+
+## Known Execution Notes
+
+- 2026-03-28: Do not assume the Rust toolchain is installed. Check `command -v cargo` before attempting to run or validate Tauri commands. In the current environment, `pnpm`, `node`, and `uv` are available, but `cargo` and `rustup` are not on `PATH`.
+- 2026-03-28: Do not run a newly created script in parallel with its `chmod +x` step. Apply permissions first, then execute the script sequentially, otherwise permission races can produce false negatives.

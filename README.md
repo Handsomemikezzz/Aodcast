@@ -16,3 +16,15 @@ The repository is organized for long-term multi-agent collaboration. Start with:
 - [MVP design spec](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
 - [Agent governance](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/agent-governance.md)
 
+## Bootstrap Commands
+
+Run from the repository root:
+
+- `./scripts/dev/check-toolchain.sh`
+- `./scripts/dev/run-python-core.sh --create-demo-session`
+- `./scripts/dev/run-desktop.sh`
+
+Current environment note:
+
+- The Python core can be bootstrapped locally today.
+- Tauri runtime verification requires `cargo`, which is not currently available on `PATH` in this environment.
