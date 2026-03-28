@@ -20,6 +20,7 @@ The repository is organized for long-term multi-agent collaboration. Start with:
 
 Run from the repository root:
 
+- `cd apps/desktop && pnpm install`
 - `./scripts/dev/check-toolchain.sh`
 - `./scripts/dev/run-python-core.sh --create-demo-session`
 - `./scripts/dev/run-python-core.sh --start-interview <session-id>`
@@ -31,4 +32,5 @@ Run from the repository root:
 Current environment note:
 
 - The Python core can be bootstrapped locally today.
+- Frontend dependency installation may require network-enabled execution in this environment.
 - Tauri runtime verification requires `cargo`, which is not currently available on `PATH` in this environment.

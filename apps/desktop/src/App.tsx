@@ -1,92 +1,65 @@
-type Milestone = {
-  title: string;
-  status: "done" | "in_progress" | "pending" | "blocked";
-  note: string;
-};
+import { useEffect, useState } from "react";
 
-const milestones: Milestone[] = [
-  {
-    title: "Repository bootstrap",
-    status: "in_progress",
-    note: "Desktop and Python scaffolds are being initialized.",
-  },
-  {
-    title: "Session contracts",
-    status: "in_progress",
-    note: "Shared schemas and local persistence are being defined.",
-  },
-  {
-    title: "Interview orchestration",
-    status: "pending",
-    note: "State machine and prompt assembly will land after storage contracts stabilize.",
-  },
-  {
-    title: "Audio output",
-    status: "pending",
-    note: "Remote TTS and local MLX-backed TTS follow once the edit flow is stable.",
-  },
-];
-
-const statusLabel: Record<Milestone["status"], string> = {
-  done: "Done",
-  in_progress: "In Progress",
-  pending: "Pending",
-  blocked: "Blocked",
-};
+import { CreateSessionForm } from "./components/CreateSessionForm";
+import { ProjectSidebar } from "./components/ProjectSidebar";
+import { SessionWorkspace } from "./components/SessionWorkspace";
+import { createMockBridge } from "./lib/mockBridge";
+import { SessionProject } from "./types";
 
 export default function App() {
+  const [bridge] = useState(() => createMockBridge());
+  const [projects, setProjects] = useState<SessionProject[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void bridge.listProjects().then((items) => {
+      setProjects(items);
+      setSelectedId((current) => current ?? items[0]?.session.session_id ?? null);
+    });
+  }, [bridge]);
+
+  async function refreshAndSelect(project: SessionProject) {
+    const items = await bridge.listProjects();
+    setProjects(items);
+    setSelectedId(project.session.session_id);
+  }
+
+  async function handleCreate(input: { topic: string; creationIntent: string }) {
+    const created = await bridge.createSession(input);
+    await refreshAndSelect(created);
+  }
+
+  const selectedProject =
+    projects.find((project) => project.session.session_id === selectedId) ?? null;
+
   return (
-    <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">EchoMind Podcast MVP</p>
-        <h1>Aodcast</h1>
-        <p className="summary">
-          A local-first macOS app for turning rough ideas into publishable solo
-          podcast scripts and audio through guided interviewing.
-        </p>
-      </section>
+    <main className="app-shell">
+      <ProjectSidebar
+        projects={projects}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+      />
 
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Bootstrap Status</h2>
-          <p>
-            This screen tracks the bootstrap milestone until the real session
-            flow and Python orchestration bridge are wired together.
+      <section className="content-column">
+        <section className="hero">
+          <div>
+            <p className="eyebrow">EchoMind Podcast MVP</p>
+            <h1>Desktop Creation Flow</h1>
+          </div>
+          <p className="summary">
+            The desktop shell now mirrors the core workflow: create a session,
+            interview for raw material, move into draft generation, and edit the
+            script directly. The current bridge is intentionally mock-backed so
+            the UI can stabilize before the real Tauri bridge replaces it.
           </p>
-        </div>
-        <ul className="milestone-list">
-          {milestones.map((item) => (
-            <li className="milestone-card" key={item.title}>
-              <span className={`status status-${item.status}`}>
-                {statusLabel[item.status]}
-              </span>
-              <div>
-                <h3>{item.title}</h3>
-                <p>{item.note}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+        </section>
 
-      <section className="panel split-panel">
-        <article>
-          <h2>MVP Boundaries</h2>
-          <ul>
-            <li>Text topic input only</li>
-            <li>Solo monologue output</li>
-            <li>User-configured LLM API</li>
-            <li>Remote TTS and local MLX-backed TTS</li>
-          </ul>
-        </article>
-        <article>
-          <h2>Current Blocker</h2>
-          <p>
-            The Rust toolchain is not installed in the current environment, so
-            native Tauri boot verification is deferred until `cargo` becomes
-            available.
-          </p>
-        </article>
+        <CreateSessionForm onCreate={handleCreate} />
+        <SessionWorkspace
+          bridge={bridge}
+          project={selectedProject}
+          onProjectChange={refreshAndSelect}
+        />
       </section>
     </main>
   );

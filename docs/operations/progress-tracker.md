@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Milestone 4 - Desktop Editing Flow`
+Active milestone: `Milestone 5 - Remote TTS Path`
 
 ## Status Summary
 
@@ -39,12 +39,18 @@ Active milestone: `Milestone 4 - Desktop Editing Flow`
 - draft script generation workflow implemented
 - script generation failure path preserves session data and records an error
 - Milestone 3 exit criteria functionally satisfied
+- desktop session list and detail workspace implemented
+- desktop interview actions wired through a bounded bridge interface
+- direct draft editing flow implemented in the desktop shell
+- desktop bridge contract documented
+- frontend dependency install, typecheck, and web build validation completed
+- Milestone 4 exit criteria functionally satisfied
 
 ### In Progress
 
-- desktop session and detail screen integration planning
-- draft review and direct editing flow design
-- backend-to-desktop contract review for generated scripts
+- Milestone 5 TTS provider interface planning
+- remote TTS configuration and generation workflow design
+- desktop integration planning for final audio status
 
 ### Blockers
 
@@ -89,6 +95,16 @@ Active milestone: `Milestone 4 - Desktop Editing Flow`
 | Implement draft generation workflow | `orchestration-builder` | done | Sessions now move from `ready_to_generate` to `script_generated` through the generation service |
 | Preserve failure state and retry path | `orchestration-builder` | done | Generation failures mark the session as `failed` and preserve transcript/script data |
 | Validate script generation flow | `quality-runner` | done | Tests cover success, failure, and invalid-state paths; CLI flow produces a draft |
+
+## Milestone 4 Tasks
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Build session list and detail screens | `desktop-builder` | done | Sidebar and detail workspace are implemented in the desktop shell |
+| Add interview interaction flow | `desktop-builder` | done | The desktop shell can start interviews, submit replies, and request finish through the bridge |
+| Add direct draft editing flow | `desktop-builder` | done | The workspace supports draft generation and direct script editing |
+| Review backend-to-desktop contract | `schema-steward` | done | Desktop types and bridge interface are aligned with the current backend shapes |
+| Validate desktop implementation | `quality-runner` | done | `pnpm check` and `pnpm build:web` both pass after installing desktop dependencies |
 
 ## Update Rules
 
