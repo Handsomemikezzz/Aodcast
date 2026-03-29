@@ -12,6 +12,13 @@ The MVP is scoped to a local-first workflow:
 
 When the UI runs inside Tauri, desktop actions are routed into the Python orchestration core through a Tauri command bridge. Browser-only runs still fall back to the mock bridge for UI iteration.
 
+The current desktop shell is route-based and organized around four workspaces:
+
+- `Chat`
+- `Script`
+- `Models`
+- `Settings`
+
 The repository is organized for long-term multi-agent collaboration. Start with:
 
 - [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)

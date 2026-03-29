@@ -18,6 +18,7 @@ This keeps UI code unaware of Python CLI details and keeps Rust free of podcast 
 - `apps/desktop/src/lib/tauriBridge.ts` implements the real bridge
 - `apps/desktop/src/lib/mockBridge.ts` remains available for browser-only UI work
 - `apps/desktop/src/lib/bridgeFactory.ts` selects the runtime-specific bridge
+- `apps/desktop/src/lib/BridgeContext.tsx` injects the active bridge into page components
 
 React components should only depend on the `DesktopBridge` interface.
 
@@ -44,6 +45,24 @@ In bridge mode:
 - failure responses must look like `{ "ok": false, "error": ... }`
 
 This contract exists specifically so Rust can parse Python responses deterministically.
+
+## Current Command Coverage
+
+The bridge is currently wired for:
+
+- session list and creation
+- interview turn commands
+- script generation and save flow
+- audio rendering
+- local TTS capability inspection
+- model catalog listing
+- voice-model download and deletion
+
+The bridge is not yet wired for:
+
+- persisted desktop settings
+- LLM/TTS config save and load from the `Settings` page
+- richer progress events for long-running downloads or model renders
 
 ## Current Limitation
 

@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Active milestone: `Post-MVP slice - MLX Qwen3 runner`
+Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 
 ## Status Summary
 
@@ -68,11 +68,14 @@ Active milestone: `Post-MVP slice - MLX Qwen3 runner`
 - local MLX provider now uses a real `mlx-audio` runner shape instead of placeholder waveform generation
 - default macOS model target is now `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit`
 - project `.venv` now has `mlx_audio` installed and capability checks can resolve the Hugging Face repo-id path
+- desktop shell has been redesigned into route-based `Chat / Script / Models / Settings` workspaces
+- model catalog actions are exposed from the UI and already mapped onto bridge commands
 
 ### In Progress
 
-- real Tauri bridge validation handoff
-- actual Qwen3-TTS model download and first full render have not been executed in this environment
+- settings UI still writes only to local browser storage
+- end-to-end configuration sync between UI and Python core is not done
+- chat/script pages still need a cleaner loading/error state contract from the backend
 - native runtime compile blocked on missing Rust toolchain
 
 ### Blockers
@@ -175,6 +178,25 @@ Active milestone: `Post-MVP slice - MLX Qwen3 runner`
 | Add model preset and capability resolution | `provider-integrator` | done | Default repo-id target is `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` |
 | Validate capability and mocked runner flow | `quality-runner` | done | Python tests pass and capability now resolves the repo-id path with `mlx_audio` installed |
 | Run first real model render | `quality-runner` | pending | Not executed yet because it would require pulling the actual model weights |
+
+## Post-MVP Slice: Desktop UI / Backend Integration
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Reflect redesigned shell in docs | `doc-syncer` | done | Desktop architecture docs now describe the route-based shell and new page responsibilities |
+| Keep `Chat` and `Script` on the real bridge | `desktop-builder` | done | Main workflow pages already call the bridge-backed session commands |
+| Wire model management end to end | `provider-integrator` | done | Models page commands are present across frontend, Rust, and Python |
+| Persist settings through the bridge | `desktop-builder` | pending | Settings page still uses local storage and needs bridge/config-store integration |
+| Normalize loading, error, and long-task progress states | `orchestration-builder` | pending | UI still relies on ad hoc page-level handling for many backend transitions |
+
+## Next-Step Plan
+
+1. Add bridge methods for `show_llm_config`, `show_tts_config`, `configure_llm_provider`, and `configure_tts_provider`.
+2. Replace `apps/desktop/src/lib/userSettings.ts` local-only writes with bridge-backed reads and saves.
+3. Make `SettingsPage` the source of truth for API provider configuration instead of browser storage.
+4. Tighten `ChatPage` and `ScriptPage` loading/error handling so failed backend calls surface consistent UI states.
+5. Add progress reporting or polling semantics for long-running model downloads and future real TTS renders.
+6. After `cargo` is available, run native Tauri validation on the full shell instead of browser-only checks.
 
 ## Update Rules
 
