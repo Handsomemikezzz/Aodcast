@@ -2,6 +2,7 @@ import {
   AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
+  ModelStatus,
   SessionProject,
   TTSCapability,
 } from "../types";
@@ -27,4 +28,7 @@ export interface DesktopBridge {
   renderAudio(sessionId: string): Promise<AudioRenderResult>;
   saveEditedScript(sessionId: string, finalText: string): Promise<SessionProject>;
   getLocalTTSCapability(): Promise<TTSCapability>;
+  listModelsStatus(): Promise<ModelStatus[]>;
+  downloadModel(modelName: string): Promise<{ message: string; path?: string }>;
+  deleteModel(modelName: string): Promise<{ message: string; path?: string }>;
 }

@@ -20,3 +20,4 @@ apps/desktop/src-tauri/target/
 
 # Local scratch (experiments, tokens; not for version control)
 /temp/
+apps/desktop/src-tauri/target/debug

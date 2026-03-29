@@ -18,6 +18,7 @@ from app.orchestration.script_generation import (
     ScriptGenerationService,
     build_generation_context,
 )
+from app.models_catalog import build_models_status, delete_voice_model, download_voice_model
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
 from app.storage.artifact_store import ArtifactStore
@@ -174,6 +175,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-local-tts-capability",
         action="store_true",
         help="Print the current local MLX TTS capability report.",
+    )
+    parser.add_argument(
+        "--list-models-status",
+        action="store_true",
+        help="List voice and transcription models (Voicebox-aligned ids) with install status.",
+    )
+    parser.add_argument(
+        "--download-model",
+        default="",
+        help="Download a catalog voice model (e.g. qwen-tts-0.6B). Uses scripts/model-download/.",
+    )
+    parser.add_argument(
+        "--delete-model",
+        default="",
+        help="Delete a voice model directory under AODCAST_HF_MODEL_BASE or <cwd>/models.",
     )
     parser.add_argument(
         "--tts-local-model-path",
@@ -385,6 +401,18 @@ def run(argv: list[str] | None = None) -> int:
 
         if args.show_tts_config:
             return output_payload(args, {"tts_config": config_store.load_tts_config().to_dict()})
+
+        if args.list_models_status:
+            models = build_models_status(config_store, Path(args.cwd))
+            return output_payload(args, {"models": models})
+
+        if args.download_model.strip():
+            result = download_voice_model(Path(args.cwd), args.download_model.strip())
+            return output_payload(args, result)
+
+        if args.delete_model.strip():
+            result = delete_voice_model(Path(args.cwd), args.delete_model.strip())
+            return output_payload(args, result)
 
         if args.show_local_tts_capability:
             capability = detect_local_mlx_capability(config_store.load_tts_config()).to_dict()

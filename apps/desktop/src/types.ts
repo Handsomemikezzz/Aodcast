@@ -116,3 +116,15 @@ export type TTSCapability = {
   resolved_model: string;
   fallback_provider: string;
 };
+
+/** Voicebox-aligned model row from python-core `--list-models-status`. */
+export type ModelStatus = {
+  model_name: string;
+  display_name: string;
+  category: "voice" | "transcription";
+  hf_repo_id?: string;
+  downloaded: boolean;
+  downloading: boolean;
+  size_mb?: number;
+  loaded: boolean;
+};

@@ -71,3 +71,18 @@ pub fn render_audio(session_id: String) -> Result<Value, BridgeError> {
 pub fn show_local_tts_capability() -> Result<Value, BridgeError> {
     run_python_bridge(&["--show-local-tts-capability".to_string()])
 }
+
+#[tauri::command]
+pub fn list_models_status() -> Result<Value, BridgeError> {
+    run_python_bridge(&["--list-models-status".to_string()])
+}
+
+#[tauri::command]
+pub fn download_model(model_name: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--download-model".to_string(), model_name])
+}
+
+#[tauri::command]
+pub fn delete_model(model_name: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--delete-model".to_string(), model_name])
+}

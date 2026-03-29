@@ -8,11 +8,80 @@ import {
   AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
+  ModelStatus,
   PromptInput,
   Readiness,
   SessionProject,
   TTSCapability,
 } from "../types";
+
+const MOCK_MODELS: ModelStatus[] = [
+  {
+    model_name: "qwen-tts-1.7B",
+    display_name: "Qwen TTS 1.7B",
+    category: "voice",
+    hf_repo_id: "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
+    downloaded: false,
+    downloading: false,
+    size_mb: 4.23 * 1024,
+    loaded: false,
+  },
+  {
+    model_name: "qwen-tts-0.6B",
+    display_name: "Qwen TTS 0.6B",
+    category: "voice",
+    hf_repo_id: "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+    downloaded: false,
+    downloading: false,
+    size_mb: 4.23 * 1024,
+    loaded: false,
+  },
+  {
+    model_name: "whisper-base",
+    display_name: "Whisper Base",
+    category: "transcription",
+    downloaded: false,
+    downloading: false,
+    size_mb: 140,
+    loaded: false,
+  },
+  {
+    model_name: "whisper-small",
+    display_name: "Whisper Small",
+    category: "transcription",
+    downloaded: false,
+    downloading: false,
+    size_mb: 460,
+    loaded: false,
+  },
+  {
+    model_name: "whisper-medium",
+    display_name: "Whisper Medium",
+    category: "transcription",
+    downloaded: false,
+    downloading: false,
+    size_mb: 1400,
+    loaded: false,
+  },
+  {
+    model_name: "whisper-large",
+    display_name: "Whisper Large",
+    category: "transcription",
+    downloaded: false,
+    downloading: false,
+    size_mb: 2900,
+    loaded: false,
+  },
+  {
+    model_name: "whisper-turbo",
+    display_name: "Whisper Large v3 Turbo",
+    category: "transcription",
+    downloaded: false,
+    downloading: false,
+    size_mb: 1600,
+    loaded: false,
+  },
+];
 
 function cloneProject(project: SessionProject): SessionProject {
   return JSON.parse(JSON.stringify(project)) as SessionProject;
@@ -225,6 +294,18 @@ export function createMockBridge(): DesktopBridge {
     };
   }
 
+  async function listModelsStatus() {
+    return MOCK_MODELS.map((m) => ({ ...m }));
+  }
+
+  async function downloadModel() {
+    return { message: "mock: use Tauri build to download via Python core." };
+  }
+
+  async function deleteModel() {
+    return { message: "mock: no local files removed." };
+  }
+
   return {
     listProjects,
     createSession,
@@ -235,6 +316,9 @@ export function createMockBridge(): DesktopBridge {
     renderAudio,
     saveEditedScript,
     getLocalTTSCapability,
+    listModelsStatus,
+    downloadModel,
+    deleteModel,
   };
 
   function getProject(sessionId: string) {

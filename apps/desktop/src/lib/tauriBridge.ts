@@ -5,6 +5,7 @@ import {
   AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
+  ModelStatus,
   SessionProject,
   TTSCapability,
 } from "../types";
@@ -13,6 +14,9 @@ type BridgeShape<T> = {
   project?: SessionProject;
   projects?: SessionProject[];
   tts_capability?: TTSCapability;
+  models?: ModelStatus[];
+  message?: string;
+  path?: string;
 } & T;
 
 function normalizeError(error: unknown): Error {
@@ -80,6 +84,24 @@ export function createTauriBridge(): DesktopBridge {
     async getLocalTTSCapability() {
       const response = await callBridge<{}>("show_local_tts_capability");
       return response.tts_capability!;
+    },
+    async listModelsStatus() {
+      const response = await callBridge<{}>("list_models_status");
+      return response.models ?? [];
+    },
+    async downloadModel(modelName: string) {
+      const response = await callBridge<{}>("download_model", { modelName });
+      return {
+        message: typeof response.message === "string" ? response.message : "ok",
+        path: typeof response.path === "string" ? response.path : undefined,
+      };
+    },
+    async deleteModel(modelName: string) {
+      const response = await callBridge<{}>("delete_model", { modelName });
+      return {
+        message: typeof response.message === "string" ? response.message : "ok",
+        path: typeof response.path === "string" ? response.path : undefined,
+      };
     },
   };
 }
