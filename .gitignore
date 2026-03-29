@@ -14,3 +14,9 @@ __pycache__/
 .superpowers/
 .local-data/
 .pnpm-store/
+
+# Tauri / Rust (build artifacts)
+apps/desktop/src-tauri/target/
+
+# Local scratch (experiments, tokens; not for version control)
+/temp/
