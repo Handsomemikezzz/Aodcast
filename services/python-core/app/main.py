@@ -103,18 +103,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--llm-model",
-        default="",
+        default=None,
         help="LLM model value for configuration updates.",
     )
     parser.add_argument(
         "--llm-base-url",
-        default="",
+        default=None,
         help="Base URL for an OpenAI-compatible provider.",
     )
     parser.add_argument(
-        "--llm-api-key-env",
-        default="",
-        help="Environment variable name that stores the LLM API key.",
+        "--llm-api-key",
+        default=None,
+        help="Raw API key for an OpenAI-compatible LLM provider.",
     )
     parser.add_argument(
         "--show-llm-config",
@@ -138,28 +138,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tts-model",
-        default="",
+        default=None,
         help="TTS model value for configuration updates.",
     )
     parser.add_argument(
         "--tts-base-url",
-        default="",
+        default=None,
         help="Base URL for an OpenAI-compatible TTS provider.",
     )
     parser.add_argument(
-        "--tts-api-key-env",
-        default="",
-        help="Environment variable name that stores the TTS API key.",
+        "--tts-api-key",
+        default=None,
+        help="Raw API key for an OpenAI-compatible TTS provider.",
     )
     parser.add_argument(
         "--tts-voice",
-        default="",
+        default=None,
         help="Voice identifier for TTS configuration updates.",
     )
     parser.add_argument(
         "--tts-audio-format",
-        default="",
+        default=None,
         help="Audio format for TTS output, for example wav or mp3.",
+    )
+    parser.add_argument(
+        "--tts-local-runtime",
+        default=None,
+        help="Local runtime identifier, currently mlx on macOS.",
     )
     parser.add_argument(
         "--show-tts-config",
@@ -179,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--list-models-status",
         action="store_true",
-        help="List voice and transcription models (Voicebox-aligned ids) with install status.",
+        help="List local voice models (Voicebox-aligned ids) with install status.",
     )
     parser.add_argument(
         "--download-model",
@@ -193,7 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tts-local-model-path",
-        default="",
+        default=None,
         help="Local model path for MLX TTS configuration updates.",
     )
     parser.add_argument(
@@ -361,37 +366,38 @@ def run(argv: list[str] | None = None) -> int:
         if args.configure_llm_provider:
             llm_config = config_store.load_llm_config()
             llm_config.provider = args.configure_llm_provider
-            if args.llm_model:
+            if args.llm_model is not None:
                 llm_config.model = args.llm_model
-            if args.llm_base_url:
+            if args.llm_base_url is not None:
                 llm_config.base_url = args.llm_base_url
-            if args.llm_api_key_env:
-                llm_config.api_key_env = args.llm_api_key_env
+            if args.llm_api_key is not None:
+                llm_config.api_key = args.llm_api_key
             path = config_store.save_llm_config(llm_config)
             return output_payload(args, {"path": str(path), "llm_config": llm_config.to_dict()})
 
         if args.configure_tts_provider:
             tts_config = config_store.load_tts_config()
             tts_config.provider = args.configure_tts_provider
-            if (
-                args.configure_tts_provider == "local_mlx"
-                and tts_config.model in {"", "mock-voice"}
-                and not args.tts_model
-            ):
+            if args.tts_model is not None:
+                if args.configure_tts_provider == "local_mlx" and args.tts_model.strip() == "":
+                    tts_config.model = DEFAULT_QWEN3_TTS_MODEL
+                else:
+                    tts_config.model = args.tts_model
+            elif args.configure_tts_provider == "local_mlx" and tts_config.model in {"", "mock-voice"}:
                 tts_config.model = DEFAULT_QWEN3_TTS_MODEL
-            if args.tts_model:
-                tts_config.model = args.tts_model
-            if args.tts_base_url:
+            if args.tts_base_url is not None:
                 tts_config.base_url = args.tts_base_url
-            if args.tts_api_key_env:
-                tts_config.api_key_env = args.tts_api_key_env
-            if args.tts_voice:
+            if args.tts_api_key is not None:
+                tts_config.api_key = args.tts_api_key
+            if args.tts_voice is not None:
                 tts_config.voice = args.tts_voice
-            if args.tts_audio_format:
+            if args.tts_audio_format is not None:
                 tts_config.audio_format = args.tts_audio_format
+            if args.tts_local_runtime is not None:
+                tts_config.local_runtime = args.tts_local_runtime
             if args.clear_tts_local_model_path:
                 tts_config.local_model_path = ""
-            if args.tts_local_model_path:
+            if args.tts_local_model_path is not None:
                 tts_config.local_model_path = args.tts_local_model_path
             path = config_store.save_tts_config(tts_config)
             return output_payload(args, {"path": str(path), "tts_config": tts_config.to_dict()})

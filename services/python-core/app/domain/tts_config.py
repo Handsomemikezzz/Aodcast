@@ -9,7 +9,7 @@ class TTSProviderConfig:
     provider: str = "mock_remote"
     model: str = "mock-voice"
     base_url: str = ""
-    api_key_env: str = ""
+    api_key: str = ""
     voice: str = "alloy"
     audio_format: str = "wav"
     local_runtime: str = "mlx"
@@ -21,7 +21,7 @@ class TTSProviderConfig:
             "provider": self.provider,
             "model": self.model,
             "base_url": self.base_url,
-            "api_key_env": self.api_key_env,
+            "api_key": self.api_key,
             "voice": self.voice,
             "audio_format": self.audio_format,
             "local_runtime": self.local_runtime,
@@ -35,7 +35,7 @@ class TTSProviderConfig:
             provider=str(payload.get("provider", "mock_remote")),
             model=str(payload.get("model", "mock-voice")),
             base_url=str(payload.get("base_url", "")),
-            api_key_env=str(payload.get("api_key_env", "")),
+            api_key=str(payload.get("api_key", "")),
             voice=str(payload.get("voice", "alloy")),
             audio_format=str(payload.get("audio_format", "wav")),
             local_runtime=str(payload.get("local_runtime", "mlx")),

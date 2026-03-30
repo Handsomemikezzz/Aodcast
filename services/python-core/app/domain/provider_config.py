@@ -9,14 +9,14 @@ class LLMProviderConfig:
     provider: str = "mock"
     model: str = "mock-solo-writer"
     base_url: str = ""
-    api_key_env: str = ""
+    api_key: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "model": self.model,
             "base_url": self.base_url,
-            "api_key_env": self.api_key_env,
+            "api_key": self.api_key,
         }
 
     @classmethod
@@ -25,5 +25,5 @@ class LLMProviderConfig:
             provider=str(payload.get("provider", "mock")),
             model=str(payload.get("model", "mock-solo-writer")),
             base_url=str(payload.get("base_url", "")),
-            api_key_env=str(payload.get("api_key_env", "")),
+            api_key=str(payload.get("api_key", "")),
         )

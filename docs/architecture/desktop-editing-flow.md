@@ -42,12 +42,11 @@ The shell is implemented through:
 
 - voice model status listing
 - download and delete controls for voice models
-- read-only display for transcription models
 
 ### `Settings`
 
-- local UI-only storage of provider/API key preferences
-- no backend persistence yet
+- global TTS provider configuration
+- bridge-backed persistence into Python core config files
 
 ## Bridge Boundary
 
@@ -64,6 +63,4 @@ Current bridge-backed desktop responsibilities:
 
 ## Current Limits
 
-- the `Settings` page still writes only to local browser storage
-- settings values are not yet synchronized into Python core config files
 - native Tauri runtime validation still depends on `cargo`, which is unavailable in the current environment

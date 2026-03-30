@@ -117,11 +117,23 @@ export type TTSCapability = {
   fallback_provider: string;
 };
 
+export type TTSProviderConfig = {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+  voice: string;
+  audio_format: string;
+  local_runtime: string;
+  local_model_path: string;
+  local_ref_audio_path: string;
+};
+
 /** Voicebox-aligned model row from python-core `--list-models-status`. */
 export type ModelStatus = {
   model_name: string;
   display_name: string;
-  category: "voice" | "transcription";
+  category: "voice";
   hf_repo_id?: string;
   downloaded: boolean;
   downloading: boolean;

@@ -118,7 +118,9 @@ Feature and maintenance role definitions live in [docs/operations/subagents.md](
 
 ## Known Execution Notes
 
-- 2026-03-28: Do not assume the Rust toolchain is installed. Check `command -v cargo` before attempting to run or validate Tauri commands. In the current environment, `pnpm`, `node`, and `uv` are available, but `cargo` and `rustup` are not on `PATH`.
+- 2026-03-29: Rust tooling is now available in this environment (`cargo 1.94.1` on `PATH`). Native compile checks can run locally (`cargo check` under `apps/desktop/src-tauri`) and should be used in integration validation.
+- 2026-03-29: Avoid calling `pnpm --dir apps/desktop tauri:build -- ...` with extra `--` cargo-style flags (`--debug`, `--no-bundle`). They are forwarded to `cargo build` and fail as unexpected args. Use plain `pnpm --dir apps/desktop tauri:build` for shell validation.
+- 2026-03-29: `pnpm --dir apps/desktop tauri:build` currently produces the release app binary but may fail at DMG packaging (`bundle_dmg.sh`). Treat this as a packaging-stage failure, not a compile/link failure.
 - 2026-03-28: Do not run a newly created script in parallel with its `chmod +x` step. Apply permissions first, then execute the script sequentially, otherwise permission races can produce false negatives.
 - 2026-03-28: Frontend dependency installation may fail inside the sandbox with npm registry `EPERM` network errors. If `pnpm install` is required for validation, rerun it with escalated permissions instead of assuming the lockfile or package manager is broken.
 - 2026-03-28: Do not run state-dependent CLI writes and immediate readbacks in parallel. Operations like `start-interview`, `reply-session`, `generate-script`, `render-audio`, `configure-tts-provider`, and the follow-up `show-*` inspection commands must be sequenced, or later steps may observe stale state and fail for the wrong reason.

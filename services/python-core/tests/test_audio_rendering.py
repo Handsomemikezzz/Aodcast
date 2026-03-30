@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,10 +72,9 @@ class AudioRenderingTests(unittest.TestCase):
                 provider="openai_compatible",
                 model="tts-test",
                 base_url="https://example.invalid/v1",
-                api_key_env="MISSING_TTS_KEY",
+                api_key="",
             )
         )
-        os.environ.pop("MISSING_TTS_KEY", None)
         session_id = self.seed_script_project(store)
 
         with self.assertRaises(ValueError):
@@ -84,7 +82,7 @@ class AudioRenderingTests(unittest.TestCase):
 
         loaded = store.load_project(session_id)
         self.assertEqual(loaded.session.state, SessionState.FAILED)
-        self.assertIn("MISSING_TTS_KEY", loaded.session.last_error)
+        self.assertIn("requires an api_key", loaded.session.last_error)
 
     def test_render_audio_requires_script_state(self) -> None:
         store, config_store, _, service = self.build_environment()

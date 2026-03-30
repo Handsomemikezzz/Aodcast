@@ -70,17 +70,18 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - project `.venv` now has `mlx_audio` installed and capability checks can resolve the Hugging Face repo-id path
 - desktop shell has been redesigned into route-based `Chat / Script / Models / Settings` workspaces
 - model catalog actions are exposed from the UI and already mapped onto bridge commands
+- desktop `Settings` now reads/writes global TTS config through the real Tauri bridge
+- Python config contracts now use local `api_key` values (the `api_key_env` path has been removed)
+- model catalog is now explicitly TTS-only for the current MVP slice
 
 ### In Progress
 
-- settings UI still writes only to local browser storage
-- end-to-end configuration sync between UI and Python core is not done
 - chat/script pages still need a cleaner loading/error state contract from the backend
-- native runtime compile blocked on missing Rust toolchain
+- native macOS packaging still fails at the DMG bundle stage (`bundle_dmg.sh`)
 
 ### Blockers
 
-- Rust toolchain is not currently available on `PATH`, so native Tauri boot verification cannot run yet
+- `tauri build` currently fails during DMG packaging even though release binary compilation succeeds
 
 ## Milestone 0 Tasks
 
@@ -168,7 +169,7 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 | Extract frontend bridge contract from mock implementation | `desktop-builder` | done | `desktopBridge.ts`, `bridgeFactory.ts`, and `tauriBridge.ts` now own the bridge boundary |
 | Add machine-readable Python CLI bridge mode | `orchestration-builder` | done | `--bridge-json`, `--list-projects`, `--create-session`, and `--save-script` are implemented |
 | Add Rust command gateway | `desktop-builder` | done | Tauri commands now call the Python runner through `python_bridge.rs` |
-| Validate bridge protocol and desktop types | `quality-runner` | in_progress | Python bridge tests and `pnpm check` pass; native Tauri compile still blocked by missing `cargo` |
+| Validate bridge protocol and desktop types | `quality-runner` | in_progress | Python bridge tests, `pnpm check`, and `cargo check` pass; `tauri build` currently fails only at DMG bundling |
 
 ## Post-MVP Slice: MLX Qwen3 Runner
 
@@ -186,17 +187,15 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 | Reflect redesigned shell in docs | `doc-syncer` | done | Desktop architecture docs now describe the route-based shell and new page responsibilities |
 | Keep `Chat` and `Script` on the real bridge | `desktop-builder` | done | Main workflow pages already call the bridge-backed session commands |
 | Wire model management end to end | `provider-integrator` | done | Models page commands are present across frontend, Rust, and Python |
-| Persist settings through the bridge | `desktop-builder` | pending | Settings page still uses local storage and needs bridge/config-store integration |
+| Persist settings through the bridge | `desktop-builder` | done | `SettingsPage` now calls `show_tts_config` / `configure_tts_provider` via Tauri and Python config store |
+| Remove `api_key_env` contract path | `provider-integrator` | done | Domain models, CLI args, providers, and tests now use local `api_key` fields |
 | Normalize loading, error, and long-task progress states | `orchestration-builder` | pending | UI still relies on ad hoc page-level handling for many backend transitions |
 
 ## Next-Step Plan
 
-1. Add bridge methods for `show_llm_config`, `show_tts_config`, `configure_llm_provider`, and `configure_tts_provider`.
-2. Replace `apps/desktop/src/lib/userSettings.ts` local-only writes with bridge-backed reads and saves.
-3. Make `SettingsPage` the source of truth for API provider configuration instead of browser storage.
-4. Tighten `ChatPage` and `ScriptPage` loading/error handling so failed backend calls surface consistent UI states.
-5. Add progress reporting or polling semantics for long-running model downloads and future real TTS renders.
-6. After `cargo` is available, run native Tauri validation on the full shell instead of browser-only checks.
+1. Tighten `ChatPage` and `ScriptPage` loading/error handling so failed backend calls surface consistent UI states.
+2. Add progress reporting or polling semantics for long-running model downloads and future real TTS renders.
+3. Resolve DMG bundling failure and complete a full `tauri build` package validation.
 
 ## Update Rules
 

@@ -36,7 +36,7 @@ The config contains:
 - provider
 - model
 - base_url
-- api_key_env
+- api_key
 
 ## Failure Behavior
 

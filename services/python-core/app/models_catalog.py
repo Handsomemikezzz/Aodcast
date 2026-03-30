@@ -1,4 +1,4 @@
-"""Voice-generation and transcription model catalog (Voicebox-aligned ids) + status from TTS config."""
+"""Voice-generation model catalog + status from TTS config."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.storage.config_store import ConfigStore
 class CatalogEntry:
     model_name: str
     display_name: str
-    category: str  # "voice" | "transcription"
+    category: str  # "voice"
     size_mb: float
     hf_repo_id: str | None
 
@@ -37,11 +37,6 @@ CATALOG: tuple[CatalogEntry, ...] = (
         4.23 * 1024,
         "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
     ),
-    CatalogEntry("whisper-base", "Whisper Base", "transcription", 140, None),
-    CatalogEntry("whisper-small", "Whisper Small", "transcription", 460, None),
-    CatalogEntry("whisper-medium", "Whisper Medium", "transcription", 1400, None),
-    CatalogEntry("whisper-large", "Whisper Large", "transcription", 2900, None),
-    CatalogEntry("whisper-turbo", "Whisper Large v3 Turbo", "transcription", 1600, None),
 )
 
 _BY_NAME: dict[str, CatalogEntry] = {e.model_name: e for e in CATALOG}
@@ -65,28 +60,6 @@ def _path_matches_qwen_variant(model_name: str, path_str: str) -> bool:
         return "0.6" in low or "0_6" in low
     if model_name == "qwen-tts-1.7B":
         return "1.7" in low or "1_7" in low
-    return False
-
-
-def _whisper_markers(name: str) -> tuple[str, ...]:
-    if name == "whisper-turbo":
-        return ("large-v3-turbo", "turbo", "large-v3")
-    size = name.replace("whisper-", "")
-    return (size,)
-
-
-def _whisper_downloaded(model_name: str) -> bool:
-    base = Path.home() / ".cache" / "whisper"
-    if not base.is_dir():
-        return False
-    markers = _whisper_markers(model_name)
-    for p in base.iterdir():
-        if not p.is_file():
-            continue
-        name_low = p.name.lower()
-        for m in markers:
-            if m.lower() in name_low and name_low.endswith((".pt", ".bin", ".safetensors")):
-                return True
     return False
 
 
@@ -130,9 +103,6 @@ def build_models_status(config_store: ConfigStore, cwd: Path) -> list[dict[str, 
             downloaded = on_disk or hf_resolved or path_match
             active = _voice_active(entry, cap_d)
             loaded = bool(downloaded and available and active)
-        elif entry.category == "transcription":
-            downloaded = _whisper_downloaded(entry.model_name)
-
         out.append(
             {
                 "model_name": entry.model_name,

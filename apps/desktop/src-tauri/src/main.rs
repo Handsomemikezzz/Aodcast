@@ -16,6 +16,8 @@ fn main() {
             commands::save_edited_script,
             commands::render_audio,
             commands::show_local_tts_capability,
+            commands::show_tts_config,
+            commands::configure_tts_provider,
             commands::list_models_status,
             commands::download_model,
             commands::delete_model,

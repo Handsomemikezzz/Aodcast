@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,10 +68,9 @@ class ScriptGenerationTests(unittest.TestCase):
                 provider="openai_compatible",
                 model="gpt-test",
                 base_url="https://example.invalid/v1",
-                api_key_env="MISSING_LLM_KEY",
+                api_key="",
             )
         )
-        os.environ.pop("MISSING_LLM_KEY", None)
         session_id = self.seed_ready_project(store)
 
         with self.assertRaises(ValueError):
@@ -80,7 +78,7 @@ class ScriptGenerationTests(unittest.TestCase):
 
         loaded = store.load_project(session_id)
         self.assertEqual(loaded.session.state, SessionState.FAILED)
-        self.assertIn("MISSING_LLM_KEY", loaded.session.last_error)
+        self.assertIn("requires an api_key", loaded.session.last_error)
         assert loaded.transcript is not None
         self.assertEqual(len(loaded.transcript.turns), 2)
 

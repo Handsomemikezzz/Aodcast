@@ -1,5 +1,5 @@
 import { createId } from "./id";
-import { CreateSessionInput, DesktopBridge } from "./desktopBridge";
+import { ConfigureTTSInput, CreateSessionInput, DesktopBridge } from "./desktopBridge";
 import { generateMockDraft } from "./generateDraft";
 import { appendTurn, evaluateReadiness, nextQuestion, transcriptToText } from "./readiness";
 import { nowIso } from "./time";
@@ -12,6 +12,7 @@ import {
   PromptInput,
   Readiness,
   SessionProject,
+  TTSProviderConfig,
   TTSCapability,
 } from "../types";
 
@@ -36,51 +37,6 @@ const MOCK_MODELS: ModelStatus[] = [
     size_mb: 4.23 * 1024,
     loaded: false,
   },
-  {
-    model_name: "whisper-base",
-    display_name: "Whisper Base",
-    category: "transcription",
-    downloaded: false,
-    downloading: false,
-    size_mb: 140,
-    loaded: false,
-  },
-  {
-    model_name: "whisper-small",
-    display_name: "Whisper Small",
-    category: "transcription",
-    downloaded: false,
-    downloading: false,
-    size_mb: 460,
-    loaded: false,
-  },
-  {
-    model_name: "whisper-medium",
-    display_name: "Whisper Medium",
-    category: "transcription",
-    downloaded: false,
-    downloading: false,
-    size_mb: 1400,
-    loaded: false,
-  },
-  {
-    model_name: "whisper-large",
-    display_name: "Whisper Large",
-    category: "transcription",
-    downloaded: false,
-    downloading: false,
-    size_mb: 2900,
-    loaded: false,
-  },
-  {
-    model_name: "whisper-turbo",
-    display_name: "Whisper Large v3 Turbo",
-    category: "transcription",
-    downloaded: false,
-    downloading: false,
-    size_mb: 1600,
-    loaded: false,
-  },
 ];
 
 function cloneProject(project: SessionProject): SessionProject {
@@ -89,6 +45,17 @@ function cloneProject(project: SessionProject): SessionProject {
 
 export function createMockBridge(): DesktopBridge {
   const store = new Map(seededProjects.map((project) => [project.session.session_id, cloneProject(project)]));
+  let ttsConfig: TTSProviderConfig = {
+    provider: "mock_remote",
+    model: "mock-voice",
+    base_url: "",
+    api_key: "",
+    voice: "alloy",
+    audio_format: "wav",
+    local_runtime: "mlx",
+    local_model_path: "",
+    local_ref_audio_path: "",
+  };
 
   async function listProjects() {
     return Array.from(store.values())
@@ -294,6 +261,25 @@ export function createMockBridge(): DesktopBridge {
     };
   }
 
+  async function showTTSConfig() {
+    return { ...ttsConfig };
+  }
+
+  async function configureTTSProvider(input: ConfigureTTSInput) {
+    ttsConfig = {
+      ...ttsConfig,
+      provider: input.provider,
+      model: input.model,
+      base_url: input.base_url,
+      api_key: input.api_key,
+      voice: input.voice,
+      audio_format: input.audio_format,
+      local_runtime: input.local_runtime,
+      local_model_path: input.local_model_path,
+    };
+    return { ...ttsConfig };
+  }
+
   async function listModelsStatus() {
     return MOCK_MODELS.map((m) => ({ ...m }));
   }
@@ -316,6 +302,8 @@ export function createMockBridge(): DesktopBridge {
     renderAudio,
     saveEditedScript,
     getLocalTTSCapability,
+    showTTSConfig,
+    configureTTSProvider,
     listModelsStatus,
     downloadModel,
     deleteModel,

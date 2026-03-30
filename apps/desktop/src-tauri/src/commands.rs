@@ -73,6 +73,58 @@ pub fn show_local_tts_capability() -> Result<Value, BridgeError> {
 }
 
 #[tauri::command]
+pub fn show_tts_config() -> Result<Value, BridgeError> {
+    run_python_bridge(&["--show-tts-config".to_string()])
+}
+
+#[tauri::command]
+pub fn configure_tts_provider(
+    provider: String,
+    model: Option<String>,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    voice: Option<String>,
+    audio_format: Option<String>,
+    local_runtime: Option<String>,
+    local_model_path: Option<String>,
+    clear_local_model_path: bool,
+) -> Result<Value, BridgeError> {
+    let mut args = vec!["--configure-tts-provider".to_string(), provider];
+    if let Some(value) = model {
+        args.push("--tts-model".to_string());
+        args.push(value);
+    }
+    if let Some(value) = base_url {
+        args.push("--tts-base-url".to_string());
+        args.push(value);
+    }
+    if let Some(value) = api_key {
+        args.push("--tts-api-key".to_string());
+        args.push(value);
+    }
+    if let Some(value) = voice {
+        args.push("--tts-voice".to_string());
+        args.push(value);
+    }
+    if let Some(value) = audio_format {
+        args.push("--tts-audio-format".to_string());
+        args.push(value);
+    }
+    if let Some(value) = local_runtime {
+        args.push("--tts-local-runtime".to_string());
+        args.push(value);
+    }
+    if clear_local_model_path {
+        args.push("--clear-tts-local-model-path".to_string());
+    }
+    if let Some(value) = local_model_path {
+        args.push("--tts-local-model-path".to_string());
+        args.push(value);
+    }
+    run_python_bridge(&args)
+}
+
+#[tauri::command]
 pub fn list_models_status() -> Result<Value, BridgeError> {
     run_python_bridge(&["--list-models-status".to_string()])
 }

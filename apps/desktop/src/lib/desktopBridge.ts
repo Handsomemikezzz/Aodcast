@@ -4,6 +4,7 @@ import {
   InterviewTurnResult,
   ModelStatus,
   SessionProject,
+  TTSProviderConfig,
   TTSCapability,
 } from "../types";
 
@@ -18,6 +19,17 @@ export type DesktopBridgeError = {
   details?: Record<string, unknown>;
 };
 
+export type ConfigureTTSInput = {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+  voice: string;
+  audio_format: string;
+  local_runtime: string;
+  local_model_path: string;
+};
+
 export interface DesktopBridge {
   listProjects(): Promise<SessionProject[]>;
   createSession(input: CreateSessionInput): Promise<SessionProject>;
@@ -28,6 +40,8 @@ export interface DesktopBridge {
   renderAudio(sessionId: string): Promise<AudioRenderResult>;
   saveEditedScript(sessionId: string, finalText: string): Promise<SessionProject>;
   getLocalTTSCapability(): Promise<TTSCapability>;
+  showTTSConfig(): Promise<TTSProviderConfig>;
+  configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
   listModelsStatus(): Promise<ModelStatus[]>;
   downloadModel(modelName: string): Promise<{ message: string; path?: string }>;
   deleteModel(modelName: string): Promise<{ message: string; path?: string }>;

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from urllib import request as urllib_request
 
@@ -18,14 +17,8 @@ class OpenAICompatibleProvider:
             raise ValueError("OpenAI-compatible provider requires a base_url.")
         if not self.config.model:
             raise ValueError("OpenAI-compatible provider requires a model.")
-        if not self.config.api_key_env:
-            raise ValueError("OpenAI-compatible provider requires an api_key_env.")
-
-        api_key = os.getenv(self.config.api_key_env, "")
-        if not api_key:
-            raise ValueError(
-                f"Environment variable '{self.config.api_key_env}' is required for the configured LLM provider."
-            )
+        if not self.config.api_key:
+            raise ValueError("OpenAI-compatible provider requires an api_key.")
 
         payload = {
             "model": self.config.model,
@@ -52,7 +45,7 @@ class OpenAICompatibleProvider:
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {self.config.api_key}",
             },
             method="POST",
         )

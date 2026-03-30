@@ -13,7 +13,7 @@ class ModelsCatalogTests(unittest.TestCase):
         names = [e.model_name for e in CATALOG]
         self.assertIn("qwen-tts-1.7B", names)
         self.assertIn("qwen-tts-0.6B", names)
-        self.assertIn("whisper-base", names)
+        self.assertTrue(all(name.startswith("qwen-tts-") for name in names))
 
     def test_list_models_status_returns_all_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

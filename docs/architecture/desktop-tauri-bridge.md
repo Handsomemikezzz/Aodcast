@@ -54,16 +54,15 @@ The bridge is currently wired for:
 - interview turn commands
 - script generation and save flow
 - audio rendering
+- TTS config load and save for the `Settings` page
 - local TTS capability inspection
 - model catalog listing
 - voice-model download and deletion
 
 The bridge is not yet wired for:
 
-- persisted desktop settings
-- LLM/TTS config save and load from the `Settings` page
 - richer progress events for long-running downloads or model renders
 
 ## Current Limitation
 
-The repository still cannot validate native Tauri compilation in the current environment because `cargo` is not available on `PATH`.
+Native compile checks can now run, but macOS DMG packaging still fails at the bundling stage (`bundle_dmg.sh`) in the current environment.
