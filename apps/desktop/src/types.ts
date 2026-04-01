@@ -79,7 +79,18 @@ export type PromptInput = {
   boundary_instruction: string;
 };
 
-export type InterviewTurnResult = {
+export type RequestState = {
+  operation: string;
+  phase: "running" | "succeeded" | "failed";
+  progress_percent: number;
+  message: string;
+};
+
+type BridgeResultMeta = {
+  request_state?: RequestState;
+};
+
+export type InterviewTurnResult = BridgeResultMeta & {
   project: SessionProject;
   readiness: Readiness;
   prompt_input: PromptInput;
@@ -87,18 +98,19 @@ export type InterviewTurnResult = {
   ai_can_finish: boolean;
 };
 
-export type GenerationResult = {
+export type GenerationResult = BridgeResultMeta & {
   project: SessionProject;
   provider: string;
   model: string;
 };
 
-export type AudioRenderResult = {
+export type AudioRenderResult = BridgeResultMeta & {
   project: SessionProject;
   provider: string;
   model: string;
   audio_path: string;
   transcript_path: string;
+  task_id?: string;
 };
 
 export type TTSCapability = {

@@ -33,22 +33,31 @@ Run from the repository root:
 - `cd services/python-core && uv venv .venv`
 - `cd services/python-core && uv pip install --python .venv/bin/python '.[local-mlx]'`
 - `./scripts/dev/check-toolchain.sh`
-- `./scripts/dev/run-python-core.sh --create-demo-session`
-- `./scripts/dev/run-python-core.sh --start-interview <session-id>`
-- `./scripts/dev/run-python-core.sh --reply-session <session-id> --message "your answer"`
-- `./scripts/dev/run-python-core.sh --configure-llm-provider mock`
-- `./scripts/dev/run-python-core.sh --generate-script <session-id>`
-- `./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote`
-- `./scripts/dev/run-python-core.sh --show-local-tts-capability`
-- `./scripts/dev/run-python-core.sh --render-audio <session-id>`
 - `./scripts/dev/run-desktop.sh`
 - `./scripts/maintenance/run-repo-hygiene-check.sh`
+
+Smoke path (mock providers):
+
+- `./scripts/dev/run-python-core.sh --create-demo-session`
+- `./scripts/dev/run-python-core.sh --configure-llm-provider mock`
+- `./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote`
+
+Real path (non-mock render):
+
+- `./scripts/dev/run-python-core.sh --create-session --topic "<topic>" --intent "<intent>"`
+- `./scripts/dev/run-python-core.sh --start-interview <session-id>`
+- `./scripts/dev/run-python-core.sh --reply-session <session-id> --message "your answer"`
+- `./scripts/dev/run-python-core.sh --finish-session <session-id>`
+- `./scripts/dev/run-python-core.sh --generate-script <session-id>`
+- `./scripts/dev/run-python-core.sh --save-script <session-id> --script-final-text "edited final script"`
+- `./scripts/dev/run-python-core.sh --show-local-tts-capability`
+- `./scripts/dev/run-python-core.sh --render-audio <session-id>`
 
 Current environment note:
 
 - The Python core can be bootstrapped locally today.
 - Frontend dependency installation may require network-enabled execution in this environment.
-- Tauri runtime verification requires `cargo`, which is not currently available on `PATH` in this environment.
+- Native compile checks can run with local `cargo`, while full macOS packaging is currently blocked at the DMG bundling stage (`bundle_dmg.sh`).
 
 ## Local MLX Notes
 
@@ -68,4 +77,4 @@ Current environment note:
 
 - The real desktop path is `React -> Tauri invoke -> Rust commands -> scripts/dev/run-python-core.sh -> app.main`.
 - Python bridge calls should use `--bridge-json` so stdout remains a single JSON envelope for Rust to parse.
-- If native Tauri validation is blocked by missing `cargo`, keep validating the Python bridge and frontend types independently until the Rust toolchain is available.
+- If full native packaging is blocked at DMG bundling, continue validating the Python bridge, frontend types, and `cargo check` independently.

@@ -3,6 +3,11 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+python_bin="$repo_root/services/python-core/.venv/bin/python"
+
+if [[ ! -x "$python_bin" ]]; then
+  python_bin="python3"
+fi
 
 echo "== git status =="
 git -C "$repo_root" status --short
@@ -30,7 +35,7 @@ echo
 echo "== python tests =="
 (
   cd "$repo_root/services/python-core"
-  python3 -m unittest discover -s tests -v
+  "$python_bin" -m unittest discover -s tests -v
 )
 
 echo

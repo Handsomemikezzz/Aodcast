@@ -56,7 +56,7 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - desktop workspace now surfaces local MLX capability and fallback messaging
 - local MLX path is validated through tests and explicit failure-path CLI checks
 - workspace-local Python venv created for MLX validation
-- local MLX capability is now available through the project venv and placeholder model path
+- local MLX dependency and model-path checks are available through the project venv; runtime availability remains host-dependent
 - Milestone 6 exit criteria functionally satisfied
 - Milestone 7 hygiene script and hardening report added
 - maintenance docs now point to a repeatable local sweep
@@ -73,26 +73,37 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - desktop `Settings` now reads/writes global TTS config through the real Tauri bridge
 - Python config contracts now use local `api_key` values (the `api_key_env` path has been removed)
 - model catalog is now explicitly TTS-only for the current MVP slice
+- Python bridge success/failure envelopes now carry a shared `request_state` contract
+- `Chat` / `Edit` / `Generate` pages now use unified loading-error-action request-state handling
+- Python bridge now persists long-task states and exposes `show_task_state` polling for `download_model` and `render_audio`
+- `Models` and `Settings` pages now follow the same request-state handling style used by `Chat`/`Script`
+- long-running tasks now report incremental `progress_percent` updates in UI (download marker parsing + render heartbeat)
+- local MLX capability checks now include a subprocess runtime-bootstrap probe so `import mlx.core` crashes are reported as unavailable capability reasons instead of hard render-time aborts
 
 ### In Progress
 
-- chat/script pages still need a cleaner loading/error state contract from the backend
 - native macOS packaging still fails at the DMG bundle stage (`bundle_dmg.sh`)
 
 ### Blockers
 
 - `tauri build` currently fails during DMG packaging even though release binary compilation succeeds
+- real `local_mlx` rendering can still be host-limited when MLX fails native Metal bootstrap (`NSRangeException`) before Python can recover
+
+## Historical Snapshot Notice
+
+The milestone tables below are preserved as historical snapshots captured at the time each milestone was active.
+Current execution constraints and environment notes should be read from `AGENTS.md` first.
 
 ## Milestone 0 Tasks
 
 | Task | Owner Role | Status | Notes |
 | --- | --- | --- | --- |
-| Probe toolchain and repo state | lead/coordinator | done | `pnpm`, `node`, `uv`, `python3` available; `cargo` missing |
+| Probe toolchain and repo state | lead/coordinator | done | `pnpm`, `node`, `uv`, `python3`, and `cargo` are available in the current environment |
 | Add persistent progress tracking | lead/coordinator | done | This file is the active bootstrap tracker |
-| Scaffold desktop workspace | `desktop-builder` | done | Vite/Tauri file layout created; native runtime still blocked by missing Rust toolchain |
+| Scaffold desktop workspace | `desktop-builder` | done | Vite/Tauri file layout created; compile checks run locally, DMG bundling remains the current packaging blocker |
 | Scaffold Python core | `orchestration-builder` | done | App config, session model, storage, and boot entrypoint created |
 | Add dev scripts | lead/coordinator | done | Toolchain check, Python boot, and desktop boot scripts added |
-| Verify local boot paths | `quality-runner` | in_progress | Python verified and tested; desktop script now fails fast with a clear Rust toolchain message |
+| Verify local boot paths | `quality-runner` | done | Python, frontend typecheck, and native compile checks are repeatably runnable in this environment |
 
 ## Milestone 1 Tasks
 
@@ -189,12 +200,12 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 | Wire model management end to end | `provider-integrator` | done | Models page commands are present across frontend, Rust, and Python |
 | Persist settings through the bridge | `desktop-builder` | done | `SettingsPage` now calls `show_tts_config` / `configure_tts_provider` via Tauri and Python config store |
 | Remove `api_key_env` contract path | `provider-integrator` | done | Domain models, CLI args, providers, and tests now use local `api_key` fields |
-| Normalize loading, error, and long-task progress states | `orchestration-builder` | pending | UI still relies on ad hoc page-level handling for many backend transitions |
+| Normalize loading, error, and long-task progress states | `orchestration-builder` | done | Shared request-state contract + task-state polling landed across Chat/Edit/Generate/Models/Settings, including incremental progress percentages |
 
 ## Next-Step Plan
 
-1. Tighten `ChatPage` and `ScriptPage` loading/error handling so failed backend calls surface consistent UI states.
-2. Add progress reporting or polling semantics for long-running model downloads and future real TTS renders.
+1. Add cancellation semantics for long-running tasks now that incremental progress updates are available.
+2. Add task history/retention policy for `.local-data/runtime/request-state` entries.
 3. Resolve DMG bundling failure and complete a full `tauri build` package validation.
 
 ## Update Rules

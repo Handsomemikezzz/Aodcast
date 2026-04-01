@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.domain.project import SessionProject
-from app.domain.provider_config import LLMProviderConfig
 from app.domain.session import SessionState
 from app.orchestration.prompts import build_prompt_input
 from app.orchestration.readiness import evaluate_readiness

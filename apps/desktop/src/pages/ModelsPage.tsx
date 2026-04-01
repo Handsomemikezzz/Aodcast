@@ -9,8 +9,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
-import type { ModelStatus } from "../types";
+import type { ModelStatus, RequestState } from "../types";
 import { cn } from "../lib/utils";
+import {
+  buildRequestState,
+  getErrorMessage,
+  getErrorRequestState,
+  withRequestStateFallback,
+} from "../lib/requestState";
 
 function formatSizeMb(sizeMb?: number): string {
   if (sizeMb == null || !Number.isFinite(sizeMb)) return "—";
@@ -24,6 +30,7 @@ export function ModelsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyName, setBusyName] = useState<string | null>(null);
+  const [requestState, setRequestState] = useState<RequestState | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -31,7 +38,7 @@ export function ModelsPage() {
       const list = await bridge.listModelsStatus();
       setModels(list);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load models");
+      setError(getErrorMessage(e, "Failed to load models"));
     } finally {
       setLoading(false);
     }
@@ -47,14 +54,50 @@ export function ModelsPage() {
   }, [refresh]);
 
   const handleDownload = async (m: ModelStatus) => {
+    const taskId = `download_model:${m.model_name}`;
     setBusyName(m.model_name);
+    setError(null);
+    setRequestState({
+      operation: "download_model",
+      phase: "running",
+      progress_percent: 0,
+      message: `Downloading model ${m.display_name}...`,
+    });
+    const pollHandle = window.setInterval(() => {
+      void bridge
+        .showTaskState(taskId)
+        .then((state) => {
+          if (state) {
+            setRequestState(state);
+          }
+        })
+        .catch(() => undefined);
+    }, 1200);
     try {
       const result = await bridge.downloadModel(m.model_name);
-      window.alert(result.path ? `Download finished.\n\n${result.path}` : "Download finished.");
+      const finalTaskId = result.task_id ?? taskId;
+      const finalState = await bridge.showTaskState(finalTaskId).catch(() => null);
+      setRequestState(
+        withRequestStateFallback(
+          finalState ?? result.request_state,
+          buildRequestState(
+            "download_model",
+            "succeeded",
+            result.path ? `Download finished: ${result.path}` : "Download finished.",
+          ),
+        ),
+      );
       await refresh();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Download failed");
+      setError(getErrorMessage(e, "Download failed"));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(e),
+          buildRequestState("download_model", "failed", "Download failed."),
+        ),
+      );
     } finally {
+      window.clearInterval(pollHandle);
       setBusyName(null);
     }
   };
@@ -62,11 +105,25 @@ export function ModelsPage() {
   const handleDelete = async (m: ModelStatus) => {
     if (!window.confirm(`Remove ${m.display_name} from the local models folder?`)) return;
     setBusyName(m.model_name);
+    setError(null);
+    setRequestState({
+      operation: "delete_model",
+      phase: "running",
+      progress_percent: 0,
+      message: `Removing model ${m.display_name}...`,
+    });
     try {
       await bridge.deleteModel(m.model_name);
+      setRequestState(buildRequestState("delete_model", "succeeded", `Removed model ${m.display_name}.`));
       await refresh();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Delete failed");
+      setError(getErrorMessage(e, "Delete failed"));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(e),
+          buildRequestState("delete_model", "failed", "Delete failed."),
+        ),
+      );
     } finally {
       setBusyName(null);
     }
@@ -88,6 +145,11 @@ export function ModelsPage() {
           {error && (
             <div className="mb-4 p-3 rounded-lg border border-red-500/20 bg-red-500/10 text-red-400 text-sm">
               {error}
+            </div>
+          )}
+          {!error && requestState?.phase === "running" && (
+            <div className="mb-4 p-3 rounded-lg border border-outline text-secondary text-xs">
+              {`${Math.round(requestState.progress_percent)}% · ${requestState.message}`}
             </div>
           )}
 

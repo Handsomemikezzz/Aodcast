@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Volume2 } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
-import { TTSProviderConfig } from "../types";
+import { RequestState, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
+import {
+  buildRequestState,
+  getErrorMessage,
+  getErrorRequestState,
+  withRequestStateFallback,
+} from "../lib/requestState";
 
 type SettingsForm = {
   provider: string;
@@ -45,6 +51,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [requestState, setRequestState] = useState<RequestState | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -56,7 +63,8 @@ export function SettingsPage() {
         setForm(toForm(config));
       } catch (e) {
         if (!active) return;
-        setError(e instanceof Error ? e.message : "Failed to load TTS settings.");
+        setError(getErrorMessage(e, "Failed to load TTS settings."));
+        setRequestState(getErrorRequestState(e));
       } finally {
         if (active) {
           setLoading(false);
@@ -76,6 +84,12 @@ export function SettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     setError(null);
+    setRequestState({
+      operation: "configure_tts_provider",
+      phase: "running",
+      progress_percent: 0,
+      message: "Saving TTS settings...",
+    });
     try {
       const next = await bridge.configureTTSProvider({
         provider: form.provider,
@@ -88,10 +102,22 @@ export function SettingsPage() {
         local_model_path: form.local_model_path,
       });
       setForm(toForm(next));
+      setRequestState({
+        operation: "configure_tts_provider",
+        phase: "succeeded",
+        progress_percent: 100,
+        message: "TTS settings saved.",
+      });
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save TTS settings.");
+      setError(getErrorMessage(e, "Failed to save TTS settings."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(e),
+          buildRequestState("configure_tts_provider", "failed", "Failed to save TTS settings."),
+        ),
+      );
     } finally {
       setSaving(false);
     }
@@ -216,6 +242,11 @@ export function SettingsPage() {
         {error && (
           <div className="mb-4 p-3 rounded-lg border border-red-500/20 bg-red-500/10 text-red-400 text-sm">
             {error}
+          </div>
+        )}
+        {!error && requestState?.phase === "running" && (
+          <div className="mb-4 p-3 rounded-lg border border-outline text-secondary text-xs">
+            {`${Math.round(requestState.progress_percent)}% · ${requestState.message}`}
           </div>
         )}
 

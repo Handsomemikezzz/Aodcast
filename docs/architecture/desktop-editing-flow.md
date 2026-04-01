@@ -63,4 +63,4 @@ Current bridge-backed desktop responsibilities:
 
 ## Current Limits
 
-- native Tauri runtime validation still depends on `cargo`, which is unavailable in the current environment
+- native compile checks can run with local `cargo`, but full macOS packaging still depends on a successful DMG bundle step

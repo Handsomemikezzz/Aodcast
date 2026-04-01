@@ -6,6 +6,8 @@ import os
 import shutil
 import subprocess
 import sys
+from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -118,7 +120,12 @@ def build_models_status(config_store: ConfigStore, cwd: Path) -> list[dict[str, 
     return out
 
 
-def download_voice_model(cwd: Path, model_name: str) -> dict[str, object]:
+def download_voice_model(
+    cwd: Path,
+    model_name: str,
+    *,
+    on_output_line: Callable[[str], None] | None = None,
+) -> dict[str, object]:
     entry = _BY_NAME.get(model_name)
     if entry is None or entry.category != "voice" or not entry.hf_repo_id:
         raise ValueError(f"Unknown or non-downloadable model: {model_name}")
@@ -135,9 +142,26 @@ def download_voice_model(cwd: Path, model_name: str) -> dict[str, object]:
         "--base-dir",
         str(base),
     ]
-    proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, check=False)
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    tail_lines: deque[str] = deque(maxlen=40)
+    stream = proc.stdout
+    if stream is not None:
+        for raw_line in stream:
+            line = raw_line.rstrip()
+            if line:
+                tail_lines.append(line)
+                if on_output_line is not None:
+                    on_output_line(line)
+    proc.wait()
     if proc.returncode != 0:
-        msg = (proc.stderr or proc.stdout or "download failed").strip()
+        msg = "\n".join(tail_lines).strip() or "download failed"
         raise RuntimeError(msg)
     out_dir = expected_voice_model_dir(cwd, entry.hf_repo_id)
     return {"message": "ok", "path": str(out_dir.resolve())}

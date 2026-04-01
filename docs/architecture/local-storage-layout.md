@@ -29,4 +29,4 @@ Local project data is written under:
 
 - The storage layout is local-first and file-based.
 - Recovery loads a full project by rebuilding these records from the session directory.
-- This layout is intentionally simple for the MVP and may evolve once the interview workflow and audio generation pipeline are implemented.
+- This layout is intentionally simple for the MVP and may evolve with future contract/versioning needs.

@@ -3,8 +3,14 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Sparkles, Mic, Send, Lightbulb, User, CheckCircle2, Circle, AlertCircle, Target, BookOpen, Layers, PanelLeft, PanelLeftClose, Plus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useBridge } from "../lib/BridgeContext";
-import { SessionProject, Readiness, PromptInput } from "../types";
+import { SessionProject, Readiness, PromptInput, RequestState } from "../types";
 import { cn } from "../lib/utils";
+import {
+  buildRequestState,
+  getErrorMessage,
+  getErrorRequestState,
+  withRequestStateFallback,
+} from "../lib/requestState";
 
 export function ChatPage({
   projects,
@@ -25,6 +31,8 @@ export function ChatPage({
   const [loading, setLoading] = useState(Boolean(sessionId));
   const [inputValue, setInputValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [requestState, setRequestState] = useState<RequestState | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -36,11 +44,13 @@ export function ChatPage({
     if (!sessionId) return;
     try {
       setLoading(true);
+      setError(null);
       const list = await bridge.listProjects();
       const current = list.find((p) => p.session.session_id === sessionId);
       setProject(current ?? null);
     } catch (err) {
-      console.error("Failed to fetch project:", err);
+      setError(getErrorMessage(err, "Failed to load the chat session."));
+      setRequestState(getErrorRequestState(err));
     } finally {
       setLoading(false);
     }
@@ -50,6 +60,8 @@ export function ChatPage({
     if (!sessionId) {
       setProject(null);
       setLoading(false);
+      setError(null);
+      setRequestState(null);
       return;
     }
     void fetchProject();
@@ -64,14 +76,33 @@ export function ChatPage({
   const handleStart = async () => {
     if (!sessionId) return;
     setSubmitting(true);
+    setError(null);
+    setRequestState({
+      operation: "start_interview",
+      phase: "running",
+      progress_percent: 0,
+      message: "Starting interview...",
+    });
     try {
       const result = await bridge.startInterview(sessionId);
       setProject(result.project);
       setReadiness(result.readiness);
       setPromptInput(result.prompt_input);
+      setRequestState(
+        withRequestStateFallback(
+          result.request_state,
+          buildRequestState("start_interview", "succeeded", "Interview started."),
+        ),
+      );
       await onRefresh();
     } catch (err) {
-      console.error("Failed to start interview:", err);
+      setError(getErrorMessage(err, "Failed to start interview."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("start_interview", "failed", "Failed to start interview."),
+        ),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -80,15 +111,34 @@ export function ChatPage({
   const handleSubmit = async () => {
     if (!sessionId || !inputValue.trim()) return;
     setSubmitting(true);
+    setError(null);
+    setRequestState({
+      operation: "submit_reply",
+      phase: "running",
+      progress_percent: 0,
+      message: "Submitting reply...",
+    });
     try {
       const result = await bridge.submitReply(sessionId, inputValue.trim(), false);
       setProject(result.project);
       setReadiness(result.readiness);
       setPromptInput(result.prompt_input);
+      setRequestState(
+        withRequestStateFallback(
+          result.request_state,
+          buildRequestState("submit_reply", "succeeded", "Reply accepted."),
+        ),
+      );
       setInputValue("");
       await onRefresh();
     } catch (err) {
-      console.error("Failed to submit reply:", err);
+      setError(getErrorMessage(err, "Failed to submit reply."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("submit_reply", "failed", "Failed to submit reply."),
+        ),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -97,14 +147,33 @@ export function ChatPage({
   const handleFinish = async () => {
     if (!sessionId) return;
     setSubmitting(true);
+    setError(null);
+    setRequestState({
+      operation: "request_finish",
+      phase: "running",
+      progress_percent: 0,
+      message: "Evaluating readiness...",
+    });
     try {
       const result = await bridge.requestFinish(sessionId);
       setProject(result.project);
       setReadiness(result.readiness);
       setPromptInput(result.prompt_input);
+      setRequestState(
+        withRequestStateFallback(
+          result.request_state,
+          buildRequestState("request_finish", "succeeded", "Interview is ready for script generation."),
+        ),
+      );
       await onRefresh();
     } catch (err) {
-      console.error("Failed to finish interview:", err);
+      setError(getErrorMessage(err, "Failed to finish interview."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("request_finish", "failed", "Failed to finish interview."),
+        ),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -224,14 +293,29 @@ export function ChatPage({
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {chatToolbar}
           <div className="flex-1 flex flex-col items-center justify-center text-secondary gap-4 px-6">
-            <p className="text-sm">Session not found.</p>
-            <button
-              type="button"
-              onClick={() => navigate("/chat")}
-              className="text-sm font-medium text-accent-amber hover:underline"
-            >
-              Back to chat
-            </button>
+            {error ? (
+              <>
+                <p className="text-sm text-red-400">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => void fetchProject()}
+                  className="text-sm font-medium text-accent-amber hover:underline"
+                >
+                  Retry
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm">Session not found.</p>
+                <button
+                  type="button"
+                  onClick={() => navigate("/chat")}
+                  className="text-sm font-medium text-accent-amber hover:underline"
+                >
+                  Back to chat
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -273,6 +357,11 @@ export function ChatPage({
 
             {/* Chat History */}
             <div className="flex flex-col gap-6">
+              {error && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  {error}
+                </div>
+              )}
               {turns.map((turn, i) => {
                 const isAgent = turn.speaker === "agent";
                 
@@ -393,7 +482,9 @@ export function ChatPage({
               </div>
               <div className="flex justify-between items-center px-1">
                 <p className="text-[11px] text-outline">
-                  The Archivist is listening. You can dictate or type your thoughts.
+                  {requestState?.phase === "running"
+                    ? requestState.message
+                    : "The Archivist is listening. You can dictate or type your thoughts."}
                 </p>
               </div>
             </div>

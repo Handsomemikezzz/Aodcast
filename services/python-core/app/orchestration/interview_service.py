@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.domain.project import SessionProject
-from app.domain.session import SessionRecord, SessionState
+from app.domain.session import SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.orchestration.prompts import (
     InterviewPromptInput,

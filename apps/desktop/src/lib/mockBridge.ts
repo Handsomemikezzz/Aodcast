@@ -5,15 +5,13 @@ import { appendTurn, evaluateReadiness, nextQuestion, transcriptToText } from ".
 import { nowIso } from "./time";
 import { seededProjects } from "./mockData";
 import {
-  AudioRenderResult,
-  GenerationResult,
   InterviewTurnResult,
   ModelStatus,
   PromptInput,
   Readiness,
+  RequestState,
   SessionProject,
   TTSProviderConfig,
-  TTSCapability,
 } from "../types";
 
 const MOCK_MODELS: ModelStatus[] = [
@@ -45,6 +43,7 @@ function cloneProject(project: SessionProject): SessionProject {
 
 export function createMockBridge(): DesktopBridge {
   const store = new Map(seededProjects.map((project) => [project.session.session_id, cloneProject(project)]));
+  const taskStates = new Map<string, RequestState>();
   let ttsConfig: TTSProviderConfig = {
     provider: "mock_remote",
     model: "mock-voice",
@@ -284,12 +283,35 @@ export function createMockBridge(): DesktopBridge {
     return MOCK_MODELS.map((m) => ({ ...m }));
   }
 
-  async function downloadModel() {
-    return { message: "mock: use Tauri build to download via Python core." };
+  async function downloadModel(modelName: string) {
+    const taskId = `download_model:${modelName}`;
+    taskStates.set(taskId, {
+      operation: "download_model",
+      phase: "running",
+      progress_percent: 10,
+      message: `Downloading model ${modelName}...`,
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+    const doneState: RequestState = {
+      operation: "download_model",
+      phase: "succeeded",
+      progress_percent: 100,
+      message: `Model ${modelName} is ready.`,
+    };
+    taskStates.set(taskId, doneState);
+    return {
+      message: "mock: model download finished.",
+      task_id: taskId,
+      request_state: doneState,
+    };
   }
 
   async function deleteModel() {
     return { message: "mock: no local files removed." };
+  }
+
+  async function showTaskState(taskId: string) {
+    return taskStates.get(taskId) ?? null;
   }
 
   return {
@@ -307,6 +329,7 @@ export function createMockBridge(): DesktopBridge {
     listModelsStatus,
     downloadModel,
     deleteModel,
+    showTaskState,
   };
 
   function getProject(sessionId: string) {

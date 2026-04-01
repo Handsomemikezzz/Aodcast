@@ -57,6 +57,8 @@ Out of scope for the current MVP:
 - operational rules belong in `docs/operations` and `AGENTS.md`, not in scattered ad hoc notes.
 - desktop bridge calls must flow through `apps/desktop/src/lib/*Bridge.ts -> src-tauri commands -> python_bridge`, not from React components directly to shell commands.
 - machine-readable Python bridge calls must keep stdout as a single JSON envelope when `--bridge-json` is set.
+- bridge success payloads and bridge failures must include a normalized `request_state` contract (`operation`, `phase`, `progress_percent`, `message`) so frontend pages can render consistent loading/error/task-state UX.
+- long-running bridge operations must persist pollable task states and surface incremental `progress_percent` through `show_task_state` before adding new UI long-task flows.
 - model-specific runtime logic belongs inside provider runner/runtime modules, not in orchestration or desktop files.
 
 ## Change Protocol
@@ -125,6 +127,7 @@ Feature and maintenance role definitions live in [docs/operations/subagents.md](
 - 2026-03-28: Frontend dependency installation may fail inside the sandbox with npm registry `EPERM` network errors. If `pnpm install` is required for validation, rerun it with escalated permissions instead of assuming the lockfile or package manager is broken.
 - 2026-03-28: Do not run state-dependent CLI writes and immediate readbacks in parallel. Operations like `start-interview`, `reply-session`, `generate-script`, `render-audio`, `configure-tts-provider`, and the follow-up `show-*` inspection commands must be sequenced, or later steps may observe stale state and fail for the wrong reason.
 - 2026-03-28: The local MLX TTS path is runtime-gated. Before trying `local_mlx`, check `--show-local-tts-capability`. The project now uses `services/python-core/.venv` for local MLX validation, and `./scripts/dev/run-python-core.sh` prefers that interpreter automatically. Do not assume bare system `python3` has the same MLX availability as the project venv.
+- 2026-04-01: Some environments can crash during `import mlx.core` with a native `NSRangeException` before Python handlers run. Treat `--show-local-tts-capability` as the source of truth: it now performs a subprocess bootstrap probe and may report `available: false` even when `mlx`, `mlx_audio`, and model path checks pass.
 - 2026-03-28: Git writes may be sandbox-restricted even when normal file edits succeed. If `git commit` fails with `.git/index.lock: Operation not permitted`, rerun the commit with escalated permissions instead of treating it as a repository corruption issue.
 - 2026-03-28: Transcript exports intentionally normalize to a trailing newline. When validating `transcript.txt`, compare normalized content or include the newline in expectations; this is storage behavior, not an audio-rendering regression.
 - 2026-03-28: `git add .` may appear to succeed in the sandbox without actually staging changes. If `git status --short` still shows unstaged files after `git add .`, rerun the staging step with escalated permissions before assuming git is inconsistent.

@@ -21,6 +21,7 @@ fn main() {
             commands::list_models_status,
             commands::download_model,
             commands::delete_model,
+            commands::show_task_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

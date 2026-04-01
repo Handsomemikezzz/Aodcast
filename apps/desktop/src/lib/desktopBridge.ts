@@ -3,6 +3,7 @@ import {
   GenerationResult,
   InterviewTurnResult,
   ModelStatus,
+  RequestState,
   SessionProject,
   TTSProviderConfig,
   TTSCapability,
@@ -43,6 +44,7 @@ export interface DesktopBridge {
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
   listModelsStatus(): Promise<ModelStatus[]>;
-  downloadModel(modelName: string): Promise<{ message: string; path?: string }>;
+  downloadModel(modelName: string): Promise<{ message: string; path?: string; task_id?: string; request_state?: RequestState }>;
   deleteModel(modelName: string): Promise<{ message: string; path?: string }>;
+  showTaskState(taskId: string): Promise<RequestState | null>;
 }

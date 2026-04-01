@@ -13,6 +13,7 @@ It is responsible for:
 - checking whether the current runtime is macOS
 - checking whether the Python `mlx` and `mlx_audio` packages are installed
 - resolving either a local model path or a supported `mlx-community/Qwen3-TTS` repo id
+- probing `mlx` runtime bootstrap in a subprocess before render attempts
 - exposing a capability report before audio rendering is attempted
 
 ## Current Behavior
@@ -22,6 +23,7 @@ If the local MLX capability check fails:
 - the local provider raises a clear runtime error
 - the orchestration layer marks the session as `failed`
 - the user can switch back to the remote provider path
+- native `mlx` bootstrap crashes are surfaced in capability reasons instead of taking down the parent process
 
 If the capability check succeeds:
 
@@ -47,6 +49,7 @@ The local MLX path currently expects:
 - macOS
 - Python `mlx` installed
 - Python `mlx_audio` installed
+- successful `mlx` runtime bootstrap probe (`import mlx.core`)
 - either a supported `mlx-community/Qwen3-TTS` repo id or a valid local model path
 
 The CLI exposes `--show-local-tts-capability` so the environment can be checked before attempting audio rendering.

@@ -23,7 +23,11 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             )
             with patch("app.providers.tts_local_mlx.runtime.platform.system", return_value="Darwin"):
                 with patch("app.providers.tts_local_mlx.runtime.importlib.util.find_spec", return_value=object()):
-                    capability = detect_local_mlx_capability(config)
+                    with patch(
+                        "app.providers.tts_local_mlx.runtime._probe_mlx_runtime_bootstrap",
+                        return_value=(True, ""),
+                    ):
+                        capability = detect_local_mlx_capability(config)
 
         self.assertTrue(capability.available)
         self.assertTrue(capability.mlx_installed)
@@ -43,6 +47,25 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(capability.provider, "local_mlx")
         self.assertFalse(capability.available)
         self.assertIn("mlx", " ".join(capability.reasons).lower())
+
+    def test_capability_reports_runtime_bootstrap_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            Path(tmp_dir, "model.safetensors").write_bytes(b"test")
+            config = TTSProviderConfig(
+                provider="local_mlx",
+                model="mlx-voice",
+                local_model_path=tmp_dir,
+            )
+            with patch("app.providers.tts_local_mlx.runtime.platform.system", return_value="Darwin"):
+                with patch("app.providers.tts_local_mlx.runtime.importlib.util.find_spec", return_value=object()):
+                    with patch(
+                        "app.providers.tts_local_mlx.runtime._probe_mlx_runtime_bootstrap",
+                        return_value=(False, "NSRangeException"),
+                    ):
+                        capability = detect_local_mlx_capability(config)
+
+        self.assertFalse(capability.available)
+        self.assertIn("runtime bootstrap failed", " ".join(capability.reasons).lower())
 
     def test_local_provider_requires_available_runtime(self) -> None:
         provider = LocalMLXTTSProvider(

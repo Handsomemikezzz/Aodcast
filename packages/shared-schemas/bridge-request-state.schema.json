@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/bridge-request-state.schema.json",
+  "title": "BridgeRequestState",
+  "type": "object",
+  "required": ["operation", "phase", "progress_percent", "message"],
+  "properties": {
+    "operation": { "type": "string", "minLength": 1 },
+    "phase": {
+      "type": "string",
+      "enum": ["running", "succeeded", "failed"]
+    },
+    "progress_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "message": { "type": "string" }
+  },
+  "additionalProperties": false
+}

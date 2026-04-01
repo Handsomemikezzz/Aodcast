@@ -8,6 +8,7 @@ Current MVP contracts:
 - `transcript.schema.json`
 - `script.schema.json`
 - `artifact.schema.json`
+- `bridge-request-state.schema.json`
 
 Rules:
 

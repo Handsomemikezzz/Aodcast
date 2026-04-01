@@ -3,9 +3,15 @@ import { useParams } from "react-router-dom";
 import { motion } from 'framer-motion';
 import { Timer, FileText, Mic, CloudDownload, Cpu, CheckCircle2, PlayCircle, Settings, Wand2 } from 'lucide-react';
 import { useBridge } from "../lib/BridgeContext";
-import { SessionProject, TTSCapability } from "../types";
+import { RequestState, SessionProject, TTSCapability } from "../types";
 import { cn } from "../lib/utils";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import {
+  buildRequestState,
+  getErrorMessage,
+  getErrorRequestState,
+  withRequestStateFallback,
+} from "../lib/requestState";
 export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const bridge = useBridge();
@@ -15,6 +21,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requestState, setRequestState] = useState<RequestState | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -29,7 +36,8 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         setProject(currentProject || null);
         setCapability(cap);
       } catch (err: any) {
-        setError(err.message || "Failed to load project");
+        setError(getErrorMessage(err, "Failed to load project"));
+        setRequestState(getErrorRequestState(err));
       } finally {
         setLoading(false);
       }
@@ -39,15 +47,50 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
 
   const handleGenerateAudio = async () => {
     if (!sessionId) return;
+    const taskId = `render_audio:${sessionId}`;
+    let pollHandle: number | null = null;
     try {
       setGenerating(true);
       setError(null);
+      setRequestState({
+        operation: "render_audio",
+        phase: "running",
+        progress_percent: 0,
+        message: "Rendering audio...",
+      });
+      pollHandle = window.setInterval(() => {
+        void bridge
+          .showTaskState(taskId)
+          .then((state) => {
+            if (state) {
+              setRequestState(state);
+            }
+          })
+          .catch(() => undefined);
+      }, 1200);
       const result = await bridge.renderAudio(sessionId);
       setProject(result.project);
+      const finalTaskId = result.task_id ?? taskId;
+      const finalState = await bridge.showTaskState(finalTaskId).catch(() => null);
+      setRequestState(
+        withRequestStateFallback(
+          finalState ?? result.request_state,
+          buildRequestState("render_audio", "succeeded", "Audio rendering complete."),
+        ),
+      );
       await onRefresh();
     } catch (err: any) {
-      setError(err.message || "Failed to render audio");
+      setError(getErrorMessage(err, "Failed to render audio"));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("render_audio", "failed", "Failed to render audio."),
+        ),
+      );
     } finally {
+      if (pollHandle !== null) {
+        window.clearInterval(pollHandle);
+      }
       setGenerating(false);
     }
   };
@@ -111,6 +154,11 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
           {error && (
             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm font-medium">
               {error}
+            </div>
+          )}
+          {!error && requestState?.phase === "running" && (
+            <div className="mb-6 p-3 border border-outline rounded-lg text-secondary text-xs">
+              {`${Math.round(requestState.progress_percent)}% · ${requestState.message}`}
             </div>
           )}
 

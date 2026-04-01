@@ -6,11 +6,13 @@ import {
   DesktopBridge,
   DesktopBridgeError,
 } from "./desktopBridge";
+import { asRequestState } from "./requestState";
 import {
   AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
   ModelStatus,
+  RequestState,
   SessionProject,
   TTSProviderConfig,
   TTSCapability,
@@ -22,17 +24,48 @@ type BridgeShape<T> = {
   tts_capability?: TTSCapability;
   tts_config?: TTSProviderConfig;
   models?: ModelStatus[];
+  request_state?: RequestState;
+  task_state?: RequestState | null;
+  task_id?: string;
   message?: string;
   path?: string;
 } & T;
+
+export class TauriBridgeInvocationError extends Error {
+  readonly code: string;
+  readonly details?: Record<string, unknown>;
+  readonly requestState?: RequestState;
+
+  constructor(
+    message: string,
+    options: {
+      code: string;
+      details?: Record<string, unknown>;
+      requestState?: RequestState;
+    },
+  ) {
+    super(message);
+    this.name = options.code || "desktop_bridge_error";
+    this.code = options.code;
+    this.details = options.details;
+    this.requestState = options.requestState;
+  }
+}
 
 function normalizeError(error: unknown): Error {
   if (typeof error === "object" && error !== null) {
     const candidate = error as Partial<DesktopBridgeError>;
     if (typeof candidate.message === "string") {
-      const wrapped = new Error(candidate.message);
-      wrapped.name = candidate.code || "desktop_bridge_error";
-      return wrapped;
+      const details =
+        typeof candidate.details === "object" && candidate.details !== null
+          ? (candidate.details as Record<string, unknown>)
+          : undefined;
+      const requestState = asRequestState(details?.request_state) ?? undefined;
+      return new TauriBridgeInvocationError(candidate.message, {
+        code: candidate.code || "desktop_bridge_error",
+        details,
+        requestState,
+      });
     }
   }
   if (error instanceof Error) {
@@ -120,6 +153,8 @@ export function createTauriBridge(): DesktopBridge {
       return {
         message: typeof response.message === "string" ? response.message : "ok",
         path: typeof response.path === "string" ? response.path : undefined,
+        task_id: typeof response.task_id === "string" ? response.task_id : undefined,
+        request_state: asRequestState(response.request_state) ?? undefined,
       };
     },
     async deleteModel(modelName: string) {
@@ -128,6 +163,10 @@ export function createTauriBridge(): DesktopBridge {
         message: typeof response.message === "string" ? response.message : "ok",
         path: typeof response.path === "string" ? response.path : undefined,
       };
+    },
+    async showTaskState(taskId: string) {
+      const response = await callBridge<{}>("show_task_state", { task_id: taskId });
+      return asRequestState(response.task_state);
     },
   };
 }

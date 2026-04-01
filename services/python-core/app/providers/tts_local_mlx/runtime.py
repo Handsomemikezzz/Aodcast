@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import platform
+import subprocess
+import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from app.domain.tts_config import TTSProviderConfig
@@ -63,6 +66,36 @@ def resolve_local_model_target(config: TTSProviderConfig) -> tuple[str, str]:
     return model, "huggingface_repo"
 
 
+def _compact_process_error(stderr: str, stdout: str, *, limit: int = 220) -> str:
+    summary = (stderr.strip() or stdout.strip()).replace("\n", " ")
+    if len(summary) <= limit:
+        return summary
+    return summary[:limit].rstrip() + "..."
+
+
+@lru_cache(maxsize=1)
+def _probe_mlx_runtime_bootstrap(python_executable: str) -> tuple[bool, str]:
+    command = [
+        python_executable,
+        "-c",
+        "import mlx.core as mx; print('mlx_runtime_ok')",
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except Exception as exc:
+        return False, str(exc)
+
+    if result.returncode != 0:
+        return False, _compact_process_error(result.stderr, result.stdout)
+    return True, ""
+
+
 def detect_local_mlx_capability(config: TTSProviderConfig) -> LocalMLXCapability:
     current_platform = platform.system().lower()
     reasons: list[str] = []
@@ -78,6 +111,14 @@ def detect_local_mlx_capability(config: TTSProviderConfig) -> LocalMLXCapability
         reasons.append("Python module 'mlx' is not installed in the current environment.")
     if not mlx_audio_installed:
         reasons.append("Python module 'mlx_audio' is not installed in the current environment.")
+    if current_platform == "darwin" and mlx_installed:
+        probe_ok, probe_error = _probe_mlx_runtime_bootstrap(sys.executable)
+        if not probe_ok:
+            detail = f" Details: {probe_error}" if probe_error else ""
+            reasons.append(
+                "Python module 'mlx' is installed but runtime bootstrap failed before generation."
+                + detail
+            )
     if model_path_configured and not model_path_exists:
         reasons.append(f"Configured local model path does not exist: {model_target}")
     elif model_path_configured and not local_model_directory_is_valid(Path(model_target)):

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+import threading
 from pathlib import Path
 
 from app.config import AppConfig
@@ -21,9 +23,12 @@ from app.orchestration.script_generation import (
 from app.models_catalog import build_models_status, delete_voice_model, download_voice_model
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
+from app.runtime.request_state_store import RequestStateStore
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+
+DOWNLOAD_PROGRESS_MARKER = "AODCAST_PROGRESS"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -197,6 +202,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete a voice model directory under AODCAST_HF_MODEL_BASE or <cwd>/models.",
     )
     parser.add_argument(
+        "--show-task-state",
+        default="",
+        help="Show the latest saved request state for a long-running task id.",
+    )
+    parser.add_argument(
         "--tts-local-model-path",
         default=None,
         help="Local model path for MLX TTS configuration updates.",
@@ -283,11 +293,116 @@ def load_final_script_text(args: argparse.Namespace) -> str:
     return args.script_final_text
 
 
-def output_payload(args: argparse.Namespace, payload: dict[str, object]) -> int:
+def infer_operation(args: argparse.Namespace) -> str:
+    if args.list_projects:
+        return "list_projects"
+    if args.create_session or args.create_demo_session:
+        return "create_session"
+    if args.show_session:
+        return "show_session"
+    if args.save_script:
+        return "save_script"
+    if args.start_interview:
+        return "start_interview"
+    if args.reply_session:
+        return "submit_reply"
+    if args.finish_session:
+        return "request_finish"
+    if args.generate_script:
+        return "generate_script"
+    if args.render_audio:
+        return "render_audio"
+    if args.show_tts_config:
+        return "show_tts_config"
+    if args.configure_tts_provider:
+        return "configure_tts_provider"
+    if args.show_llm_config:
+        return "show_llm_config"
+    if args.configure_llm_provider:
+        return "configure_llm_provider"
+    if args.show_local_tts_capability:
+        return "show_local_tts_capability"
+    if args.list_models_status:
+        return "list_models_status"
+    if args.download_model.strip():
+        return "download_model"
+    if args.delete_model.strip():
+        return "delete_model"
+    if args.show_task_state.strip():
+        return "show_task_state"
+    return "bridge_ping"
+
+
+def build_request_state(
+    *,
+    operation: str,
+    phase: str,
+    progress_percent: float,
+    message: str,
+) -> dict[str, object]:
+    return {
+        "operation": operation,
+        "phase": phase,
+        "progress_percent": progress_percent,
+        "message": message,
+    }
+
+
+def _start_running_progress_heartbeat(
+    *,
+    request_state_store: RequestStateStore,
+    task_id: str,
+    operation: str,
+    start_percent: float,
+    max_percent: float,
+    step_percent: float,
+    interval_seconds: float,
+    message: str,
+) -> tuple[threading.Event, threading.Thread]:
+    stop_event = threading.Event()
+    progress_lock = threading.Lock()
+    progress = start_percent
+
+    def loop() -> None:
+        nonlocal progress
+        while not stop_event.wait(interval_seconds):
+            with progress_lock:
+                progress = min(max_percent, progress + step_percent)
+                next_progress = progress
+            request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation=operation,
+                    phase="running",
+                    progress_percent=next_progress,
+                    message=message,
+                ),
+            )
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    return stop_event, thread
+
+
+def output_payload(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    *,
+    operation: str | None = None,
+    message: str = "completed",
+) -> int:
+    request_state = build_request_state(
+        operation=operation or infer_operation(args),
+        phase="succeeded",
+        progress_percent=100.0,
+        message=message,
+    )
+    enriched_payload = dict(payload)
+    enriched_payload["request_state"] = request_state
     if args.bridge_json:
-        print(json.dumps({"ok": True, "data": payload}, indent=2))
+        print(json.dumps({"ok": True, "data": enriched_payload}, indent=2))
     else:
-        print(json.dumps(payload, indent=2))
+        print(json.dumps(enriched_payload, indent=2))
     return 0
 
 
@@ -297,16 +412,26 @@ def output_error(
     code: str,
     message: str,
     details: dict[str, object] | None = None,
+    operation: str | None = None,
 ) -> int:
+    request_state = build_request_state(
+        operation=operation or infer_operation(args),
+        phase="failed",
+        progress_percent=0.0,
+        message=message,
+    )
+    error_details = dict(details or {})
+    error_details["request_state"] = request_state
     if args.bridge_json:
         print(
             json.dumps(
                 {
                     "ok": False,
+                    "request_state": request_state,
                     "error": {
                         "code": code,
                         "message": message,
-                        "details": details or {},
+                        "details": error_details,
                     },
                 },
                 indent=2,
@@ -324,12 +449,14 @@ def run(argv: list[str] | None = None) -> int:
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
     artifact_store = ArtifactStore(config.data_dir)
+    request_state_store = RequestStateStore(config.data_dir)
     orchestrator = InterviewOrchestrator(store)
     script_generation = ScriptGenerationService(store, config_store)
     audio_rendering = AudioRenderingService(store, config_store, artifact_store)
     store.bootstrap()
     config_store.bootstrap()
     artifact_store.bootstrap()
+    request_state_store.bootstrap()
 
     if not args.bridge_json:
         print(f"Aodcast Python core ready at: {config.data_dir}")
@@ -413,12 +540,111 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, {"models": models})
 
         if args.download_model.strip():
-            result = download_voice_model(Path(args.cwd), args.download_model.strip())
-            return output_payload(args, result)
+            model_name = args.download_model.strip()
+            task_id = f"download_model:{model_name}"
+            progress_lock = threading.Lock()
+            current_progress = 5.0
+            progress_pattern = re.compile(rf"{re.escape(DOWNLOAD_PROGRESS_MARKER)}\s+(\d{{1,3}})")
+
+            def update_download_progress(next_percent: float, message: str) -> None:
+                nonlocal current_progress
+                with progress_lock:
+                    bounded = min(95.0, max(current_progress, next_percent))
+                    if bounded <= current_progress:
+                        return
+                    current_progress = bounded
+                    progress_value = current_progress
+                request_state_store.save(
+                    task_id,
+                    build_request_state(
+                        operation="download_model",
+                        phase="running",
+                        progress_percent=progress_value,
+                        message=message,
+                    ),
+                )
+
+            heartbeat_stop = threading.Event()
+
+            def download_heartbeat() -> None:
+                while not heartbeat_stop.wait(1.2):
+                    update_download_progress(
+                        current_progress + 1.5,
+                        f"Downloading model {model_name}...",
+                    )
+
+            heartbeat_thread = threading.Thread(target=download_heartbeat, daemon=True)
+            heartbeat_thread.start()
+
+            def on_download_output_line(line: str) -> None:
+                match = progress_pattern.search(line)
+                if match is None:
+                    return
+                parsed = int(match.group(1))
+                update_download_progress(
+                    float(max(5, min(95, parsed))),
+                    f"Downloading model {model_name}... {parsed}%",
+                )
+            request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation="download_model",
+                    phase="running",
+                    progress_percent=5.0,
+                    message=f"Downloading model {model_name}...",
+                ),
+            )
+            try:
+                result = download_voice_model(
+                    Path(args.cwd),
+                    model_name,
+                    on_output_line=on_download_output_line,
+                )
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=2.0)
+            except Exception as exc:
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=2.0)
+                request_state_store.save(
+                    task_id,
+                    build_request_state(
+                        operation="download_model",
+                        phase="failed",
+                        progress_percent=0.0,
+                        message=str(exc),
+                    ),
+                )
+                raise
+            request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation="download_model",
+                    phase="running",
+                    progress_percent=98.0,
+                    message=f"Finalizing model {model_name}...",
+                ),
+            )
+            request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation="download_model",
+                    phase="succeeded",
+                    progress_percent=100.0,
+                    message=f"Model {model_name} is ready.",
+                ),
+            )
+            payload = dict(result)
+            payload["task_id"] = task_id
+            return output_payload(args, payload)
 
         if args.delete_model.strip():
             result = delete_voice_model(Path(args.cwd), args.delete_model.strip())
             return output_payload(args, result)
+
+        if args.show_task_state.strip():
+            task_id = args.show_task_state.strip()
+            task_state = request_state_store.load(task_id)
+            return output_payload(args, {"task_id": task_id, "task_state": task_state})
 
         if args.show_local_tts_capability:
             capability = detect_local_mlx_capability(config_store.load_tts_config()).to_dict()
@@ -450,11 +676,68 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, serialize_generation_result(result))
 
         if args.render_audio:
-            result = audio_rendering.render_audio(
-                args.render_audio,
-                override_provider=args.tts_provider_override,
+            session_id = args.render_audio
+            task_id = f"render_audio:{session_id}"
+            request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation="render_audio",
+                    phase="running",
+                    progress_percent=5.0,
+                    message=f"Rendering audio for session {session_id}...",
+                ),
             )
-            return output_payload(args, serialize_audio_result(result))
+            heartbeat_stop, heartbeat_thread = _start_running_progress_heartbeat(
+                request_state_store=request_state_store,
+                task_id=task_id,
+                operation="render_audio",
+                start_percent=10.0,
+                max_percent=88.0,
+                step_percent=2.0,
+                interval_seconds=1.2,
+                message=f"Synthesizing audio for session {session_id}...",
+            )
+            try:
+                result = audio_rendering.render_audio(
+                    session_id,
+                    override_provider=args.tts_provider_override,
+                )
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=2.0)
+            except Exception as exc:
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=2.0)
+                request_state_store.save(
+                    task_id,
+                    build_request_state(
+                        operation="render_audio",
+                        phase="failed",
+                        progress_percent=0.0,
+                        message=str(exc),
+                    ),
+                )
+                raise
+            request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation="render_audio",
+                    phase="running",
+                    progress_percent=96.0,
+                    message=f"Finalizing rendered artifacts for session {session_id}...",
+                ),
+            )
+            request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation="render_audio",
+                    phase="succeeded",
+                    progress_percent=100.0,
+                    message=f"Audio render finished for session {session_id}.",
+                ),
+            )
+            payload = serialize_audio_result(result)
+            payload["task_id"] = task_id
+            return output_payload(args, payload)
 
         if args.show_session:
             project = store.load_project(args.show_session)

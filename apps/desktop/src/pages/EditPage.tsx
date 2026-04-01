@@ -3,7 +3,13 @@ import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sparkles, Edit3 } from 'lucide-react';
 import { useBridge } from '../lib/BridgeContext';
-import type { SessionProject } from '../types';
+import type { RequestState, SessionProject } from '../types';
+import {
+  buildRequestState,
+  getErrorMessage,
+  getErrorRequestState,
+  withRequestStateFallback,
+} from "../lib/requestState";
 
 export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -13,12 +19,15 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const [script, setScript] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [requestState, setRequestState] = useState<RequestState | null>(null);
 
   useEffect(() => {
     const loadProject = async () => {
       if (!sessionId) return;
       try {
         setLoading(true);
+        setError(null);
         const projects = await bridge.listProjects();
         const project = projects.find((p: SessionProject) => p.session.session_id === sessionId);
         
@@ -28,7 +37,8 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
           setScript(initialScript);
         }
       } catch (error) {
-        console.error("Failed to load project:", error);
+        setError(getErrorMessage(error, "Failed to load the script project."));
+        setRequestState(getErrorRequestState(error));
       } finally {
         setLoading(false);
       }
@@ -41,10 +51,24 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
     if (!sessionId) return;
     try {
       setSaving(true);
+      setError(null);
+      setRequestState({
+        operation: "save_script",
+        phase: "running",
+        progress_percent: 0,
+        message: "Saving script...",
+      });
       await bridge.saveEditedScript(sessionId, script);
+      setRequestState(buildRequestState("save_script", "succeeded", "Script saved."));
       if (onRefresh) await onRefresh();
     } catch (error) {
-      console.error("Failed to save script:", error);
+      setError(getErrorMessage(error, "Failed to save script."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(error),
+          buildRequestState("save_script", "failed", "Failed to save script."),
+        ),
+      );
     } finally {
       setSaving(false);
     }
@@ -68,6 +92,10 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
             <div>
                <h1 className="text-2xl font-headline font-bold text-primary mb-1">{topic}</h1>
                <p className="text-secondary text-sm">Review and refine your script before generation.</p>
+               {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+               {!error && requestState?.phase === "running" && (
+                 <p className="mt-2 text-xs text-secondary">{requestState.message}</p>
+               )}
             </div>
             {saving && <span className="text-xs text-secondary font-medium animate-pulse">Saving...</span>}
           </div>

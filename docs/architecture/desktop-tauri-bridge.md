@@ -42,7 +42,9 @@ In bridge mode:
 
 - stdout must contain exactly one JSON envelope
 - success responses must look like `{ "ok": true, "data": ... }`
-- failure responses must look like `{ "ok": false, "error": ... }`
+- success `data` payloads now include a `request_state` object with `operation`, `phase`, `progress_percent`, and `message`
+- failure responses must look like `{ "ok": false, "request_state": ..., "error": ... }`
+- failure `error.details` must also include `request_state` so frontend can map action-level failures consistently
 
 This contract exists specifically so Rust can parse Python responses deterministically.
 
@@ -58,10 +60,12 @@ The bridge is currently wired for:
 - local TTS capability inspection
 - model catalog listing
 - voice-model download and deletion
+- task-state polling through `show_task_state` for long-running operations (`download_model:*`, `render_audio:*`)
+- task-state polling now includes incremental `progress_percent` updates (download marker parsing + render heartbeat updates)
 
 The bridge is not yet wired for:
 
-- richer progress events for long-running downloads or model renders
+- true push-stream progress events across the Rust invoke boundary (current contract remains poll-based)
 
 ## Current Limitation
 

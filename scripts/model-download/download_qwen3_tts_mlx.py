@@ -23,11 +23,43 @@ from pathlib import Path
 
 DEFAULT_BASE = Path("/Users/chuhaonan/codeMIni-hn/model")
 DEFAULT_REPO = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+PROGRESS_MARKER = "AODCAST_PROGRESS"
 
 
 def _default_output_dir(base: Path, repo_id: str) -> Path:
     name = repo_id.rstrip("/").split("/")[-1]
     return base / name
+
+
+def _build_progress_tqdm():
+    # Imported lazily so this script still errors cleanly if huggingface_hub/tqdm
+    # are missing in the current interpreter environment.
+    from tqdm.auto import tqdm
+
+    class _ProgressTqdm(tqdm):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._last_reported = -1
+
+        def update(self, n=1):
+            out = super().update(n)
+            self._report()
+            return out
+
+        def refresh(self, *args, **kwargs):
+            out = super().refresh(*args, **kwargs)
+            self._report()
+            return out
+
+        def _report(self) -> None:
+            if not self.total:
+                return
+            percent = int(max(0, min(100, (self.n / self.total) * 100)))
+            if percent != self._last_reported:
+                self._last_reported = percent
+                print(f"{PROGRESS_MARKER} {percent}", flush=True)
+
+    return _ProgressTqdm
 
 
 def main() -> int:
@@ -74,13 +106,40 @@ def main() -> int:
     print(f"Repo:      {args.repo_id}")
     print(f"Output:    {out.resolve()}")
     print("Downloading (this may take a while)...")
-    snapshot_download(
-        repo_id=args.repo_id,
-        local_dir=str(out),
-        token=args.token,
-        local_dir_use_symlinks=False,
-        resume_download=True,
-    )
+    progress_tqdm = None
+    try:
+        progress_tqdm = _build_progress_tqdm()
+    except Exception:
+        # Fallback: keep download functional even if tqdm hooks are unavailable.
+        progress_tqdm = None
+
+    if progress_tqdm is not None:
+        try:
+            snapshot_download(
+                repo_id=args.repo_id,
+                local_dir=str(out),
+                token=args.token,
+                local_dir_use_symlinks=False,
+                resume_download=True,
+                tqdm_class=progress_tqdm,
+            )
+        except TypeError:
+            # Older huggingface_hub may not support tqdm_class.
+            snapshot_download(
+                repo_id=args.repo_id,
+                local_dir=str(out),
+                token=args.token,
+                local_dir_use_symlinks=False,
+                resume_download=True,
+            )
+    else:
+        snapshot_download(
+            repo_id=args.repo_id,
+            local_dir=str(out),
+            token=args.token,
+            local_dir_use_symlinks=False,
+            resume_download=True,
+        )
     print("Done.")
     print(f"For Aodcast later: set local_model_path to {out.resolve()}")
     return 0
