@@ -733,6 +733,27 @@ def run(argv: list[str] | None = None) -> int:
                 message=f"Downloading model {model_name}...",
             )
 
+            def raise_download_cancelled(
+                message: str,
+                *,
+                default_progress: float,
+                source_error: Exception | None = None,
+            ) -> None:
+                cancel_progress = progress.current_progress(default=default_progress)
+                progress.save_cancelled(progress_percent=cancel_progress, message=message)
+                request_state_store.clear_cancel_request(task_id)
+                if source_error is None:
+                    raise BridgeTaskCancelledError(
+                        message,
+                        operation="download_model",
+                        progress_percent=cancel_progress,
+                    )
+                raise BridgeTaskCancelledError(
+                    message,
+                    operation="download_model",
+                    progress_percent=cancel_progress,
+                ) from source_error
+
             def on_download_output_line(line: str) -> None:
                 match = progress_pattern.search(line)
                 if match is None:
@@ -752,30 +773,15 @@ def run(argv: list[str] | None = None) -> int:
                 )
             except TaskCancellationRequested as exc:
                 progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                progress.save_cancelled(
-                    progress_percent=progress.current_progress(),
-                    message=str(exc),
-                )
-                request_state_store.clear_cancel_request(task_id)
-                raise BridgeTaskCancelledError(
-                    str(exc),
-                    operation="download_model",
-                    progress_percent=progress.current_progress(),
-                )
+                raise_download_cancelled(str(exc), default_progress=5.0)
             except Exception as exc:
                 progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
                 if request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
-                    cancel_progress = progress.current_progress(default=5.0)
-                    progress.save_cancelled(
-                        progress_percent=cancel_progress,
-                        message=f"Model {model_name} download cancelled.",
-                    )
-                    request_state_store.clear_cancel_request(task_id)
-                    raise BridgeTaskCancelledError(
+                    raise_download_cancelled(
                         f"Model {model_name} download cancelled.",
-                        operation="download_model",
-                        progress_percent=cancel_progress,
-                    ) from exc
+                        default_progress=5.0,
+                        source_error=exc,
+                    )
                 progress.save_failed(message=str(exc))
                 request_state_store.clear_cancel_request(task_id)
                 raise
@@ -788,16 +794,9 @@ def run(argv: list[str] | None = None) -> int:
             if not saved_succeeded and (
                 request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling"
             ):
-                cancel_progress = progress.current_progress(default=98.0)
-                progress.save_cancelled(
-                    progress_percent=cancel_progress,
-                    message=f"Model {model_name} download cancelled.",
-                )
-                request_state_store.clear_cancel_request(task_id)
-                raise BridgeTaskCancelledError(
+                raise_download_cancelled(
                     f"Model {model_name} download cancelled.",
-                    operation="download_model",
-                    progress_percent=cancel_progress,
+                    default_progress=98.0,
                 )
             if not saved_succeeded:
                 progress.save_failed(message=f"Unable to finalize download state for {model_name}.")
