@@ -83,6 +83,9 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - session management now supports rename/search/soft-delete/restore with a 30-day restore window
 - script management now supports soft-delete/restore plus revision history and rollback
 - DMG packaging now succeeds in this environment by running desktop build with `CI=true` (bundler `--skip-jenkins` path), avoiding Finder AppleScript timeout `-1712`
+- local MLX runner now executes in a cancellable subprocess path (`Popen` + terminate/kill) so `cancel_task` can settle from `cancelling` to `cancelled` without manual process cleanup
+- long local MLX text rendering now passes `--join_audio` and extended token budget so output duration scales with script length instead of truncating to a short fixed clip
+- render-task request-state persistence now uses per-task cross-process file locks to keep `save_if_current_phase` atomic under concurrent `render_audio` and `cancel_task` calls
 
 ### In Progress
 

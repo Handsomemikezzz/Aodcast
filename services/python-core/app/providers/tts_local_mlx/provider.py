@@ -18,12 +18,13 @@ class LocalMLXTTSProvider:
         if not capability.available:
             joined = " ".join(capability.reasons)
             raise RuntimeError(
-                f"Local MLX TTS is unavailable. {joined} Fallback provider: {capability.fallback_provider}."
+                f"Local MLX TTS is unavailable. {joined}"
             )
 
         result = self.runner.synthesize(
             request.script_text,
             audio_format=self.config.audio_format or request.audio_format,
+            should_cancel=request.should_cancel,
         )
         return TTSGenerationResponse(
             audio_bytes=result.audio_bytes,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -10,6 +11,7 @@ class TTSGenerationRequest:
     script_text: str
     voice: str
     audio_format: str
+    should_cancel: Callable[[], bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)

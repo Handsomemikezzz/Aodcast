@@ -12,6 +12,7 @@ from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.tts_config import TTSProviderConfig
 from app.orchestration.audio_rendering import AudioRenderingService
+from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
@@ -140,6 +141,35 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(transcript_text, script.draft + "\n")
         self.assertTrue(Path(result.audio_path).exists())
         self.assertTrue(Path(artifact_store.exports_dir / session.session_id).exists())
+
+    def test_render_audio_cancellation_restores_previous_state(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session_id = self.seed_script_project(store)
+        checks = {"count": 0}
+
+        def should_cancel() -> bool:
+            checks["count"] += 1
+            return checks["count"] >= 2
+
+        class CancelAwareProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                if request.should_cancel is not None and request.should_cancel():
+                    raise TaskCancellationRequested("cancelled in provider")
+                raise AssertionError("Provider should have been cancelled before writing output.")
+
+        with patch(
+            "app.orchestration.audio_rendering.build_tts_provider",
+            return_value=CancelAwareProvider(),
+        ):
+            with self.assertRaises(TaskCancellationRequested):
+                service.render_audio_with_cancellation(
+                    session_id,
+                    should_cancel=should_cancel,
+                )
+
+        loaded = store.load_project(session_id)
+        self.assertEqual(loaded.session.state, SessionState.SCRIPT_EDITED)
 
 
 if __name__ == "__main__":

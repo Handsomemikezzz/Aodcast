@@ -4,8 +4,14 @@ import json
 import re
 import tempfile
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None
 
 
 def _now_iso() -> str:
@@ -23,15 +29,17 @@ class RequestStateStore:
     def __init__(self, data_dir: Path) -> None:
         self._dir = data_dir / "runtime" / "request-state"
         self._cancel_dir = data_dir / "runtime" / "cancel-request"
+        self._lock_dir = data_dir / "runtime" / "locks"
         self._locks_guard = threading.Lock()
         self._task_locks: dict[str, threading.Lock] = {}
 
     def bootstrap(self) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._cancel_dir.mkdir(parents=True, exist_ok=True)
+        self._lock_dir.mkdir(parents=True, exist_ok=True)
 
     def save(self, task_id: str, request_state: dict[str, object]) -> Path:
-        with self._task_lock(task_id):
+        with self._task_guard(task_id):
             payload = {
                 "task_id": task_id,
                 "request_state": request_state,
@@ -49,7 +57,7 @@ class RequestStateStore:
         allowed_phases: set[str],
     ) -> bool:
         normalized_allowed = {phase.strip().lower() for phase in allowed_phases}
-        with self._task_lock(task_id):
+        with self._task_guard(task_id):
             current = self._load_request_state(self._path(task_id))
             current_phase = ""
             if isinstance(current, dict):
@@ -67,14 +75,14 @@ class RequestStateStore:
             return True
 
     def load(self, task_id: str) -> dict[str, object] | None:
-        with self._task_lock(task_id):
+        with self._task_guard(task_id):
             return self._load_request_state(self._path(task_id))
 
     def _path(self, task_id: str) -> Path:
         return self._dir / f"{_safe_task_file_name(task_id)}.json"
 
     def request_cancel(self, task_id: str) -> Path:
-        with self._task_lock(task_id):
+        with self._task_guard(task_id):
             path = self._cancel_path(task_id)
             payload = {
                 "task_id": task_id,
@@ -85,14 +93,14 @@ class RequestStateStore:
             return path
 
     def clear_cancel_request(self, task_id: str) -> None:
-        with self._task_lock(task_id):
+        with self._task_guard(task_id):
             try:
                 self._cancel_path(task_id).unlink()
             except FileNotFoundError:
                 return
 
     def is_cancel_requested(self, task_id: str) -> bool:
-        with self._task_lock(task_id):
+        with self._task_guard(task_id):
             path = self._cancel_path(task_id)
             if not path.is_file():
                 return False
@@ -105,6 +113,9 @@ class RequestStateStore:
     def _cancel_path(self, task_id: str) -> Path:
         return self._cancel_dir / f"{_safe_task_file_name(task_id)}.json"
 
+    def _lock_path(self, task_id: str) -> Path:
+        return self._lock_dir / f"{_safe_task_file_name(task_id)}.lock"
+
     def _task_lock(self, task_id: str) -> threading.Lock:
         normalized = _safe_task_file_name(task_id)
         with self._locks_guard:
@@ -113,6 +124,21 @@ class RequestStateStore:
                 lock = threading.Lock()
                 self._task_locks[normalized] = lock
             return lock
+
+    @contextmanager
+    def _task_guard(self, task_id: str):
+        with self._task_lock(task_id):
+            if fcntl is None:
+                yield
+                return
+            lock_path = self._lock_path(task_id)
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            with lock_path.open("a+", encoding="utf-8") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _load_request_state(self, path: Path) -> dict[str, object] | None:
         if not path.is_file():

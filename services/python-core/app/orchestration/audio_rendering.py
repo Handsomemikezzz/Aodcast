@@ -82,6 +82,7 @@ class AudioRenderingService:
             script_text=final_text,
             voice=tts_config.voice,
             audio_format=tts_config.audio_format,
+            should_cancel=should_cancel,
         )
         try:
             raise_if_cancelled()
@@ -94,6 +95,8 @@ class AudioRenderingService:
                 response.file_extension,
             )
         except TaskCancellationRequested:
+            project.session.transition(previous_state)
+            self.store.save_project(project)
             raise
         except Exception as exc:
             project.session.set_error(str(exc))

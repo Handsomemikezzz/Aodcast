@@ -10,6 +10,7 @@ from app.providers.tts_api.base import TTSGenerationRequest
 from app.providers.tts_local_mlx.provider import LocalMLXTTSProvider
 from app.providers.tts_local_mlx.runner import LocalMLXRunResult, MLXAudioQwenRunner
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.runtime.task_cancellation import TaskCancellationRequested
 
 
 class LocalMLXRuntimeTests(unittest.TestCase):
@@ -122,18 +123,90 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         )
         runner = MLXAudioQwenRunner(config)
 
-        def fake_run(command: list[str], **_: object):
-            prefix = Path(command[command.index("--file_prefix") + 1])
-            output_path = prefix.with_suffix(".wav")
-            output_path.write_bytes(b"wav-bytes")
-            return type("Completed", (), {"returncode": 0, "stderr": "", "stdout": ""})()
+        captured_command: list[str] = []
 
-        with patch("app.providers.tts_local_mlx.runner.subprocess.run", side_effect=fake_run):
+        class FakeProcess:
+            def __init__(self, command: list[str]) -> None:
+                nonlocal captured_command
+                captured_command = command
+                self.returncode: int | None = None
+
+            def poll(self) -> int | None:
+                if self.returncode is None:
+                    prefix = Path(captured_command[captured_command.index("--file_prefix") + 1])
+                    output_path = prefix.with_suffix(".wav")
+                    output_path.write_bytes(b"wav-bytes")
+                    self.returncode = 0
+                return self.returncode
+
+            def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+                _ = timeout
+                return "", ""
+
+            def terminate(self) -> None:
+                self.returncode = -15
+
+            def kill(self) -> None:
+                self.returncode = -9
+
+        def fake_popen(command: list[str], **_: object) -> FakeProcess:
+            return FakeProcess(command)
+
+        with patch("app.providers.tts_local_mlx.runner.subprocess.Popen", side_effect=fake_popen):
             result = runner.synthesize("Runner test", audio_format="wav")
 
         self.assertEqual(result.audio_bytes, b"wav-bytes")
         self.assertEqual(result.file_extension, "wav")
         self.assertEqual(result.model_name, config.model)
+        self.assertIn("--join_audio", captured_command)
+        self.assertIn("--max_tokens", captured_command)
+        self.assertGreater(int(captured_command[captured_command.index("--max_tokens") + 1]), 0)
+
+    def test_runner_terminates_process_when_cancellation_requested(self) -> None:
+        config = TTSProviderConfig(
+            provider="local_mlx",
+            model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+        )
+        runner = MLXAudioQwenRunner(config)
+
+        class FakeProcess:
+            def __init__(self) -> None:
+                self.returncode: int | None = None
+                self.terminated = False
+
+            def poll(self) -> int | None:
+                return self.returncode
+
+            def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+                _ = timeout
+                return "", ""
+
+            def terminate(self) -> None:
+                self.terminated = True
+                self.returncode = -15
+
+            def kill(self) -> None:
+                self.returncode = -9
+
+        fake_process = FakeProcess()
+        checks = {"count": 0}
+
+        def should_cancel() -> bool:
+            checks["count"] += 1
+            return checks["count"] >= 2
+
+        with patch(
+            "app.providers.tts_local_mlx.runner.subprocess.Popen",
+            return_value=fake_process,
+        ), patch("app.providers.tts_local_mlx.runner.time.sleep", return_value=None):
+            with self.assertRaises(TaskCancellationRequested):
+                runner.synthesize(
+                    "A long script body that will be cancelled.",
+                    audio_format="wav",
+                    should_cancel=should_cancel,
+                )
+
+        self.assertTrue(fake_process.terminated)
 
 
 if __name__ == "__main__":

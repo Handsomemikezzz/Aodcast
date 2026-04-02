@@ -1030,6 +1030,29 @@ def run(argv: list[str] | None = None) -> int:
             except Exception as exc:
                 heartbeat_stop.set()
                 heartbeat_thread.join(timeout=2.0)
+                current_state = request_state_store.load(task_id)
+                current_phase = ""
+                if isinstance(current_state, dict):
+                    phase_value = current_state.get("phase")
+                    if isinstance(phase_value, str):
+                        current_phase = phase_value.strip().lower()
+                if is_cancel_requested() or current_phase == "cancelling":
+                    cancel_progress = progress_from_request_state(current_state, default=10.0)
+                    request_state_store.save(
+                        task_id,
+                        build_request_state(
+                            operation="render_audio",
+                            phase="cancelled",
+                            progress_percent=cancel_progress,
+                            message=f"Audio rendering cancelled for session {session_id}.",
+                        ),
+                    )
+                    request_state_store.clear_cancel_request(task_id)
+                    raise BridgeTaskCancelledError(
+                        f"Audio rendering cancelled for session {session_id}.",
+                        operation="render_audio",
+                        progress_percent=cancel_progress,
+                    ) from exc
                 request_state_store.save(
                     task_id,
                     build_request_state(
@@ -1043,7 +1066,7 @@ def run(argv: list[str] | None = None) -> int:
                 raise
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2.0)
-            request_state_store.save(
+            request_state_store.save_if_current_phase(
                 task_id,
                 build_request_state(
                     operation="render_audio",
@@ -1051,8 +1074,9 @@ def run(argv: list[str] | None = None) -> int:
                     progress_percent=96.0,
                     message=f"Finalizing rendered artifacts for session {session_id}...",
                 ),
+                allowed_phases={"running"},
             )
-            request_state_store.save(
+            saved_succeeded = request_state_store.save_if_current_phase(
                 task_id,
                 build_request_state(
                     operation="render_audio",
@@ -1060,7 +1084,32 @@ def run(argv: list[str] | None = None) -> int:
                     progress_percent=100.0,
                     message=f"Audio render finished for session {session_id}.",
                 ),
+                allowed_phases={"running"},
             )
+            if not saved_succeeded:
+                current_state = request_state_store.load(task_id)
+                current_phase = ""
+                if isinstance(current_state, dict):
+                    phase_value = current_state.get("phase")
+                    if isinstance(phase_value, str):
+                        current_phase = phase_value.strip().lower()
+                if current_phase == "cancelling" or is_cancel_requested():
+                    cancel_progress = progress_from_request_state(current_state, default=96.0)
+                    request_state_store.save(
+                        task_id,
+                        build_request_state(
+                            operation="render_audio",
+                            phase="cancelled",
+                            progress_percent=cancel_progress,
+                            message=f"Audio rendering cancelled for session {session_id}.",
+                        ),
+                    )
+                    request_state_store.clear_cancel_request(task_id)
+                    raise BridgeTaskCancelledError(
+                        f"Audio rendering cancelled for session {session_id}.",
+                        operation="render_audio",
+                        progress_percent=cancel_progress,
+                    )
             request_state_store.clear_cancel_request(task_id)
             payload = serialize_audio_result(result)
             payload["task_id"] = task_id
