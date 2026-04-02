@@ -624,8 +624,8 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.rename_session:
-            new_topic = args.session_topic.strip() or args.topic.strip()
-            if not new_topic or (not args.session_topic.strip() and args.topic == "A new podcast topic"):
+            new_topic = args.session_topic.strip()
+            if not new_topic:
                 raise ValueError("--session-topic is required when using --rename-session")
             project = store.load_project(args.rename_session)
             ensure_session_is_active(project)

@@ -371,7 +371,19 @@ export function createMockBridge(): DesktopBridge {
     if (isScriptDeleted(project)) {
       return cloneProject(project);
     }
+    const previousContent = latestScriptContent(project);
+    if (previousContent) {
+      revisionsBySession.set(
+        sessionId,
+        [
+          ...(revisionsBySession.get(sessionId) ?? []),
+          buildRevision(sessionId, previousContent, "manual", "Moved to trash"),
+        ],
+      );
+    }
     project.script.deleted_at = nowIso();
+    project.script.draft = "";
+    project.script.final = "";
     project.script.updated_at = project.script.deleted_at;
     store.set(sessionId, project);
     return cloneProject(project);
@@ -389,8 +401,18 @@ export function createMockBridge(): DesktopBridge {
     if (!project.script.deleted_at || !isWithinRestoreWindow(project.script.deleted_at)) {
       throw new Error("Script restore window has expired.");
     }
+    const revisions = revisionsBySession.get(sessionId) ?? [];
+    const recoverable = [...revisions].reverse().find((item) => item.content.trim().length > 0)?.content ?? "";
     project.script.deleted_at = null;
+    project.script.draft = recoverable;
+    project.script.final = recoverable;
     project.script.updated_at = nowIso();
+    if (recoverable) {
+      revisionsBySession.set(
+        sessionId,
+        [...revisions, buildRevision(sessionId, recoverable, "manual", "Restored from trash")],
+      );
+    }
     store.set(sessionId, project);
     return cloneProject(project);
   }

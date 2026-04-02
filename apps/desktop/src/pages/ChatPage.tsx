@@ -139,7 +139,7 @@ export function ChatPage({
           buildRequestState("start_interview", "succeeded", "Interview started."),
         ),
       );
-      await onRefresh();
+      await refreshWorkspace();
     } catch (err) {
       setError(getErrorMessage(err, "Failed to start interview."));
       setRequestState(
@@ -175,7 +175,7 @@ export function ChatPage({
         ),
       );
       setInputValue("");
-      await onRefresh();
+      await refreshWorkspace();
     } catch (err) {
       setError(getErrorMessage(err, "Failed to submit reply."));
       setRequestState(
@@ -210,7 +210,7 @@ export function ChatPage({
           buildRequestState("request_finish", "succeeded", "Interview is ready for script generation."),
         ),
       );
-      await onRefresh();
+      await refreshWorkspace();
     } catch (err) {
       setError(getErrorMessage(err, "Failed to finish interview."));
       setRequestState(
