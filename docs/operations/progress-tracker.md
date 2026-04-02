@@ -86,6 +86,7 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - local MLX runner now executes in a cancellable subprocess path (`Popen` + terminate/kill) so `cancel_task` can settle from `cancelling` to `cancelled` without manual process cleanup
 - long local MLX text rendering now passes `--join_audio` and extended token budget so output duration scales with script length instead of truncating to a short fixed clip
 - render-task request-state persistence now uses per-task cross-process file locks to keep `save_if_current_phase` atomic under concurrent `render_audio` and `cancel_task` calls
+- long-task bridge state flow is now centralized in `LongTaskStateManager`, and both `download_model` + `render_audio` reuse the same start/heartbeat/cancel/success-finalize semantics
 
 ### In Progress
 

@@ -4,8 +4,6 @@ import argparse
 import json
 import re
 import sys
-import threading
-from collections.abc import Callable
 from pathlib import Path
 
 from app.config import AppConfig
@@ -22,6 +20,7 @@ from app.orchestration.script_generation import (
     build_generation_context,
 )
 from app.models_catalog import build_models_status, delete_voice_model, download_voice_model
+from app.runtime.long_task_state import LongTaskStateManager
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
 from app.runtime.request_state_store import RequestStateStore
@@ -484,46 +483,6 @@ def progress_from_request_state(state: dict[str, object] | None, default: float 
     return default
 
 
-def _start_running_progress_heartbeat(
-    *,
-    request_state_store: RequestStateStore,
-    task_id: str,
-    operation: str,
-    start_percent: float,
-    max_percent: float,
-    step_percent: float,
-    interval_seconds: float,
-    message: str,
-    should_stop: Callable[[], bool] | None = None,
-) -> tuple[threading.Event, threading.Thread]:
-    stop_event = threading.Event()
-    progress_lock = threading.Lock()
-    progress = start_percent
-
-    def loop() -> None:
-        nonlocal progress
-        while not stop_event.wait(interval_seconds):
-            if should_stop is not None and should_stop():
-                break
-            with progress_lock:
-                progress = min(max_percent, progress + step_percent)
-                next_progress = progress
-            request_state_store.save_if_current_phase(
-                task_id,
-                build_request_state(
-                    operation=operation,
-                    phase="running",
-                    progress_percent=next_progress,
-                    message=message,
-                ),
-                allowed_phases={"running"},
-            )
-
-    thread = threading.Thread(target=loop, daemon=True)
-    thread.start()
-    return stop_event, thread
-
-
 def output_payload(
     args: argparse.Namespace,
     payload: dict[str, object],
@@ -755,131 +714,95 @@ def run(argv: list[str] | None = None) -> int:
         if args.download_model.strip():
             model_name = args.download_model.strip()
             task_id = f"download_model:{model_name}"
+            progress = LongTaskStateManager(
+                request_state_store=request_state_store,
+                task_id=task_id,
+                operation="download_model",
+                build_request_state=build_request_state,
+                should_cancel=lambda: request_state_store.is_cancel_requested(task_id),
+            )
             request_state_store.clear_cancel_request(task_id)
-            progress_lock = threading.Lock()
-            current_progress = 5.0
             progress_pattern = re.compile(rf"{re.escape(DOWNLOAD_PROGRESS_MARKER)}\s+(\d{{1,3}})")
 
-            def is_cancel_requested() -> bool:
-                return request_state_store.is_cancel_requested(task_id)
-
-            def current_progress_value() -> float:
-                with progress_lock:
-                    return current_progress
-
-            def update_download_progress(next_percent: float, message: str) -> None:
-                nonlocal current_progress
-                if is_cancel_requested():
-                    return
-                with progress_lock:
-                    bounded = min(95.0, max(current_progress, next_percent))
-                    if bounded <= current_progress:
-                        return
-                    current_progress = bounded
-                    progress_value = current_progress
-                request_state_store.save_if_current_phase(
-                    task_id,
-                    build_request_state(
-                        operation="download_model",
-                        phase="running",
-                        progress_percent=progress_value,
-                        message=message,
-                    ),
-                    allowed_phases={"running"},
-                )
-
-            heartbeat_stop = threading.Event()
-
-            def download_heartbeat() -> None:
-                while not heartbeat_stop.wait(1.2):
-                    if is_cancel_requested():
-                        break
-                    update_download_progress(
-                        current_progress_value() + 1.5,
-                        f"Downloading model {model_name}...",
-                    )
-
-            heartbeat_thread = threading.Thread(target=download_heartbeat, daemon=True)
-            heartbeat_thread.start()
+            progress.start(progress_percent=5.0, message=f"Downloading model {model_name}...")
+            heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
+                start_percent=5.0,
+                max_percent=95.0,
+                step_percent=1.5,
+                interval_seconds=1.2,
+                message=f"Downloading model {model_name}...",
+            )
 
             def on_download_output_line(line: str) -> None:
                 match = progress_pattern.search(line)
                 if match is None:
                     return
                 parsed = int(match.group(1))
-                update_download_progress(
+                progress.update_running(
                     float(max(5, min(95, parsed))),
                     f"Downloading model {model_name}... {parsed}%",
+                    max_percent=95.0,
                 )
-            request_state_store.save(
-                task_id,
-                build_request_state(
-                    operation="download_model",
-                    phase="running",
-                    progress_percent=5.0,
-                    message=f"Downloading model {model_name}...",
-                ),
-            )
             try:
                 result = download_voice_model(
                     Path(args.cwd),
                     model_name,
                     on_output_line=on_download_output_line,
-                    should_cancel=is_cancel_requested,
+                    should_cancel=progress.should_cancel,
                 )
             except TaskCancellationRequested as exc:
-                heartbeat_stop.set()
-                heartbeat_thread.join(timeout=2.0)
-                progress_value = current_progress_value()
-                request_state_store.save(
-                    task_id,
-                    build_request_state(
-                        operation="download_model",
-                        phase="cancelled",
-                        progress_percent=progress_value,
-                        message=str(exc),
-                    ),
+                progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+                progress.save_cancelled(
+                    progress_percent=progress.current_progress(),
+                    message=str(exc),
                 )
                 request_state_store.clear_cancel_request(task_id)
                 raise BridgeTaskCancelledError(
                     str(exc),
                     operation="download_model",
-                    progress_percent=progress_value,
+                    progress_percent=progress.current_progress(),
                 )
             except Exception as exc:
-                heartbeat_stop.set()
-                heartbeat_thread.join(timeout=2.0)
-                request_state_store.save(
-                    task_id,
-                    build_request_state(
+                progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+                if request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
+                    cancel_progress = progress.current_progress(default=5.0)
+                    progress.save_cancelled(
+                        progress_percent=cancel_progress,
+                        message=f"Model {model_name} download cancelled.",
+                    )
+                    request_state_store.clear_cancel_request(task_id)
+                    raise BridgeTaskCancelledError(
+                        f"Model {model_name} download cancelled.",
                         operation="download_model",
-                        phase="failed",
-                        progress_percent=0.0,
-                        message=str(exc),
-                    ),
-                )
+                        progress_percent=cancel_progress,
+                    ) from exc
+                progress.save_failed(message=str(exc))
                 request_state_store.clear_cancel_request(task_id)
                 raise
-            heartbeat_stop.set()
-            heartbeat_thread.join(timeout=2.0)
-            request_state_store.save(
-                task_id,
-                build_request_state(
-                    operation="download_model",
-                    phase="running",
-                    progress_percent=98.0,
-                    message=f"Finalizing model {model_name}...",
-                ),
+            progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+            progress.save_finalizing(
+                progress_percent=98.0,
+                message=f"Finalizing model {model_name}...",
             )
-            request_state_store.save(
-                task_id,
-                build_request_state(
+            saved_succeeded = progress.save_succeeded(message=f"Model {model_name} is ready.")
+            if not saved_succeeded and (
+                request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling"
+            ):
+                cancel_progress = progress.current_progress(default=98.0)
+                progress.save_cancelled(
+                    progress_percent=cancel_progress,
+                    message=f"Model {model_name} download cancelled.",
+                )
+                request_state_store.clear_cancel_request(task_id)
+                raise BridgeTaskCancelledError(
+                    f"Model {model_name} download cancelled.",
                     operation="download_model",
-                    phase="succeeded",
-                    progress_percent=100.0,
-                    message=f"Model {model_name} is ready.",
-                ),
-            )
+                    progress_percent=cancel_progress,
+                )
+            if not saved_succeeded:
+                progress.save_failed(message=f"Unable to finalize download state for {model_name}.")
+                request_state_store.clear_cancel_request(task_id)
+                raise RuntimeError(f"Unable to finalize download state for {model_name}.")
             request_state_store.clear_cancel_request(task_id)
             payload = dict(result)
             payload["task_id"] = task_id
@@ -977,50 +900,36 @@ def run(argv: list[str] | None = None) -> int:
             ensure_session_is_active(project)
             ensure_script_is_active(project)
             task_id = f"render_audio:{session_id}"
-            request_state_store.clear_cancel_request(task_id)
-
-            def is_cancel_requested() -> bool:
-                return request_state_store.is_cancel_requested(task_id)
-
-            request_state_store.save(
-                task_id,
-                build_request_state(
-                    operation="render_audio",
-                    phase="running",
-                    progress_percent=5.0,
-                    message=f"Rendering audio for session {session_id}...",
-                ),
-            )
-            heartbeat_stop, heartbeat_thread = _start_running_progress_heartbeat(
+            progress = LongTaskStateManager(
                 request_state_store=request_state_store,
                 task_id=task_id,
                 operation="render_audio",
+                build_request_state=build_request_state,
+                should_cancel=lambda: request_state_store.is_cancel_requested(task_id),
+            )
+            request_state_store.clear_cancel_request(task_id)
+
+            progress.start(
+                progress_percent=5.0,
+                message=f"Rendering audio for session {session_id}...",
+            )
+            heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
                 start_percent=10.0,
                 max_percent=88.0,
                 step_percent=2.0,
                 interval_seconds=1.2,
                 message=f"Synthesizing audio for session {session_id}...",
-                should_stop=is_cancel_requested,
             )
             try:
                 result = audio_rendering.render_audio_with_cancellation(
                     session_id,
                     override_provider=args.tts_provider_override,
-                    should_cancel=is_cancel_requested,
+                    should_cancel=progress.should_cancel,
                 )
             except TaskCancellationRequested as exc:
-                heartbeat_stop.set()
-                heartbeat_thread.join(timeout=2.0)
-                cancel_progress = progress_from_request_state(request_state_store.load(task_id), default=10.0)
-                request_state_store.save(
-                    task_id,
-                    build_request_state(
-                        operation="render_audio",
-                        phase="cancelled",
-                        progress_percent=cancel_progress,
-                        message=str(exc),
-                    ),
-                )
+                progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+                cancel_progress = progress.current_progress(default=10.0)
+                progress.save_cancelled(progress_percent=cancel_progress, message=str(exc))
                 request_state_store.clear_cancel_request(task_id)
                 raise BridgeTaskCancelledError(
                     str(exc),
@@ -1028,24 +937,13 @@ def run(argv: list[str] | None = None) -> int:
                     progress_percent=cancel_progress,
                 )
             except Exception as exc:
-                heartbeat_stop.set()
-                heartbeat_thread.join(timeout=2.0)
-                current_state = request_state_store.load(task_id)
-                current_phase = ""
-                if isinstance(current_state, dict):
-                    phase_value = current_state.get("phase")
-                    if isinstance(phase_value, str):
-                        current_phase = phase_value.strip().lower()
-                if is_cancel_requested() or current_phase == "cancelling":
-                    cancel_progress = progress_from_request_state(current_state, default=10.0)
-                    request_state_store.save(
-                        task_id,
-                        build_request_state(
-                            operation="render_audio",
-                            phase="cancelled",
-                            progress_percent=cancel_progress,
-                            message=f"Audio rendering cancelled for session {session_id}.",
-                        ),
+                progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+                current_phase = progress.current_phase()
+                if request_state_store.is_cancel_requested(task_id) or current_phase == "cancelling":
+                    cancel_progress = progress.current_progress(default=10.0)
+                    progress.save_cancelled(
+                        progress_percent=cancel_progress,
+                        message=f"Audio rendering cancelled for session {session_id}.",
                     )
                     request_state_store.clear_cancel_request(task_id)
                     raise BridgeTaskCancelledError(
@@ -1053,56 +951,24 @@ def run(argv: list[str] | None = None) -> int:
                         operation="render_audio",
                         progress_percent=cancel_progress,
                     ) from exc
-                request_state_store.save(
-                    task_id,
-                    build_request_state(
-                        operation="render_audio",
-                        phase="failed",
-                        progress_percent=0.0,
-                        message=str(exc),
-                    ),
-                )
+                progress.save_failed(message=str(exc))
                 request_state_store.clear_cancel_request(task_id)
                 raise
-            heartbeat_stop.set()
-            heartbeat_thread.join(timeout=2.0)
-            request_state_store.save_if_current_phase(
-                task_id,
-                build_request_state(
-                    operation="render_audio",
-                    phase="running",
-                    progress_percent=96.0,
-                    message=f"Finalizing rendered artifacts for session {session_id}...",
-                ),
-                allowed_phases={"running"},
+            progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+            progress.save_finalizing(
+                progress_percent=96.0,
+                message=f"Finalizing rendered artifacts for session {session_id}...",
             )
-            saved_succeeded = request_state_store.save_if_current_phase(
-                task_id,
-                build_request_state(
-                    operation="render_audio",
-                    phase="succeeded",
-                    progress_percent=100.0,
-                    message=f"Audio render finished for session {session_id}.",
-                ),
-                allowed_phases={"running"},
+            saved_succeeded = progress.save_succeeded(
+                message=f"Audio render finished for session {session_id}.",
             )
             if not saved_succeeded:
-                current_state = request_state_store.load(task_id)
-                current_phase = ""
-                if isinstance(current_state, dict):
-                    phase_value = current_state.get("phase")
-                    if isinstance(phase_value, str):
-                        current_phase = phase_value.strip().lower()
-                if current_phase == "cancelling" or is_cancel_requested():
-                    cancel_progress = progress_from_request_state(current_state, default=96.0)
-                    request_state_store.save(
-                        task_id,
-                        build_request_state(
-                            operation="render_audio",
-                            phase="cancelled",
-                            progress_percent=cancel_progress,
-                            message=f"Audio rendering cancelled for session {session_id}.",
-                        ),
+                current_phase = progress.current_phase()
+                if current_phase == "cancelling" or request_state_store.is_cancel_requested(task_id):
+                    cancel_progress = progress.current_progress(default=96.0)
+                    progress.save_cancelled(
+                        progress_percent=cancel_progress,
+                        message=f"Audio rendering cancelled for session {session_id}.",
                     )
                     request_state_store.clear_cancel_request(task_id)
                     raise BridgeTaskCancelledError(
@@ -1110,6 +976,9 @@ def run(argv: list[str] | None = None) -> int:
                         operation="render_audio",
                         progress_percent=cancel_progress,
                     )
+                progress.save_failed(message=f"Unable to finalize audio render for session {session_id}.")
+                request_state_store.clear_cancel_request(task_id)
+                raise RuntimeError(f"Unable to finalize audio render for session {session_id}.")
             request_state_store.clear_cancel_request(task_id)
             payload = serialize_audio_result(result)
             payload["task_id"] = task_id
