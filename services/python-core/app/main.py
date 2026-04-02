@@ -920,6 +920,28 @@ def run(argv: list[str] | None = None) -> int:
                 interval_seconds=1.2,
                 message=f"Synthesizing audio for session {session_id}...",
             )
+
+            def raise_render_cancelled(
+                message: str,
+                *,
+                default_progress: float,
+                source_error: Exception | None = None,
+            ) -> None:
+                cancel_progress = progress.current_progress(default=default_progress)
+                progress.save_cancelled(progress_percent=cancel_progress, message=message)
+                request_state_store.clear_cancel_request(task_id)
+                if source_error is None:
+                    raise BridgeTaskCancelledError(
+                        message,
+                        operation="render_audio",
+                        progress_percent=cancel_progress,
+                    )
+                raise BridgeTaskCancelledError(
+                    message,
+                    operation="render_audio",
+                    progress_percent=cancel_progress,
+                ) from source_error
+
             try:
                 result = audio_rendering.render_audio_with_cancellation(
                     session_id,
@@ -928,29 +950,16 @@ def run(argv: list[str] | None = None) -> int:
                 )
             except TaskCancellationRequested as exc:
                 progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                cancel_progress = progress.current_progress(default=10.0)
-                progress.save_cancelled(progress_percent=cancel_progress, message=str(exc))
-                request_state_store.clear_cancel_request(task_id)
-                raise BridgeTaskCancelledError(
-                    str(exc),
-                    operation="render_audio",
-                    progress_percent=cancel_progress,
-                )
+                raise_render_cancelled(str(exc), default_progress=10.0)
             except Exception as exc:
                 progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
                 current_phase = progress.current_phase()
                 if request_state_store.is_cancel_requested(task_id) or current_phase == "cancelling":
-                    cancel_progress = progress.current_progress(default=10.0)
-                    progress.save_cancelled(
-                        progress_percent=cancel_progress,
-                        message=f"Audio rendering cancelled for session {session_id}.",
-                    )
-                    request_state_store.clear_cancel_request(task_id)
-                    raise BridgeTaskCancelledError(
+                    raise_render_cancelled(
                         f"Audio rendering cancelled for session {session_id}.",
-                        operation="render_audio",
-                        progress_percent=cancel_progress,
-                    ) from exc
+                        default_progress=10.0,
+                        source_error=exc,
+                    )
                 progress.save_failed(message=str(exc))
                 request_state_store.clear_cancel_request(task_id)
                 raise
@@ -965,16 +974,9 @@ def run(argv: list[str] | None = None) -> int:
             if not saved_succeeded:
                 current_phase = progress.current_phase()
                 if current_phase == "cancelling" or request_state_store.is_cancel_requested(task_id):
-                    cancel_progress = progress.current_progress(default=96.0)
-                    progress.save_cancelled(
-                        progress_percent=cancel_progress,
-                        message=f"Audio rendering cancelled for session {session_id}.",
-                    )
-                    request_state_store.clear_cancel_request(task_id)
-                    raise BridgeTaskCancelledError(
+                    raise_render_cancelled(
                         f"Audio rendering cancelled for session {session_id}.",
-                        operation="render_audio",
-                        progress_percent=cancel_progress,
+                        default_progress=96.0,
                     )
                 progress.save_failed(message=f"Unable to finalize audio render for session {session_id}.")
                 request_state_store.clear_cancel_request(task_id)

@@ -75,7 +75,7 @@ class RequestStateStore:
             return True
 
     def load(self, task_id: str) -> dict[str, object] | None:
-        with self._task_guard(task_id):
+        with self._task_guard(task_id, mode="read"):
             return self._load_request_state(self._path(task_id))
 
     def _path(self, task_id: str) -> Path:
@@ -100,7 +100,7 @@ class RequestStateStore:
                 return
 
     def is_cancel_requested(self, task_id: str) -> bool:
-        with self._task_guard(task_id):
+        with self._task_guard(task_id, mode="read"):
             path = self._cancel_path(task_id)
             if not path.is_file():
                 return False
@@ -126,15 +126,18 @@ class RequestStateStore:
             return lock
 
     @contextmanager
-    def _task_guard(self, task_id: str):
+    def _task_guard(self, task_id: str, *, mode: str = "write"):
         with self._task_lock(task_id):
             if fcntl is None:
                 yield
                 return
+            if mode not in {"read", "write"}:
+                raise ValueError(f"Unsupported lock mode '{mode}'.")
             lock_path = self._lock_path(task_id)
             lock_path.parent.mkdir(parents=True, exist_ok=True)
             with lock_path.open("a+", encoding="utf-8") as handle:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                lock_mode = fcntl.LOCK_SH if mode == "read" else fcntl.LOCK_EX
+                fcntl.flock(handle.fileno(), lock_mode)
                 try:
                     yield
                 finally:
