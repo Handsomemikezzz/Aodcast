@@ -82,14 +82,14 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - local MLX capability checks now include a subprocess runtime-bootstrap probe so `import mlx.core` crashes are reported as unavailable capability reasons instead of hard render-time aborts
 - session management now supports rename/search/soft-delete/restore with a 30-day restore window
 - script management now supports soft-delete/restore plus revision history and rollback
+- DMG packaging now succeeds in this environment by running desktop build with `CI=true` (bundler `--skip-jenkins` path), avoiding Finder AppleScript timeout `-1712`
 
 ### In Progress
 
-- native macOS packaging still fails at the DMG bundle stage (`bundle_dmg.sh`)
+- no active packaging regressions tracked in this slice
 
 ### Blockers
 
-- `tauri build` currently fails during DMG packaging even though release binary compilation succeeds
 - real `local_mlx` rendering can still be host-limited when MLX fails native Metal bootstrap (`NSRangeException`) before Python can recover
 
 ## Historical Snapshot Notice
@@ -183,7 +183,7 @@ Current execution constraints and environment notes should be read from `AGENTS.
 | Extract frontend bridge contract from mock implementation | `desktop-builder` | done | `desktopBridge.ts`, `bridgeFactory.ts`, and `tauriBridge.ts` now own the bridge boundary |
 | Add machine-readable Python CLI bridge mode | `orchestration-builder` | done | `--bridge-json`, `--list-projects`, `--create-session`, and `--save-script` are implemented |
 | Add Rust command gateway | `desktop-builder` | done | Tauri commands now call the Python runner through `python_bridge.rs` |
-| Validate bridge protocol and desktop types | `quality-runner` | in_progress | Python bridge tests, `pnpm check`, and `cargo check` pass; `tauri build` currently fails only at DMG bundling |
+| Validate bridge protocol and desktop types | `quality-runner` | done | Python bridge tests, `pnpm check`, `cargo check`, and `pnpm --dir apps/desktop tauri:build` now pass in this environment (DMG build uses `CI=true` to skip Finder styling AppleScript) |
 
 ## Post-MVP Slice: MLX Qwen3 Runner
 
@@ -219,7 +219,7 @@ Current execution constraints and environment notes should be read from `AGENTS.
 ## Next-Step Plan
 
 1. Add task history/retention policy for `.local-data/runtime/request-state` entries.
-2. Resolve DMG bundling failure and complete a full `tauri build` package validation.
+2. Add optional notarization/signing validation for release-ready DMG distribution.
 
 ## Update Rules
 
