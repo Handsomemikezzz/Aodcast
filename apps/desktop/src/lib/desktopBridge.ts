@@ -47,4 +47,5 @@ export interface DesktopBridge {
   downloadModel(modelName: string): Promise<{ message: string; path?: string; task_id?: string; request_state?: RequestState }>;
   deleteModel(modelName: string): Promise<{ message: string; path?: string }>;
   showTaskState(taskId: string): Promise<RequestState | null>;
+  cancelTask(taskId: string): Promise<RequestState | null>;
 }

@@ -78,6 +78,7 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - Python bridge now persists long-task states and exposes `show_task_state` polling for `download_model` and `render_audio`
 - `Models` and `Settings` pages now follow the same request-state handling style used by `Chat`/`Script`
 - long-running tasks now report incremental `progress_percent` updates in UI (download marker parsing + render heartbeat)
+- long-running tasks now support cooperative cancellation through `cancel_task` with `cancelling` and `cancelled` phases
 - local MLX capability checks now include a subprocess runtime-bootstrap probe so `import mlx.core` crashes are reported as unavailable capability reasons instead of hard render-time aborts
 
 ### In Progress
@@ -201,12 +202,12 @@ Current execution constraints and environment notes should be read from `AGENTS.
 | Persist settings through the bridge | `desktop-builder` | done | `SettingsPage` now calls `show_tts_config` / `configure_tts_provider` via Tauri and Python config store |
 | Remove `api_key_env` contract path | `provider-integrator` | done | Domain models, CLI args, providers, and tests now use local `api_key` fields |
 | Normalize loading, error, and long-task progress states | `orchestration-builder` | done | Shared request-state contract + task-state polling landed across Chat/Edit/Generate/Models/Settings, including incremental progress percentages |
+| Add long-task cancellation semantics | `orchestration-builder` | done | `cancel_task` now marks task-state `cancelling`, tasks cooperatively stop into `cancelled`, and Generate/Models pages expose cancel actions |
 
 ## Next-Step Plan
 
-1. Add cancellation semantics for long-running tasks now that incremental progress updates are available.
-2. Add task history/retention policy for `.local-data/runtime/request-state` entries.
-3. Resolve DMG bundling failure and complete a full `tauri build` package validation.
+1. Add task history/retention policy for `.local-data/runtime/request-state` entries.
+2. Resolve DMG bundling failure and complete a full `tauri build` package validation.
 
 ## Update Rules
 

@@ -59,6 +59,7 @@ Out of scope for the current MVP:
 - machine-readable Python bridge calls must keep stdout as a single JSON envelope when `--bridge-json` is set.
 - bridge success payloads and bridge failures must include a normalized `request_state` contract (`operation`, `phase`, `progress_percent`, `message`) so frontend pages can render consistent loading/error/task-state UX.
 - long-running bridge operations must persist pollable task states and surface incremental `progress_percent` through `show_task_state` before adding new UI long-task flows.
+- long-running bridge operations that expose `show_task_state` must also support `cancel_task` with cooperative phase transitions (`running -> cancelling -> cancelled`) for desktop-triggered cancellation.
 - model-specific runtime logic belongs inside provider runner/runtime modules, not in orchestration or desktop files.
 
 ## Change Protocol

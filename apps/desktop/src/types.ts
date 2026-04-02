@@ -81,7 +81,7 @@ export type PromptInput = {
 
 export type RequestState = {
   operation: string;
-  phase: "running" | "succeeded" | "failed";
+  phase: "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
   progress_percent: number;
   message: string;
 };

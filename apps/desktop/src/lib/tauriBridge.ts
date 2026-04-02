@@ -168,5 +168,9 @@ export function createTauriBridge(): DesktopBridge {
       const response = await callBridge<{}>("show_task_state", { task_id: taskId });
       return asRequestState(response.task_state);
     },
+    async cancelTask(taskId: string) {
+      const response = await callBridge<{}>("cancel_task", { task_id: taskId });
+      return asRequestState(response.task_state) ?? asRequestState(response.request_state);
+    },
   };
 }

@@ -143,3 +143,8 @@ pub fn delete_model(model_name: String) -> Result<Value, BridgeError> {
 pub fn show_task_state(task_id: String) -> Result<Value, BridgeError> {
     run_python_bridge(&["--show-task-state".to_string(), task_id])
 }
+
+#[tauri::command]
+pub fn cancel_task(task_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--cancel-task".to_string(), task_id])
+}

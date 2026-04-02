@@ -6,12 +6,15 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.config_store import ConfigStore
 
 
@@ -125,6 +128,7 @@ def download_voice_model(
     model_name: str,
     *,
     on_output_line: Callable[[str], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, object]:
     entry = _BY_NAME.get(model_name)
     if entry is None or entry.category != "voice" or not entry.hf_repo_id:
@@ -152,14 +156,44 @@ def download_voice_model(
     )
     tail_lines: deque[str] = deque(maxlen=40)
     stream = proc.stdout
-    if stream is not None:
-        for raw_line in stream:
-            line = raw_line.rstrip()
-            if line:
+    reader_done = threading.Event()
+
+    def read_output() -> None:
+        if stream is None:
+            reader_done.set()
+            return
+        try:
+            for raw_line in stream:
+                line = raw_line.rstrip()
+                if not line:
+                    continue
                 tail_lines.append(line)
                 if on_output_line is not None:
                     on_output_line(line)
-    proc.wait()
+        finally:
+            reader_done.set()
+
+    reader_thread = threading.Thread(target=read_output, daemon=True)
+    reader_thread.start()
+
+    cancelled = False
+    while proc.poll() is None:
+        if should_cancel is not None and should_cancel():
+            cancelled = True
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            break
+        time.sleep(0.2)
+
+    if proc.poll() is None:
+        proc.wait()
+    reader_done.wait(timeout=2.0)
+    reader_thread.join(timeout=2.0)
+    if cancelled:
+        raise TaskCancellationRequested(f"Download cancelled for {model_name}.")
     if proc.returncode != 0:
         msg = "\n".join(tail_lines).strip() or "download failed"
         raise RuntimeError(msg)

@@ -62,6 +62,7 @@ The bridge is currently wired for:
 - voice-model download and deletion
 - task-state polling through `show_task_state` for long-running operations (`download_model:*`, `render_audio:*`)
 - task-state polling now includes incremental `progress_percent` updates (download marker parsing + render heartbeat updates)
+- task cancellation through `cancel_task` for long-running operations, with cooperative `cancelling` and `cancelled` task-state phases
 
 The bridge is not yet wired for:
 

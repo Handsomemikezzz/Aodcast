@@ -10,6 +10,8 @@ import {
   buildRequestState,
   getErrorMessage,
   getErrorRequestState,
+  isActiveRequestState,
+  isTerminalRequestState,
   withRequestStateFallback,
 } from "../lib/requestState";
 export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) {
@@ -62,9 +64,17 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         void bridge
           .showTaskState(taskId)
           .then((state) => {
-            if (state) {
-              setRequestState(state);
+            if (!state) return;
+            if (isTerminalRequestState(state) && pollHandle !== null) {
+              window.clearInterval(pollHandle);
+              pollHandle = null;
             }
+            setRequestState((prev) => {
+              if ((prev?.phase === "cancelling" || prev?.phase === "cancelled") && state.phase === "running") {
+                return prev;
+              }
+              return state;
+            });
           })
           .catch(() => undefined);
       }, 1200);
@@ -80,10 +90,15 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
       );
       await onRefresh();
     } catch (err: any) {
-      setError(getErrorMessage(err, "Failed to render audio"));
+      const errorState = getErrorRequestState(err);
+      if (errorState?.phase === "cancelled") {
+        setError(null);
+      } else {
+        setError(getErrorMessage(err, "Failed to render audio"));
+      }
       setRequestState(
         withRequestStateFallback(
-          getErrorRequestState(err),
+          errorState,
           buildRequestState("render_audio", "failed", "Failed to render audio."),
         ),
       );
@@ -92,6 +107,23 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         window.clearInterval(pollHandle);
       }
       setGenerating(false);
+    }
+  };
+
+  const handleCancelAudio = async () => {
+    if (!sessionId) return;
+    const taskId = `render_audio:${sessionId}`;
+    try {
+      const state = await bridge.cancelTask(taskId);
+      if (state) {
+        setRequestState(state);
+      } else {
+        setRequestState(
+          buildRequestState("render_audio", "cancelling", "Cancellation requested."),
+        );
+      }
+    } catch (err: any) {
+      setError(getErrorMessage(err, "Failed to request cancellation"));
     }
   };
 
@@ -156,9 +188,23 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
               {error}
             </div>
           )}
-          {!error && requestState?.phase === "running" && (
+          {!error && isActiveRequestState(requestState) && (
+            <div className="mb-6 p-3 border border-outline rounded-lg text-secondary text-xs flex items-center justify-between gap-3">
+              <span>{`${Math.round(requestState!.progress_percent)}% · ${requestState!.message}`}</span>
+              {generating && requestState?.phase === "running" && (
+                <button
+                  type="button"
+                  onClick={() => void handleCancelAudio()}
+                  className="px-2 py-1 rounded border border-outline text-[11px] font-medium hover:bg-surface-container"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
+          {!error && requestState?.phase === "cancelled" && (
             <div className="mb-6 p-3 border border-outline rounded-lg text-secondary text-xs">
-              {`${Math.round(requestState.progress_percent)}% · ${requestState.message}`}
+              {requestState.message}
             </div>
           )}
 

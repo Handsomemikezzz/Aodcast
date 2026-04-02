@@ -292,6 +292,21 @@ export function createMockBridge(): DesktopBridge {
       message: `Downloading model ${modelName}...`,
     });
     await new Promise((resolve) => window.setTimeout(resolve, 300));
+    const current = taskStates.get(taskId);
+    if (current?.phase === "cancelling" || current?.phase === "cancelled") {
+      const cancelledState: RequestState = {
+        operation: "download_model",
+        phase: "cancelled",
+        progress_percent: current.progress_percent,
+        message: `Download cancelled for ${modelName}.`,
+      };
+      taskStates.set(taskId, cancelledState);
+      return {
+        message: "mock: model download cancelled.",
+        task_id: taskId,
+        request_state: cancelledState,
+      };
+    }
     const doneState: RequestState = {
       operation: "download_model",
       phase: "succeeded",
@@ -314,6 +329,24 @@ export function createMockBridge(): DesktopBridge {
     return taskStates.get(taskId) ?? null;
   }
 
+  async function cancelTask(taskId: string) {
+    const current = taskStates.get(taskId);
+    if (!current) return null;
+    if (current.phase === "succeeded" || current.phase === "failed" || current.phase === "cancelled") {
+      return current;
+    }
+    if (current.phase === "cancelling") {
+      return current;
+    }
+    const cancelling: RequestState = {
+      ...current,
+      phase: "cancelling",
+      message: `Cancellation requested for ${taskId}.`,
+    };
+    taskStates.set(taskId, cancelling);
+    return cancelling;
+  }
+
   return {
     listProjects,
     createSession,
@@ -330,6 +363,7 @@ export function createMockBridge(): DesktopBridge {
     downloadModel,
     deleteModel,
     showTaskState,
+    cancelTask,
   };
 
   function getProject(sessionId: string) {

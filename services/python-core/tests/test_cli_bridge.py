@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from app.main import run
+from app.runtime.request_state_store import RequestStateStore
 
 
 class BridgeCliTests(unittest.TestCase):
@@ -110,6 +111,47 @@ class BridgeCliTests(unittest.TestCase):
         task_state = state_payload["data"]["task_state"]
         self.assertEqual(task_state["operation"], "download_model")
         self.assertEqual(task_state["phase"], "failed")
+
+    def test_cancel_task_marks_running_task_as_cancelling(self) -> None:
+        state_store = RequestStateStore(self.cwd / ".local-data")
+        state_store.bootstrap()
+        state_store.save(
+            "render_audio:test-session",
+            {
+                "operation": "render_audio",
+                "phase": "running",
+                "progress_percent": 42.0,
+                "message": "Rendering...",
+            },
+        )
+
+        code, payload = self.run_bridge("--cancel-task", "render_audio:test-session")
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["task_id"], "render_audio:test-session")
+        self.assertEqual(payload["data"]["task_state"]["phase"], "cancelling")
+
+        code, state_payload = self.run_bridge("--show-task-state", "render_audio:test-session")
+        self.assertEqual(code, 0)
+        self.assertEqual(state_payload["data"]["task_state"]["phase"], "cancelling")
+
+    def test_cancel_task_keeps_terminal_task_state(self) -> None:
+        state_store = RequestStateStore(self.cwd / ".local-data")
+        state_store.bootstrap()
+        state_store.save(
+            "download_model:test-model",
+            {
+                "operation": "download_model",
+                "phase": "succeeded",
+                "progress_percent": 100.0,
+                "message": "Ready",
+            },
+        )
+
+        code, payload = self.run_bridge("--cancel-task", "download_model:test-model")
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["task_state"]["phase"], "succeeded")
 
 
 if __name__ == "__main__":

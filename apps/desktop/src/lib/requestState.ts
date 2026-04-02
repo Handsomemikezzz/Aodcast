@@ -11,7 +11,19 @@ export function asRequestState(value: unknown): RequestState | null {
   ) {
     return null;
   }
-  if (candidate.phase !== "running" && candidate.phase !== "succeeded" && candidate.phase !== "failed") {
+  if (
+    candidate.phase !== "running"
+    && candidate.phase !== "cancelling"
+    && candidate.phase !== "succeeded"
+    && candidate.phase !== "failed"
+    && candidate.phase !== "cancelled"
+  ) {
+    return null;
+  }
+  if (!Number.isFinite(candidate.progress_percent)) {
+    return null;
+  }
+  if (candidate.progress_percent < 0 || candidate.progress_percent > 100) {
     return null;
   }
   return candidate as RequestState;
@@ -50,4 +62,12 @@ export function withRequestStateFallback(
   fallback: RequestState,
 ): RequestState {
   return state ?? fallback;
+}
+
+export function isActiveRequestState(state: RequestState | null | undefined): boolean {
+  return state?.phase === "running" || state?.phase === "cancelling";
+}
+
+export function isTerminalRequestState(state: RequestState | null | undefined): boolean {
+  return state?.phase === "succeeded" || state?.phase === "failed" || state?.phase === "cancelled";
 }

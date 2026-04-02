@@ -8,7 +8,7 @@
     "operation": { "type": "string", "minLength": 1 },
     "phase": {
       "type": "string",
-      "enum": ["running", "succeeded", "failed"]
+      "enum": ["running", "cancelling", "succeeded", "failed", "cancelled"]
     },
     "progress_percent": {
       "type": "number",

@@ -15,6 +15,8 @@ import {
   buildRequestState,
   getErrorMessage,
   getErrorRequestState,
+  isActiveRequestState,
+  isTerminalRequestState,
   withRequestStateFallback,
 } from "../lib/requestState";
 
@@ -29,7 +31,8 @@ export function ModelsPage() {
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busyName, setBusyName] = useState<string | null>(null);
+  const [busyDownloadName, setBusyDownloadName] = useState<string | null>(null);
+  const [busyDeleteName, setBusyDeleteName] = useState<string | null>(null);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
 
   const refresh = useCallback(async () => {
@@ -55,7 +58,8 @@ export function ModelsPage() {
 
   const handleDownload = async (m: ModelStatus) => {
     const taskId = `download_model:${m.model_name}`;
-    setBusyName(m.model_name);
+    setBusyDownloadName(m.model_name);
+    setBusyDeleteName(null);
     setError(null);
     setRequestState({
       operation: "download_model",
@@ -67,9 +71,16 @@ export function ModelsPage() {
       void bridge
         .showTaskState(taskId)
         .then((state) => {
-          if (state) {
-            setRequestState(state);
+          if (!state) return;
+          if (isTerminalRequestState(state)) {
+            window.clearInterval(pollHandle);
           }
+          setRequestState((prev) => {
+            if ((prev?.phase === "cancelling" || prev?.phase === "cancelled") && state.phase === "running") {
+              return prev;
+            }
+            return state;
+          });
         })
         .catch(() => undefined);
     }, 1200);
@@ -89,22 +100,43 @@ export function ModelsPage() {
       );
       await refresh();
     } catch (e) {
-      setError(getErrorMessage(e, "Download failed"));
+      const errorState = getErrorRequestState(e);
+      if (errorState?.phase === "cancelled") {
+        setError(null);
+      } else {
+        setError(getErrorMessage(e, "Download failed"));
+      }
       setRequestState(
         withRequestStateFallback(
-          getErrorRequestState(e),
+          errorState,
           buildRequestState("download_model", "failed", "Download failed."),
         ),
       );
     } finally {
       window.clearInterval(pollHandle);
-      setBusyName(null);
+      setBusyDownloadName(null);
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    if (!busyDownloadName) return;
+    const taskId = `download_model:${busyDownloadName}`;
+    try {
+      const state = await bridge.cancelTask(taskId);
+      if (state) {
+        setRequestState(state);
+      } else {
+        setRequestState(buildRequestState("download_model", "cancelling", "Cancellation requested."));
+      }
+    } catch (e) {
+      setError(getErrorMessage(e, "Failed to request cancellation"));
     }
   };
 
   const handleDelete = async (m: ModelStatus) => {
     if (!window.confirm(`Remove ${m.display_name} from the local models folder?`)) return;
-    setBusyName(m.model_name);
+    setBusyDeleteName(m.model_name);
+    setBusyDownloadName(null);
     setError(null);
     setRequestState({
       operation: "delete_model",
@@ -125,7 +157,7 @@ export function ModelsPage() {
         ),
       );
     } finally {
-      setBusyName(null);
+      setBusyDeleteName(null);
     }
   };
 
@@ -147,9 +179,23 @@ export function ModelsPage() {
               {error}
             </div>
           )}
-          {!error && requestState?.phase === "running" && (
+          {!error && isActiveRequestState(requestState) && (
+            <div className="mb-4 p-3 rounded-lg border border-outline text-secondary text-xs flex items-center justify-between gap-3">
+              <span>{`${Math.round(requestState!.progress_percent)}% · ${requestState!.message}`}</span>
+              {busyDownloadName && requestState?.operation === "download_model" && requestState?.phase === "running" && (
+                <button
+                  type="button"
+                  onClick={() => void handleCancelDownload()}
+                  className="px-2 py-1 rounded border border-outline text-[11px] font-medium hover:bg-surface-container"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
+          {!error && requestState?.phase === "cancelled" && (
             <div className="mb-4 p-3 rounded-lg border border-outline text-secondary text-xs">
-              {`${Math.round(requestState.progress_percent)}% · ${requestState.message}`}
+              {requestState.message}
             </div>
           )}
 
@@ -165,8 +211,8 @@ export function ModelsPage() {
                 </h2>
                 <div className="rounded-xl border border-outline overflow-hidden divide-y divide-outline-variant bg-surface-container-low/30">
                   {models.map((m) => {
-                    const busy = busyName === m.model_name;
-                    const isDownloading = busy || m.downloading;
+                    const isDownloading = busyDownloadName === m.model_name || m.downloading;
+                    const isBusy = busyDownloadName !== null || busyDeleteName !== null;
                     return (
                       <div
                         key={m.model_name}
@@ -215,6 +261,7 @@ export function ModelsPage() {
                             <button
                               type="button"
                               onClick={() => void handleDownload(m)}
+                              disabled={isBusy}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-container-high text-primary border border-outline hover:bg-surface-container-highest"
                             >
                               <Download className="h-3.5 w-3.5" />
@@ -226,6 +273,7 @@ export function ModelsPage() {
                               type="button"
                               title="Delete local files"
                               onClick={() => void handleDelete(m)}
+                              disabled={isBusy}
                               className="p-1.5 rounded-md border border-outline text-secondary hover:text-primary hover:bg-surface-container-high"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
