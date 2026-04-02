@@ -80,6 +80,8 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - long-running tasks now report incremental `progress_percent` updates in UI (download marker parsing + render heartbeat)
 - long-running tasks now support cooperative cancellation through `cancel_task` with `cancelling` and `cancelled` phases
 - local MLX capability checks now include a subprocess runtime-bootstrap probe so `import mlx.core` crashes are reported as unavailable capability reasons instead of hard render-time aborts
+- session management now supports rename/search/soft-delete/restore with a 30-day restore window
+- script management now supports soft-delete/restore plus revision history and rollback
 
 ### In Progress
 
@@ -203,6 +205,16 @@ Current execution constraints and environment notes should be read from `AGENTS.
 | Remove `api_key_env` contract path | `provider-integrator` | done | Domain models, CLI args, providers, and tests now use local `api_key` fields |
 | Normalize loading, error, and long-task progress states | `orchestration-builder` | done | Shared request-state contract + task-state polling landed across Chat/Edit/Generate/Models/Settings, including incremental progress percentages |
 | Add long-task cancellation semantics | `orchestration-builder` | done | `cancel_task` now marks task-state `cancelling`, tasks cooperatively stop into `cancelled`, and Generate/Models pages expose cancel actions |
+
+## Post-MVP Slice: Session and Script Management
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Extend shared contracts for soft-delete and script revisions | `schema-steward` | done | Session/script schemas now include deletion metadata and revision fields |
+| Add backend operations for session/script lifecycle management | `orchestration-builder` | done | Python core now supports rename/search/list filtering, soft-delete/restore, revision listing, and rollback |
+| Wire Rust and desktop bridge commands | `desktop-builder` | done | New commands are exposed in Tauri and desktop bridge interfaces |
+| Add desktop chat/script management UX | `desktop-builder` | done | Chat history now supports search/trash/restore/rename; script editor supports trash, revisions, and rollback |
+| Validate behavior and retain cleanup discipline | `quality-runner` | done | Python tests, TS check, and Cargo check all pass after cleanup and integration |
 
 ## Next-Step Plan
 

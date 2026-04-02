@@ -3,11 +3,27 @@
   "$id": "https://aodcast.dev/schemas/script.schema.json",
   "title": "Script",
   "type": "object",
-  "required": ["session_id", "draft", "final", "updated_at"],
+  "required": ["session_id", "draft", "final", "deleted_at", "revisions", "updated_at"],
   "properties": {
     "session_id": { "type": "string" },
     "draft": { "type": "string" },
     "final": { "type": "string" },
+    "deleted_at": { "type": ["string", "null"], "format": "date-time" },
+    "revisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["revision_id", "draft", "final", "reason", "created_at"],
+        "properties": {
+          "revision_id": { "type": "string" },
+          "draft": { "type": "string" },
+          "final": { "type": "string" },
+          "reason": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    },
     "updated_at": { "type": "string", "format": "date-time" }
   },
   "additionalProperties": false

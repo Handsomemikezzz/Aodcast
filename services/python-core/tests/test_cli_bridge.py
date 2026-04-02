@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.main import run
@@ -24,6 +25,10 @@ class BridgeCliTests(unittest.TestCase):
         with redirect_stdout(stream):
             code = run(["--cwd", str(self.cwd), "--bridge-json", *args])
         return code, json.loads(stream.getvalue())
+
+    @staticmethod
+    def iso_days_ago(days: int) -> str:
+        return (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
     def test_create_list_and_show_session_use_bridge_envelope(self) -> None:
         code, created = self.run_bridge(
@@ -80,6 +85,178 @@ class BridgeCliTests(unittest.TestCase):
             saved["data"]["project"]["session"]["state"],
             "script_edited",
         )
+
+    def test_rename_session_and_search_query(self) -> None:
+        _, created = self.run_bridge(
+            "--create-session",
+            "--topic",
+            "Original topic",
+            "--intent",
+            "Renaming",
+        )
+        session_id = created["data"]["project"]["session"]["session_id"]
+
+        code, renamed = self.run_bridge(
+            "--rename-session",
+            session_id,
+            "--session-topic",
+            "Renamed session title",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(renamed["data"]["project"]["session"]["topic"], "Renamed session title")
+
+        code, listed = self.run_bridge("--list-projects", "--search", "renamed")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(listed["data"]["projects"]), 1)
+        self.assertEqual(
+            listed["data"]["projects"][0]["session"]["session_id"],
+            session_id,
+        )
+
+    def test_soft_deleted_sessions_hidden_unless_include_deleted(self) -> None:
+        _, created = self.run_bridge(
+            "--create-session",
+            "--topic",
+            "To delete",
+            "--intent",
+            "Cleanup",
+        )
+        session_id = created["data"]["project"]["session"]["session_id"]
+
+        code, deleted = self.run_bridge("--delete-session", session_id)
+        self.assertEqual(code, 0)
+        self.assertTrue(deleted["data"]["project"]["session"]["deleted_at"])
+
+        code, listed_default = self.run_bridge("--list-projects")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(listed_default["data"]["projects"]), 0)
+
+        code, listed_with_deleted = self.run_bridge("--list-projects", "--include-deleted")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(listed_with_deleted["data"]["projects"]), 1)
+        self.assertEqual(
+            listed_with_deleted["data"]["projects"][0]["session"]["session_id"],
+            session_id,
+        )
+
+    def test_script_revisions_and_rollback(self) -> None:
+        _, created = self.run_bridge(
+            "--create-session",
+            "--topic",
+            "Revision topic",
+            "--intent",
+            "Revision intent",
+        )
+        session_id = created["data"]["project"]["session"]["session_id"]
+
+        code, _ = self.run_bridge(
+            "--save-script",
+            session_id,
+            "--script-final-text",
+            "Version one",
+        )
+        self.assertEqual(code, 0)
+        code, _ = self.run_bridge(
+            "--save-script",
+            session_id,
+            "--script-final-text",
+            "Version two",
+        )
+        self.assertEqual(code, 0)
+
+        code, listed = self.run_bridge("--list-script-revisions", session_id)
+        self.assertEqual(code, 0)
+        revisions = listed["data"]["revisions"]
+        self.assertGreaterEqual(len(revisions), 1)
+        revision = next((item for item in revisions if item["content"] == "Version one"), None)
+        self.assertIsNotNone(revision)
+
+        code, rolled_back = self.run_bridge(
+            "--rollback-script-revision",
+            session_id,
+            "--revision-id",
+            revision["revision_id"],
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(rolled_back["data"]["project"]["script"]["final"], "Version one")
+
+    def test_delete_and_restore_script(self) -> None:
+        _, created = self.run_bridge(
+            "--create-session",
+            "--topic",
+            "Script delete",
+            "--intent",
+            "Script delete intent",
+        )
+        session_id = created["data"]["project"]["session"]["session_id"]
+        code, _ = self.run_bridge(
+            "--save-script",
+            session_id,
+            "--script-final-text",
+            "Keep me",
+        )
+        self.assertEqual(code, 0)
+
+        code, deleted = self.run_bridge("--delete-script", session_id)
+        self.assertEqual(code, 0)
+        self.assertTrue(deleted["data"]["project"]["script"]["deleted_at"])
+        self.assertEqual(deleted["data"]["project"]["script"]["final"], "")
+
+        code, restored = self.run_bridge("--restore-script", session_id)
+        self.assertEqual(code, 0)
+        self.assertEqual(restored["data"]["project"]["script"]["final"], "Keep me")
+
+    def test_restore_session_rejects_expired_deletion(self) -> None:
+        _, created = self.run_bridge(
+            "--create-session",
+            "--topic",
+            "Expired session",
+            "--intent",
+            "Expired restore window",
+        )
+        session_id = created["data"]["project"]["session"]["session_id"]
+
+        code, deleted = self.run_bridge("--delete-session", session_id)
+        self.assertEqual(code, 0)
+
+        project_path = self.cwd / ".local-data" / "sessions" / session_id / "session.json"
+        session_payload = json.loads(project_path.read_text(encoding="utf-8"))
+        session_payload["deleted_at"] = self.iso_days_ago(31)
+        project_path.write_text(json.dumps(session_payload, indent=2) + "\n", encoding="utf-8")
+
+        code, payload = self.run_bridge("--restore-session", session_id)
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["ok"])
+        self.assertIn("restore window", payload["error"]["message"])
+
+    def test_restore_script_rejects_expired_deletion(self) -> None:
+        _, created = self.run_bridge(
+            "--create-session",
+            "--topic",
+            "Expired script",
+            "--intent",
+            "Expired script restore",
+        )
+        session_id = created["data"]["project"]["session"]["session_id"]
+        code, _ = self.run_bridge(
+            "--save-script",
+            session_id,
+            "--script-final-text",
+            "Restore me if you can.",
+        )
+        self.assertEqual(code, 0)
+        code, deleted = self.run_bridge("--delete-script", session_id)
+        self.assertEqual(code, 0)
+
+        project_path = self.cwd / ".local-data" / "sessions" / session_id / "script.json"
+        script_payload = json.loads(project_path.read_text(encoding="utf-8"))
+        script_payload["deleted_at"] = self.iso_days_ago(31)
+        project_path.write_text(json.dumps(script_payload, indent=2) + "\n", encoding="utf-8")
+
+        code, payload = self.run_bridge("--restore-script", session_id)
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["ok"])
+        self.assertIn("restore window", payload["error"]["message"])
 
     def test_bridge_errors_return_error_envelope(self) -> None:
         code, payload = self.run_bridge("--show-session", "missing-session")

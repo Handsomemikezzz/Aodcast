@@ -107,13 +107,35 @@ class ProjectStore:
             artifact=artifact,
         )
 
-    def list_sessions(self) -> list[SessionRecord]:
+    def list_sessions(
+        self,
+        *,
+        include_deleted: bool = False,
+        search_query: str = "",
+    ) -> list[SessionRecord]:
         if not self.sessions_dir.exists():
             return []
+        query_value = search_query.strip().lower()
         sessions: list[SessionRecord] = []
         for session_file in sorted(self.sessions_dir.glob("*/session.json")):
-            sessions.append(SessionRecord.from_dict(self._read_json(session_file)))
+            session = SessionRecord.from_dict(self._read_json(session_file))
+            if not include_deleted and session.is_deleted():
+                continue
+            if query_value and query_value not in f"{session.topic} {session.creation_intent}".lower():
+                continue
+            sessions.append(session)
         return sessions
 
-    def list_projects(self) -> list[SessionProject]:
-        return [self.load_project(session.session_id) for session in self.list_sessions()]
+    def list_projects(
+        self,
+        *,
+        include_deleted: bool = False,
+        search_query: str = "",
+    ) -> list[SessionProject]:
+        return [
+            self.load_project(session.session_id)
+            for session in self.list_sessions(
+                include_deleted=include_deleted,
+                search_query=search_query,
+            )
+        ]

@@ -21,6 +21,7 @@ export type SessionRecord = {
   last_error: string;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 };
 
 export type TranscriptTurn = {
@@ -39,6 +40,16 @@ export type ScriptRecord = {
   draft: string;
   final: string;
   updated_at: string;
+  deleted_at?: string | null;
+};
+
+export type ScriptRevisionRecord = {
+  revision_id: string;
+  session_id: string;
+  content: string;
+  created_at: string;
+  label?: string;
+  kind?: string;
 };
 
 export type ArtifactRecord = {

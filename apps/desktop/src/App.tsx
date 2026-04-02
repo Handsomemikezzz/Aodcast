@@ -172,7 +172,6 @@ export default function App() {
               path="/chat"
               element={
                 <ChatPage
-                  projects={projects}
                   onRefresh={fetchProjects}
                   onCreateSession={handleCreateSession}
                 />
@@ -182,7 +181,6 @@ export default function App() {
               path="/chat/:sessionId"
               element={
                 <ChatPage
-                  projects={projects}
                   onRefresh={fetchProjects}
                   onCreateSession={handleCreateSession}
                 />

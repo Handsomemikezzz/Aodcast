@@ -62,6 +62,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Short creation intent",
     )
     parser.add_argument("--list-projects", action="store_true", help="List all known projects.")
+    parser.add_argument(
+        "--list-projects-include-deleted",
+        "--include-deleted",
+        dest="list_projects_include_deleted",
+        action="store_true",
+        help="Include soft-deleted sessions in --list-projects output.",
+    )
+    parser.add_argument(
+        "--list-projects-query",
+        "--search",
+        dest="list_projects_query",
+        default="",
+        help="Optional search query for --list-projects (topic + creation_intent).",
+    )
     parser.add_argument("--create-session", action="store_true", help="Create a new session project.")
     parser.add_argument(
         "--create-demo-session",
@@ -74,9 +88,54 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print a recovered session project as JSON.",
     )
     parser.add_argument(
+        "--rename-session",
+        default="",
+        help="Rename a session topic by session id.",
+    )
+    parser.add_argument(
+        "--session-topic",
+        default="",
+        help="Session topic value for --rename-session.",
+    )
+    parser.add_argument(
+        "--delete-session",
+        default="",
+        help="Soft-delete a session by id.",
+    )
+    parser.add_argument(
+        "--restore-session",
+        default="",
+        help="Restore a soft-deleted session by id (within retention window).",
+    )
+    parser.add_argument(
         "--save-script",
         default="",
         help="Persist a user-edited final script for a session id.",
+    )
+    parser.add_argument(
+        "--delete-script",
+        default="",
+        help="Soft-delete the script content for a session id.",
+    )
+    parser.add_argument(
+        "--restore-script",
+        default="",
+        help="Restore a soft-deleted script for a session id (within retention window).",
+    )
+    parser.add_argument(
+        "--list-script-revisions",
+        default="",
+        help="List script revisions for a session id.",
+    )
+    parser.add_argument(
+        "--rollback-script-revision",
+        default="",
+        help="Rollback script content to a revision id for a session id.",
+    )
+    parser.add_argument(
+        "--revision-id",
+        default="",
+        help="Target revision id for --rollback-script-revision.",
     )
     parser.add_argument(
         "--script-final-text",
@@ -309,6 +368,36 @@ def create_project(topic: str, intent: str, *, demo: bool = False) -> SessionPro
     )
 
 
+def ensure_session_is_active(project: SessionProject) -> None:
+    if project.session.is_deleted():
+        raise ValueError("Session is deleted. Restore it before continuing.")
+
+
+def ensure_script_is_active(project: SessionProject) -> None:
+    if project.script is None:
+        raise ValueError("Cannot continue without a script record.")
+    if project.script.is_deleted():
+        raise ValueError("Script is deleted. Restore it before continuing.")
+
+
+def serialize_script_revisions(project: SessionProject) -> list[dict[str, object]]:
+    if project.script is None:
+        return []
+    revisions: list[dict[str, object]] = []
+    for revision in project.script.list_revisions():
+        revisions.append(
+            {
+                "revision_id": revision.revision_id,
+                "session_id": project.session.session_id,
+                "content": revision.final or revision.draft,
+                "kind": revision.reason,
+                "label": revision.reason.replace("_", " "),
+                "created_at": revision.created_at,
+            }
+        )
+    return revisions
+
+
 def load_final_script_text(args: argparse.Namespace) -> str:
     if args.script_final_file:
         return Path(args.script_final_file).read_text(encoding="utf-8")
@@ -322,8 +411,22 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "create_session"
     if args.show_session:
         return "show_session"
+    if args.rename_session:
+        return "rename_session"
+    if args.delete_session:
+        return "delete_session"
+    if args.restore_session:
+        return "restore_session"
     if args.save_script:
         return "save_script"
+    if args.delete_script:
+        return "delete_script"
+    if args.restore_script:
+        return "restore_script"
+    if args.list_script_revisions:
+        return "list_script_revisions"
+    if args.rollback_script_revision:
+        return "rollback_script_revision"
     if args.start_interview:
         return "start_interview"
     if args.reply_session:
@@ -503,7 +606,10 @@ def run(argv: list[str] | None = None) -> int:
     try:
         if args.list_projects:
             projects = sorted(
-                store.list_projects(),
+                store.list_projects(
+                    include_deleted=args.list_projects_include_deleted,
+                    search_query=args.list_projects_query,
+                ),
                 key=lambda project: project.session.updated_at,
                 reverse=True,
             )
@@ -517,14 +623,82 @@ def run(argv: list[str] | None = None) -> int:
                 return 0
             return output_payload(args, {"project": serialize_project(project)})
 
+        if args.rename_session:
+            new_topic = args.session_topic.strip() or args.topic.strip()
+            if not new_topic or (not args.session_topic.strip() and args.topic == "A new podcast topic"):
+                raise ValueError("--session-topic is required when using --rename-session")
+            project = store.load_project(args.rename_session)
+            ensure_session_is_active(project)
+            project.session.rename_topic(new_topic)
+            store.save_project(project)
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.delete_session:
+            project = store.load_project(args.delete_session)
+            if project.session.is_deleted():
+                raise ValueError("Session is already deleted.")
+            project.session.soft_delete()
+            store.save_project(project)
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.restore_session:
+            project = store.load_project(args.restore_session)
+            if not project.session.is_deleted():
+                raise ValueError("Session is not deleted.")
+            project.session.restore()
+            store.save_project(project)
+            return output_payload(args, {"project": serialize_project(project)})
+
         if args.save_script:
             final_text = load_final_script_text(args)
             if not final_text.strip():
                 raise ValueError("--script-final-text or --script-final-file is required when using --save-script")
             project = store.load_project(args.save_script)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
+            project.script.save_final(final_text)
+            project.session.transition(SessionState.SCRIPT_EDITED)
+            store.save_project(project)
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.delete_script:
+            project = store.load_project(args.delete_script)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
             if project.script is None:
-                raise ValueError("Cannot save an edited script without a script record.")
-            project.script.update_final(final_text)
+                raise ValueError("Cannot delete script because no script record exists.")
+            if project.script.is_deleted():
+                raise ValueError("Script is already deleted.")
+            project.script.soft_delete()
+            store.save_project(project)
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.restore_script:
+            project = store.load_project(args.restore_script)
+            ensure_session_is_active(project)
+            if project.script is None:
+                raise ValueError("Cannot restore script because no script record exists.")
+            if not project.script.is_deleted():
+                raise ValueError("Script is not deleted.")
+            project.script.restore()
+            store.save_project(project)
+            return output_payload(args, {"project": serialize_project(project)})
+
+        if args.list_script_revisions:
+            project = store.load_project(args.list_script_revisions)
+            ensure_session_is_active(project)
+            if project.script is None:
+                raise ValueError("Cannot list revisions because no script record exists.")
+            revisions = serialize_script_revisions(project)
+            return output_payload(args, {"session_id": args.list_script_revisions, "revisions": revisions})
+
+        if args.rollback_script_revision:
+            if not args.revision_id.strip():
+                raise ValueError("--revision-id is required when using --rollback-script-revision")
+            project = store.load_project(args.rollback_script_revision)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
+            project.script.rollback_to_revision(args.revision_id.strip())
             project.session.transition(SessionState.SCRIPT_EDITED)
             store.save_project(project)
             return output_payload(args, {"project": serialize_project(project)})
@@ -764,12 +938,16 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, {"tts_capability": capability})
 
         if args.start_interview:
+            project = store.load_project(args.start_interview)
+            ensure_session_is_active(project)
             result = orchestrator.start_interview(args.start_interview)
             return output_payload(args, serialize_turn_result(result))
 
         if args.reply_session:
             if not args.message.strip():
                 raise ValueError("--message is required when using --reply-session")
+            project = store.load_project(args.reply_session)
+            ensure_session_is_active(project)
             result = orchestrator.submit_user_response(
                 args.reply_session,
                 args.message,
@@ -778,10 +956,15 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, serialize_turn_result(result))
 
         if args.finish_session:
+            project = store.load_project(args.finish_session)
+            ensure_session_is_active(project)
             result = orchestrator.request_finish(args.finish_session)
             return output_payload(args, serialize_turn_result(result))
 
         if args.generate_script:
+            project = store.load_project(args.generate_script)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
             result = script_generation.generate_draft(
                 args.generate_script,
                 override_provider=args.llm_provider_override,
@@ -790,6 +973,9 @@ def run(argv: list[str] | None = None) -> int:
 
         if args.render_audio:
             session_id = args.render_audio
+            project = store.load_project(session_id)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
             task_id = f"render_audio:{session_id}"
             request_state_store.clear_cancel_request(task_id)
 
@@ -882,6 +1068,8 @@ def run(argv: list[str] | None = None) -> int:
 
         if args.show_session:
             project = store.load_project(args.show_session)
+            if project.session.is_deleted() and not args.list_projects_include_deleted:
+                raise ValueError("Session is deleted. Pass --include-deleted to inspect it.")
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.bridge_json:

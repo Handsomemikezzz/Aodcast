@@ -4,10 +4,20 @@ import {
   InterviewTurnResult,
   ModelStatus,
   RequestState,
+  ScriptRevisionRecord,
   SessionProject,
   TTSProviderConfig,
   TTSCapability,
 } from "../types";
+
+export type ListProjectsOptions = {
+  search?: string;
+  includeDeleted?: boolean;
+};
+
+export type ShowSessionOptions = {
+  includeDeleted?: boolean;
+};
 
 export type CreateSessionInput = {
   topic: string;
@@ -32,14 +42,22 @@ export type ConfigureTTSInput = {
 };
 
 export interface DesktopBridge {
-  listProjects(): Promise<SessionProject[]>;
+  listProjects(options?: ListProjectsOptions): Promise<SessionProject[]>;
   createSession(input: CreateSessionInput): Promise<SessionProject>;
+  showSession(sessionId: string, options?: ShowSessionOptions): Promise<SessionProject>;
+  renameSession(sessionId: string, topic: string): Promise<SessionProject>;
+  deleteSession(sessionId: string): Promise<SessionProject>;
+  restoreSession(sessionId: string): Promise<SessionProject>;
   startInterview(sessionId: string): Promise<InterviewTurnResult>;
   submitReply(sessionId: string, message: string, userRequestedFinish?: boolean): Promise<InterviewTurnResult>;
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
   generateScript(sessionId: string): Promise<GenerationResult>;
   renderAudio(sessionId: string): Promise<AudioRenderResult>;
   saveEditedScript(sessionId: string, finalText: string): Promise<SessionProject>;
+  deleteScript(sessionId: string): Promise<SessionProject>;
+  restoreScript(sessionId: string): Promise<SessionProject>;
+  listScriptRevisions(sessionId: string): Promise<ScriptRevisionRecord[]>;
+  rollbackScriptRevision(sessionId: string, revisionId: string): Promise<SessionProject>;
   getLocalTTSCapability(): Promise<TTSCapability>;
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;

@@ -1,6 +1,26 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Sparkles, Mic, Send, Lightbulb, User, CheckCircle2, Circle, AlertCircle, Target, BookOpen, Layers, PanelLeft, PanelLeftClose, Plus } from "lucide-react";
+import {
+  AlertCircle,
+  BookOpen,
+  CheckCircle2,
+  Circle,
+  Lightbulb,
+  Loader2,
+  Layers,
+  Mic,
+  PanelLeft,
+  PanelLeftClose,
+  PencilLine,
+  Plus,
+  RotateCcw,
+  Search,
+  Send,
+  Sparkles,
+  Target,
+  Trash2,
+  User,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useBridge } from "../lib/BridgeContext";
 import { SessionProject, Readiness, PromptInput, RequestState } from "../types";
@@ -13,11 +33,9 @@ import {
 } from "../lib/requestState";
 
 export function ChatPage({
-  projects,
   onRefresh,
   onCreateSession,
 }: {
-  projects: SessionProject[];
   onRefresh: () => Promise<void>;
   onCreateSession?: () => void;
 }) {
@@ -34,26 +52,49 @@ export function ChatPage({
   const [error, setError] = useState<string | null>(null);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyProjects, setHistoryProjects] = useState<SessionProject[]>([]);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [showTrash, setShowTrash] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyActionId, setHistoryActionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const sortedChats = [...projects].sort((a, b) =>
-    b.session.updated_at.localeCompare(a.session.updated_at),
-  );
 
   const fetchProject = async () => {
     if (!sessionId) return;
     try {
       setLoading(true);
       setError(null);
-      const list = await bridge.listProjects();
-      const current = list.find((p) => p.session.session_id === sessionId);
-      setProject(current ?? null);
+      const current = await bridge.showSession(sessionId, { includeDeleted: true });
+      setProject(current);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load the chat session."));
       setRequestState(getErrorRequestState(err));
+      setProject(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadHistory = async () => {
+    try {
+      setHistoryLoading(true);
+      const list = await bridge.listProjects({
+        search: historyQuery.trim() || undefined,
+        includeDeleted: showTrash,
+      });
+      setHistoryProjects(
+        list.filter((entry) => (showTrash ? Boolean(entry.session.deleted_at) : !entry.session.deleted_at)),
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load chat history."));
+      setRequestState(getErrorRequestState(err));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const refreshWorkspace = async () => {
+    await Promise.allSettled([fetchProject(), loadHistory(), onRefresh()]);
   };
 
   useEffect(() => {
@@ -66,6 +107,10 @@ export function ChatPage({
     }
     void fetchProject();
   }, [sessionId, bridge]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [bridge, historyQuery, showTrash]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -179,45 +224,218 @@ export function ChatPage({
     }
   };
 
+  const handleRenameSession = async (target: SessionProject) => {
+    const nextTopic = window.prompt("Rename chat", target.session.topic);
+    if (!nextTopic?.trim()) return;
+    setHistoryActionId(target.session.session_id);
+    setError(null);
+    setRequestState({
+      operation: "rename_session",
+      phase: "running",
+      progress_percent: 0,
+      message: "Renaming chat...",
+    });
+    try {
+      const updated = await bridge.renameSession(target.session.session_id, nextTopic.trim());
+      if (updated.session.session_id === sessionId) {
+        setProject(updated);
+      }
+      await refreshWorkspace();
+      setRequestState(buildRequestState("rename_session", "succeeded", "Chat renamed."));
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to rename chat."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("rename_session", "failed", "Failed to rename chat."),
+        ),
+      );
+    } finally {
+      setHistoryActionId(null);
+    }
+  };
+
+  const handleDeleteSession = async (target: SessionProject) => {
+    if (!window.confirm(`Move "${target.session.topic}" to trash?`)) return;
+    setHistoryActionId(target.session.session_id);
+    setError(null);
+    setRequestState({
+      operation: "delete_session",
+      phase: "running",
+      progress_percent: 0,
+      message: "Moving chat to trash...",
+    });
+    try {
+      const updated = await bridge.deleteSession(target.session.session_id);
+      if (updated.session.session_id === sessionId) {
+        setProject(updated);
+      }
+      await refreshWorkspace();
+      setRequestState(buildRequestState("delete_session", "succeeded", "Chat moved to trash."));
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to delete chat."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("delete_session", "failed", "Failed to delete chat."),
+        ),
+      );
+    } finally {
+      setHistoryActionId(null);
+    }
+  };
+
+  const handleRestoreSession = async (target: SessionProject) => {
+    setHistoryActionId(target.session.session_id);
+    setError(null);
+    setRequestState({
+      operation: "restore_session",
+      phase: "running",
+      progress_percent: 0,
+      message: "Restoring chat...",
+    });
+    try {
+      const updated = await bridge.restoreSession(target.session.session_id);
+      if (updated.session.session_id === sessionId) {
+        setProject(updated);
+      }
+      await refreshWorkspace();
+      setRequestState(buildRequestState("restore_session", "succeeded", "Chat restored."));
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to restore chat."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("restore_session", "failed", "Failed to restore chat."),
+        ),
+      );
+    } finally {
+      setHistoryActionId(null);
+    }
+  };
+
   const historyAside =
     historyOpen && (
-      <aside className="w-[260px] shrink-0 border-r border-outline bg-surface flex flex-col min-h-0">
-        <div className="p-3 border-b border-outline flex items-center justify-between gap-2">
-          <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">Chats</span>
-          <button
-            type="button"
-            onClick={() => setHistoryOpen(false)}
-            className="p-1.5 rounded-md text-secondary hover:bg-surface-container-high hover:text-primary"
-            aria-label="Hide history"
-          >
-            <PanelLeftClose className="w-4 h-4" />
-          </button>
+      <aside className="w-[300px] shrink-0 border-r border-outline bg-surface flex flex-col min-h-0">
+        <div className="p-3 border-b border-outline space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">
+              {showTrash ? "Trash" : "Chats"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(false)}
+              className="p-1.5 rounded-md text-secondary hover:bg-surface-container-high hover:text-primary"
+              aria-label="Hide history"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowTrash(false)}
+              className={cn(
+                "px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors",
+                !showTrash ? "bg-primary/10 text-primary" : "text-secondary hover:bg-surface-container-high hover:text-primary",
+              )}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTrash(true)}
+              className={cn(
+                "px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors",
+                showTrash ? "bg-primary/10 text-primary" : "text-secondary hover:bg-surface-container-high hover:text-primary",
+              )}
+            >
+              Trash
+            </button>
+          </div>
+          <label className="flex items-center gap-2 rounded-md border border-outline bg-background px-2.5 py-2">
+            <Search className="w-4 h-4 text-secondary shrink-0" />
+            <input
+              value={historyQuery}
+              onChange={(event) => setHistoryQuery(event.target.value)}
+              placeholder="Search chats"
+              className="w-full bg-transparent text-[13px] outline-none placeholder:text-outline"
+            />
+          </label>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-0.5 mac-scrollbar">
-          {sortedChats.length === 0 ? (
-            <p className="px-2 py-4 text-xs text-secondary text-center">No chats yet.</p>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 mac-scrollbar">
+          {historyLoading ? (
+            <div className="flex items-center gap-2 px-2 py-4 text-xs text-secondary">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading chats...
+            </div>
+          ) : historyProjects.length === 0 ? (
+            <p className="px-2 py-4 text-xs text-secondary text-center">
+              {showTrash ? "Trash is empty." : "No chats yet."}
+            </p>
           ) : (
-            sortedChats.map((p) => (
-              <button
-                key={p.session.session_id}
-                type="button"
-                onClick={() => {
-                  navigate(`/chat/${p.session.session_id}`);
-                  setHistoryOpen(false);
-                }}
-                className={cn(
-                  "w-full text-left rounded-md px-2 py-2 transition-colors",
-                  p.session.session_id === sessionId
-                    ? "bg-primary/10 text-primary"
-                    : "text-secondary hover:bg-surface-container-high hover:text-primary",
-                )}
-              >
-                <p className="text-[13px] font-medium truncate">{p.session.topic || "Untitled"}</p>
-                <p className="text-[10px] text-outline truncate mt-0.5">
-                  {new Date(p.session.updated_at).toLocaleDateString()}
-                </p>
-              </button>
-            ))
+            historyProjects.map((p) => {
+              const isDeleted = Boolean(p.session.deleted_at);
+              const isCurrent = p.session.session_id === sessionId;
+              return (
+                <div
+                  key={p.session.session_id}
+                  className={cn(
+                    "rounded-md border px-2 py-2 transition-colors",
+                    isCurrent ? "border-primary/20 bg-primary/5" : "border-transparent hover:bg-surface-container-high",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigate(`/chat/${p.session.session_id}`);
+                      setHistoryOpen(false);
+                    }}
+                    className="w-full text-left"
+                  >
+                    <p className="text-[13px] font-medium truncate text-primary">{p.session.topic || "Untitled"}</p>
+                    <p className="text-[10px] text-outline truncate mt-0.5">
+                      {new Date(p.session.updated_at).toLocaleDateString()}
+                      {isDeleted ? " · in trash" : ""}
+                    </p>
+                  </button>
+                  <div className="mt-2 flex items-center gap-1">
+                    {!showTrash ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleRenameSession(p)}
+                          disabled={historyActionId === p.session.session_id}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
+                        >
+                          <PencilLine className="w-3.5 h-3.5" />
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteSession(p)}
+                          disabled={historyActionId === p.session.session_id}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Trash
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void handleRestoreSession(p)}
+                        disabled={historyActionId === p.session.session_id}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Restore
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </aside>
@@ -325,6 +543,7 @@ export function ChatPage({
   const turns = project.transcript?.turns || [];
   const state = project.session.state;
   const isFinished = state === "ready_to_generate" || state === "script_generated" || state === "script_edited" || state === "completed";
+  const isDeletedSession = Boolean(project.session.deleted_at);
 
   return (
     <div className="flex flex-row h-full w-full relative overflow-hidden">
@@ -343,7 +562,23 @@ export function ChatPage({
               </p>
             </div>
 
-            {turns.length === 0 && state === "topic_defined" && (
+            {isDeletedSession && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium text-primary">This chat is in trash.</p>
+                  <p className="text-[12px] text-secondary">Restore it to continue the interview or script flow.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleRestoreSession(project)}
+                  className="px-3 py-1.5 rounded-md bg-surface-container text-primary text-[12px] font-medium hover:bg-surface-container-high transition-colors"
+                >
+                  Restore
+                </button>
+              </div>
+            )}
+
+            {turns.length === 0 && state === "topic_defined" && !isDeletedSession && (
               <div className="py-8">
                 <button
                   onClick={handleStart}
@@ -427,7 +662,7 @@ export function ChatPage({
             </div>
 
             {/* Finished State Action */}
-            {isFinished && (
+            {isFinished && !isDeletedSession && (
               <div className="py-8 border-t border-outline mt-4">
                 <p className="text-sm text-secondary mb-4">Interview complete. Ready to move to the next phase.</p>
                 <button
@@ -442,7 +677,7 @@ export function ChatPage({
         </div>
 
         {/* Persistent Bottom Input Dock */}
-        {!isFinished && state === "interview_in_progress" && (
+        {!isDeletedSession && !isFinished && state === "interview_in_progress" && (
           <div className="absolute bottom-0 left-0 w-full bg-background/60 backdrop-blur-2xl border-t border-outline p-4 lg:px-12">
             <div className="max-w-4xl mx-auto flex flex-col gap-2">
               <div className="bg-surface-container border border-outline rounded-lg p-2 flex items-end gap-2 focus-within:border-accent-amber/30 transition-colors shadow-sm">

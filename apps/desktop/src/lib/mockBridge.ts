@@ -1,5 +1,5 @@
 import { createId } from "./id";
-import { ConfigureTTSInput, CreateSessionInput, DesktopBridge } from "./desktopBridge";
+import { ConfigureTTSInput, CreateSessionInput, DesktopBridge, ListProjectsOptions, ShowSessionOptions } from "./desktopBridge";
 import { generateMockDraft } from "./generateDraft";
 import { appendTurn, evaluateReadiness, nextQuestion, transcriptToText } from "./readiness";
 import { nowIso } from "./time";
@@ -10,6 +10,7 @@ import {
   PromptInput,
   Readiness,
   RequestState,
+  ScriptRevisionRecord,
   SessionProject,
   TTSProviderConfig,
 } from "../types";
@@ -37,13 +38,105 @@ const MOCK_MODELS: ModelStatus[] = [
   },
 ];
 
+const RESTORE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
 function cloneProject(project: SessionProject): SessionProject {
   return JSON.parse(JSON.stringify(project)) as SessionProject;
 }
 
+function cloneRevisions(revisions: ScriptRevisionRecord[]): ScriptRevisionRecord[] {
+  return JSON.parse(JSON.stringify(revisions)) as ScriptRevisionRecord[];
+}
+
+function isDeletedAt(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isWithinRestoreWindow(deletedAt: string): boolean {
+  const deletedTime = Date.parse(deletedAt);
+  if (Number.isNaN(deletedTime)) return false;
+  return Date.now() - deletedTime <= RESTORE_WINDOW_MS;
+}
+
+function isSessionDeleted(project: SessionProject): boolean {
+  return isDeletedAt(project.session.deleted_at);
+}
+
+function isScriptDeleted(project: SessionProject): boolean {
+  return isDeletedAt(project.script?.deleted_at);
+}
+
+function sessionMatchesQuery(project: SessionProject, search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  if (!needle) return true;
+  return [project.session.topic, project.session.creation_intent]
+    .some((value) => value.toLowerCase().includes(needle));
+}
+
+function buildRevision(
+  sessionId: string,
+  content: string,
+  kind: ScriptRevisionRecord["kind"],
+  label?: string,
+): ScriptRevisionRecord {
+  return {
+    revision_id: createId("revision"),
+    session_id: sessionId,
+    content,
+    created_at: nowIso(),
+    kind,
+    label,
+  };
+}
+
+function latestScriptContent(project: SessionProject): string {
+  return project.script?.final?.trim() || project.script?.draft?.trim() || "";
+}
+
+function ensureProjectExists(store: Map<string, SessionProject>, sessionId: string): SessionProject {
+  const project = store.get(sessionId);
+  if (!project) {
+    throw new Error(`Unknown session '${sessionId}'.`);
+  }
+  return project;
+}
+
+function ensureActiveSession(project: SessionProject): void {
+  if (isSessionDeleted(project)) {
+    throw new Error("This session is in trash. Restore it before continuing.");
+  }
+}
+
+function ensureEditableScript(project: SessionProject): void {
+  ensureActiveSession(project);
+  if (!project.script) {
+    throw new Error("This session has no script record.");
+  }
+  if (isScriptDeleted(project)) {
+    throw new Error("This script is in trash. Restore it before editing.");
+  }
+}
+
 export function createMockBridge(): DesktopBridge {
-  const store = new Map(seededProjects.map((project) => [project.session.session_id, cloneProject(project)]));
+  const store = new Map<string, SessionProject>();
+  const revisionsBySession = new Map<string, ScriptRevisionRecord[]>();
   const taskStates = new Map<string, RequestState>();
+
+  for (const project of seededProjects) {
+    const cloned = cloneProject(project);
+    store.set(cloned.session.session_id, cloned);
+
+    const content = latestScriptContent(cloned);
+    if (content) {
+      revisionsBySession.set(
+        cloned.session.session_id,
+        [buildRevision(cloned.session.session_id, content, "generated", "Seeded script")],
+      );
+    } else {
+      revisionsBySession.set(cloned.session.session_id, []);
+    }
+  }
+
   let ttsConfig: TTSProviderConfig = {
     provider: "mock_remote",
     model: "mock-voice",
@@ -56,10 +149,19 @@ export function createMockBridge(): DesktopBridge {
     local_ref_audio_path: "",
   };
 
-  async function listProjects() {
+  async function listProjects(options?: ListProjectsOptions) {
+    const search = options?.search?.trim() ?? "";
+    const includeDeleted = options?.includeDeleted ?? false;
+
     return Array.from(store.values())
-      .map(cloneProject)
-      .sort((left, right) => right.session.updated_at.localeCompare(left.session.updated_at));
+      .filter((project) => {
+        if (!includeDeleted && isSessionDeleted(project)) {
+          return false;
+        }
+        return sessionMatchesQuery(project, search);
+      })
+      .sort((left, right) => right.session.updated_at.localeCompare(left.session.updated_at))
+      .map(cloneProject);
   }
 
   async function createSession(input: CreateSessionInput) {
@@ -76,6 +178,7 @@ export function createMockBridge(): DesktopBridge {
         last_error: "",
         created_at: now,
         updated_at: now,
+        deleted_at: null,
       },
       transcript: {
         session_id: sessionId,
@@ -86,6 +189,7 @@ export function createMockBridge(): DesktopBridge {
         draft: "",
         final: "",
         updated_at: now,
+        deleted_at: null,
       },
       artifact: {
         session_id: sessionId,
@@ -96,11 +200,55 @@ export function createMockBridge(): DesktopBridge {
       },
     };
     store.set(sessionId, project);
+    revisionsBySession.set(sessionId, []);
+    return cloneProject(project);
+  }
+
+  async function showSession(sessionId: string, options?: ShowSessionOptions) {
+    const project = ensureProjectExists(store, sessionId);
+    if (isSessionDeleted(project) && !options?.includeDeleted) {
+      throw new Error(`Session '${sessionId}' is in trash.`);
+    }
+    return cloneProject(project);
+  }
+
+  async function renameSession(sessionId: string, topic: string) {
+    const project = ensureProjectExists(store, sessionId);
+    ensureActiveSession(project);
+    project.session.topic = topic.trim() || project.session.topic;
+    project.session.updated_at = nowIso();
+    store.set(sessionId, project);
+    return cloneProject(project);
+  }
+
+  async function deleteSession(sessionId: string) {
+    const project = ensureProjectExists(store, sessionId);
+    if (isSessionDeleted(project)) {
+      return cloneProject(project);
+    }
+    project.session.deleted_at = nowIso();
+    project.session.updated_at = project.session.deleted_at;
+    store.set(sessionId, project);
+    return cloneProject(project);
+  }
+
+  async function restoreSession(sessionId: string) {
+    const project = ensureProjectExists(store, sessionId);
+    if (!isSessionDeleted(project)) {
+      return cloneProject(project);
+    }
+    if (!project.session.deleted_at || !isWithinRestoreWindow(project.session.deleted_at)) {
+      throw new Error("Session restore window has expired.");
+    }
+    project.session.deleted_at = null;
+    project.session.updated_at = nowIso();
+    store.set(sessionId, project);
     return cloneProject(project);
   }
 
   async function startInterview(sessionId: string) {
-    const project = getProject(sessionId);
+    const project = ensureProjectExists(store, sessionId);
+    ensureActiveSession(project);
     const transcript = project.transcript!;
     if (transcript.turns.length === 0) {
       const question = nextQuestion(project.session.topic, [
@@ -124,12 +272,9 @@ export function createMockBridge(): DesktopBridge {
     return buildInterviewResult(project, null, readiness.is_ready);
   }
 
-  async function submitReply(
-    sessionId: string,
-    message: string,
-    userRequestedFinish = false,
-  ) {
-    const project = getProject(sessionId);
+  async function submitReply(sessionId: string, message: string, userRequestedFinish = false) {
+    const project = ensureProjectExists(store, sessionId);
+    ensureActiveSession(project);
     const transcript = project.transcript!;
     project.session.state = "interview_in_progress";
     project.session.updated_at = nowIso();
@@ -153,7 +298,8 @@ export function createMockBridge(): DesktopBridge {
   }
 
   async function requestFinish(sessionId: string) {
-    const project = getProject(sessionId);
+    const project = ensureProjectExists(store, sessionId);
+    ensureActiveSession(project);
     project.session.state = "ready_to_generate";
     project.session.updated_at = nowIso();
     store.set(sessionId, project);
@@ -161,7 +307,8 @@ export function createMockBridge(): DesktopBridge {
   }
 
   async function generateScript(sessionId: string) {
-    const project = getProject(sessionId);
+    const project = ensureProjectExists(store, sessionId);
+    ensureEditableScript(project);
     if (project.session.state !== "ready_to_generate" && project.session.state !== "failed") {
       throw new Error("Session must be ready to generate before drafting.");
     }
@@ -176,7 +323,12 @@ export function createMockBridge(): DesktopBridge {
       draft,
       final: project.script?.final?.trim() ? project.script.final : draft,
       updated_at: nowIso(),
+      deleted_at: null,
     };
+    revisionsBySession.set(
+      sessionId,
+      [...(revisionsBySession.get(sessionId) ?? []), buildRevision(sessionId, draft, "generated", "Generated draft")],
+    );
     project.session.state = "script_generated";
     project.session.llm_provider = "mock";
     project.session.last_error = "";
@@ -191,12 +343,83 @@ export function createMockBridge(): DesktopBridge {
   }
 
   async function saveEditedScript(sessionId: string, finalText: string) {
-    const project = getProject(sessionId);
+    const project = ensureProjectExists(store, sessionId);
+    ensureEditableScript(project);
     project.script = {
       ...project.script!,
+      draft: project.script?.draft || finalText,
       final: finalText,
       updated_at: nowIso(),
+      deleted_at: null,
     };
+    revisionsBySession.set(
+      sessionId,
+      [...(revisionsBySession.get(sessionId) ?? []), buildRevision(sessionId, finalText, "edited", "Saved edit")],
+    );
+    project.session.state = "script_edited";
+    project.session.updated_at = nowIso();
+    store.set(sessionId, project);
+    return cloneProject(project);
+  }
+
+  async function deleteScript(sessionId: string) {
+    const project = ensureProjectExists(store, sessionId);
+    ensureActiveSession(project);
+    if (!project.script) {
+      throw new Error("This session has no script record.");
+    }
+    if (isScriptDeleted(project)) {
+      return cloneProject(project);
+    }
+    project.script.deleted_at = nowIso();
+    project.script.updated_at = project.script.deleted_at;
+    store.set(sessionId, project);
+    return cloneProject(project);
+  }
+
+  async function restoreScript(sessionId: string) {
+    const project = ensureProjectExists(store, sessionId);
+    ensureActiveSession(project);
+    if (!project.script) {
+      throw new Error("This session has no script record.");
+    }
+    if (!isScriptDeleted(project)) {
+      return cloneProject(project);
+    }
+    if (!project.script.deleted_at || !isWithinRestoreWindow(project.script.deleted_at)) {
+      throw new Error("Script restore window has expired.");
+    }
+    project.script.deleted_at = null;
+    project.script.updated_at = nowIso();
+    store.set(sessionId, project);
+    return cloneProject(project);
+  }
+
+  async function listScriptRevisions(sessionId: string) {
+    ensureProjectExists(store, sessionId);
+    return cloneRevisions(revisionsBySession.get(sessionId) ?? []);
+  }
+
+  async function rollbackScriptRevision(sessionId: string, revisionId: string) {
+    const project = ensureProjectExists(store, sessionId);
+    ensureEditableScript(project);
+    const revisions = revisionsBySession.get(sessionId) ?? [];
+    const revision = revisions.find((entry) => entry.revision_id === revisionId);
+    if (!revision) {
+      throw new Error(`Unknown revision '${revisionId}'.`);
+    }
+
+    project.script = {
+      ...project.script!,
+      draft: revision.content,
+      final: revision.content,
+      updated_at: nowIso(),
+      deleted_at: null,
+    };
+    revisionsBySession.set(
+      sessionId,
+      [...revisions, buildRevision(sessionId, revision.content, "rollback", "Rollback revision")],
+    );
     project.session.state = "script_edited";
     project.session.updated_at = nowIso();
     store.set(sessionId, project);
@@ -204,7 +427,8 @@ export function createMockBridge(): DesktopBridge {
   }
 
   async function renderAudio(sessionId: string) {
-    const project = getProject(sessionId);
+    const project = ensureProjectExists(store, sessionId);
+    ensureEditableScript(project);
     if (
       project.session.state !== "script_generated" &&
       project.session.state !== "script_edited" &&
@@ -280,7 +504,7 @@ export function createMockBridge(): DesktopBridge {
   }
 
   async function listModelsStatus() {
-    return MOCK_MODELS.map((m) => ({ ...m }));
+    return MOCK_MODELS.map((model) => ({ ...model }));
   }
 
   async function downloadModel(modelName: string) {
@@ -307,17 +531,19 @@ export function createMockBridge(): DesktopBridge {
         request_state: cancelledState,
       };
     }
-    const doneState: RequestState = {
-      operation: "download_model",
-      phase: "succeeded",
-      progress_percent: 100,
-      message: `Model ${modelName} is ready.`,
-    };
-    taskStates.set(taskId, doneState);
     return {
       message: "mock: model download finished.",
       task_id: taskId,
-      request_state: doneState,
+      request_state: (() => {
+        const doneState: RequestState = {
+          operation: "download_model",
+          phase: "succeeded",
+          progress_percent: 100,
+          message: `Model ${modelName} is ready.`,
+        };
+        taskStates.set(taskId, doneState);
+        return doneState;
+      })(),
     };
   }
 
@@ -350,12 +576,20 @@ export function createMockBridge(): DesktopBridge {
   return {
     listProjects,
     createSession,
+    showSession,
+    renameSession,
+    deleteSession,
+    restoreSession,
     startInterview,
     submitReply,
     requestFinish,
     generateScript,
     renderAudio,
     saveEditedScript,
+    deleteScript,
+    restoreScript,
+    listScriptRevisions,
+    rollbackScriptRevision,
     getLocalTTSCapability,
     showTTSConfig,
     configureTTSProvider,
@@ -365,14 +599,6 @@ export function createMockBridge(): DesktopBridge {
     showTaskState,
     cancelTask,
   };
-
-  function getProject(sessionId: string) {
-    const project = store.get(sessionId);
-    if (!project) {
-      throw new Error(`Unknown session '${sessionId}'.`);
-    }
-    return project;
-  }
 }
 
 function buildInterviewResult(

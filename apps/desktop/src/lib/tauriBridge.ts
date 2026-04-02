@@ -5,6 +5,8 @@ import {
   CreateSessionInput,
   DesktopBridge,
   DesktopBridgeError,
+  ListProjectsOptions,
+  ShowSessionOptions,
 } from "./desktopBridge";
 import { asRequestState } from "./requestState";
 import {
@@ -13,6 +15,7 @@ import {
   InterviewTurnResult,
   ModelStatus,
   RequestState,
+  ScriptRevisionRecord,
   SessionProject,
   TTSProviderConfig,
   TTSCapability,
@@ -21,6 +24,7 @@ import {
 type BridgeShape<T> = {
   project?: SessionProject;
   projects?: SessionProject[];
+  revisions?: ScriptRevisionRecord[];
   tts_capability?: TTSCapability;
   tts_config?: TTSProviderConfig;
   models?: ModelStatus[];
@@ -82,16 +86,53 @@ async function callBridge<T>(command: string, payload?: Record<string, unknown>)
   }
 }
 
+function cleanPayload(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  const entries = Object.entries(payload).filter(([, value]) => value !== undefined && value !== "");
+  if (entries.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(entries);
+}
+
 export function createTauriBridge(): DesktopBridge {
   return {
-    async listProjects() {
-      const response = await callBridge<{}>("list_projects");
+    async listProjects(options?: ListProjectsOptions) {
+      const response = await callBridge<{}>("list_projects", cleanPayload({
+        search: options?.search?.trim(),
+        include_deleted: options?.includeDeleted ?? undefined,
+      }));
       return response.projects ?? [];
     },
     async createSession(input: CreateSessionInput) {
       const response = await callBridge<{}>("create_session", {
         topic: input.topic,
         creation_intent: input.creationIntent,
+      });
+      return response.project!;
+    },
+    async showSession(sessionId: string, options?: ShowSessionOptions) {
+      const response = await callBridge<{}>("show_session", cleanPayload({
+        session_id: sessionId,
+        include_deleted: options?.includeDeleted ?? undefined,
+      }));
+      return response.project!;
+    },
+    async renameSession(sessionId: string, topic: string) {
+      const response = await callBridge<{}>("rename_session", {
+        session_id: sessionId,
+        topic,
+      });
+      return response.project!;
+    },
+    async deleteSession(sessionId: string) {
+      const response = await callBridge<{}>("delete_session", {
+        session_id: sessionId,
+      });
+      return response.project!;
+    },
+    async restoreSession(sessionId: string) {
+      const response = await callBridge<{}>("restore_session", {
+        session_id: sessionId,
       });
       return response.project!;
     },
@@ -118,6 +159,31 @@ export function createTauriBridge(): DesktopBridge {
       const response = await callBridge<{}>("save_edited_script", {
         session_id: sessionId,
         final_text: finalText,
+      });
+      return response.project!;
+    },
+    async deleteScript(sessionId: string) {
+      const response = await callBridge<{}>("delete_script", {
+        session_id: sessionId,
+      });
+      return response.project!;
+    },
+    async restoreScript(sessionId: string) {
+      const response = await callBridge<{}>("restore_script", {
+        session_id: sessionId,
+      });
+      return response.project!;
+    },
+    async listScriptRevisions(sessionId: string) {
+      const response = await callBridge<{}>("list_script_revisions", {
+        session_id: sessionId,
+      });
+      return response.revisions ?? [];
+    },
+    async rollbackScriptRevision(sessionId: string, revisionId: string) {
+      const response = await callBridge<{}>("rollback_script_revision", {
+        session_id: sessionId,
+        revision_id: revisionId,
       });
       return response.project!;
     },

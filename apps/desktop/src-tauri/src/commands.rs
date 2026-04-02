@@ -4,8 +4,16 @@ use crate::errors::BridgeError;
 use crate::python_bridge::run_python_bridge;
 
 #[tauri::command]
-pub fn list_projects() -> Result<Value, BridgeError> {
-    run_python_bridge(&["--list-projects".to_string()])
+pub fn list_projects(search: Option<String>, include_deleted: Option<bool>) -> Result<Value, BridgeError> {
+    let mut args = vec!["--list-projects".to_string()];
+    if let Some(value) = search.filter(|value| !value.trim().is_empty()) {
+        args.push("--search".to_string());
+        args.push(value);
+    }
+    if include_deleted.unwrap_or(false) {
+        args.push("--include-deleted".to_string());
+    }
+    run_python_bridge(&args)
 }
 
 #[tauri::command]
@@ -17,6 +25,35 @@ pub fn create_session(topic: String, creation_intent: String) -> Result<Value, B
         "--intent".to_string(),
         creation_intent,
     ])
+}
+
+#[tauri::command]
+pub fn show_session(session_id: String, include_deleted: Option<bool>) -> Result<Value, BridgeError> {
+    let mut args = vec!["--show-session".to_string(), session_id];
+    if include_deleted.unwrap_or(false) {
+        args.push("--include-deleted".to_string());
+    }
+    run_python_bridge(&args)
+}
+
+#[tauri::command]
+pub fn rename_session(session_id: String, topic: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&[
+        "--rename-session".to_string(),
+        session_id,
+        "--session-topic".to_string(),
+        topic,
+    ])
+}
+
+#[tauri::command]
+pub fn delete_session(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--delete-session".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn restore_session(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--restore-session".to_string(), session_id])
 }
 
 #[tauri::command]
@@ -59,6 +96,31 @@ pub fn save_edited_script(session_id: String, final_text: String) -> Result<Valu
         session_id,
         "--script-final-text".to_string(),
         final_text,
+    ])
+}
+
+#[tauri::command]
+pub fn delete_script(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--delete-script".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn restore_script(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--restore-script".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn list_script_revisions(session_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&["--list-script-revisions".to_string(), session_id])
+}
+
+#[tauri::command]
+pub fn rollback_script_revision(session_id: String, revision_id: String) -> Result<Value, BridgeError> {
+    run_python_bridge(&[
+        "--rollback-script-revision".to_string(),
+        session_id,
+        "--revision-id".to_string(),
+        revision_id,
     ])
 }
 
