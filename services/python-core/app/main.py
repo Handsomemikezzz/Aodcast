@@ -754,6 +754,10 @@ def run(argv: list[str] | None = None) -> int:
                     progress_percent=cancel_progress,
                 ) from source_error
 
+            def fail_download(message: str) -> None:
+                progress.save_failed(message=message)
+                request_state_store.clear_cancel_request(task_id)
+
             def on_download_output_line(line: str) -> None:
                 match = progress_pattern.search(line)
                 if match is None:
@@ -782,8 +786,7 @@ def run(argv: list[str] | None = None) -> int:
                         default_progress=5.0,
                         source_error=exc,
                     )
-                progress.save_failed(message=str(exc))
-                request_state_store.clear_cancel_request(task_id)
+                fail_download(str(exc))
                 raise
             progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
             progress.save_finalizing(
@@ -799,8 +802,7 @@ def run(argv: list[str] | None = None) -> int:
                     default_progress=98.0,
                 )
             if not saved_succeeded:
-                progress.save_failed(message=f"Unable to finalize download state for {model_name}.")
-                request_state_store.clear_cancel_request(task_id)
+                fail_download(f"Unable to finalize download state for {model_name}.")
                 raise RuntimeError(f"Unable to finalize download state for {model_name}.")
             request_state_store.clear_cancel_request(task_id)
             payload = dict(result)
@@ -941,6 +943,10 @@ def run(argv: list[str] | None = None) -> int:
                     progress_percent=cancel_progress,
                 ) from source_error
 
+            def fail_render(message: str) -> None:
+                progress.save_failed(message=message)
+                request_state_store.clear_cancel_request(task_id)
+
             try:
                 result = audio_rendering.render_audio_with_cancellation(
                     session_id,
@@ -959,8 +965,7 @@ def run(argv: list[str] | None = None) -> int:
                         default_progress=10.0,
                         source_error=exc,
                     )
-                progress.save_failed(message=str(exc))
-                request_state_store.clear_cancel_request(task_id)
+                fail_render(str(exc))
                 raise
             progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
             progress.save_finalizing(
@@ -977,8 +982,7 @@ def run(argv: list[str] | None = None) -> int:
                         f"Audio rendering cancelled for session {session_id}.",
                         default_progress=96.0,
                     )
-                progress.save_failed(message=f"Unable to finalize audio render for session {session_id}.")
-                request_state_store.clear_cancel_request(task_id)
+                fail_render(f"Unable to finalize audio render for session {session_id}.")
                 raise RuntimeError(f"Unable to finalize audio render for session {session_id}.")
             request_state_store.clear_cancel_request(task_id)
             payload = serialize_audio_result(result)
