@@ -80,7 +80,7 @@ pub fn submit_reply(
 }
 
 #[tauri::command]
-pub fn submit_reply_stream(
+pub async fn submit_reply_stream(
     session_id: String,
     message: String,
     user_requested_finish: bool,
@@ -96,16 +96,20 @@ pub fn submit_reply_stream(
         args.push("--user-requested-finish".to_string());
     }
 
-    run_python_bridge_stream(&args, |line| {
-        let trimmed = line.trim();
-        if trimmed.starts_with("AOD_STREAM_CHUNK: ") {
-            let json_part = &trimmed[18..];
-            if let Ok(chunk_val) = serde_json::from_str::<Value>(json_part) {
-                let _ = channel.send(chunk_val);
+    tauri::async_runtime::spawn_blocking(move || {
+        run_python_bridge_stream(&args, |line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with("AOD_STREAM_CHUNK: ") {
+                let json_part = &trimmed[18..];
+                if let Ok(chunk_val) = serde_json::from_str::<Value>(json_part) {
+                    let _ = channel.send(chunk_val);
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     })
+    .await
+    .map_err(|e| BridgeError::new("spawn_blocking_error", e.to_string()))?
 }
 
 #[tauri::command]

@@ -192,6 +192,24 @@ export function ChatPage({
       progress_percent: 0,
       message: "Submitting reply...",
     });
+
+    // Optimistic UI update so the user's message appears immediately
+    setProject((prev) => {
+      if (!prev) return prev;
+      const optimisticTurn = {
+        speaker: "user",
+        content: content,
+        created_at: new Date().toISOString(),
+      };
+      
+      const prevTurns = prev.transcript?.turns || [];
+      const newTranscript = {
+        ...(prev.transcript || { session_id: prev.session.session_id }),
+        turns: [...prevTurns, optimisticTurn],
+      };
+      return { ...prev, transcript: newTranscript as any };
+    });
+
     try {
       const result = await bridge.submitReplyStream(
         sessionId,
