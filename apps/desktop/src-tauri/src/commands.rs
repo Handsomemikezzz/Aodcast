@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::errors::BridgeError;
-use crate::python_bridge::run_python_bridge;
+use crate::python_bridge::{run_python_bridge, run_python_bridge_stream};
 
 #[tauri::command]
 pub fn list_projects(search: Option<String>, include_deleted: Option<bool>) -> Result<Value, BridgeError> {
@@ -77,6 +77,35 @@ pub fn submit_reply(
         args.push("--user-requested-finish".to_string());
     }
     run_python_bridge(&args)
+}
+
+#[tauri::command]
+pub fn submit_reply_stream(
+    session_id: String,
+    message: String,
+    user_requested_finish: bool,
+    channel: tauri::ipc::Channel<Value>,
+) -> Result<Value, BridgeError> {
+    let mut args = vec![
+        "--reply-session".to_string(),
+        session_id,
+        "--message".to_string(),
+        message,
+    ];
+    if user_requested_finish {
+        args.push("--user-requested-finish".to_string());
+    }
+
+    run_python_bridge_stream(&args, |line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with("AOD_STREAM_CHUNK: ") {
+            let json_part = &trimmed[18..];
+            if let Ok(chunk_val) = serde_json::from_str::<Value>(json_part) {
+                let _ = channel.send(chunk_val);
+            }
+        }
+        Ok(())
+    })
 }
 
 #[tauri::command]

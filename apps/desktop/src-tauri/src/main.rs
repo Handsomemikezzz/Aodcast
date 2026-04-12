@@ -15,6 +15,7 @@ fn main() {
             commands::restore_session,
             commands::start_interview,
             commands::submit_reply,
+            commands::submit_reply_stream,
             commands::request_finish,
             commands::generate_script,
             commands::save_edited_script,

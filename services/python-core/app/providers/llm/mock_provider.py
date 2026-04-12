@@ -6,6 +6,8 @@ from app.providers.llm.base import (
     ScriptGenerationRequest,
     ScriptGenerationResponse,
 )
+from typing import Iterator
+import time
 
 
 class MockLLMProvider:
@@ -64,3 +66,10 @@ class MockLLMProvider:
             provider_name=self.provider_name,
             model_name=self.model_name,
         )
+
+    def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:
+        full_response = self.generate_interview_question(request).question
+        # Simulate streaming by splitting into words
+        for word in full_response.split(" "):
+            yield word + " "
+            time.sleep(0.05)

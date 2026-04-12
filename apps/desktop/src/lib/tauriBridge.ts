@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 
 import {
   ConfigureLLMInput,
@@ -147,6 +147,20 @@ export function createTauriBridge(): DesktopBridge {
         sessionId,
         message,
         userRequestedFinish,
+      });
+    },
+    async submitReplyStream(sessionId, message, onChunk, userRequestedFinish = false) {
+      const channel = new Channel<any>();
+      channel.onmessage = (chunk) => {
+        if (chunk && typeof chunk === "object" && chunk.type === "chunk") {
+          onChunk(chunk.delta || "");
+        }
+      };
+      return callBridge<InterviewTurnResult>("submit_reply_stream", {
+        sessionId,
+        message,
+        userRequestedFinish,
+        channel,
       });
     },
     async requestFinish(sessionId: string) {

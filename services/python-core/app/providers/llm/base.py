@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, Iterator
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,3 +44,6 @@ class LLMProvider(Protocol):
         self, request: InterviewQuestionRequest
     ) -> InterviewQuestionResponse:
         """Produce the next interview follow-up question from transcript context."""
+
+    def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:
+        """Produce the next interview follow-up question transcript context as a stream of chunks."""

@@ -60,6 +60,7 @@ export function ChatPage({
   const [landingInput, setLandingInput] = useState("");
   const [landingSubmitting, setLandingSubmitting] = useState(false);
   const [landingError, setLandingError] = useState<string | null>(null);
+  const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
 
   const fetchProject = async () => {
     if (!sessionId) return;
@@ -180,8 +181,11 @@ export function ChatPage({
 
   const handleSubmit = async () => {
     if (!sessionId || !inputValue.trim()) return;
+    const content = inputValue.trim();
     setSubmitting(true);
     setError(null);
+    setStreamingMessage("");
+    setInputValue("");
     setRequestState({
       operation: "submit_reply",
       phase: "running",
@@ -189,7 +193,14 @@ export function ChatPage({
       message: "Submitting reply...",
     });
     try {
-      const result = await bridge.submitReply(sessionId, inputValue.trim(), false);
+      const result = await bridge.submitReplyStream(
+        sessionId,
+        content,
+        (delta) => {
+          setStreamingMessage((prev) => (prev ?? "") + delta);
+        },
+        false,
+      );
       setProject(result.project);
       setReadiness(result.readiness);
       setPromptInput(result.prompt_input);
@@ -199,10 +210,10 @@ export function ChatPage({
           buildRequestState("submit_reply", "succeeded", "Reply accepted."),
         ),
       );
-      setInputValue("");
       await refreshWorkspace();
     } catch (err) {
       setError(getErrorMessage(err, "Failed to submit reply."));
+      if (!inputValue) setInputValue(content);
       setRequestState(
         withRequestStateFallback(
           getErrorRequestState(err),
@@ -210,6 +221,7 @@ export function ChatPage({
         ),
       );
     } finally {
+      setStreamingMessage(null);
       setSubmitting(false);
     }
   };
@@ -723,8 +735,25 @@ export function ChatPage({
                 );
               })}
 
+              {/* Streaming Content */}
+              {streamingMessage !== null && (
+                <div className="flex w-full justify-start animate-in fade-in duration-300">
+                  <div className="max-w-[min(92%,40rem)] space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
+                      <span className="font-medium text-[13px] text-primary">The Archivist</span>
+                    </div>
+                    <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
+                      <div className="prose prose-sm prose-invert max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                        <ReactMarkdown>{streamingMessage || "..."}</ReactMarkdown>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Loading Indicator — left-aligned like assistant */}
-              {submitting && state === "interview_in_progress" && (
+              {submitting && state === "interview_in_progress" && streamingMessage === null && (
                 <div className="flex w-full justify-start gap-3 pt-1">
                   <div className="flex items-center gap-2 text-secondary">
                     <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />

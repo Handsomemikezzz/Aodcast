@@ -58,6 +58,12 @@ export interface DesktopBridge {
   restoreSession(sessionId: string): Promise<SessionProject>;
   startInterview(sessionId: string): Promise<InterviewTurnResult>;
   submitReply(sessionId: string, message: string, userRequestedFinish?: boolean): Promise<InterviewTurnResult>;
+  submitReplyStream(
+    sessionId: string,
+    message: string,
+    onChunk: (delta: string) => void,
+    userRequestedFinish?: boolean,
+  ): Promise<InterviewTurnResult>;
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
   generateScript(sessionId: string): Promise<GenerationResult>;
   renderAudio(sessionId: string): Promise<AudioRenderResult>;

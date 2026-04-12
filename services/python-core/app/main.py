@@ -172,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mark the reply as an explicit user stop request.",
     )
     parser.add_argument(
+        "--no-stream",
+        action="store_true",
+        help="Disable streaming and wait for the full response before output.",
+    )
+    parser.add_argument(
         "--generate-script",
         default="",
         help="Generate a draft script for a session id.",
@@ -499,9 +504,9 @@ def output_payload(
     enriched_payload = dict(payload)
     enriched_payload["request_state"] = request_state
     if args.bridge_json:
-        print(json.dumps({"ok": True, "data": enriched_payload}, indent=2))
+        print(f"AOD_FINAL_RESPONSE: {json.dumps({'ok': True, 'data': enriched_payload})}")
     else:
-        print(json.dumps(enriched_payload, indent=2))
+        print(json.dumps(enriched_payload))
     return 0
 
 
@@ -525,18 +530,7 @@ def output_error(
     error_details["request_state"] = request_state
     if args.bridge_json:
         print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "request_state": request_state,
-                    "error": {
-                        "code": code,
-                        "message": message,
-                        "details": error_details,
-                    },
-                },
-                indent=2,
-            )
+            f"AOD_FINAL_RESPONSE: {json.dumps({'ok': False, 'request_state': request_state, 'error': {'code': code, 'message': message, 'details': error_details}})}"
         )
     else:
         print(message, file=sys.stderr)
@@ -872,12 +866,38 @@ def run(argv: list[str] | None = None) -> int:
                 raise ValueError("--message is required when using --reply-session")
             project = store.load_project(args.reply_session)
             ensure_session_is_active(project)
-            result = orchestrator.submit_user_response(
-                args.reply_session,
-                args.message,
-                user_requested_finish=args.user_requested_finish,
-            )
-            return output_payload(args, serialize_turn_result(result))
+            
+            if args.no_stream:
+                result = orchestrator.submit_user_response(
+                    args.reply_session,
+                    args.message,
+                    user_requested_finish=args.user_requested_finish,
+                )
+                return output_payload(args, serialize_turn_result(result))
+            else:
+                final_result = None
+                for chunk in orchestrator.submit_user_response_stream(
+                    args.reply_session,
+                    args.message,
+                    user_requested_finish=args.user_requested_finish,
+                ):
+                    if isinstance(chunk, InterviewTurnResult):
+                        final_result = chunk
+                    else:
+                        # Emit a chunk JSON envelope
+                        chunk_payload = {
+                            "ok": True,
+                            "type": "chunk",
+                            "delta": chunk,
+                        }
+                        # We use a specific prefix to make it easy for the bridge to parse
+                        print(f"AOD_STREAM_CHUNK: {json.dumps(chunk_payload)}")
+                        sys.stdout.flush()
+
+                if final_result:
+                    return output_payload(args, serialize_turn_result(final_result))
+                else:
+                    raise RuntimeError("Streaming finished without a final result record.")
 
         if args.finish_session:
             project = store.load_project(args.finish_session)
