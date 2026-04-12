@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.providers.llm.base import ScriptGenerationRequest, ScriptGenerationResponse
+from app.providers.llm.base import (
+    InterviewQuestionRequest,
+    InterviewQuestionResponse,
+    ScriptGenerationRequest,
+    ScriptGenerationResponse,
+)
 
 
 class MockLLMProvider:
@@ -37,6 +42,25 @@ class MockLLMProvider:
         )
         return ScriptGenerationResponse(
             draft=draft,
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+        )
+
+    def generate_interview_question(
+        self, request: InterviewQuestionRequest
+    ) -> InterviewQuestionResponse:
+        missing = ", ".join(request.missing_dimensions) or "none"
+        tail = (
+            " What feels most important to you about that right now?"
+            if request.transcript_text.strip()
+            else " What made you want to explore this topic?"
+        )
+        question = (
+            f"[mock interviewer] Regarding «{request.topic}» "
+            f"(next: {request.suggested_focus}; still need: {missing}) —{tail}"
+        )
+        return InterviewQuestionResponse(
+            question=question,
             provider_name=self.provider_name,
             model_name=self.model_name,
         )

@@ -135,6 +135,30 @@ pub fn show_local_tts_capability() -> Result<Value, BridgeError> {
 }
 
 #[tauri::command]
+pub fn show_llm_config() -> Result<Value, BridgeError> {
+    run_python_bridge(&["--show-llm-config".to_string()])
+}
+
+#[tauri::command]
+pub fn configure_llm_provider(
+    provider: String,
+    model: String,
+    base_url: String,
+    api_key: String,
+) -> Result<Value, BridgeError> {
+    run_python_bridge(&[
+        "--configure-llm-provider".to_string(),
+        provider,
+        "--llm-model".to_string(),
+        model,
+        "--llm-base-url".to_string(),
+        base_url,
+        "--llm-api-key".to_string(),
+        api_key,
+    ])
+}
+
+#[tauri::command]
 pub fn show_tts_config() -> Result<Value, BridgeError> {
     run_python_bridge(&["--show-tts-config".to_string()])
 }

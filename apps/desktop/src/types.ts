@@ -140,6 +140,13 @@ export type TTSCapability = {
   fallback_provider: string;
 };
 
+export type LLMProviderConfig = {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+};
+
 export type TTSProviderConfig = {
   provider: string;
   model: string;

@@ -9,6 +9,7 @@ import { ScriptPage } from "./pages/ScriptPage";
 import { ModelsPage } from "./pages/ModelsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { MessageSquare, Edit3, Mic, Package, Settings } from "lucide-react";
+import { WEB_BACKEND_UNAVAILABLE } from "./lib/webBackendUnavailableBridge";
 
 function RedirectInterviewToChat() {
   const { sessionId } = useParams<{ sessionId?: string }>();
@@ -27,28 +28,22 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [projects, setProjects] = useState<SessionProject[]>([]);
+  const [bridgeError, setBridgeError] = useState<string | null>(null);
 
   const fetchProjects = async () => {
-    const items = await bridge.listProjects();
-    setProjects(items);
+    try {
+      const items = await bridge.listProjects();
+      setProjects(items);
+      setBridgeError(null);
+    } catch (err) {
+      setProjects([]);
+      setBridgeError(err instanceof Error ? err.message : WEB_BACKEND_UNAVAILABLE);
+    }
   };
 
   useEffect(() => {
     void fetchProjects();
   }, [bridge]);
-
-  const handleCreateSession = async () => {
-    const topic = window.prompt("Enter podcast topic:");
-    if (!topic) return;
-
-    const created = await bridge.createSession({
-      topic,
-      creationIntent: "Discuss " + topic,
-    });
-
-    await fetchProjects();
-    navigate(`/chat/${created.session.session_id}`);
-  };
 
   const pathParts = location.pathname.split("/").filter(Boolean);
   const pathSegment = pathParts[0] ?? "";
@@ -164,27 +159,23 @@ export default function App() {
           </div>
         </header>
 
+        {bridgeError ? (
+          <div className="shrink-0 px-4 py-2.5 text-[13px] leading-snug bg-amber-500/15 border-b border-amber-500/25 text-amber-100">
+            {bridgeError}
+          </div>
+        ) : null}
+
         <div className="flex-1 overflow-hidden relative">
           <Routes>
             <Route path="/" element={<Navigate to="/chat" replace />} />
             <Route path="/history" element={<Navigate to="/chat" replace />} />
             <Route
               path="/chat"
-              element={
-                <ChatPage
-                  onRefresh={fetchProjects}
-                  onCreateSession={handleCreateSession}
-                />
-              }
+              element={<ChatPage onRefresh={fetchProjects} />}
             />
             <Route
               path="/chat/:sessionId"
-              element={
-                <ChatPage
-                  onRefresh={fetchProjects}
-                  onCreateSession={handleCreateSession}
-                />
-              }
+              element={<ChatPage onRefresh={fetchProjects} />}
             />
             <Route path="/script" element={<ScriptPage projects={projects} onRefresh={fetchProjects} />} />
             <Route

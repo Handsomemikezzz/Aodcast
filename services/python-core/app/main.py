@@ -551,7 +551,7 @@ def run(argv: list[str] | None = None) -> int:
     config_store = ConfigStore(config.config_dir)
     artifact_store = ArtifactStore(config.data_dir)
     request_state_store = RequestStateStore(config.data_dir)
-    orchestrator = InterviewOrchestrator(store)
+    orchestrator = InterviewOrchestrator(store, config_store)
     script_generation = ScriptGenerationService(store, config_store)
     audio_rendering = AudioRenderingService(store, config_store, artifact_store)
     store.bootstrap()

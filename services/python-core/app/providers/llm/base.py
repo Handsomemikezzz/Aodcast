@@ -19,6 +19,28 @@ class ScriptGenerationResponse:
     model_name: str
 
 
+@dataclass(frozen=True, slots=True)
+class InterviewQuestionRequest:
+    session_id: str
+    topic: str
+    creation_intent: str
+    transcript_text: str
+    suggested_focus: str
+    missing_dimensions: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class InterviewQuestionResponse:
+    question: str
+    provider_name: str
+    model_name: str
+
+
 class LLMProvider(Protocol):
     def generate_script(self, request: ScriptGenerationRequest) -> ScriptGenerationResponse:
         """Generate a script draft from interview transcript text."""
+
+    def generate_interview_question(
+        self, request: InterviewQuestionRequest
+    ) -> InterviewQuestionResponse:
+        """Produce the next interview follow-up question from transcript context."""

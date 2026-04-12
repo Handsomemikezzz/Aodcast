@@ -2,6 +2,7 @@ import {
   AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
+  LLMProviderConfig,
   ModelStatus,
   RequestState,
   ScriptRevisionRecord,
@@ -41,6 +42,13 @@ export type ConfigureTTSInput = {
   local_model_path: string;
 };
 
+export type ConfigureLLMInput = {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+};
+
 export interface DesktopBridge {
   listProjects(options?: ListProjectsOptions): Promise<SessionProject[]>;
   createSession(input: CreateSessionInput): Promise<SessionProject>;
@@ -59,6 +67,8 @@ export interface DesktopBridge {
   listScriptRevisions(sessionId: string): Promise<ScriptRevisionRecord[]>;
   rollbackScriptRevision(sessionId: string, revisionId: string): Promise<SessionProject>;
   getLocalTTSCapability(): Promise<TTSCapability>;
+  showLLMConfig(): Promise<LLMProviderConfig>;
+  configureLLMProvider(input: ConfigureLLMInput): Promise<LLMProviderConfig>;
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
   listModelsStatus(): Promise<ModelStatus[]>;

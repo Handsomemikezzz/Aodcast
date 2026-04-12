@@ -6,9 +6,11 @@ from pathlib import Path
 
 from app.config import AppConfig
 from app.domain.project import SessionProject
+from app.domain.provider_config import LLMProviderConfig
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker
 from app.orchestration.interview_service import InterviewOrchestrator
+from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 
 
@@ -17,8 +19,11 @@ class InterviewOrchestratorTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         config = AppConfig.from_cwd(Path(self.temp_dir.name))
         store = ProjectStore(config.data_dir)
+        config_store = ConfigStore(config.config_dir)
         store.bootstrap()
-        return store, InterviewOrchestrator(store)
+        config_store.bootstrap()
+        config_store.save_llm_config(LLMProviderConfig(provider="mock"))
+        return store, InterviewOrchestrator(store, config_store)
 
     def tearDown(self) -> None:
         temp_dir = getattr(self, "temp_dir", None)

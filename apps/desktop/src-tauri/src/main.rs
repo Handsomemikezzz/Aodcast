@@ -24,6 +24,8 @@ fn main() {
             commands::rollback_script_revision,
             commands::render_audio,
             commands::show_local_tts_capability,
+            commands::show_llm_config,
+            commands::configure_llm_provider,
             commands::show_tts_config,
             commands::configure_tts_provider,
             commands::list_models_status,

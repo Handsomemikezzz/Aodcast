@@ -19,7 +19,6 @@ import {
   Sparkles,
   Target,
   Trash2,
-  User,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useBridge } from "../lib/BridgeContext";
@@ -34,10 +33,8 @@ import {
 
 export function ChatPage({
   onRefresh,
-  onCreateSession,
 }: {
   onRefresh: () => Promise<void>;
-  onCreateSession?: () => void;
 }) {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
@@ -58,6 +55,11 @@ export function ChatPage({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyActionId, setHistoryActionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const landingInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const [landingInput, setLandingInput] = useState("");
+  const [landingSubmitting, setLandingSubmitting] = useState(false);
+  const [landingError, setLandingError] = useState<string | null>(null);
 
   const fetchProject = async () => {
     if (!sessionId) return;
@@ -95,6 +97,29 @@ export function ChatPage({
 
   const refreshWorkspace = async () => {
     await Promise.allSettled([fetchProject(), loadHistory(), onRefresh()]);
+  };
+
+  const handleLandingCreate = async () => {
+    const message = landingInput.trim();
+    if (!message || landingSubmitting) return;
+    setLandingSubmitting(true);
+    setLandingError(null);
+    try {
+      const topic = message.length > 200 ? `${message.slice(0, 197)}…` : message;
+      const created = await bridge.createSession({
+        topic,
+        creationIntent: `Discuss ${message}`,
+      });
+      const sid = created.session.session_id;
+      await bridge.submitReply(sid, message, false);
+      await onRefresh();
+      navigate(`/chat/${sid}`);
+      setLandingInput("");
+    } catch (err) {
+      setLandingError(getErrorMessage(err, "Failed to start conversation."));
+    } finally {
+      setLandingSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -452,16 +477,14 @@ export function ChatPage({
       >
         {historyOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
       </button>
-      {onCreateSession && (
-        <button
-          type="button"
-          onClick={onCreateSession}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New chat
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => navigate("/chat")}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary transition-colors"
+      >
+        <Plus className="w-4 h-4" />
+        New chat
+      </button>
     </div>
   );
 
@@ -483,21 +506,67 @@ export function ChatPage({
         {historyAside}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {chatToolbar}
-          <div className="flex-1 flex flex-col items-center justify-center text-secondary gap-4 px-6">
-            <Mic className="w-12 h-12 text-outline-variant mb-2" />
-            <div className="text-center max-w-sm">
-              <h2 className="text-lg font-semibold text-primary mb-1">Chat</h2>
-              <p className="text-sm">What you want to talk about today</p>
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
+            <div className="w-full max-w-2xl flex flex-col items-center gap-8">
+              <h2 className="text-2xl sm:text-3xl font-medium text-primary text-center tracking-tight">
+                我们先从哪里开始呢？
+              </h2>
+              <div className="w-full flex flex-col gap-2">
+                {landingError ? (
+                  <p className="text-sm text-red-400 text-center">{landingError}</p>
+                ) : null}
+                <div
+                  className={cn(
+                    "flex items-end gap-2 rounded-full border border-outline bg-surface-container px-3 py-2 pl-4 shadow-sm",
+                    "focus-within:border-accent-amber/30 transition-colors",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => landingInputRef.current?.focus()}
+                    className="p-2 text-on-surface hover:bg-surface-container-high rounded-full transition-colors shrink-0 mb-0.5"
+                    aria-label="Focus input"
+                  >
+                    <Plus className="w-5 h-5" />
+                  </button>
+                  <textarea
+                    ref={landingInputRef}
+                    value={landingInput}
+                    onChange={(e) => setLandingInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleLandingCreate();
+                      }
+                    }}
+                    disabled={landingSubmitting}
+                    placeholder="今天你想聊什么?"
+                    rows={1}
+                    className="flex-1 min-h-[44px] max-h-[200px] resize-none bg-transparent border-none focus:ring-0 text-[15px] text-on-surface placeholder:text-outline py-2.5 outline-none leading-relaxed"
+                  />
+                  <button
+                    type="button"
+                    className="p-2 text-secondary hover:bg-surface-container-high rounded-full transition-colors shrink-0 mb-0.5"
+                    aria-label="Voice input"
+                  >
+                    <Mic className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleLandingCreate()}
+                    disabled={!landingInput.trim() || landingSubmitting}
+                    className="p-2.5 bg-primary text-background rounded-full hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed shrink-0 mb-0.5"
+                    aria-label="Start chat"
+                  >
+                    {landingSubmitting ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
-            {onCreateSession && (
-              <button
-                type="button"
-                onClick={onCreateSession}
-                className="px-4 py-2 bg-accent-amber hover:bg-accent-amber/90 text-black rounded-lg text-sm font-medium transition-colors shadow-sm"
-              >
-                New chat
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -590,8 +659,8 @@ export function ChatPage({
               </div>
             )}
 
-            {/* Chat History */}
-            <div className="flex flex-col gap-6">
+            {/* Chat History: user bubbles right, assistant plain left */}
+            <div className="flex flex-col gap-5">
               {error && (
                 <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
                   {error}
@@ -599,63 +668,71 @@ export function ChatPage({
               )}
               {turns.map((turn, i) => {
                 const isAgent = turn.speaker === "agent";
-                
+
                 let cleanContent = turn.content;
                 let insight = null;
                 const insightMatch = cleanContent.match(/<insight>(.*?)<\/insight>/);
                 if (insightMatch) {
                   insight = insightMatch[1];
-                  cleanContent = cleanContent.replace(/<insight>.*?<\/insight>/, '').trim();
+                  cleanContent = cleanContent.replace(/<insight>.*?<\/insight>/, "").trim();
                 }
 
-                return (
-                  <div key={i} className="flex gap-4 animate-in fade-in duration-300">
-                    <div className="w-8 h-8 rounded-full border border-outline flex items-center justify-center shrink-0 bg-surface-container mt-1">
-                      {isAgent ? (
-                        <Sparkles className="w-4 h-4 text-accent-amber" />
-                      ) : (
-                        <User className="w-4 h-4 text-secondary" />
-                      )}
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-[13px] text-primary">
-                          {isAgent ? "The Archivist" : "You"}
-                        </span>
-                      </div>
-                      
-                      {/* Content Block */}
-                      <div className={cn(
-                        "text-[14px] leading-relaxed",
-                        isAgent ? "text-on-surface" : "text-secondary"
-                      )}>
-                        <div className="prose prose-sm prose-invert max-w-none">
+                if (!isAgent) {
+                  return (
+                    <div
+                      key={i}
+                      className="flex w-full justify-end animate-in fade-in duration-300"
+                    >
+                      <div
+                        className={cn(
+                          "max-w-[min(85%,28rem)] rounded-3xl rounded-br-md",
+                          "border border-outline/60 bg-surface-container-high px-4 py-2.5 shadow-sm",
+                        )}
+                      >
+                        <div className="text-[14px] leading-relaxed text-on-surface prose prose-sm prose-invert max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
                           <ReactMarkdown>{cleanContent}</ReactMarkdown>
                         </div>
                       </div>
+                    </div>
+                  );
+                }
 
-                      {/* AI Insights block styled as a sub-note */}
-                      {insight && (
-                        <div className="mt-3 bg-accent-amber-container text-primary text-[13px] px-4 py-3 rounded-lg border border-accent-amber/20 flex items-start gap-3">
+                return (
+                  <div
+                    key={i}
+                    className="flex w-full justify-start animate-in fade-in duration-300"
+                  >
+                    <div className="max-w-[min(92%,40rem)] space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
+                        <span className="font-medium text-[13px] text-primary">The Archivist</span>
+                      </div>
+                      <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
+                        <div className="prose prose-sm prose-invert max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                          <ReactMarkdown>{cleanContent}</ReactMarkdown>
+                        </div>
+                      </div>
+                      {insight ? (
+                        <div className="mt-2 bg-accent-amber-container text-primary text-[13px] px-4 py-3 rounded-lg border border-accent-amber/20 flex items-start gap-3">
                           <Lightbulb className="w-4 h-4 mt-0.5 text-accent-amber shrink-0" />
                           <p className="italic opacity-90">{insight}</p>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 );
               })}
 
-              {/* Loading Indicator */}
+              {/* Loading Indicator — left-aligned like assistant */}
               {submitting && state === "interview_in_progress" && (
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full border border-outline flex items-center justify-center shrink-0 bg-surface-container mt-1">
-                    <Sparkles className="w-4 h-4 text-accent-amber" />
-                  </div>
-                  <div className="flex-1 flex items-center gap-2 pt-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce [animation-delay:0.2s]" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce [animation-delay:0.4s]" />
+                <div className="flex w-full justify-start gap-3 pt-1">
+                  <div className="flex items-center gap-2 text-secondary">
+                    <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
+                    <div className="flex items-center gap-1.5 h-6">
+                      <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce [animation-delay:0.2s]" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce [animation-delay:0.4s]" />
+                    </div>
                   </div>
                 </div>
               )}

@@ -11,7 +11,14 @@ from app.orchestration.prompts import (
     build_question,
 )
 from app.orchestration.readiness import ReadinessReport, evaluate_readiness
+from app.providers.llm.base import InterviewQuestionRequest
+from app.providers.llm.factory import build_llm_provider
+from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+
+
+def _transcript_text(transcript: TranscriptRecord) -> str:
+    return "\n".join(f"{turn.speaker.value}: {turn.content}" for turn in transcript.turns)
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,8 +31,35 @@ class InterviewTurnResult:
 
 
 class InterviewOrchestrator:
-    def __init__(self, store: ProjectStore) -> None:
+    def __init__(self, store: ProjectStore, config_store: ConfigStore) -> None:
         self.store = store
+        self.config_store = config_store
+
+    def _next_question(
+        self,
+        project: SessionProject,
+        prompt_input: InterviewPromptInput,
+        transcript: TranscriptRecord,
+    ) -> str:
+        llm_config = self.config_store.load_llm_config()
+        provider = build_llm_provider(llm_config)
+        request = InterviewQuestionRequest(
+            session_id=prompt_input.session_id,
+            topic=prompt_input.topic,
+            creation_intent=prompt_input.creation_intent,
+            transcript_text=_transcript_text(transcript),
+            suggested_focus=prompt_input.suggested_focus,
+            missing_dimensions=list(prompt_input.missing_dimensions),
+        )
+        try:
+            response = provider.generate_interview_question(request)
+            question = response.question.strip()
+            if question:
+                return question
+        except Exception:
+            if llm_config.provider != "mock":
+                raise
+        return build_question(prompt_input)
 
     def start_interview(self, session_id: str) -> InterviewTurnResult:
         project = self.store.load_project(session_id)
@@ -36,7 +70,7 @@ class InterviewOrchestrator:
             project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
             readiness = evaluate_readiness(transcript)
             prompt_input = build_prompt_input(project.session, transcript, readiness)
-            next_question = build_question(prompt_input)
+            next_question = self._next_question(project, prompt_input, transcript)
             transcript.append(Speaker.AGENT, next_question)
             self.store.save_project(project)
             return InterviewTurnResult(
@@ -87,7 +121,7 @@ class InterviewOrchestrator:
             )
 
         project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
-        next_question = build_question(prompt_input)
+        next_question = self._next_question(project, prompt_input, transcript)
         transcript.append(Speaker.AGENT, next_question)
         self.store.save_project(project)
         return InterviewTurnResult(
