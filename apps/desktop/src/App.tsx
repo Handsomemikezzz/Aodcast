@@ -9,7 +9,7 @@ import { ScriptPage } from "./pages/ScriptPage";
 import { ModelsPage } from "./pages/ModelsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { MessageSquare, Edit3, Mic, Package, Settings } from "lucide-react";
-import { WEB_BACKEND_UNAVAILABLE } from "./lib/webBackendUnavailableBridge";
+import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
 
 function RedirectInterviewToChat() {
   const { sessionId } = useParams<{ sessionId?: string }>();
@@ -37,7 +37,7 @@ export default function App() {
       setBridgeError(null);
     } catch (err) {
       setProjects([]);
-      setBridgeError(err instanceof Error ? err.message : WEB_BACKEND_UNAVAILABLE);
+      setBridgeError(err instanceof Error ? err.message : HTTP_BACKEND_UNAVAILABLE);
     }
   };
 

@@ -59,7 +59,7 @@ Tasks:
 
 Exit criteria:
 
-- commands behave deterministically via `--bridge-json`
+- commands behave deterministically through the active backend bridge contract
 - restore after retention window fails with explicit error
 
 ### Slice C: Desktop Bridge and Tauri Commands
@@ -70,8 +70,7 @@ Tasks:
 - register commands in `src-tauri/main.rs`
 - add TypeScript bridge methods in:
   - `desktopBridge.ts`
-  - `tauriBridge.ts`
-  - `mockBridge.ts`
+  - the active transport bridge implementation
 - extend related TS types for revisions/deletion metadata
 
 Exit criteria:
@@ -105,7 +104,7 @@ Tasks:
 
 - extend Python tests:
   - `test_project_store.py`
-  - `test_cli_bridge.py`
+  - backend bridge / contract coverage appropriate to the active transport
 - run targeted checks:
   - python tests for store/bridge flows
   - desktop type check (if dependency state allows)

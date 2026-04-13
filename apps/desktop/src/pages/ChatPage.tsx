@@ -51,7 +51,8 @@ export function ChatPage({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyProjects, setHistoryProjects] = useState<SessionProject[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
-  const [showTrash, setShowTrash] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTopic, setEditingTopic] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyActionId, setHistoryActionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -61,6 +62,13 @@ export function ChatPage({
   const [landingSubmitting, setLandingSubmitting] = useState(false);
   const [landingError, setLandingError] = useState<string | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
+
+  const toDisplayText = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (value == null) return "";
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    return "";
+  };
 
   const fetchProject = async () => {
     if (!sessionId) return;
@@ -83,10 +91,10 @@ export function ChatPage({
       setHistoryLoading(true);
       const list = await bridge.listProjects({
         search: historyQuery.trim() || undefined,
-        includeDeleted: showTrash,
+        includeDeleted: false,
       });
       setHistoryProjects(
-        list.filter((entry) => (showTrash ? Boolean(entry.session.deleted_at) : !entry.session.deleted_at)),
+        list.filter((entry) => !entry.session.deleted_at),
       );
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load chat history."));
@@ -136,7 +144,7 @@ export function ChatPage({
 
   useEffect(() => {
     void loadHistory();
-  }, [bridge, historyQuery, showTrash]);
+  }, [bridge, historyQuery]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -279,10 +287,12 @@ export function ChatPage({
     }
   };
 
-  const handleRenameSession = async (target: SessionProject) => {
-    const nextTopic = window.prompt("Rename chat", target.session.topic);
-    if (!nextTopic?.trim()) return;
-    setHistoryActionId(target.session.session_id);
+  const handleRenameSession = async (targetSessionId: string, nextTopic: string) => {
+    if (!nextTopic.trim()) {
+      setEditingSessionId(null);
+      return;
+    }
+    setHistoryActionId(targetSessionId);
     setError(null);
     setRequestState({
       operation: "rename_session",
@@ -291,7 +301,7 @@ export function ChatPage({
       message: "Renaming chat...",
     });
     try {
-      const updated = await bridge.renameSession(target.session.session_id, nextTopic.trim());
+      const updated = await bridge.renameSession(targetSessionId, nextTopic.trim());
       if (updated.session.session_id === sessionId) {
         setProject(updated);
       }
@@ -307,26 +317,28 @@ export function ChatPage({
       );
     } finally {
       setHistoryActionId(null);
+      setEditingSessionId(null);
     }
   };
 
   const handleDeleteSession = async (target: SessionProject) => {
-    if (!window.confirm(`Move "${target.session.topic}" to trash?`)) return;
+    if (!window.confirm(`Delete chat "${target.session.topic}"?`)) return;
     setHistoryActionId(target.session.session_id);
     setError(null);
     setRequestState({
       operation: "delete_session",
       phase: "running",
       progress_percent: 0,
-      message: "Moving chat to trash...",
+      message: "Deleting chat...",
     });
     try {
       const updated = await bridge.deleteSession(target.session.session_id);
       if (updated.session.session_id === sessionId) {
-        setProject(updated);
+        navigate("/chat");
+      } else {
+        await refreshWorkspace();
       }
-      await refreshWorkspace();
-      setRequestState(buildRequestState("delete_session", "succeeded", "Chat moved to trash."));
+      setRequestState(buildRequestState("delete_session", "succeeded", "Chat deleted."));
     } catch (err) {
       setError(getErrorMessage(err, "Failed to delete chat."));
       setRequestState(
@@ -340,42 +352,13 @@ export function ChatPage({
     }
   };
 
-  const handleRestoreSession = async (target: SessionProject) => {
-    setHistoryActionId(target.session.session_id);
-    setError(null);
-    setRequestState({
-      operation: "restore_session",
-      phase: "running",
-      progress_percent: 0,
-      message: "Restoring chat...",
-    });
-    try {
-      const updated = await bridge.restoreSession(target.session.session_id);
-      if (updated.session.session_id === sessionId) {
-        setProject(updated);
-      }
-      await refreshWorkspace();
-      setRequestState(buildRequestState("restore_session", "succeeded", "Chat restored."));
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to restore chat."));
-      setRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("restore_session", "failed", "Failed to restore chat."),
-        ),
-      );
-    } finally {
-      setHistoryActionId(null);
-    }
-  };
-
   const historyAside =
     historyOpen && (
       <aside className="w-[300px] shrink-0 border-r border-outline bg-surface flex flex-col min-h-0">
         <div className="p-3 border-b border-outline space-y-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">
-              {showTrash ? "Trash" : "Chats"}
+              Chats
             </span>
             <button
               type="button"
@@ -384,28 +367,6 @@ export function ChatPage({
               aria-label="Hide history"
             >
               <PanelLeftClose className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setShowTrash(false)}
-              className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors",
-                !showTrash ? "bg-primary/10 text-primary" : "text-secondary hover:bg-surface-container-high hover:text-primary",
-              )}
-            >
-              Active
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowTrash(true)}
-              className={cn(
-                "px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors",
-                showTrash ? "bg-primary/10 text-primary" : "text-secondary hover:bg-surface-container-high hover:text-primary",
-              )}
-            >
-              Trash
             </button>
           </div>
           <label className="flex items-center gap-2 rounded-md border border-outline bg-background px-2.5 py-2">
@@ -426,12 +387,13 @@ export function ChatPage({
             </div>
           ) : historyProjects.length === 0 ? (
             <p className="px-2 py-4 text-xs text-secondary text-center">
-              {showTrash ? "Trash is empty." : "No chats yet."}
+              No chats yet.
             </p>
           ) : (
             historyProjects.map((p) => {
-              const isDeleted = Boolean(p.session.deleted_at);
               const isCurrent = p.session.session_id === sessionId;
+              const isEditing = editingSessionId === p.session.session_id;
+
               return (
                 <div
                   key={p.session.session_id}
@@ -440,53 +402,61 @@ export function ChatPage({
                     isCurrent ? "border-primary/20 bg-primary/5" : "border-transparent hover:bg-surface-container-high",
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigate(`/chat/${p.session.session_id}`);
-                      setHistoryOpen(false);
-                    }}
-                    className="w-full text-left"
-                  >
-                    <p className="text-[13px] font-medium truncate text-primary">{p.session.topic || "Untitled"}</p>
-                    <p className="text-[10px] text-outline truncate mt-0.5">
-                      {new Date(p.session.updated_at).toLocaleDateString()}
-                      {isDeleted ? " · in trash" : ""}
-                    </p>
-                  </button>
+                  {isEditing ? (
+                    <div className="w-full flex items-center gap-2 mb-2">
+                      <input
+                        autoFocus
+                        value={editingTopic}
+                        onChange={(e) => setEditingTopic(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void handleRenameSession(p.session.session_id, editingTopic);
+                          } else if (e.key === "Escape") {
+                            setEditingSessionId(null);
+                          }
+                        }}
+                        onBlur={() => setEditingSessionId(null)}
+                        className="flex-1 min-w-0 bg-background text-[13px] text-primary border border-primary/30 rounded px-2 py-1 outline-none focus:border-primary"
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate(`/chat/${p.session.session_id}`);
+                        setHistoryOpen(false);
+                      }}
+                      className="w-full text-left"
+                    >
+                      <p className="text-[13px] font-medium truncate text-primary">{p.session.topic || "Untitled"}</p>
+                      <p className="text-[10px] text-outline truncate mt-0.5">
+                        {new Date(p.session.updated_at).toLocaleDateString()}
+                      </p>
+                    </button>
+                  )}
                   <div className="mt-2 flex items-center gap-1">
-                    {!showTrash ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => void handleRenameSession(p)}
-                          disabled={historyActionId === p.session.session_id}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
-                        >
-                          <PencilLine className="w-3.5 h-3.5" />
-                          Rename
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteSession(p)}
-                          disabled={historyActionId === p.session.session_id}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Trash
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void handleRestoreSession(p)}
-                        disabled={historyActionId === p.session.session_id}
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Restore
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingSessionId(p.session.session_id);
+                        setEditingTopic(p.session.topic);
+                      }}
+                      disabled={historyActionId === p.session.session_id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
+                    >
+                      <PencilLine className="w-3.5 h-3.5" />
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteSession(p)}
+                      disabled={historyActionId === p.session.session_id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50 text-red-500/80 hover:text-red-500"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete
+                    </button>
                   </div>
                 </div>
               );
@@ -639,11 +609,10 @@ export function ChatPage({
     );
   }
 
-  const turns = project.transcript?.turns || [];
+  const turns = Array.isArray(project.transcript?.turns) ? project.transcript.turns : [];
   const state = project.session.state;
   const isFinished = state === "ready_to_generate" || state === "script_generated" || state === "script_edited" || state === "completed";
   const isDeletedSession = Boolean(project.session.deleted_at);
-
   return (
     <div className="flex flex-row h-full w-full relative overflow-hidden">
       {historyAside}
@@ -660,22 +629,6 @@ export function ChatPage({
                 Shape your episode through conversation; the script is summarized from this chat.
               </p>
             </div>
-
-            {isDeletedSession && (
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-primary">This chat is in trash.</p>
-                  <p className="text-[12px] text-secondary">Restore it to continue the interview or script flow.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleRestoreSession(project)}
-                  className="px-3 py-1.5 rounded-md bg-surface-container text-primary text-[12px] font-medium hover:bg-surface-container-high transition-colors"
-                >
-                  Restore
-                </button>
-              </div>
-            )}
 
             {turns.length === 0 && state === "topic_defined" && !isDeletedSession && (
               <div className="py-8">
@@ -699,7 +652,7 @@ export function ChatPage({
               {turns.map((turn, i) => {
                 const isAgent = turn.speaker === "agent";
 
-                let cleanContent = turn.content;
+                let cleanContent = toDisplayText(turn.content);
                 let insight = null;
                 const insightMatch = cleanContent.match(/<insight>(.*?)<\/insight>/);
                 if (insightMatch) {

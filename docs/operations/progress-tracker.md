@@ -180,14 +180,23 @@ Current execution constraints and environment notes should be read from `AGENTS.
 | Sync maintenance docs with implemented workflow | `doc-syncer` | done | README and maintenance playbook now point to the maintenance sweep and report location |
 | Publish hardening report | `spec-keeper` | done | Report stored at `.agent/reports/2026-03-28-milestone-7-hardening-pass.md` |
 
-## Post-MVP Slice: Real Tauri Bridge
+## Post-MVP Slice: Legacy Tauri Bridge
 
 | Task | Owner Role | Status | Notes |
 | --- | --- | --- | --- |
-| Extract frontend bridge contract from mock implementation | `desktop-builder` | done | `desktopBridge.ts`, `bridgeFactory.ts`, and `tauriBridge.ts` now own the bridge boundary |
-| Add machine-readable Python CLI bridge mode | `orchestration-builder` | done | `--bridge-json`, `--list-projects`, `--create-session`, and `--save-script` are implemented |
-| Add Rust command gateway | `desktop-builder` | done | Tauri commands now call the Python runner through `python_bridge.rs` |
-| Validate bridge protocol and desktop types | `quality-runner` | done | Python bridge tests, `pnpm check`, `cargo check`, and `pnpm --dir apps/desktop tauri:build` now pass in this environment (DMG build uses `CI=true` to skip Finder styling AppleScript) |
+| Extract frontend bridge contract from mock implementation | `desktop-builder` | done | `desktopBridge.ts` remains the stable UI contract and survives the transport swap |
+| Add machine-readable Python CLI bridge mode | `orchestration-builder` | superseded | Legacy subprocess/stdout bridge path; retained here only as historical record |
+| Add Rust command gateway | `desktop-builder` | superseded | Historical subprocess bridge milestone; replaced by the localhost HTTP runtime path during strong convergence cleanup |
+| Validate bridge protocol and desktop types | `quality-runner` | superseded | Historical validation of the removed bridge path |
+
+## Shared Runtime HTTP Convergence
+
+| Task | Owner Role | Status | Notes |
+| --- | --- | --- | --- |
+| Add stdlib localhost HTTP runtime | `orchestration-builder` | in progress | `services/python-core/app/api/http_runtime.py` now exists and is being converged away from legacy CLI-bridge internals |
+| Add HTTP runtime tests | `quality-runner` | in progress | HTTP parity, security, runtime smoke, and browser parity tests are now in the repo |
+| Restore browser fallback bridge parity | `desktop-builder` | done | Browser fallback now uses the same HTTP bridge contract rather than a desktop-only hard stop |
+| Replace legacy subprocess bridge | `desktop-builder` | in progress | Frontend and Rust now converge on HTTP runtime startup + HTTP transport; remaining cleanup is inside python-core CLI-bridge internals and stale historical docs/tests |
 
 ## Post-MVP Slice: MLX Qwen3 Runner
 

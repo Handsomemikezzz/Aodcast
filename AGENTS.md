@@ -55,11 +55,11 @@ Out of scope for the current MVP:
 - provider-specific logic belongs only under `services/python-core/app/providers`.
 - interview state logic belongs only under `services/python-core/app/orchestration`.
 - operational rules belong in `docs/operations` and `AGENTS.md`, not in scattered ad hoc notes.
-- desktop bridge calls must flow through `apps/desktop/src/lib/*Bridge.ts -> src-tauri commands -> python_bridge`, not from React components directly to shell commands.
-- machine-readable Python bridge calls must keep stdout as a single JSON envelope when `--bridge-json` is set.
+- desktop bridge calls must flow through `apps/desktop/src/lib/*Bridge.ts -> localhost HTTP runtime -> services/python-core`, not from React components directly to shell commands.
+- the desktop shell may own lifecycle helpers for starting, attaching, health-checking, and shutting down the localhost runtime, but it must not own podcast business logic or per-operation payload translation.
 - bridge success payloads and bridge failures must include a normalized `request_state` contract (`operation`, `phase`, `progress_percent`, `message`) so frontend pages can render consistent loading/error/task-state UX.
-- long-running bridge operations must persist pollable task states and surface incremental `progress_percent` through `show_task_state` before adding new UI long-task flows.
-- long-running bridge operations that expose `show_task_state` must also support `cancel_task` with cooperative phase transitions (`running -> cancelling -> cancelled`) for desktop-triggered cancellation.
+- long-running HTTP bridge operations must persist pollable task states and surface incremental `progress_percent` through `show_task_state` before adding new UI long-task flows.
+- long-running HTTP bridge operations that expose `show_task_state` must also support `cancel_task` with cooperative phase transitions (`running -> cancelling -> cancelled`) for desktop-triggered cancellation.
 - model-specific runtime logic belongs inside provider runner/runtime modules, not in orchestration or desktop files.
 
 ## Change Protocol

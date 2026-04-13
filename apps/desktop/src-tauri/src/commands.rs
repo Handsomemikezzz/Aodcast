@@ -1,269 +1,161 @@
-use serde_json::Value;
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
+
+use serde_json::{json, Value};
+use tauri::State;
 
 use crate::errors::BridgeError;
-use crate::python_bridge::{run_python_bridge, run_python_bridge_stream};
 
-#[tauri::command]
-pub fn list_projects(search: Option<String>, include_deleted: Option<bool>) -> Result<Value, BridgeError> {
-    let mut args = vec!["--list-projects".to_string()];
-    if let Some(value) = search.filter(|value| !value.trim().is_empty()) {
-        args.push("--search".to_string());
-        args.push(value);
-    }
-    if include_deleted.unwrap_or(false) {
-        args.push("--include-deleted".to_string());
-    }
-    run_python_bridge(&args)
+const DEFAULT_HOST: &str = "127.0.0.1";
+const DEFAULT_PORT: u16 = 8765;
+const READY_TIMEOUT: Duration = Duration::from_secs(20);
+const READY_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+#[derive(Default)]
+pub struct DesktopRuntimeState {
+    child: Mutex<Option<Child>>,
 }
 
-#[tauri::command]
-pub fn create_session(topic: String, creation_intent: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&[
-        "--create-session".to_string(),
-        "--topic".to_string(),
-        topic,
-        "--intent".to_string(),
-        creation_intent,
-    ])
+fn repo_root() -> Result<PathBuf, BridgeError> {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .ancestors()
+        .nth(3)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| BridgeError::new("repo_root_not_found", "Failed to locate repository root."))
 }
 
-#[tauri::command]
-pub fn show_session(session_id: String, include_deleted: Option<bool>) -> Result<Value, BridgeError> {
-    let mut args = vec!["--show-session".to_string(), session_id];
-    if include_deleted.unwrap_or(false) {
-        args.push("--include-deleted".to_string());
-    }
-    run_python_bridge(&args)
+fn runner_script(repo_root: &Path) -> PathBuf {
+    repo_root.join("scripts/dev/run-python-core.sh")
 }
 
-#[tauri::command]
-pub fn rename_session(session_id: String, topic: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&[
-        "--rename-session".to_string(),
-        session_id,
-        "--session-topic".to_string(),
-        topic,
-    ])
+fn base_url() -> String {
+    format!("http://{DEFAULT_HOST}:{DEFAULT_PORT}")
 }
 
-#[tauri::command]
-pub fn delete_session(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--delete-session".to_string(), session_id])
-}
+fn healthz_ready() -> bool {
+    let address = format!("{DEFAULT_HOST}:{DEFAULT_PORT}");
+    let mut stream = match TcpStream::connect(address) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
 
-#[tauri::command]
-pub fn restore_session(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--restore-session".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn start_interview(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--start-interview".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn submit_reply(
-    session_id: String,
-    message: String,
-    user_requested_finish: bool,
-) -> Result<Value, BridgeError> {
-    let mut args = vec![
-        "--reply-session".to_string(),
-        session_id,
-        "--message".to_string(),
-        message,
-    ];
-    if user_requested_finish {
-        args.push("--user-requested-finish".to_string());
-    }
-    run_python_bridge(&args)
-}
-
-#[tauri::command]
-pub async fn submit_reply_stream(
-    session_id: String,
-    message: String,
-    user_requested_finish: bool,
-    channel: tauri::ipc::Channel<Value>,
-) -> Result<Value, BridgeError> {
-    let mut args = vec![
-        "--reply-session".to_string(),
-        session_id,
-        "--message".to_string(),
-        message,
-    ];
-    if user_requested_finish {
-        args.push("--user-requested-finish".to_string());
+    let request = format!(
+        "GET /healthz HTTP/1.1\r\nHost: {DEFAULT_HOST}:{DEFAULT_PORT}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
     }
 
-    tauri::async_runtime::spawn_blocking(move || {
-        run_python_bridge_stream(&args, |line| {
-            let trimmed = line.trim();
-            if trimmed.starts_with("AOD_STREAM_CHUNK: ") {
-                let json_part = &trimmed[18..];
-                if let Ok(chunk_val) = serde_json::from_str::<Value>(json_part) {
-                    let _ = channel.send(chunk_val);
-                }
-            }
-            Ok(())
+    let mut response = String::new();
+    if stream.read_to_string(&mut response).is_err() {
+        return false;
+    }
+    response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
+}
+
+fn spawn_runtime_process(repo_root: &Path) -> Result<Child, BridgeError> {
+    let script_path = runner_script(repo_root);
+    if !script_path.exists() {
+        return Err(BridgeError::new(
+            "python_runtime_script_missing",
+            format!("Python runner script was not found at {}", script_path.display()),
+        ));
+    }
+
+    Command::new(&script_path)
+        .args([
+            "--serve-http",
+            "--host",
+            DEFAULT_HOST,
+            "--port",
+            &DEFAULT_PORT.to_string(),
+        ])
+        .current_dir(repo_root)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| {
+            BridgeError::with_details(
+                "python_runtime_spawn_failed",
+                format!("Failed to spawn HTTP runtime: {error}"),
+                json!({
+                    "script_path": script_path.display().to_string(),
+                }),
+            )
         })
-    })
-    .await
-    .map_err(|e| BridgeError::new("spawn_blocking_error", e.to_string()))?
 }
 
-#[tauri::command]
-pub fn request_finish(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--finish-session".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn generate_script(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--generate-script".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn save_edited_script(session_id: String, final_text: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&[
-        "--save-script".to_string(),
-        session_id,
-        "--script-final-text".to_string(),
-        final_text,
-    ])
-}
-
-#[tauri::command]
-pub fn delete_script(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--delete-script".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn restore_script(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--restore-script".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn list_script_revisions(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--list-script-revisions".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn rollback_script_revision(session_id: String, revision_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&[
-        "--rollback-script-revision".to_string(),
-        session_id,
-        "--revision-id".to_string(),
-        revision_id,
-    ])
-}
-
-#[tauri::command]
-pub fn render_audio(session_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--render-audio".to_string(), session_id])
-}
-
-#[tauri::command]
-pub fn show_local_tts_capability() -> Result<Value, BridgeError> {
-    run_python_bridge(&["--show-local-tts-capability".to_string()])
-}
-
-#[tauri::command]
-pub fn show_llm_config() -> Result<Value, BridgeError> {
-    run_python_bridge(&["--show-llm-config".to_string()])
-}
-
-#[tauri::command]
-pub fn configure_llm_provider(
-    provider: String,
-    model: String,
-    base_url: String,
-    api_key: String,
-) -> Result<Value, BridgeError> {
-    run_python_bridge(&[
-        "--configure-llm-provider".to_string(),
-        provider,
-        "--llm-model".to_string(),
-        model,
-        "--llm-base-url".to_string(),
-        base_url,
-        "--llm-api-key".to_string(),
-        api_key,
-    ])
-}
-
-#[tauri::command]
-pub fn show_tts_config() -> Result<Value, BridgeError> {
-    run_python_bridge(&["--show-tts-config".to_string()])
-}
-
-#[tauri::command]
-pub fn configure_tts_provider(
-    provider: String,
-    model: Option<String>,
-    base_url: Option<String>,
-    api_key: Option<String>,
-    voice: Option<String>,
-    audio_format: Option<String>,
-    local_runtime: Option<String>,
-    local_model_path: Option<String>,
-    clear_local_model_path: bool,
-) -> Result<Value, BridgeError> {
-    let mut args = vec!["--configure-tts-provider".to_string(), provider];
-    if let Some(value) = model {
-        args.push("--tts-model".to_string());
-        args.push(value);
+fn wait_for_runtime_ready(child: &mut Child) -> Result<(), BridgeError> {
+    let started = Instant::now();
+    while started.elapsed() < READY_TIMEOUT {
+      if healthz_ready() {
+          return Ok(());
+      }
+      if let Ok(Some(status)) = child.try_wait() {
+          return Err(BridgeError::with_details(
+              "python_runtime_exited_early",
+              format!("HTTP runtime exited before becoming ready: {status}"),
+              json!({
+                  "status": status.code(),
+              }),
+          ));
+      }
+      sleep(READY_POLL_INTERVAL);
     }
-    if let Some(value) = base_url {
-        args.push("--tts-base-url".to_string());
-        args.push(value);
+
+    Err(BridgeError::new(
+        "python_runtime_ready_timeout",
+        "Timed out waiting for the localhost HTTP runtime to become ready.",
+    ))
+}
+
+impl Drop for DesktopRuntimeState {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.child.lock() {
+            if let Some(child) = guard.as_mut() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            *guard = None;
+        }
     }
-    if let Some(value) = api_key {
-        args.push("--tts-api-key".to_string());
-        args.push(value);
-    }
-    if let Some(value) = voice {
-        args.push("--tts-voice".to_string());
-        args.push(value);
-    }
-    if let Some(value) = audio_format {
-        args.push("--tts-audio-format".to_string());
-        args.push(value);
-    }
-    if let Some(value) = local_runtime {
-        args.push("--tts-local-runtime".to_string());
-        args.push(value);
-    }
-    if clear_local_model_path {
-        args.push("--clear-tts-local-model-path".to_string());
-    }
-    if let Some(value) = local_model_path {
-        args.push("--tts-local-model-path".to_string());
-        args.push(value);
-    }
-    run_python_bridge(&args)
 }
 
 #[tauri::command]
-pub fn list_models_status() -> Result<Value, BridgeError> {
-    run_python_bridge(&["--list-models-status".to_string()])
-}
+pub fn ensure_http_runtime(state: State<'_, DesktopRuntimeState>) -> Result<Value, BridgeError> {
+    if healthz_ready() {
+        return Ok(json!({ "base_url": base_url() }));
+    }
 
-#[tauri::command]
-pub fn download_model(model_name: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--download-model".to_string(), model_name])
-}
+    let repo_root = repo_root()?;
+    let mut guard = state
+        .child
+        .lock()
+        .map_err(|_| BridgeError::new("python_runtime_lock_failed", "Failed to lock runtime state."))?;
 
-#[tauri::command]
-pub fn delete_model(model_name: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--delete-model".to_string(), model_name])
-}
+    if let Some(existing_child) = guard.as_mut() {
+        match existing_child.try_wait() {
+            Ok(None) => {
+                wait_for_runtime_ready(existing_child)?;
+                return Ok(json!({ "base_url": base_url() }));
+            }
+            Ok(Some(_)) | Err(_) => {
+                *guard = None;
+            }
+        }
+    }
 
-#[tauri::command]
-pub fn show_task_state(task_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--show-task-state".to_string(), task_id])
-}
+    let mut child = spawn_runtime_process(&repo_root)?;
+    wait_for_runtime_ready(&mut child)?;
+    *guard = Some(child);
 
-#[tauri::command]
-pub fn cancel_task(task_id: String) -> Result<Value, BridgeError> {
-    run_python_bridge(&["--cancel-task".to_string(), task_id])
+    Ok(json!({ "base_url": base_url() }))
 }

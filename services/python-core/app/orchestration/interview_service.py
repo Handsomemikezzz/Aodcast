@@ -129,6 +129,9 @@ class InterviewOrchestrator:
 
         project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
         transcript.append(Speaker.USER, content)
+        # Persist the user turn before any provider work so reopening the session
+        # still shows the message if generation hangs, fails, or the client disconnects.
+        self.store.save_project(project)
 
         project.session.transition(SessionState.READINESS_EVALUATION)
         readiness = evaluate_readiness(transcript)
@@ -170,6 +173,9 @@ class InterviewOrchestrator:
 
         project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
         transcript.append(Speaker.USER, content)
+        # Persist the user turn before streaming provider output so partial failures
+        # still leave the user's message visible when reopening the session.
+        self.store.save_project(project)
 
         project.session.transition(SessionState.READINESS_EVALUATION)
         readiness = evaluate_readiness(transcript)

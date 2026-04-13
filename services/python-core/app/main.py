@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from app.config import AppConfig
+from app.api.http_runtime import serve_http
 from app.domain.artifact import ArtifactRecord
 from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
@@ -53,7 +54,20 @@ def build_parser() -> argparse.ArgumentParser:
         description="Bootstrap utility for the Aodcast Python orchestration core.",
     )
     parser.add_argument("--cwd", type=Path, default=Path.cwd(), help="Project root")
-    parser.add_argument("--bridge-json", action="store_true", help="Emit a JSON envelope for desktop bridge calls.")
+    parser.add_argument("--serve-http", action="store_true", help="Run the stdlib localhost HTTP runtime.")
+    parser.add_argument("--host", default="127.0.0.1", help="Bind host for --serve-http.")
+    parser.add_argument("--port", type=int, default=8765, help="Bind port for --serve-http.")
+    parser.add_argument("--runtime-token", default="", help="Runtime auth token for protected HTTP endpoints.")
+    parser.add_argument(
+        "--allowed-origins",
+        default="",
+        help="Comma-separated explicit origin allowlist for the HTTP runtime.",
+    )
+    parser.add_argument(
+        "--bootstrap-nonce",
+        default="",
+        help="Single-use bootstrap nonce for same-machine browser token exchange.",
+    )
     parser.add_argument("--topic", default="A new podcast topic", help="Topic seed")
     parser.add_argument(
         "--intent",
@@ -409,6 +423,8 @@ def load_final_script_text(args: argparse.Namespace) -> str:
 
 
 def infer_operation(args: argparse.Namespace) -> str:
+    if args.serve_http:
+        return "http_runtime"
     if args.list_projects:
         return "list_projects"
     if args.create_session or args.create_demo_session:
@@ -503,10 +519,7 @@ def output_payload(
     )
     enriched_payload = dict(payload)
     enriched_payload["request_state"] = request_state
-    if args.bridge_json:
-        print(f"AOD_FINAL_RESPONSE: {json.dumps({'ok': True, 'data': enriched_payload})}")
-    else:
-        print(json.dumps(enriched_payload))
+    print(json.dumps(enriched_payload))
     return 0
 
 
@@ -526,14 +539,7 @@ def output_error(
         progress_percent=progress_percent,
         message=message,
     )
-    error_details = dict(details or {})
-    error_details["request_state"] = request_state
-    if args.bridge_json:
-        print(
-            f"AOD_FINAL_RESPONSE: {json.dumps({'ok': False, 'request_state': request_state, 'error': {'code': code, 'message': message, 'details': error_details}})}"
-        )
-    else:
-        print(message, file=sys.stderr)
+    print(message, file=sys.stderr)
     return 1
 
 
@@ -553,8 +559,17 @@ def run(argv: list[str] | None = None) -> int:
     artifact_store.bootstrap()
     request_state_store.bootstrap()
 
-    if not args.bridge_json:
-        print(f"Aodcast Python core ready at: {config.data_dir}")
+    if args.serve_http:
+        return serve_http(
+            cwd=Path(args.cwd),
+            host=args.host,
+            port=args.port,
+            runtime_token=args.runtime_token.strip() or None,
+            allowed_origins=args.allowed_origins.strip() or None,
+            bootstrap_nonce=args.bootstrap_nonce.strip() or None,
+        )
+
+    print(f"Aodcast Python core ready at: {config.data_dir}")
 
     try:
         if args.list_projects:
@@ -571,7 +586,7 @@ def run(argv: list[str] | None = None) -> int:
         if args.create_session or args.create_demo_session:
             project = create_project(args.topic, args.intent, demo=args.create_demo_session)
             store.save_project(project)
-            if args.create_demo_session and not args.bridge_json:
+            if args.create_demo_session:
                 print(f"Created demo session {project.session.session_id} at {store.session_dir(project.session.session_id)}")
                 return 0
             return output_payload(args, {"project": serialize_project(project)})
@@ -890,8 +905,7 @@ def run(argv: list[str] | None = None) -> int:
                             "type": "chunk",
                             "delta": chunk,
                         }
-                        # We use a specific prefix to make it easy for the bridge to parse
-                        print(f"AOD_STREAM_CHUNK: {json.dumps(chunk_payload)}")
+                        print(json.dumps(chunk_payload))
                         sys.stdout.flush()
 
                 if final_result:
@@ -1014,9 +1028,6 @@ def run(argv: list[str] | None = None) -> int:
             if project.session.is_deleted() and not args.list_projects_include_deleted:
                 raise ValueError("Session is deleted. Pass --include-deleted to inspect it.")
             return output_payload(args, {"project": serialize_project(project)})
-
-        if args.bridge_json:
-            return output_payload(args, {"projects": []})
 
         print(f"Known sessions: {len(store.list_projects())}")
         return 0
