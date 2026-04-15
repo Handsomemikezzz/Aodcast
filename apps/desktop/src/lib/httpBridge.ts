@@ -98,6 +98,9 @@ async function ensureDesktopRuntime(): Promise<RuntimeContext> {
 }
 
 function normalizeError(error: unknown): Error {
+  if (typeof error === "object" && error !== null && (error as { name?: string }).name === "AbortError") {
+    return new Error("Reply stream was interrupted. You can send again.");
+  }
   if (error instanceof TypeError) {
     const message = error.message.trim();
     if (/failed to fetch|networkerror|load failed/i.test(message)) {
@@ -212,6 +215,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     message: string,
     onChunk: (delta: string) => void,
     userRequestedFinish = false,
+    signal?: AbortSignal,
   ): Promise<InterviewTurnResult> {
     const runtime = await getRuntime();
     const response = await fetch(buildUrl(runtime.base_url, `/api/v1/sessions/${encodeURIComponent(sessionId)}/interview:reply-stream`), {
@@ -223,6 +227,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         message,
         user_requested_finish: userRequestedFinish,
       }),
+      signal,
     });
     if (!response.ok || !response.body) {
       let payload: BridgeEnvelope<InterviewTurnResult> | null = null;
@@ -264,17 +269,26 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       }
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let separatorIndex = buffer.indexOf("\n\n");
-      while (separatorIndex >= 0) {
-        const eventChunk = buffer.slice(0, separatorIndex);
-        buffer = buffer.slice(separatorIndex + 2);
-        flushEvent(eventChunk);
-        separatorIndex = buffer.indexOf("\n\n");
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let separatorIndex = buffer.indexOf("\n\n");
+        while (separatorIndex >= 0) {
+          const eventChunk = buffer.slice(0, separatorIndex);
+          buffer = buffer.slice(separatorIndex + 2);
+          flushEvent(eventChunk);
+          separatorIndex = buffer.indexOf("\n\n");
+        }
       }
+    } catch (err) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* ignore */
+      }
+      throw normalizeError(err);
     }
     if (!finalPayload) {
       throw new Error("Streaming reply finished without a final payload.");
@@ -350,8 +364,8 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         }),
       });
     },
-    async submitReplyStream(sessionId, message, onChunk, userRequestedFinish = false) {
-      return streamReply(sessionId, message, onChunk, userRequestedFinish);
+    async submitReplyStream(sessionId, message, onChunk, userRequestedFinish = false, signal?: AbortSignal) {
+      return streamReply(sessionId, message, onChunk, userRequestedFinish, signal);
     },
     async requestFinish(sessionId: string) {
       return callHttp<InterviewTurnResult>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/interview:finish`, {

@@ -63,6 +63,7 @@ export interface DesktopBridge {
     message: string,
     onChunk: (delta: string) => void,
     userRequestedFinish?: boolean,
+    signal?: AbortSignal,
   ): Promise<InterviewTurnResult>;
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
   generateScript(sessionId: string): Promise<GenerationResult>;

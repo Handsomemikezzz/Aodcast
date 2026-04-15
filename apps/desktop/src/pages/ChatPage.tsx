@@ -62,6 +62,8 @@ export function ChatPage({
   const [landingSubmitting, setLandingSubmitting] = useState(false);
   const [landingError, setLandingError] = useState<string | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const replyStreamAbortRef = useRef<AbortController | null>(null);
 
   const toDisplayText = (value: unknown): string => {
     if (typeof value === "string") return value;
@@ -147,6 +149,27 @@ export function ChatPage({
   }, [bridge, historyQuery]);
 
   useEffect(() => {
+    submittingRef.current = submitting;
+  }, [submitting]);
+
+  /** WebView / browser often suspends SSE while the app is in the background; the stream may never finish, leaving `submitting` true forever. Abort after resume so the textarea re-enables. */
+  useEffect(() => {
+    let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+    const onVisibility = () => {
+      clearTimeout(resumeTimer);
+      if (document.visibilityState !== "visible") return;
+      resumeTimer = window.setTimeout(() => {
+        if (submittingRef.current) replyStreamAbortRef.current?.abort();
+      }, 2000);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearTimeout(resumeTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -218,6 +241,10 @@ export function ChatPage({
       return { ...prev, transcript: newTranscript as any };
     });
 
+    replyStreamAbortRef.current?.abort();
+    const replyAbort = new AbortController();
+    replyStreamAbortRef.current = replyAbort;
+
     try {
       const result = await bridge.submitReplyStream(
         sessionId,
@@ -226,6 +253,7 @@ export function ChatPage({
           setStreamingMessage((prev) => (prev ?? "") + delta);
         },
         false,
+        replyAbort.signal,
       );
       setProject(result.project);
       setReadiness(result.readiness);
@@ -247,6 +275,7 @@ export function ChatPage({
         ),
       );
     } finally {
+      replyStreamAbortRef.current = null;
       setStreamingMessage(null);
       setSubmitting(false);
     }
