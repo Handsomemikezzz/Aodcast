@@ -69,6 +69,13 @@ class ScriptRecord:
         self.final = content
         self.updated_at = utc_now_iso()
 
+    def replace_with_generated_draft(self, content: str, *, reason: str = "script_regenerate") -> None:
+        if content != self.draft or content != self.final:
+            self._snapshot(reason=reason)
+        self.draft = content
+        self.final = content
+        self.updated_at = utc_now_iso()
+
     def soft_delete(self, *, reason: str = "script_delete") -> None:
         if not self.is_deleted():
             self._snapshot(reason=reason)

@@ -281,34 +281,52 @@ export function ChatPage({
     }
   };
 
-  const handleFinish = async () => {
-    if (!sessionId) return;
+  const handleGenerateScript = async () => {
+    if (!sessionId || submitting) return;
+    const hasExistingScript = Boolean(
+      project?.script &&
+      !project.script.deleted_at &&
+      (project.script.final.trim() || project.script.draft.trim()),
+    );
+    if (
+      hasExistingScript &&
+      !window.confirm("A script already exists for this chat. Overwrite it with a new draft from the latest conversation?")
+    ) {
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     setRequestState({
-      operation: "request_finish",
+      operation: "generate_script",
       phase: "running",
       progress_percent: 0,
-      message: "Evaluating readiness...",
+      message: "Preparing script generation...",
     });
     try {
-      const result = await bridge.requestFinish(sessionId);
+      await bridge.requestFinish(sessionId);
+      setRequestState({
+        operation: "generate_script",
+        phase: "running",
+        progress_percent: 45,
+        message: "Generating script from chat...",
+      });
+      const result = await bridge.generateScript(sessionId);
       setProject(result.project);
-      setReadiness(result.readiness);
-      setPromptInput(result.prompt_input);
       setRequestState(
         withRequestStateFallback(
           result.request_state,
-          buildRequestState("request_finish", "succeeded", "Interview is ready for script generation."),
+          buildRequestState("generate_script", "succeeded", "Script generated from this chat."),
         ),
       );
       await refreshWorkspace();
+      navigate(`/script/${sessionId}`);
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to finish interview."));
+      setError(getErrorMessage(err, "Failed to generate script from chat."));
       setRequestState(
         withRequestStateFallback(
           getErrorRequestState(err),
-          buildRequestState("request_finish", "failed", "Failed to finish interview."),
+          buildRequestState("generate_script", "failed", "Failed to generate script."),
         ),
       );
     } finally {
@@ -642,6 +660,7 @@ export function ChatPage({
   const state = project.session.state;
   const isFinished = state === "ready_to_generate" || state === "script_generated" || state === "script_edited" || state === "completed";
   const isDeletedSession = Boolean(project.session.deleted_at);
+  const hasUserTurns = turns.some((turn) => turn.speaker === "user");
   return (
     <div className="flex flex-row h-full w-full relative overflow-hidden">
       {historyAside}
@@ -770,13 +789,26 @@ export function ChatPage({
             {/* Finished State Action */}
             {isFinished && !isDeletedSession && (
               <div className="py-8 border-t border-outline mt-4">
-                <p className="text-sm text-secondary mb-4">Interview complete. Ready to move to the next phase.</p>
+                <p className="text-sm text-secondary mb-4">
+                  {state === "ready_to_generate"
+                    ? "Ready to generate a script from this conversation."
+                    : "Script phase is available for this chat."}
+                </p>
                 <button
-                  onClick={() => navigate(`/script/${sessionId}`)}
+                  onClick={() => void handleGenerateScript()}
+                  disabled={submitting}
                   className="px-5 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-sm font-medium transition-colors"
                 >
-                  Review Generated Script
+                  {submitting ? "Generating..." : "生成脚本"}
                 </button>
+                {(state === "script_generated" || state === "script_edited" || state === "completed") && (
+                  <button
+                    onClick={() => navigate(`/script/${sessionId}`)}
+                    className="ml-3 px-5 py-2.5 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    查看脚本
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -803,11 +835,11 @@ export function ChatPage({
                 />
                 <div className="flex items-center gap-1 shrink-0 p-1">
                   <button 
-                    onClick={handleFinish}
-                    disabled={submitting}
+                    onClick={() => void handleGenerateScript()}
+                    disabled={submitting || !hasUserTurns}
                     className="px-3 py-1.5 text-secondary hover:bg-surface-container-high hover:text-primary transition-colors rounded text-[12px] font-medium"
                   >
-                    Finish
+                    生成脚本
                   </button>
                   <button className="p-2 text-secondary hover:bg-surface-container-high transition-colors rounded">
                     <Mic className="w-4 h-4" />

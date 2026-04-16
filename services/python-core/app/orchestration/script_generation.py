@@ -61,9 +61,7 @@ class ScriptGenerationService:
             self.store.save_project(project)
             raise
 
-        script.update_draft(response.draft)
-        if (not script.final.strip()) or script.final == "Draft script pending real generation.":
-            script.update_final(response.draft)
+        script.replace_with_generated_draft(response.draft)
 
         project.session.llm_provider = response.provider_name
         project.session.transition(SessionState.SCRIPT_GENERATED)

@@ -93,6 +93,29 @@ class ScriptGenerationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.generate_draft(session.session_id)
 
+    def test_regenerate_script_snapshots_previous_content(self) -> None:
+        store, config_store, service = self.build_environment()
+        config_store.save_llm_config(LLMProviderConfig(provider="mock"))
+        session_id = self.seed_ready_project(store)
+
+        first = service.generate_draft(session_id)
+        loaded_after_first = store.load_project(session_id)
+        assert loaded_after_first.script is not None
+        loaded_after_first.script.save_final("User edited final script")
+        loaded_after_first.session.transition(SessionState.READY_TO_GENERATE)
+        store.save_project(loaded_after_first)
+
+        second = service.generate_draft(session_id)
+        loaded_after_second = store.load_project(session_id)
+        assert loaded_after_second.script is not None
+
+        self.assertEqual(first.provider, second.provider)
+        self.assertGreaterEqual(len(loaded_after_second.script.revisions), 2)
+        self.assertIn(
+            "User edited final script",
+            [revision.final for revision in loaded_after_second.script.revisions],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

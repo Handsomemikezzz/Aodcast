@@ -64,7 +64,7 @@ class InterviewOrchestratorTests(unittest.TestCase):
         self.assertEqual(len(loaded.transcript.turns), 3)
         self.assertEqual(loaded.transcript.turns[-1].speaker, Speaker.AGENT)
 
-    def test_ready_response_moves_session_to_ready_to_generate(self) -> None:
+    def test_ready_response_keeps_interview_running_until_user_finishes(self) -> None:
         store, orchestrator = self.build_orchestrator()
         session = SessionRecord(topic="AI workflow", creation_intent="Test ready")
         store.save_project(SessionProject(session=session))
@@ -79,10 +79,10 @@ class InterviewOrchestratorTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(result.project.session.state, SessionState.READY_TO_GENERATE)
+        self.assertEqual(result.project.session.state, SessionState.INTERVIEW_IN_PROGRESS)
         self.assertTrue(result.ai_can_finish)
         self.assertTrue(result.readiness.is_ready)
-        self.assertIsNone(result.next_question)
+        self.assertIsNotNone(result.next_question)
 
     def test_explicit_finish_request_moves_to_ready_even_if_not_ready(self) -> None:
         store, orchestrator = self.build_orchestrator()

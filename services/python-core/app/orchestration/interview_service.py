@@ -137,7 +137,7 @@ class InterviewOrchestrator:
         readiness = evaluate_readiness(transcript)
         prompt_input = build_prompt_input(project.session, transcript, readiness)
 
-        if user_requested_finish or readiness.is_ready:
+        if user_requested_finish:
             project.session.transition(SessionState.READY_TO_GENERATE)
             self.store.save_project(project)
             return InterviewTurnResult(
@@ -157,7 +157,7 @@ class InterviewOrchestrator:
             readiness=readiness,
             prompt_input=prompt_input,
             next_question=next_question,
-            ai_can_finish=False,
+            ai_can_finish=readiness.is_ready,
         )
 
     def submit_user_response_stream(
@@ -181,7 +181,7 @@ class InterviewOrchestrator:
         readiness = evaluate_readiness(transcript)
         prompt_input = build_prompt_input(project.session, transcript, readiness)
 
-        if user_requested_finish or readiness.is_ready:
+        if user_requested_finish:
             project.session.transition(SessionState.READY_TO_GENERATE)
             self.store.save_project(project)
             yield InterviewTurnResult(
@@ -209,7 +209,7 @@ class InterviewOrchestrator:
             readiness=readiness,
             prompt_input=prompt_input,
             next_question=next_question,
-            ai_can_finish=False,
+            ai_can_finish=readiness.is_ready,
         )
 
     def request_finish(self, session_id: str) -> InterviewTurnResult:

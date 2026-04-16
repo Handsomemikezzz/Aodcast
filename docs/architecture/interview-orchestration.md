@@ -13,12 +13,16 @@ The Python orchestration core currently supports four interview actions:
 - evaluate readiness
 - request finish
 
+Desktop UX baseline (manual trigger):
+- The Chat page provides a manual **“生成脚本”** action.
+- Trigger path: `request_finish` -> `script:generate` -> open Script page.
+- If a script already exists, overwrite requires explicit user confirmation on the desktop side.
+
 ## State Behavior
 
 - `start_interview` moves a new session into `interview_in_progress` and appends the first agent question.
-- `submit_user_response` appends the user turn, evaluates readiness, and either:
-  - returns to `interview_in_progress` with the next agent question, or
-  - moves the session to `ready_to_generate`
+- `submit_user_response` appends the user turn, evaluates readiness, and returns to `interview_in_progress` with the next agent question.
+- Readiness (`is_ready`) is exposed as a signal (`ai_can_finish`) but does not auto-end the conversation.
 - `request_finish` moves the session to `ready_to_generate` even if readiness is incomplete.
 
 ## Readiness Heuristic
