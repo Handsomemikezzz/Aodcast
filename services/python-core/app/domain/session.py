@@ -49,7 +49,6 @@ class SessionRecord:
         if not cleaned:
             raise ValueError("Session topic cannot be empty.")
         self.topic = cleaned
-        self.updated_at = utc_now_iso()
 
     def soft_delete(self) -> None:
         now = utc_now_iso()
