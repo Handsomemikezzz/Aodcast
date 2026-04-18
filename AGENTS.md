@@ -18,6 +18,7 @@ If implementation changes invalidate this file, update `AGENTS.md` in the same c
 
 Current source of truth: [docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
 Implementation plan: [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md)
+Product overview (sessions, multi-script snapshots): [docs/product/product-overview.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/product/product-overview.md)
 
 Current MVP:
 

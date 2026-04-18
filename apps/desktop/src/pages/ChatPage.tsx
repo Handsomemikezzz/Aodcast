@@ -283,17 +283,6 @@ export function ChatPage({
 
   const handleGenerateScript = async () => {
     if (!sessionId || submitting) return;
-    const hasExistingScript = Boolean(
-      project?.script &&
-      !project.script.deleted_at &&
-      (project.script.final.trim() || project.script.draft.trim()),
-    );
-    if (
-      hasExistingScript &&
-      !window.confirm("A script already exists for this chat. Overwrite it with a new draft from the latest conversation?")
-    ) {
-      return;
-    }
 
     setSubmitting(true);
     setError(null);
@@ -313,6 +302,7 @@ export function ChatPage({
       });
       const result = await bridge.generateScript(sessionId);
       setProject(result.project);
+      const newScriptId = result.script_id ?? result.project.script?.script_id;
       setRequestState(
         withRequestStateFallback(
           result.request_state,
@@ -320,7 +310,11 @@ export function ChatPage({
         ),
       );
       await refreshWorkspace();
-      navigate(`/script/${sessionId}`);
+      if (newScriptId) {
+        navigate(`/script/${sessionId}/${newScriptId}`);
+      } else {
+        navigate(`/script/${sessionId}`);
+      }
     } catch (err) {
       setError(getErrorMessage(err, "Failed to generate script from chat."));
       setRequestState(
@@ -661,6 +655,19 @@ export function ChatPage({
   const isFinished = state === "ready_to_generate" || state === "script_generated" || state === "script_edited" || state === "completed";
   const isDeletedSession = Boolean(project.session.deleted_at);
   const hasUserTurns = turns.some((turn) => turn.speaker === "user");
+  const showChatComposer = !isDeletedSession && state !== "topic_defined";
+
+  const openLatestScript = () => {
+    if (!sessionId) return;
+    void bridge.showLatestScript(sessionId).then((p) => {
+      if (p.script?.script_id) {
+        navigate(`/script/${sessionId}/${p.script.script_id}`);
+      } else {
+        navigate(`/script/${sessionId}`);
+      }
+    });
+  };
+
   return (
     <div className="flex flex-row h-full w-full relative overflow-hidden">
       {historyAside}
@@ -786,25 +793,27 @@ export function ChatPage({
               )}
             </div>
 
-            {/* Finished State Action */}
+            {/* Script hints (non-blocking; composer stays available below) */}
             {isFinished && !isDeletedSession && (
-              <div className="py-8 border-t border-outline mt-4">
-                <p className="text-sm text-secondary mb-4">
+              <div className="py-4 border-t border-outline mt-4 flex flex-wrap items-center gap-3">
+                <p className="text-sm text-secondary flex-1 min-w-[200px]">
                   {state === "ready_to_generate"
-                    ? "Ready to generate a script from this conversation."
-                    : "Script phase is available for this chat."}
+                    ? "可以从此对话生成脚本；也可继续聊天后再生成新的脚本。"
+                    : "可随时继续对话；每次生成都会新增一份脚本，不会覆盖已有脚本。"}
                 </p>
                 <button
+                  type="button"
                   onClick={() => void handleGenerateScript()}
                   disabled={submitting}
-                  className="px-5 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-sm font-medium transition-colors"
+                  className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-sm font-medium transition-colors shrink-0"
                 >
-                  {submitting ? "Generating..." : "生成脚本"}
+                  {submitting ? "生成中…" : "生成脚本"}
                 </button>
                 {(state === "script_generated" || state === "script_edited" || state === "completed") && (
                   <button
-                    onClick={() => navigate(`/script/${sessionId}`)}
-                    className="ml-3 px-5 py-2.5 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg text-sm font-medium transition-colors"
+                    type="button"
+                    onClick={() => openLatestScript()}
+                    className="px-4 py-2 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg text-sm font-medium transition-colors shrink-0"
                   >
                     查看脚本
                   </button>
@@ -815,7 +824,7 @@ export function ChatPage({
         </div>
 
         {/* Persistent Bottom Input Dock */}
-        {!isDeletedSession && !isFinished && state === "interview_in_progress" && (
+        {showChatComposer && (
           <div className="absolute bottom-0 left-0 w-full bg-background/60 backdrop-blur-2xl border-t border-outline p-4 lg:px-12">
             <div className="max-w-4xl mx-auto flex flex-col gap-2">
               <div className="bg-surface-container border border-outline rounded-lg p-2 flex items-end gap-2 focus-within:border-accent-amber/30 transition-colors shadow-sm">

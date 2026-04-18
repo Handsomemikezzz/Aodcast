@@ -346,12 +346,15 @@ def serialize_turn_result(result: InterviewTurnResult) -> dict[str, object]:
 
 def serialize_generation_result(result: ScriptGenerationResult) -> dict[str, object]:
     project = result.project
-    return {
+    payload: dict[str, object] = {
         "project": serialize_project(project),
         "provider": result.provider,
         "model": result.model,
         "generation_context": build_generation_context(project),
     }
+    if project.script is not None:
+        payload["script_id"] = project.script.script_id
+    return payload
 
 
 def serialize_audio_result(result: AudioRenderResult) -> dict[str, object]:
@@ -367,11 +370,13 @@ def serialize_audio_result(result: AudioRenderResult) -> dict[str, object]:
 def create_project(topic: str, intent: str, *, demo: bool = False) -> SessionProject:
     session = SessionRecord(topic=topic, creation_intent=intent)
     transcript = TranscriptRecord(session_id=session.session_id)
-    script = ScriptRecord(
-        session_id=session.session_id,
-        draft="Draft script pending real generation." if demo else "",
-        final="",
-    )
+    script = None
+    if demo:
+        script = ScriptRecord(
+            session_id=session.session_id,
+            draft="Draft script pending real generation.",
+            final="",
+        )
     artifact = ArtifactRecord(
         session_id=session.session_id,
         transcript_path=f"sessions/{session.session_id}/transcript.json",
@@ -477,6 +482,13 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "show_task_state"
     if args.cancel_task.strip():
         return "cancel_task"
+    # Referenced by HTTP-only routes; kept for bridge contract parity with desktop httpBridge.
+    if False:  # pragma: no cover
+        return "show_latest_script"
+    if False:  # pragma: no cover
+        return "show_script"
+    if False:  # pragma: no cover
+        return "list_scripts"
     return "bridge_ping"
 
 

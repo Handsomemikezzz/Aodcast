@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from app.config import AppConfig
 from app.domain.project import SessionProject
-from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import TranscriptRecord
 from app.models_catalog import build_models_status, delete_voice_model, download_voice_model
@@ -158,12 +157,15 @@ def serialize_turn_result(result: InterviewTurnResult) -> dict[str, object]:
 
 def serialize_generation_result(result: ScriptGenerationResult) -> dict[str, object]:
     project = result.project
-    return {
+    payload: dict[str, object] = {
         "project": serialize_project(project),
         "provider": result.provider,
         "model": result.model,
         "generation_context": build_generation_context(project),
     }
+    if project.script is not None:
+        payload["script_id"] = project.script.script_id
+    return payload
 
 
 def serialize_script_revisions(project: SessionProject) -> list[dict[str, object]]:
@@ -187,11 +189,10 @@ def serialize_script_revisions(project: SessionProject) -> list[dict[str, object
 def create_project(topic: str, intent: str) -> SessionProject:
     session = SessionRecord(topic=topic, creation_intent=intent)
     transcript = TranscriptRecord(session_id=session.session_id)
-    script = ScriptRecord(session_id=session.session_id)
     return SessionProject(
         session=session,
         transcript=transcript,
-        script=script,
+        script=None,
         artifact=None,
     )
 
@@ -871,10 +872,96 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             result = self.context.orchestrator.request_finish(session_id)
             self._send_bridge_envelope(success_envelope(serialize_turn_result(result), operation="request_finish"), origin=origin)
             return
+        if self.command == "GET" and suffix == "/scripts":
+            ensure_session_is_active(self.context.store.load_project(session_id))
+            scripts = self.context.store.list_scripts(session_id)
+            self._send_bridge_envelope(
+                success_envelope({"session_id": session_id, "scripts": [s.to_dict() for s in scripts]}, operation="list_scripts"),
+                origin=origin,
+            )
+            return
+        if self.command == "GET" and suffix == "/scripts/latest":
+            project = self.context.store.load_project(session_id)
+            ensure_session_is_active(project)
+            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="show_latest_script"), origin=origin)
+            return
+        if self.command == "GET" and suffix.startswith("/scripts/"):
+            rest = suffix.removeprefix("/scripts/").strip("/")
+            if rest and "/" not in rest:
+                project = self.context.store.load_project_for_script(session_id, rest)
+                ensure_session_is_active(project)
+                self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="show_script"), origin=origin)
+                return
+        if self.command == "PUT" and suffix.startswith("/scripts/") and suffix.endswith("/final"):
+            rest = suffix.removeprefix("/scripts/").removesuffix("/final").strip("/")
+            final_text = str(body.get("final_text") or "")
+            if not final_text.strip():
+                raise ValueError("Field 'final_text' is required.")
+            project = self.context.store.load_project_for_script(session_id, rest)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
+            project.script.save_final(final_text)
+            project.session.transition(SessionState.SCRIPT_EDITED)
+            self.context.store.save_project(project)
+            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="save_script"), origin=origin)
+            return
+        if self.command == "GET" and suffix.startswith("/scripts/") and "/revisions" in suffix:
+            # /scripts/{id}/revisions
+            rest = suffix.removeprefix("/scripts/").strip("/")
+            if not rest.endswith("/revisions"):
+                raise ValueError(f"Unknown route: {path}")
+            script_id = rest[: -len("/revisions")].strip("/")
+            project = self.context.store.load_project_for_script(session_id, script_id)
+            ensure_session_is_active(project)
+            if project.script is None:
+                raise ValueError("Cannot list revisions because no script record exists.")
+            self._send_bridge_envelope(
+                success_envelope(
+                    {"session_id": session_id, "script_id": script_id, "revisions": serialize_script_revisions(project)},
+                    operation="list_script_revisions",
+                ),
+                origin=origin,
+            )
+            return
+        if self.command == "POST" and suffix.startswith("/scripts/") and "/revisions/" in suffix and suffix.endswith(":rollback"):
+            rest = suffix.removeprefix("/scripts/").strip("/")
+            # {script_id}/revisions/{rev}:rollback
+            mid, _, revpart = rest.partition("/revisions/")
+            revision_id = revpart.removesuffix(":rollback")
+            project = self.context.store.load_project_for_script(session_id, mid)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
+            project.script.rollback_to_revision(revision_id)
+            project.session.transition(SessionState.SCRIPT_EDITED)
+            self.context.store.save_project(project)
+            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rollback_script_revision"), origin=origin)
+            return
+        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith(":delete"):
+            script_id = suffix.removeprefix("/scripts/").removesuffix(":delete").strip("/")
+            project = self.context.store.load_project_for_script(session_id, script_id)
+            ensure_session_is_active(project)
+            ensure_script_is_active(project)
+            if project.script.is_deleted():
+                raise ValueError("Script is already deleted.")
+            project.script.soft_delete()
+            self.context.store.save_project(project)
+            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="delete_script"), origin=origin)
+            return
+        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith(":restore"):
+            script_id = suffix.removeprefix("/scripts/").removesuffix(":restore").strip("/")
+            project = self.context.store.load_project_for_script(session_id, script_id)
+            ensure_session_is_active(project)
+            if project.script is None:
+                raise ValueError("Cannot restore script because no script record exists.")
+            if not project.script.is_deleted():
+                raise ValueError("Script is not deleted.")
+            project.script.restore()
+            self.context.store.save_project(project)
+            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_script"), origin=origin)
+            return
         if self.command == "POST" and suffix == "/script:generate":
             project = self.context.store.load_project(session_id)
             ensure_session_is_active(project)
-            ensure_script_is_active(project)
             result = self.context.script_generation.generate_draft(session_id)
             self._send_bridge_envelope(success_envelope(serialize_generation_result(result), operation="generate_script"), origin=origin)
             return

@@ -29,8 +29,9 @@ Out of scope for this slice:
 
 ### Script Management
 
+- **Multiple scripts per session**: Each script generation from the same chat creates a **new** script entity (new `script_id`, new persisted blob). Earlier scripts remain available; generation is **not** modeled as overwriting a single “current script” file.
 - Users can continue editing scripts as today.
-- Each script save creates a revision snapshot.
+- Each script save creates a revision snapshot **within that script record**.
 - Users can view revision history and rollback to a selected revision.
 - Script delete is soft delete for current script content:
   - delete keeps revision history

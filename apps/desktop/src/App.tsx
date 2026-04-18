@@ -6,6 +6,7 @@ import { cn } from "./lib/utils";
 
 import { ChatPage } from "./pages/ChatPage";
 import { ScriptPage } from "./pages/ScriptPage";
+import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
 import { ModelsPage } from "./pages/ModelsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { MessageSquare, Edit3, Mic, Package, Settings } from "lucide-react";
@@ -179,9 +180,10 @@ export default function App() {
             />
             <Route path="/script" element={<ScriptPage projects={projects} onRefresh={fetchProjects} />} />
             <Route
-              path="/script/:sessionId"
+              path="/script/:sessionId/:scriptId"
               element={<ScriptPage projects={projects} onRefresh={fetchProjects} />}
             />
+            <Route path="/script/:sessionId" element={<ScriptSessionResolve />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/interview" element={<RedirectInterviewToChat />} />

@@ -38,10 +38,13 @@ class ScriptRevision:
 @dataclass(slots=True)
 class ScriptRecord:
     session_id: str
+    script_id: str = field(default_factory=lambda: str(uuid4()))
+    name: str = ""
     draft: str = ""
     final: str = ""
     deleted_at: str | None = None
     revisions: list[ScriptRevision] = field(default_factory=list)
+    created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
 
     def _snapshot(self, *, reason: str) -> None:
@@ -123,20 +126,28 @@ class ScriptRecord:
     def to_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
+            "script_id": self.script_id,
+            "name": self.name,
             "draft": self.draft,
             "final": self.final,
             "deleted_at": self.deleted_at,
             "revisions": [item.to_dict() for item in self.revisions],
+            "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ScriptRecord":
+        updated = payload.get("updated_at") or utc_now_iso()
+        created = payload.get("created_at") or updated
         return cls(
             session_id=payload["session_id"],
+            script_id=str(payload.get("script_id") or uuid4()),
+            name=str(payload.get("name") or ""),
             draft=payload.get("draft", ""),
             final=payload.get("final", ""),
             deleted_at=payload.get("deleted_at") or None,
             revisions=[ScriptRevision.from_dict(item) for item in payload.get("revisions", [])],
-            updated_at=payload["updated_at"],
+            created_at=str(created),
+            updated_at=str(updated),
         )

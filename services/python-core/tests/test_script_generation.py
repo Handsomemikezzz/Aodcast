@@ -43,8 +43,7 @@ class ScriptGenerationTests(unittest.TestCase):
                 "that workflows should fail in recoverable ways."
             ),
         )
-        script = ScriptRecord(session_id=session.session_id)
-        store.save_project(SessionProject(session=session, transcript=transcript, script=script))
+        store.save_project(SessionProject(session=session, transcript=transcript, script=None))
         return session.session_id
 
     def test_generate_script_with_mock_provider_updates_session(self) -> None:
@@ -82,18 +81,20 @@ class ScriptGenerationTests(unittest.TestCase):
         assert loaded.transcript is not None
         self.assertEqual(len(loaded.transcript.turns), 2)
 
-    def test_generate_script_requires_ready_or_failed_state(self) -> None:
+    def test_generate_script_rejects_audio_rendering_state(self) -> None:
         store, config_store, service = self.build_environment()
         config_store.save_llm_config(LLMProviderConfig(provider="mock"))
-        session = SessionRecord(topic="Not ready", creation_intent="Guard rails")
+        session = SessionRecord(topic="Rendering", creation_intent="Busy")
+        session.transition(SessionState.AUDIO_RENDERING)
         transcript = TranscriptRecord(session_id=session.session_id)
+        transcript.append(Speaker.AGENT, "Hello")
         script = ScriptRecord(session_id=session.session_id)
         store.save_project(SessionProject(session=session, transcript=transcript, script=script))
 
         with self.assertRaises(ValueError):
             service.generate_draft(session.session_id)
 
-    def test_regenerate_script_snapshots_previous_content(self) -> None:
+    def test_second_generate_creates_new_script_file(self) -> None:
         store, config_store, service = self.build_environment()
         config_store.save_llm_config(LLMProviderConfig(provider="mock"))
         session_id = self.seed_ready_project(store)
@@ -101,6 +102,7 @@ class ScriptGenerationTests(unittest.TestCase):
         first = service.generate_draft(session_id)
         loaded_after_first = store.load_project(session_id)
         assert loaded_after_first.script is not None
+        first_script_id = loaded_after_first.script.script_id
         loaded_after_first.script.save_final("User edited final script")
         loaded_after_first.session.transition(SessionState.READY_TO_GENERATE)
         store.save_project(loaded_after_first)
@@ -110,11 +112,11 @@ class ScriptGenerationTests(unittest.TestCase):
         assert loaded_after_second.script is not None
 
         self.assertEqual(first.provider, second.provider)
-        self.assertGreaterEqual(len(loaded_after_second.script.revisions), 2)
-        self.assertIn(
-            "User edited final script",
-            [revision.final for revision in loaded_after_second.script.revisions],
-        )
+        self.assertNotEqual(first_script_id, loaded_after_second.script.script_id)
+        scripts = store.list_scripts(session_id)
+        self.assertEqual(len(scripts), 2)
+        older = store.load_script_by_id(session_id, first_script_id)
+        self.assertEqual(older.final, "User edited final script")
 
 
 if __name__ == "__main__":

@@ -37,8 +37,11 @@ export type TranscriptRecord = {
 
 export type ScriptRecord = {
   session_id: string;
+  script_id: string;
+  name: string;
   draft: string;
   final: string;
+  created_at: string;
   updated_at: string;
   deleted_at?: string | null;
 };
@@ -113,6 +116,7 @@ export type GenerationResult = BridgeResultMeta & {
   project: SessionProject;
   provider: string;
   model: string;
+  script_id?: string;
 };
 
 export type AudioRenderResult = BridgeResultMeta & {

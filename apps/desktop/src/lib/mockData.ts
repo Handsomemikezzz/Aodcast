@@ -28,11 +28,15 @@ function transcript(sessionId: string, turns: TranscriptRecord["turns"]): Transc
 }
 
 function script(sessionId: string, draft: string, finalText = ""): ScriptRecord {
+  const now = new Date().toISOString();
   return {
     session_id: sessionId,
+    script_id: "00000000-0000-4000-8000-000000000001",
+    name: "Mock script",
     draft,
     final: finalText,
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   };
 }
 

@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Clock3, Edit3, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
-import type { RequestState, ScriptRevisionRecord, SessionProject } from "../types";
+import type { RequestState, ScriptRecord, ScriptRevisionRecord, SessionProject } from "../types";
 import {
   buildRequestState,
   getErrorMessage,
   getErrorRequestState,
   withRequestStateFallback,
 } from "../lib/requestState";
+import { cn } from "../lib/utils";
 
 export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId, scriptId } = useParams<{ sessionId: string; scriptId: string }>();
+  const navigate = useNavigate();
   const bridge = useBridge();
 
   const [project, setProject] = useState<SessionProject | null>(null);
@@ -24,17 +26,20 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
+  const [scriptSnapshots, setScriptSnapshots] = useState<ScriptRecord[]>([]);
 
   const reload = async () => {
-    if (!sessionId) return;
-    const [loadedProject, loadedRevisions] = await Promise.all([
-      bridge.showSession(sessionId, { includeDeleted: true }),
-      bridge.listScriptRevisions(sessionId),
+    if (!sessionId || !scriptId) return;
+    const [loadedProject, loadedRevisions, listed] = await Promise.all([
+      bridge.showScript(sessionId, scriptId),
+      bridge.listScriptRevisions(sessionId, scriptId),
+      bridge.listScripts(sessionId),
     ]);
     setProject(loadedProject);
     setTopic(loadedProject.session.topic || "Untitled Project");
     setScript(loadedProject.script?.final || loadedProject.script?.draft || "");
     setRevisions(loadedRevisions);
+    setScriptSnapshots(listed);
   };
 
   const refreshWorkspace = async () => {
@@ -43,7 +48,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   useEffect(() => {
     const loadProject = async () => {
-      if (!sessionId) return;
+      if (!sessionId || !scriptId) return;
       try {
         setLoading(true);
         setError(null);
@@ -57,10 +62,10 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
     };
 
     void loadProject();
-  }, [sessionId, bridge]);
+  }, [sessionId, scriptId, bridge]);
 
   const handleSave = async () => {
-    if (!sessionId || project?.script?.deleted_at || project?.session.deleted_at) return;
+    if (!sessionId || !scriptId || project?.script?.deleted_at || project?.session.deleted_at) return;
     try {
       setSaving(true);
       setError(null);
@@ -70,7 +75,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
         progress_percent: 0,
         message: "Saving script...",
       });
-      await bridge.saveEditedScript(sessionId, script);
+      await bridge.saveEditedScript(sessionId, scriptId, script);
       await refreshWorkspace();
       setRequestState(buildRequestState("save_script", "succeeded", "Script saved."));
     } catch (err) {
@@ -87,7 +92,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   };
 
   const handleDeleteScript = async () => {
-    if (!sessionId || !project || project.script?.deleted_at || project.session.deleted_at) return;
+    if (!sessionId || !scriptId || !project || project.script?.deleted_at || project.session.deleted_at) return;
     if (!window.confirm("Move this script to trash?")) return;
     setBusyAction("delete-script");
     setError(null);
@@ -98,7 +103,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
       message: "Moving script to trash...",
     });
     try {
-      await bridge.deleteScript(sessionId);
+      await bridge.deleteScript(sessionId, scriptId);
       await refreshWorkspace();
       setRequestState(buildRequestState("delete_script", "succeeded", "Script moved to trash."));
     } catch (err) {
@@ -115,7 +120,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   };
 
   const handleRestoreScript = async () => {
-    if (!sessionId || !project?.script?.deleted_at) return;
+    if (!sessionId || !scriptId || !project?.script?.deleted_at) return;
     setBusyAction("restore-script");
     setError(null);
     setRequestState({
@@ -125,7 +130,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
       message: "Restoring script...",
     });
     try {
-      await bridge.restoreScript(sessionId);
+      await bridge.restoreScript(sessionId, scriptId);
       await refreshWorkspace();
       setRequestState(buildRequestState("restore_script", "succeeded", "Script restored."));
     } catch (err) {
@@ -142,7 +147,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   };
 
   const handleRollbackRevision = async (revisionId: string) => {
-    if (!sessionId || project?.script?.deleted_at || project?.session.deleted_at) return;
+    if (!sessionId || !scriptId || project?.script?.deleted_at || project?.session.deleted_at) return;
     if (!window.confirm("Rollback to this revision?")) return;
     setBusyAction(revisionId);
     setError(null);
@@ -153,7 +158,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
       message: "Rolling back revision...",
     });
     try {
-      await bridge.rollbackScriptRevision(sessionId, revisionId);
+      await bridge.rollbackScriptRevision(sessionId, scriptId, revisionId);
       await refreshWorkspace();
       setRequestState(buildRequestState("rollback_script_revision", "succeeded", "Revision restored."));
     } catch (err) {
@@ -215,7 +220,47 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
             <div className="mb-6 flex justify-between items-end border-b border-outline pb-4">
               <div>
                 <h1 className="text-2xl font-headline font-bold text-primary mb-1">{topic}</h1>
-                <p className="text-secondary text-sm">Review and refine your script before generation.</p>
+                {project?.script?.name ? (
+                  <p className="text-[13px] text-secondary font-medium mb-1">{project.script.name}</p>
+                ) : null}
+                <p className="text-secondary text-sm">
+                  Review and refine this script snapshot. Each chat generation adds another snapshot; switch below if this
+                  session has more than one.
+                </p>
+                {scriptSnapshots.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-[11px] uppercase tracking-wider text-secondary mb-2">
+                      Script snapshots ({scriptSnapshots.length})
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {scriptSnapshots.map((snap) => {
+                        const active = snap.script_id === scriptId;
+                        const deleted = Boolean(snap.deleted_at);
+                        return (
+                          <button
+                            key={snap.script_id}
+                            type="button"
+                            onClick={() => {
+                              if (!active) navigate(`/script/${sessionId}/${snap.script_id}`);
+                            }}
+                            disabled={active}
+                            title={snap.name}
+                            className={cn(
+                              "max-w-full truncate rounded-md border px-2.5 py-1 text-left text-[12px] font-medium transition-colors",
+                              active
+                                ? "border-accent-amber/50 bg-accent-amber/10 text-primary cursor-default"
+                                : "border-outline bg-surface-container-low text-secondary hover:border-accent-amber/30 hover:text-primary",
+                              deleted && "opacity-60",
+                            )}
+                          >
+                            {snap.name || snap.script_id.slice(0, 8)}
+                            {deleted ? " · trash" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
                 {!error && requestState?.phase === "running" && (
                   <p className="mt-2 text-xs text-secondary">{requestState.message}</p>

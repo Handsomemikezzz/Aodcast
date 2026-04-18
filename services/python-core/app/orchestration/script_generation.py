@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from uuid import uuid4
 
+from app.domain.common import utc_now_iso
 from app.domain.project import SessionProject
+from app.domain.script import ScriptRecord
 from app.domain.session import SessionState
 from app.orchestration.prompts import build_prompt_input
 from app.orchestration.readiness import evaluate_readiness
@@ -32,15 +36,10 @@ class ScriptGenerationService:
     ) -> ScriptGenerationResult:
         project = self.store.load_project(session_id)
         transcript = project.transcript
-        script = project.script
         if transcript is None:
             raise ValueError("Cannot generate a script without a transcript.")
-        if script is None:
-            raise ValueError("Cannot generate a script without a script record.")
-        if project.session.state not in (SessionState.READY_TO_GENERATE, SessionState.FAILED):
-            raise ValueError(
-                f"Session must be in ready_to_generate or failed state before script generation, got '{project.session.state.value}'."
-            )
+        if project.session.state == SessionState.AUDIO_RENDERING:
+            raise ValueError("Cannot generate a script while audio rendering is in progress.")
 
         llm_config = self.config_store.load_llm_config()
         if override_provider:
@@ -54,6 +53,14 @@ class ScriptGenerationService:
             transcript_text=_transcript_text(transcript),
         )
 
+        script = ScriptRecord(
+            session_id=session_id,
+            script_id=str(uuid4()),
+            name=_format_new_script_name(project.session.topic),
+            created_at=utc_now_iso(),
+            updated_at=utc_now_iso(),
+        )
+
         try:
             response = provider.generate_script(request)
         except Exception as exc:
@@ -62,6 +69,7 @@ class ScriptGenerationService:
             raise
 
         script.replace_with_generated_draft(response.draft)
+        project.script = script
 
         project.session.llm_provider = response.provider_name
         project.session.transition(SessionState.SCRIPT_GENERATED)
@@ -90,3 +98,11 @@ def build_generation_context(project: SessionProject) -> dict[str, object]:
 
 def _transcript_text(transcript) -> str:
     return "\n".join(f"{turn.speaker.value}: {turn.content}" for turn in transcript.turns)
+
+
+def _format_new_script_name(topic: str) -> str:
+    local = datetime.now().astimezone()
+    # Second precision so back-to-back generations in the same minute get distinct labels.
+    stamp = local.strftime("%Y-%m-%d %H:%M:%S")
+    base = (topic or "").strip() or "Untitled"
+    return f"{base}-{stamp}"

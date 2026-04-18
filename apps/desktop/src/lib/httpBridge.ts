@@ -17,6 +17,7 @@ import type {
   LLMProviderConfig,
   ModelStatus,
   RequestState,
+  ScriptRecord,
   ScriptRevisionRecord,
   SessionProject,
   TTSCapability,
@@ -47,6 +48,9 @@ type BridgeEnvelope<T> = EnvelopeSuccess<T> | EnvelopeFailure;
 type BridgeShape<T> = {
   project?: SessionProject;
   projects?: SessionProject[];
+  scripts?: ScriptRecord[];
+  session_id?: string;
+  script_id?: string;
   revisions?: ScriptRevisionRecord[];
   llm_config?: LLMProviderConfig;
   tts_capability?: TTSCapability;
@@ -379,40 +383,65 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({}),
       });
     },
+    async showLatestScript(sessionId: string) {
+      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/latest`);
+      return response.project!;
+    },
+    async showScript(sessionId: string, scriptId: string) {
+      const response = await callHttp<{}>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}`,
+      );
+      return response.project!;
+    },
+    async listScripts(sessionId: string) {
+      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts`);
+      return (response.scripts as ScriptRecord[]) ?? [];
+    },
     async renderAudio(sessionId: string) {
       return callHttp<AudioRenderResult>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/audio:render`, {
         method: "POST",
         body: JSON.stringify({}),
       });
     },
-    async saveEditedScript(sessionId: string, finalText: string) {
-      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/script/final`, {
-        method: "PUT",
-        body: JSON.stringify({ final_text: finalText }),
-      });
+    async saveEditedScript(sessionId: string, scriptId: string, finalText: string) {
+      const response = await callHttp<{}>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/final`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ final_text: finalText }),
+        },
+      );
       return response.project!;
     },
-    async deleteScript(sessionId: string) {
-      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/script:delete`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+    async deleteScript(sessionId: string, scriptId: string) {
+      const response = await callHttp<{}>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}:delete`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
       return response.project!;
     },
-    async restoreScript(sessionId: string) {
-      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/script:restore`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+    async restoreScript(sessionId: string, scriptId: string) {
+      const response = await callHttp<{}>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}:restore`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
       return response.project!;
     },
-    async listScriptRevisions(sessionId: string) {
-      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/script/revisions`);
+    async listScriptRevisions(sessionId: string, scriptId: string) {
+      const response = await callHttp<{}>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/revisions`,
+      );
       return response.revisions ?? [];
     },
-    async rollbackScriptRevision(sessionId: string, revisionId: string) {
+    async rollbackScriptRevision(sessionId: string, scriptId: string, revisionId: string) {
       const response = await callHttp<{}>(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}/script/revisions/${encodeURIComponent(revisionId)}:rollback`,
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/revisions/${encodeURIComponent(revisionId)}:rollback`,
         {
           method: "POST",
           body: JSON.stringify({}),

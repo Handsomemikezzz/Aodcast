@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ChevronRight, Edit3, Mic } from "lucide-react";
 import { SessionProject } from "../types";
 import { cn } from "../lib/utils";
+import { useBridge } from "../lib/BridgeContext";
 import { EditPage } from "./EditPage";
 import { GeneratePage } from "./GeneratePage";
 
@@ -16,8 +17,9 @@ export function ScriptPage({
   projects: SessionProject[];
   onRefresh: () => Promise<void>;
 }) {
-  const { sessionId } = useParams<{ sessionId?: string }>();
+  const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const navigate = useNavigate();
+  const bridge = useBridge();
   const [tab, setTab] = useState<TabId>("edit");
 
   const sorted = [...projects].sort((a, b) =>
@@ -48,7 +50,20 @@ export function ScriptPage({
                 <button
                   key={p.session.session_id}
                   type="button"
-                  onClick={() => navigate(`/script/${p.session.session_id}`)}
+                  onClick={() => {
+                    void (async () => {
+                      try {
+                        const proj = await bridge.showLatestScript(p.session.session_id);
+                        if (proj.script?.script_id) {
+                          navigate(`/script/${p.session.session_id}/${proj.script.script_id}`);
+                        } else {
+                          navigate(`/script/${p.session.session_id}`);
+                        }
+                      } catch {
+                        navigate(`/script/${p.session.session_id}`);
+                      }
+                    })();
+                  }}
                   className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-container transition-colors"
                 >
                   <div className="min-w-0">
@@ -64,6 +79,14 @@ export function ScriptPage({
           </div>
         </div>
       </motion.div>
+    );
+  }
+
+  if (!scriptId) {
+    return (
+      <div className="flex h-full items-center justify-center text-secondary text-sm">
+        Missing script id. Use the script list or open from chat.
+      </div>
     );
   }
 
@@ -98,7 +121,11 @@ export function ScriptPage({
         </button>
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
-        {tab === "edit" ? <EditPage onRefresh={onRefresh} /> : <GeneratePage onRefresh={onRefresh} />}
+        {tab === "edit" ? (
+          <EditPage key={`${sessionId}-${scriptId}`} onRefresh={onRefresh} />
+        ) : (
+          <GeneratePage onRefresh={onRefresh} />
+        )}
       </div>
     </div>
   );

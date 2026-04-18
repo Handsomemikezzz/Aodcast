@@ -5,6 +5,7 @@ import {
   LLMProviderConfig,
   ModelStatus,
   RequestState,
+  ScriptRecord,
   ScriptRevisionRecord,
   SessionProject,
   TTSProviderConfig,
@@ -68,11 +69,14 @@ export interface DesktopBridge {
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
   generateScript(sessionId: string): Promise<GenerationResult>;
   renderAudio(sessionId: string): Promise<AudioRenderResult>;
-  saveEditedScript(sessionId: string, finalText: string): Promise<SessionProject>;
-  deleteScript(sessionId: string): Promise<SessionProject>;
-  restoreScript(sessionId: string): Promise<SessionProject>;
-  listScriptRevisions(sessionId: string): Promise<ScriptRevisionRecord[]>;
-  rollbackScriptRevision(sessionId: string, revisionId: string): Promise<SessionProject>;
+  showLatestScript(sessionId: string): Promise<SessionProject>;
+  showScript(sessionId: string, scriptId: string): Promise<SessionProject>;
+  listScripts(sessionId: string): Promise<ScriptRecord[]>;
+  saveEditedScript(sessionId: string, scriptId: string, finalText: string): Promise<SessionProject>;
+  deleteScript(sessionId: string, scriptId: string): Promise<SessionProject>;
+  restoreScript(sessionId: string, scriptId: string): Promise<SessionProject>;
+  listScriptRevisions(sessionId: string, scriptId: string): Promise<ScriptRevisionRecord[]>;
+  rollbackScriptRevision(sessionId: string, scriptId: string, revisionId: string): Promise<SessionProject>;
   getLocalTTSCapability(): Promise<TTSCapability>;
   showLLMConfig(): Promise<LLMProviderConfig>;
   configureLLMProvider(input: ConfigureLLMInput): Promise<LLMProviderConfig>;
