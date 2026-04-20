@@ -398,10 +398,17 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       return (response.scripts as ScriptRecord[]) ?? [];
     },
     async renderAudio(sessionId: string) {
-      return callHttp<AudioRenderResult>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/audio:render`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+      const response = await callHttp<AudioRenderResult>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/audio:render`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      if (typeof response.run_token !== "string" && typeof response.request_state?.run_token === "string") {
+        response.run_token = response.request_state.run_token;
+      }
+      return response;
     },
     async saveEditedScript(sessionId: string, scriptId: string, finalText: string) {
       const response = await callHttp<{}>(

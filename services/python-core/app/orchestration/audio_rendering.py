@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
@@ -20,6 +21,21 @@ class AudioRenderResult:
     model: str
     audio_path: str
     transcript_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class AudioRenderProgress:
+    """Progress snapshot surfaced to the orchestration caller.
+
+    ``percent`` is a 0-100 completion estimate. ``chunk_index`` and
+    ``chunks_total`` are 1-based counters describing the current sentence
+    being synthesized; values of 0 mean no chunk information was supplied.
+    """
+
+    percent: float
+    message: str
+    chunk_index: int = 0
+    chunks_total: int = 0
 
 
 class AudioRenderingService:
@@ -42,6 +58,7 @@ class AudioRenderingService:
         *,
         override_provider: str = "",
         should_cancel: Callable[[], bool] | None = None,
+        on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
         project = self.store.load_project(session_id)
         script = project.script
@@ -77,17 +94,32 @@ class AudioRenderingService:
             self.store.save_project(project)
             raise TaskCancellationRequested(f"Audio rendering cancelled for session {session_id}.")
 
+        def forward_provider_event(event: Any) -> None:
+            if on_progress is None:
+                return
+            snapshot = _translate_provider_event(event)
+            if snapshot is None:
+                return
+            on_progress(snapshot)
+
         request = TTSGenerationRequest(
             session_id=session_id,
             script_text=final_text,
             voice=tts_config.voice,
             audio_format=tts_config.audio_format,
             should_cancel=should_cancel,
+            on_progress=forward_provider_event,
         )
         try:
             raise_if_cancelled()
+            if on_progress is not None:
+                on_progress(AudioRenderProgress(percent=7.0, message="Loading voice model..."))
             response = provider.synthesize(request)
             raise_if_cancelled()
+            if on_progress is not None:
+                on_progress(
+                    AudioRenderProgress(percent=95.0, message="Writing transcript and audio artifacts...")
+                )
             transcript_path = self.artifact_store.write_transcript(session_id, final_text)
             audio_path = self.artifact_store.write_audio(
                 session_id,
@@ -117,3 +149,45 @@ class AudioRenderingService:
             audio_path=str(audio_path),
             transcript_path=str(transcript_path),
         )
+
+
+_PROVIDER_RENDER_WINDOW = (10.0, 90.0)
+
+
+def _translate_provider_event(event: Any) -> AudioRenderProgress | None:
+    """Convert a provider-specific progress event into a task snapshot.
+
+    We currently understand the :class:`ChunkProgressEvent` emitted by the
+    local MLX runner; other providers that do not emit progress produce no
+    snapshot and the heartbeat / phase markers drive the UI instead.
+    """
+
+    phase = getattr(event, "phase", None)
+    index = getattr(event, "index", None)
+    total = getattr(event, "total", None)
+    if not isinstance(phase, str) or not isinstance(index, int) or not isinstance(total, int):
+        return None
+    if total <= 0:
+        return None
+
+    start, end = _PROVIDER_RENDER_WINDOW
+    span = max(end - start, 0.1)
+
+    if phase == "chunk_started":
+        fraction = index / total
+        message = f"Synthesizing chunk {index + 1} / {total}"
+    elif phase == "chunk_done":
+        completed = index + 1
+        fraction = completed / total
+        message = f"Rendered chunk {completed} / {total}"
+    else:
+        return None
+
+    fraction = max(0.0, min(1.0, fraction))
+    percent = start + span * fraction
+    return AudioRenderProgress(
+        percent=percent,
+        message=message,
+        chunk_index=index + 1,
+        chunks_total=total,
+    )

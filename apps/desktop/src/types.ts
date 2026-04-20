@@ -98,6 +98,7 @@ export type RequestState = {
   phase: "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
   progress_percent: number;
   message: string;
+  run_token?: string;
 };
 
 type BridgeResultMeta = {
@@ -126,6 +127,7 @@ export type AudioRenderResult = BridgeResultMeta & {
   audio_path: string;
   transcript_path: string;
   task_id?: string;
+  run_token?: string;
 };
 
 export type TTSCapability = {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Callable
 from unittest.mock import patch
 
 from app.domain.tts_config import TTSProviderConfig
@@ -10,6 +11,10 @@ from app.providers.tts_api.base import TTSGenerationRequest
 from app.providers.tts_local_mlx.provider import LocalMLXTTSProvider
 from app.providers.tts_local_mlx.runner import LocalMLXRunResult, MLXAudioQwenRunner
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.providers.tts_local_mlx.worker_client import (
+    MLXWorkerCancelled,
+    WorkerEvent,
+)
 from app.runtime.task_cancellation import TaskCancellationRequested
 
 
@@ -116,97 +121,93 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(response.file_extension, "wav")
         self.assertEqual(response.audio_bytes, b"runner-bytes")
 
-    def test_runner_uses_mlx_audio_cli_and_reads_output(self) -> None:
+    def test_runner_submits_chunks_to_worker_and_returns_audio(self) -> None:
         config = TTSProviderConfig(
             provider="local_mlx",
             model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
         )
-        runner = MLXAudioQwenRunner(config)
 
-        captured_command: list[str] = []
+        class FakeWorkerClient:
+            def __init__(self) -> None:
+                self.last_kwargs: dict[str, object] = {}
 
-        class FakeProcess:
-            def __init__(self, command: list[str]) -> None:
-                nonlocal captured_command
-                captured_command = command
-                self.returncode: int | None = None
+            def synthesize(
+                self,
+                *,
+                model: str,
+                chunks,
+                voice: str,
+                audio_format: str,
+                output_dir: Path,
+                ref_audio,
+                should_cancel,
+                on_event: Callable[[WorkerEvent], None] | None,
+            ) -> dict[str, object]:
+                self.last_kwargs = {
+                    "model": model,
+                    "chunks": list(chunks),
+                    "voice": voice,
+                    "audio_format": audio_format,
+                    "ref_audio": ref_audio,
+                }
+                if on_event is not None:
+                    on_event(
+                        WorkerEvent(
+                            type="chunk_started",
+                            payload={"index": 0, "total": 1, "job_id": "job"},
+                        )
+                    )
+                    on_event(
+                        WorkerEvent(
+                            type="chunk_done",
+                            payload={"index": 0, "total": 1, "job_id": "job", "duration_seconds": 0.5},
+                        )
+                    )
+                audio_path = Path(output_dir) / f"final.{audio_format}"
+                audio_path.write_bytes(b"worker-wav")
+                return {
+                    "audio_path": str(audio_path),
+                    "file_extension": audio_format,
+                    "chunks_total": 1,
+                    "sample_rate": 24000,
+                }
 
-            def poll(self) -> int | None:
-                if self.returncode is None:
-                    prefix = Path(captured_command[captured_command.index("--file_prefix") + 1])
-                    output_path = prefix.with_suffix(".wav")
-                    output_path.write_bytes(b"wav-bytes")
-                    self.returncode = 0
-                return self.returncode
+        fake = FakeWorkerClient()
+        runner = MLXAudioQwenRunner(config, worker_client=fake)
 
-            def communicate(self, timeout: float | None = None) -> tuple[str, str]:
-                _ = timeout
-                return "", ""
+        events: list[object] = []
+        result = runner.synthesize(
+            "Short runner test sentence.",
+            audio_format="wav",
+            on_progress=events.append,
+        )
 
-            def terminate(self) -> None:
-                self.returncode = -15
-
-            def kill(self) -> None:
-                self.returncode = -9
-
-        def fake_popen(command: list[str], **_: object) -> FakeProcess:
-            return FakeProcess(command)
-
-        with patch("app.providers.tts_local_mlx.runner.subprocess.Popen", side_effect=fake_popen):
-            result = runner.synthesize("Runner test", audio_format="wav")
-
-        self.assertEqual(result.audio_bytes, b"wav-bytes")
+        self.assertEqual(result.audio_bytes, b"worker-wav")
         self.assertEqual(result.file_extension, "wav")
         self.assertEqual(result.model_name, config.model)
-        self.assertIn("--join_audio", captured_command)
-        self.assertIn("--max_tokens", captured_command)
-        self.assertGreater(int(captured_command[captured_command.index("--max_tokens") + 1]), 0)
+        self.assertEqual(fake.last_kwargs["audio_format"], "wav")
+        self.assertEqual(len(events), 2)
+        self.assertEqual(getattr(events[0], "phase"), "chunk_started")
+        self.assertEqual(getattr(events[1], "phase"), "chunk_done")
 
-    def test_runner_terminates_process_when_cancellation_requested(self) -> None:
+    def test_runner_translates_worker_cancellation_into_task_cancellation(self) -> None:
         config = TTSProviderConfig(
             provider="local_mlx",
             model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
         )
-        runner = MLXAudioQwenRunner(config)
 
-        class FakeProcess:
-            def __init__(self) -> None:
-                self.returncode: int | None = None
-                self.terminated = False
+        class CancellingWorker:
+            def synthesize(self, **_: object) -> dict[str, object]:
+                raise MLXWorkerCancelled("worker cancelled")
 
-            def poll(self) -> int | None:
-                return self.returncode
+        runner = MLXAudioQwenRunner(config, worker_client=CancellingWorker())
 
-            def communicate(self, timeout: float | None = None) -> tuple[str, str]:
-                _ = timeout
-                return "", ""
-
-            def terminate(self) -> None:
-                self.terminated = True
-                self.returncode = -15
-
-            def kill(self) -> None:
-                self.returncode = -9
-
-        fake_process = FakeProcess()
-        checks = {"count": 0}
-
-        def should_cancel() -> bool:
-            checks["count"] += 1
-            return checks["count"] >= 2
-
-        with patch(
-            "app.providers.tts_local_mlx.runner.subprocess.Popen",
-            return_value=fake_process,
-        ), patch("app.providers.tts_local_mlx.runner.time.sleep", return_value=None):
-            with self.assertRaises(TaskCancellationRequested):
-                runner.synthesize(
-                    "A long script body that will be cancelled.",
-                    audio_format="wav",
-                    should_cancel=should_cancel,
-                )
-
-        self.assertTrue(fake_process.terminated)
+        with self.assertRaises(TaskCancellationRequested):
+            runner.synthesize(
+                "A long script body that will be cancelled.",
+                audio_format="wav",
+                should_cancel=lambda: True,
+            )
 
 
 if __name__ == "__main__":

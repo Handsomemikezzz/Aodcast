@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +12,10 @@ class TTSGenerationRequest:
     voice: str
     audio_format: str
     should_cancel: Callable[[], bool] | None = None
+    # Optional callback that providers may invoke whenever they have new
+    # chunk-level progress information. The ``event`` payload is provider
+    # defined; callers should treat unknown fields as informational only.
+    on_progress: Callable[[Any], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)

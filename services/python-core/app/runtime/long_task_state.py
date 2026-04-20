@@ -49,6 +49,39 @@ class LongTaskStateManager:
             allowed_phases={"running"},
         )
 
+    def set_progress(
+        self,
+        progress_percent: float,
+        message: str,
+        *,
+        max_percent: float = 99.0,
+    ) -> bool:
+        """Force-set the current running progress to the supplied percent.
+
+        Unlike :meth:`update_running`, this does not require the new value
+        to be strictly greater than the previous one; callers own their
+        own monotonic policy (e.g. chunk-driven progress) and just want
+        the store to reflect reality. Returns True if the store accepted
+        the write for the current phase.
+        """
+
+        if self.should_cancel is not None and self.should_cancel():
+            return False
+        bounded = min(max_percent, max(0.0, progress_percent))
+        with self._progress_lock:
+            self._current_progress = max(self._current_progress, bounded)
+            persisted = self._current_progress
+        return self.request_state_store.save_if_current_phase(
+            self.task_id,
+            self.build_request_state(
+                operation=self.operation,
+                phase="running",
+                progress_percent=persisted,
+                message=message,
+            ),
+            allowed_phases={"running"},
+        )
+
     def start_heartbeat(
         self,
         *,

@@ -26,7 +26,16 @@ export function asRequestState(value: unknown): RequestState | null {
   if (candidate.progress_percent < 0 || candidate.progress_percent > 100) {
     return null;
   }
-  return candidate as RequestState;
+  const normalized: RequestState = {
+    operation: candidate.operation,
+    phase: candidate.phase,
+    progress_percent: candidate.progress_percent,
+    message: candidate.message,
+  };
+  if (typeof candidate.run_token === "string" && candidate.run_token.length > 0) {
+    normalized.run_token = candidate.run_token;
+  }
+  return normalized;
 }
 
 export function getErrorMessage(error: unknown, fallback: string): string {

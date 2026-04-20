@@ -8,6 +8,7 @@ fn main() {
         .manage(commands::DesktopRuntimeState::default())
         .invoke_handler(tauri::generate_handler![
             commands::ensure_http_runtime,
+            commands::reveal_in_finder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from 'framer-motion';
 import { Timer, FileText, Mic, CloudDownload, Cpu, CheckCircle2, PlayCircle, Settings, Wand2 } from 'lucide-react';
@@ -6,6 +6,7 @@ import { useBridge } from "../lib/BridgeContext";
 import { RequestState, SessionProject, TTSCapability } from "../types";
 import { cn } from "../lib/utils";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { revealInFinder } from "../lib/shellOps";
 import {
   buildRequestState,
   getErrorMessage,
@@ -14,9 +15,14 @@ import {
   isTerminalRequestState,
   withRequestStateFallback,
 } from "../lib/requestState";
+
+const POLL_INTERVAL_MS = 1000;
+const POLL_FAILURE_THRESHOLD = 3;
+
 export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const bridge = useBridge();
+  const taskId = sessionId ? `render_audio:${sessionId}` : "";
 
   const [project, setProject] = useState<SessionProject | null>(null);
   const [capability, setCapability] = useState<TTSCapability | null>(null);
@@ -24,6 +30,85 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
+  const [pollWarning, setPollWarning] = useState<string | null>(null);
+  const pollHandleRef = useRef<number | null>(null);
+  const pollingInFlightRef = useRef(false);
+  const pollFailureCountRef = useRef(0);
+  const expectedRunTokenRef = useRef<string | null>(null);
+
+  const stopTaskPolling = () => {
+    if (pollHandleRef.current !== null) {
+      window.clearInterval(pollHandleRef.current);
+      pollHandleRef.current = null;
+    }
+    pollingInFlightRef.current = false;
+    pollFailureCountRef.current = 0;
+  };
+
+  const acceptPolledState = (state: RequestState | null): boolean => {
+    if (!state) return false;
+    const expected = expectedRunTokenRef.current;
+    if (expected && state.run_token && state.run_token !== expected) {
+      return false;
+    }
+    setRequestState((prev) => {
+      if ((prev?.phase === "cancelling" || prev?.phase === "cancelled") && state.phase === "running") {
+        return prev;
+      }
+      return state;
+    });
+    if (isTerminalRequestState(state)) {
+      stopTaskPolling();
+      setGenerating(false);
+    } else {
+      setGenerating(true);
+    }
+    return true;
+  };
+
+  const startTaskPolling = () => {
+    if (!taskId || pollHandleRef.current !== null) return;
+    pollFailureCountRef.current = 0;
+    setPollWarning(null);
+    pollHandleRef.current = window.setInterval(() => {
+      if (pollingInFlightRef.current) return;
+      pollingInFlightRef.current = true;
+      void bridge
+        .showTaskState(taskId)
+        .then((state) => {
+          pollFailureCountRef.current = 0;
+          setPollWarning((prev) => (prev ? null : prev));
+          acceptPolledState(state);
+        })
+        .catch((err: unknown) => {
+          pollFailureCountRef.current += 1;
+          if (pollFailureCountRef.current >= POLL_FAILURE_THRESHOLD) {
+            const message = getErrorMessage(err, "Lost connection to the rendering runtime.");
+            setPollWarning(message);
+          }
+        })
+        .finally(() => {
+          pollingInFlightRef.current = false;
+        });
+    }, POLL_INTERVAL_MS);
+  };
+
+  const syncTaskState = async (): Promise<RequestState | null> => {
+    if (!taskId) return null;
+    const state = await bridge.showTaskState(taskId);
+    if (!state) return null;
+    const expected = expectedRunTokenRef.current;
+    if (expected && state.run_token && state.run_token !== expected) {
+      return null;
+    }
+    setRequestState((prev) => {
+      if ((prev?.phase === "cancelling" || prev?.phase === "cancelled") && state.phase === "running") {
+        return prev;
+      }
+      return state;
+    });
+    return state;
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -47,11 +132,39 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
     loadData();
   }, [sessionId, bridge]);
 
+  useEffect(() => {
+    if (!taskId) return;
+    expectedRunTokenRef.current = null;
+    void syncTaskState()
+      .then((state) => {
+        if (state && isActiveRequestState(state)) {
+          expectedRunTokenRef.current = state.run_token ?? null;
+          setGenerating(true);
+          startTaskPolling();
+        } else {
+          setGenerating(false);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      stopTaskPolling();
+      expectedRunTokenRef.current = null;
+    };
+  }, [taskId]);
+
   const handleGenerateAudio = async () => {
-    if (!sessionId) return;
-    const taskId = `render_audio:${sessionId}`;
-    let pollHandle: number | null = null;
+    if (!sessionId || !taskId) return;
     try {
+      expectedRunTokenRef.current = null;
+      stopTaskPolling();
+      const existingState = await syncTaskState();
+      if (existingState && isActiveRequestState(existingState)) {
+        expectedRunTokenRef.current = existingState.run_token ?? null;
+        setGenerating(true);
+        startTaskPolling();
+        return;
+      }
       setGenerating(true);
       setError(null);
       setRequestState({
@@ -60,34 +173,27 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         progress_percent: 0,
         message: "Rendering audio...",
       });
-      pollHandle = window.setInterval(() => {
-        void bridge
-          .showTaskState(taskId)
-          .then((state) => {
-            if (!state) return;
-            if (isTerminalRequestState(state) && pollHandle !== null) {
-              window.clearInterval(pollHandle);
-              pollHandle = null;
-            }
-            setRequestState((prev) => {
-              if ((prev?.phase === "cancelling" || prev?.phase === "cancelled") && state.phase === "running") {
-                return prev;
-              }
-              return state;
-            });
-          })
-          .catch(() => undefined);
-      }, 1200);
       const result = await bridge.renderAudio(sessionId);
+      const runToken =
+        typeof result.run_token === "string" && result.run_token.length > 0
+          ? result.run_token
+          : result.request_state?.run_token ?? null;
+      expectedRunTokenRef.current = runToken;
       setProject(result.project);
       const finalTaskId = result.task_id ?? taskId;
       const finalState = await bridge.showTaskState(finalTaskId).catch(() => null);
-      setRequestState(
-        withRequestStateFallback(
-          finalState ?? result.request_state,
-          buildRequestState("render_audio", "succeeded", "Audio rendering complete."),
-        ),
-      );
+      const chosenState =
+        finalState ?? result.request_state ?? buildRequestState("render_audio", "running", "Rendering audio...");
+      if (runToken && !chosenState.run_token) {
+        chosenState.run_token = runToken;
+      }
+      setRequestState(chosenState);
+      if (isTerminalRequestState(chosenState)) {
+        setGenerating(false);
+      } else {
+        setGenerating(true);
+        startTaskPolling();
+      }
       await onRefresh();
     } catch (err: any) {
       const errorState = getErrorRequestState(err);
@@ -102,17 +208,13 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
           buildRequestState("render_audio", "failed", "Failed to render audio."),
         ),
       );
-    } finally {
-      if (pollHandle !== null) {
-        window.clearInterval(pollHandle);
-      }
       setGenerating(false);
+      stopTaskPolling();
     }
   };
 
   const handleCancelAudio = async () => {
-    if (!sessionId) return;
-    const taskId = `render_audio:${sessionId}`;
+    if (!sessionId || !taskId) return;
     try {
       const state = await bridge.cancelTask(taskId);
       if (state) {
@@ -126,6 +228,21 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
       setError(getErrorMessage(err, "Failed to request cancellation"));
     }
   };
+
+  const handleRevealInFinder = async () => {
+    if (!project?.artifact?.audio_path) return;
+    try {
+      await revealInFinder(project.artifact.audio_path);
+    } catch (err: any) {
+      setError(getErrorMessage(err, "Failed to open file manager"));
+    }
+  };
+
+  const wordCount = useMemo(
+    () => project?.script?.final?.split(' ').length || project?.script?.draft?.split(' ').length || 0,
+    [project?.script?.final, project?.script?.draft],
+  );
+  const estMinutes = Math.max(1, Math.round(wordCount / 150));
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading orchestration settings...</div>;
@@ -143,10 +260,6 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
     );
   }
 
-  const wordCount = project.script?.final?.split(' ').length || project.script?.draft?.split(' ').length || 0;
-  // very rough estimate: 150 words per minute
-  const estMinutes = Math.max(1, Math.round(wordCount / 150));
-  
   const { artifact, session } = project;
   let audioSrc = "";
   if (artifact?.audio_path) {
@@ -164,6 +277,9 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
       description: capability?.available ? "Local MLX Engine" : "API Fallback",
     },
   ];
+
+  const localEngineDisabled = generating || !capability?.available;
+  const cloudEngineDisabled = generating;
 
   return (
     <motion.div 
@@ -186,6 +302,11 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
           {error && (
             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm font-medium">
               {error}
+            </div>
+          )}
+          {pollWarning && (
+            <div className="mb-6 p-3 border border-amber-500/30 bg-amber-500/10 rounded-lg text-amber-500 text-xs font-medium">
+              {pollWarning}
             </div>
           )}
           {!error && isActiveRequestState(requestState) && (
@@ -262,16 +383,16 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <button 
                   onClick={handleGenerateAudio}
-                  disabled={generating || capability?.available}
+                  disabled={cloudEngineDisabled}
                   className={cn(
                     "p-5 rounded-xl border text-left transition-all relative overflow-hidden group",
-                    !capability?.available && !generating 
-                      ? "border-accent-amber/30 bg-surface hover:bg-surface-container shadow-sm" 
+                    !cloudEngineDisabled
+                      ? "border-accent-amber/30 bg-surface hover:bg-surface-container shadow-sm"
                       : "border-outline bg-surface-container opacity-60 cursor-not-allowed"
                   )}
                 >
                   <div className="flex items-center gap-3 mb-2">
-                    <CloudDownload className={cn("w-5 h-5", !capability?.available ? "text-accent-amber" : "text-secondary")} />
+                    <CloudDownload className={cn("w-5 h-5", !cloudEngineDisabled ? "text-accent-amber" : "text-secondary")} />
                     <span className="font-semibold text-sm">Cloud Synthesis</span>
                   </div>
                   <p className="text-xs text-secondary mb-3">API-based generation. Requires internet connection.</p>
@@ -282,10 +403,10 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
 
                 <button 
                   onClick={handleGenerateAudio}
-                  disabled={generating || !capability?.available}
+                  disabled={localEngineDisabled}
                   className={cn(
                     "p-5 rounded-xl border text-left transition-all relative overflow-hidden group",
-                    capability?.available && !generating
+                    !localEngineDisabled
                       ? "border-accent-amber bg-accent-amber text-black shadow-md hover:bg-accent-amber/90"
                       : "border-outline bg-surface-container opacity-60 cursor-not-allowed"
                   )}
@@ -294,10 +415,10 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
                     {generating ? <div className="w-5 h-5 rounded-full border-2 border-black/20 border-t-black animate-spin" /> : <Cpu className="w-5 h-5" />}
                     <span className="font-semibold text-sm">Local MLX Engine</span>
                   </div>
-                  <p className={cn("text-xs mb-3", capability?.available && !generating ? "text-black/70" : "text-secondary")}>
+                  <p className={cn("text-xs mb-3", !localEngineDisabled ? "text-black/70" : "text-secondary")}>
                     High-performance local rendering using Apple Silicon.
                   </p>
-                  <span className={cn("text-[10px] font-bold uppercase tracking-wider", capability?.available && !generating ? "text-black/80" : "text-secondary")}>
+                  <span className={cn("text-[10px] font-bold uppercase tracking-wider", !localEngineDisabled ? "text-black/80" : "text-secondary")}>
                     {generating ? "Rendering locally..." : "Recommended"}
                   </span>
                 </button>
@@ -342,7 +463,11 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
                   </p>
                 </div>
 
-                <button className="w-full py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-xs font-medium text-primary transition-colors flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleRevealInFinder()}
+                  className="w-full py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-xs font-medium text-primary transition-colors flex items-center justify-center gap-2"
+                >
                   <Wand2 className="w-3.5 h-3.5" />
                   Reveal in Finder
                 </button>

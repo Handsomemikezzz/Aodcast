@@ -159,3 +159,62 @@ pub fn ensure_http_runtime(state: State<'_, DesktopRuntimeState>) -> Result<Valu
 
     Ok(json!({ "base_url": base_url() }))
 }
+
+#[tauri::command]
+pub fn reveal_in_finder(path: String) -> Result<Value, BridgeError> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(BridgeError::new(
+            "reveal_path_empty",
+            "Cannot reveal an empty path.",
+        ));
+    }
+
+    let target = PathBuf::from(trimmed);
+    if !target.exists() {
+        return Err(BridgeError::with_details(
+            "reveal_path_missing",
+            format!("Path does not exist on disk: {}", target.display()),
+            json!({ "path": target.display().to_string() }),
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open")
+        .arg("-R")
+        .arg(&target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("explorer")
+        .arg(format!("/select,{}", target.display()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let status = {
+        let parent = target.parent().unwrap_or(target.as_path());
+        Command::new("xdg-open")
+            .arg(parent)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+    };
+
+    match status {
+        Ok(status) if status.success() => Ok(json!({ "ok": true })),
+        Ok(status) => Err(BridgeError::with_details(
+            "reveal_failed",
+            format!("File manager exited with status {status}"),
+            json!({ "path": target.display().to_string() }),
+        )),
+        Err(error) => Err(BridgeError::with_details(
+            "reveal_failed",
+            format!("Failed to launch file manager: {error}"),
+            json!({ "path": target.display().to_string() }),
+        )),
+    }
+}

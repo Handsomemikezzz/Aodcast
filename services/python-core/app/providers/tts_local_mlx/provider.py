@@ -25,6 +25,7 @@ class LocalMLXTTSProvider:
             request.script_text,
             audio_format=self.config.audio_format or request.audio_format,
             should_cancel=request.should_cancel,
+            on_progress=request.on_progress,
         )
         return TTSGenerationResponse(
             audio_bytes=result.audio_bytes,

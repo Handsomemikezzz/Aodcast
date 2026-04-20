@@ -4,6 +4,7 @@ import json
 import secrets
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,7 +17,7 @@ from app.domain.project import SessionProject
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import TranscriptRecord
 from app.models_catalog import build_models_status, delete_voice_model, download_voice_model
-from app.orchestration.audio_rendering import AudioRenderingService
+from app.orchestration.audio_rendering import AudioRenderingService, AudioRenderProgress
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import (
     ScriptGenerationResult,
@@ -65,13 +66,17 @@ def build_request_state(
     phase: str,
     progress_percent: float,
     message: str,
+    run_token: str | None = None,
 ) -> dict[str, object]:
-    return {
+    state: dict[str, object] = {
         "operation": operation,
         "phase": phase,
         "progress_percent": progress_percent,
         "message": message,
     }
+    if run_token:
+        state["run_token"] = run_token
+    return state
 
 
 def progress_from_request_state(state: dict[str, object] | None, default: float = 0.0) -> float:
@@ -90,6 +95,7 @@ def success_envelope(
     message: str = "completed",
     phase: str = "succeeded",
     progress_percent: float = 100.0,
+    run_token: str | None = None,
 ) -> dict[str, object]:
     payload = dict(data)
     payload["request_state"] = build_request_state(
@@ -97,6 +103,7 @@ def success_envelope(
         phase=phase,
         progress_percent=progress_percent,
         message=message,
+        run_token=run_token,
     )
     return {"ok": True, "data": payload}
 
@@ -275,30 +282,38 @@ class RuntimeContext:
             raise ValueError("Script is deleted. Restore it before continuing.")
 
         task_id = f"render_audio:{session_id}"
-        existing_state = self.request_state_store.load(task_id)
         with self.task_lock:
             existing_thread = self.active_tasks.get(task_id)
-            if existing_thread is not None and existing_thread.is_alive() and isinstance(existing_state, dict):
-                return success_envelope(
-                    {
-                        "project": serialize_project(project),
-                        "provider": str(project.session.tts_provider or ""),
-                        "model": str(self.config_store.load_tts_config().model or ""),
-                        "audio_path": project.artifact.audio_path if project.artifact else "",
-                        "transcript_path": project.artifact.transcript_path if project.artifact else "",
-                        "task_id": task_id,
-                    },
-                    operation="render_audio",
-                    message=str(existing_state.get("message") or "Rendering audio..."),
-                    phase=str(existing_state.get("phase") or "running"),
-                    progress_percent=progress_from_request_state(existing_state, default=5.0),
-                )
+            if existing_thread is not None and existing_thread.is_alive():
+                existing_state = self.request_state_store.load(task_id)
+                if isinstance(existing_state, dict):
+                    return success_envelope(
+                        {
+                            "project": serialize_project(project),
+                            "provider": str(project.session.tts_provider or ""),
+                            "model": str(self.config_store.load_tts_config().model or ""),
+                            "audio_path": project.artifact.audio_path if project.artifact else "",
+                            "transcript_path": project.artifact.transcript_path if project.artifact else "",
+                            "task_id": task_id,
+                            "run_token": str(existing_state.get("run_token") or ""),
+                        },
+                        operation="render_audio",
+                        message=str(existing_state.get("message") or "Rendering audio..."),
+                        phase=str(existing_state.get("phase") or "running"),
+                        progress_percent=progress_from_request_state(existing_state, default=5.0),
+                        run_token=str(existing_state.get("run_token") or ""),
+                    )
+
+            run_token = uuid.uuid4().hex
+
+            def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
+                return build_request_state(run_token=run_token, **kwargs)
 
             progress = LongTaskStateManager(
                 request_state_store=self.request_state_store,
                 task_id=task_id,
                 operation="render_audio",
-                build_request_state=build_request_state,
+                build_request_state=tagged_build_request_state,
                 should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
             )
             self.request_state_store.clear_cancel_request(task_id)
@@ -308,13 +323,12 @@ class RuntimeContext:
             )
 
             def worker() -> None:
-                heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
-                    start_percent=10.0,
-                    max_percent=88.0,
-                    step_percent=2.0,
-                    interval_seconds=1.2,
-                    message=f"Synthesizing audio for session {session_id}...",
-                )
+                def on_progress(snapshot: AudioRenderProgress) -> None:
+                    progress.set_progress(
+                        snapshot.percent,
+                        snapshot.message,
+                        max_percent=99.0,
+                    )
 
                 def raise_render_cancelled(
                     message: str,
@@ -346,12 +360,11 @@ class RuntimeContext:
                         session_id,
                         override_provider=override_provider,
                         should_cancel=progress.should_cancel,
+                        on_progress=on_progress,
                     )
                 except TaskCancellationRequested as exc:
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
                     raise_render_cancelled(str(exc), default_progress=10.0)
                 except Exception as exc:  # pragma: no cover - exercised by integration tests
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
                     current_phase = progress.current_phase()
                     if self.request_state_store.is_cancel_requested(task_id) or current_phase == "cancelling":
                         raise_render_cancelled(
@@ -361,9 +374,8 @@ class RuntimeContext:
                         )
                     fail_render(str(exc))
                 else:
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
                     progress.save_finalizing(
-                        progress_percent=96.0,
+                        progress_percent=99.0,
                         message=f"Finalizing rendered artifacts for session {session_id}...",
                     )
                     saved_succeeded = progress.save_succeeded(
@@ -374,7 +386,7 @@ class RuntimeContext:
                         if current_phase == "cancelling" or self.request_state_store.is_cancel_requested(task_id):
                             raise_render_cancelled(
                                 f"Audio rendering cancelled for session {session_id}.",
-                                default_progress=96.0,
+                                default_progress=99.0,
                             )
                         fail_render(f"Unable to finalize audio render for session {session_id}.")
                     self.request_state_store.clear_cancel_request(task_id)
@@ -395,11 +407,13 @@ class RuntimeContext:
                 "audio_path": project.artifact.audio_path if project.artifact else "",
                 "transcript_path": project.artifact.transcript_path if project.artifact else "",
                 "task_id": task_id,
+                "run_token": run_token,
             },
             operation="render_audio",
             message=str((started_state or {}).get("message") or "Rendering audio..."),
             phase=str((started_state or {}).get("phase") or "running"),
             progress_percent=progress_from_request_state(started_state, default=5.0),
+            run_token=run_token,
         )
 
     def start_download_model(self, model_name: str) -> dict[str, object]:
