@@ -10,10 +10,18 @@ The Python core now supports a render-audio path after a session reaches `script
 
 1. Load the persisted session project.
 2. Load the active TTS configuration from local config storage.
-3. Build the configured TTS provider adapter.
-4. Render audio bytes from the final script text.
-5. Write transcript and audio artifacts under local export storage.
-6. Transition the session to `completed`.
+3. Optionally apply a one-shot desktop-side provider override for the current render request.
+4. Build the selected TTS provider adapter.
+5. Render audio bytes from the final script text.
+6. Write transcript and audio artifacts under local export storage.
+7. Transition the session to `completed`.
+
+The desktop `GeneratePage` uses this override path for its engine buttons:
+
+- `Cloud Synthesis` runs a single render with the configured cloud provider, or the local-capability fallback provider when the saved config currently points at `local_mlx`
+- `Local MLX Engine` runs a single render with `local_mlx`
+
+These buttons do **not** rewrite the global TTS settings saved in `Settings`.
 
 ## Provider Layer
 

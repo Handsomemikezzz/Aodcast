@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { motion } from 'framer-motion';
 import { Timer, FileText, Mic, CloudDownload, Cpu, CheckCircle2, PlayCircle, Settings, Wand2 } from 'lucide-react';
 import { useBridge } from "../lib/BridgeContext";
-import { RequestState, SessionProject, TTSCapability } from "../types";
+import { RequestState, SessionProject, TTSCapability, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { revealInFinder } from "../lib/shellOps";
@@ -26,6 +26,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
 
   const [project, setProject] = useState<SessionProject | null>(null);
   const [capability, setCapability] = useState<TTSCapability | null>(null);
+  const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,14 +116,16 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
       if (!sessionId) return;
       try {
         setLoading(true);
-        const [projects, cap] = await Promise.all([
-          bridge.listProjects(),
-          bridge.getLocalTTSCapability()
+        setError(null);
+        const [currentProject, cap, config] = await Promise.all([
+          bridge.showSession(sessionId, { includeDeleted: true }),
+          bridge.getLocalTTSCapability(),
+          bridge.showTTSConfig(),
         ]);
-        const currentProject = projects.find(p => p.session.session_id === sessionId);
-        setProject(currentProject || null);
+        setProject(currentProject);
         setCapability(cap);
-      } catch (err: any) {
+        setTtsConfig(config);
+      } catch (err: unknown) {
         setError(getErrorMessage(err, "Failed to load project"));
         setRequestState(getErrorRequestState(err));
       } finally {
@@ -153,7 +156,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
     };
   }, [taskId]);
 
-  const handleGenerateAudio = async () => {
+  const handleGenerateAudio = async (providerOverride: string) => {
     if (!sessionId || !taskId) return;
     try {
       expectedRunTokenRef.current = null;
@@ -173,7 +176,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         progress_percent: 0,
         message: "Rendering audio...",
       });
-      const result = await bridge.renderAudio(sessionId);
+      const result = await bridge.renderAudio(sessionId, { providerOverride });
       const runToken =
         typeof result.run_token === "string" && result.run_token.length > 0
           ? result.run_token
@@ -195,7 +198,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         startTaskPolling();
       }
       await onRefresh();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorState = getErrorRequestState(err);
       if (errorState?.phase === "cancelled") {
         setError(null);
@@ -224,7 +227,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
           buildRequestState("render_audio", "cancelling", "Cancellation requested."),
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to request cancellation"));
     }
   };
@@ -233,10 +236,18 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
     if (!project?.artifact?.audio_path) return;
     try {
       await revealInFinder(project.artifact.audio_path);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to open file manager"));
     }
   };
+
+  const cloudProvider = useMemo(() => {
+    const configuredProvider = ttsConfig?.provider?.trim();
+    if (configuredProvider && configuredProvider !== "local_mlx") {
+      return configuredProvider;
+    }
+    return capability?.fallback_provider || "mock_remote";
+  }, [capability?.fallback_provider, ttsConfig?.provider]);
 
   const wordCount = useMemo(
     () => project?.script?.final?.split(' ').length || project?.script?.draft?.split(' ').length || 0,
@@ -280,6 +291,10 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
 
   const localEngineDisabled = generating || !capability?.available;
   const cloudEngineDisabled = generating;
+  const cloudEngineDescription =
+    cloudProvider === "openai_compatible"
+      ? "Configured API provider. Requires internet connection."
+      : "Fallback cloud-safe engine for a single render.";
 
   return (
     <motion.div 
@@ -350,7 +365,12 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
                <h3 className="font-headline font-semibold text-primary">Voice Persona</h3>
-               <button className="text-xs font-medium text-accent-amber hover:underline flex items-center gap-1">
+               <button
+                 type="button"
+                 disabled
+                 title="Coming soon"
+                 className="text-xs font-medium text-accent-amber/60 flex items-center gap-1 cursor-not-allowed disabled:opacity-60"
+               >
                  <Settings className="w-3 h-3" /> Manage Voices
                </button>
             </div>
@@ -382,7 +402,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
              <h3 className="font-headline font-semibold text-primary mb-4">Rendering Engine</h3>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <button 
-                  onClick={handleGenerateAudio}
+                  onClick={() => void handleGenerateAudio(cloudProvider)}
                   disabled={cloudEngineDisabled}
                   className={cn(
                     "p-5 rounded-xl border text-left transition-all relative overflow-hidden group",
@@ -395,14 +415,14 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
                     <CloudDownload className={cn("w-5 h-5", !cloudEngineDisabled ? "text-accent-amber" : "text-secondary")} />
                     <span className="font-semibold text-sm">Cloud Synthesis</span>
                   </div>
-                  <p className="text-xs text-secondary mb-3">API-based generation. Requires internet connection.</p>
+                  <p className="text-xs text-secondary mb-3">{cloudEngineDescription}</p>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-secondary">
-                    {generating ? "Generating..." : "Fallback Engine"}
+                    {generating ? "Generating..." : `Provider: ${cloudProvider}`}
                   </span>
                 </button>
 
                 <button 
-                  onClick={handleGenerateAudio}
+                  onClick={() => void handleGenerateAudio("local_mlx")}
                   disabled={localEngineDisabled}
                   className={cn(
                     "p-5 rounded-xl border text-left transition-all relative overflow-hidden group",

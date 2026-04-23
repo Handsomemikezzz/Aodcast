@@ -7,6 +7,7 @@ import type {
   DesktopBridge,
   DesktopBridgeError,
   ListProjectsOptions,
+  RenderAudioOptions,
   ShowSessionOptions,
 } from "./desktopBridge";
 import { asRequestState } from "./requestState";
@@ -66,11 +67,6 @@ type BridgeShape<T> = {
 type RuntimeContext = {
   base_url: string;
 };
-
-function runtimeContext(baseUrl: string): RuntimeContext {
-  const context: RuntimeContext = { base_url: baseUrl };
-  return context;
-}
 
 export class HttpBridgeInvocationError extends Error {
   readonly code: string;
@@ -151,7 +147,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       runtimePromise = (async () => {
         if (options?.ensureRuntime) return options.ensureRuntime();
         if (isTauriRuntime()) return ensureDesktopRuntime();
-        return runtimeContext(fallbackBaseUrl);
+        return { base_url: fallbackBaseUrl };
       })();
     }
     return runtimePromise;
@@ -397,12 +393,14 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts`);
       return (response.scripts as ScriptRecord[]) ?? [];
     },
-    async renderAudio(sessionId: string) {
+    async renderAudio(sessionId: string, options?: RenderAudioOptions) {
       const response = await callHttp<AudioRenderResult>(
         `/api/v1/sessions/${encodeURIComponent(sessionId)}/audio:render`,
         {
           method: "POST",
-          body: JSON.stringify({}),
+          body: JSON.stringify({
+            provider_override: options?.providerOverride ?? "",
+          }),
         },
       );
       if (typeof response.run_token !== "string" && typeof response.request_state?.run_token === "string") {

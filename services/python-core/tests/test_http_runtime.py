@@ -8,6 +8,7 @@ import time
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -22,7 +23,7 @@ if "openai" not in sys.modules:
     openai_stub.OpenAI = _DummyOpenAI
     sys.modules["openai"] = openai_stub
 
-from app.api.http_runtime import RuntimeContext, RuntimeHttpServer
+from app.api.http_runtime import RuntimeContext, RuntimeHttpServer, success_envelope
 from app.config import AppConfig
 from app.domain.provider_config import LLMProviderConfig
 from app.orchestration.audio_rendering import AudioRenderingService
@@ -190,6 +191,23 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertFalse(second["ok"])
         self.assertEqual(second["error"]["code"], "bridge_bootstrap_expired")
+
+    def test_audio_render_route_passes_provider_override_to_runtime_context(self) -> None:
+        with patch.object(
+            RuntimeContext,
+            "start_render_audio",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_audio:session-123"}, operation="render_audio"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/sessions/session-123/audio:render",
+                body={"provider_override": "mock_remote"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        mocked_start.assert_called_once_with(self.context, "session-123", override_provider="mock_remote")
 
 
 if __name__ == "__main__":

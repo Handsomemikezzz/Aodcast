@@ -21,8 +21,16 @@ import {
   Trash2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useBridge } from "../lib/BridgeContext";
-import { SessionProject, Readiness, PromptInput, RequestState } from "../types";
+import {
+  SessionProject,
+  Readiness,
+  PromptInput,
+  RequestState,
+  TranscriptRecord,
+  TranscriptTurn,
+} from "../types";
 import { cn } from "../lib/utils";
 import {
   buildRequestState,
@@ -64,6 +72,9 @@ export function ChatPage({
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const replyStreamAbortRef = useRef<AbortController | null>(null);
+  const historyRequestIdRef = useRef(0);
+  const optimisticTranscriptRef = useRef<TranscriptRecord | null>(null);
+  const [sessionToDelete, setSessionToDelete] = useState<SessionProject | null>(null);
 
   const toDisplayText = (value: unknown): string => {
     if (typeof value === "string") return value;
@@ -88,20 +99,24 @@ export function ChatPage({
     }
   };
 
-  const loadHistory = async () => {
+  const loadHistory = async (searchValue = historyQuery) => {
+    const requestId = ++historyRequestIdRef.current;
     try {
       setHistoryLoading(true);
       const list = await bridge.listProjects({
-        search: historyQuery.trim() || undefined,
+        search: searchValue.trim() || undefined,
         includeDeleted: false,
       });
+      if (requestId !== historyRequestIdRef.current) return;
       setHistoryProjects(
         list.filter((entry) => !entry.session.deleted_at),
       );
     } catch (err) {
+      if (requestId !== historyRequestIdRef.current) return;
       setError(getErrorMessage(err, "Failed to load chat history."));
       setRequestState(getErrorRequestState(err));
     } finally {
+      if (requestId !== historyRequestIdRef.current) return;
       setHistoryLoading(false);
     }
   };
@@ -145,7 +160,11 @@ export function ChatPage({
   }, [sessionId, bridge]);
 
   useEffect(() => {
-    void loadHistory();
+    const delayMs = historyQuery.trim() ? 250 : 0;
+    const handle = window.setTimeout(() => {
+      void loadHistory(historyQuery);
+    }, delayMs);
+    return () => window.clearTimeout(handle);
   }, [bridge, historyQuery]);
 
   useEffect(() => {
@@ -213,6 +232,18 @@ export function ChatPage({
   const handleSubmit = async () => {
     if (!sessionId || !inputValue.trim()) return;
     const content = inputValue.trim();
+    const previousTranscript = project
+      ? {
+          session_id: project.transcript?.session_id ?? project.session.session_id,
+          turns: [...(project.transcript?.turns ?? [])],
+        }
+      : null;
+    const optimisticTurn: TranscriptTurn = {
+      speaker: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
+
     setSubmitting(true);
     setError(null);
     setStreamingMessage("");
@@ -224,21 +255,14 @@ export function ChatPage({
       message: "Submitting reply...",
     });
 
-    // Optimistic UI update so the user's message appears immediately
+    optimisticTranscriptRef.current = previousTranscript;
     setProject((prev) => {
       if (!prev) return prev;
-      const optimisticTurn = {
-        speaker: "user",
-        content: content,
-        created_at: new Date().toISOString(),
+      const newTranscript: TranscriptRecord = {
+        session_id: prev.transcript?.session_id ?? prev.session.session_id,
+        turns: [...(prev.transcript?.turns ?? []), optimisticTurn],
       };
-      
-      const prevTurns = prev.transcript?.turns || [];
-      const newTranscript = {
-        ...(prev.transcript || { session_id: prev.session.session_id }),
-        turns: [...prevTurns, optimisticTurn],
-      };
-      return { ...prev, transcript: newTranscript as any };
+      return { ...prev, transcript: newTranscript };
     });
 
     replyStreamAbortRef.current?.abort();
@@ -264,10 +288,15 @@ export function ChatPage({
           buildRequestState("submit_reply", "succeeded", "Reply accepted."),
         ),
       );
+      optimisticTranscriptRef.current = null;
       await refreshWorkspace();
     } catch (err) {
       setError(getErrorMessage(err, "Failed to submit reply."));
-      if (!inputValue) setInputValue(content);
+      const rollbackTranscript = optimisticTranscriptRef.current;
+      if (rollbackTranscript) {
+        setProject((prev) => (prev ? { ...prev, transcript: rollbackTranscript } : prev));
+      }
+      setInputValue(content);
       setRequestState(
         withRequestStateFallback(
           getErrorRequestState(err),
@@ -276,6 +305,7 @@ export function ChatPage({
       );
     } finally {
       replyStreamAbortRef.current = null;
+      optimisticTranscriptRef.current = null;
       setStreamingMessage(null);
       setSubmitting(false);
     }
@@ -363,7 +393,6 @@ export function ChatPage({
   };
 
   const handleDeleteSession = async (target: SessionProject) => {
-    if (!window.confirm(`Delete chat "${target.session.topic}"?`)) return;
     setHistoryActionId(target.session.session_id);
     setError(null);
     setRequestState({
@@ -392,6 +421,38 @@ export function ChatPage({
       setHistoryActionId(null);
     }
   };
+
+  const renderWithDialog = (content: JSX.Element) => (
+    <>
+      {content}
+      <ConfirmDialog
+        open={sessionToDelete !== null}
+        title="Delete chat?"
+        message={
+          sessionToDelete
+            ? `Move "${sessionToDelete.session.topic || "Untitled"}" to trash?`
+            : ""
+        }
+        onClose={() => setSessionToDelete(null)}
+        actions={[
+          {
+            label: "Cancel",
+            onClick: () => setSessionToDelete(null),
+          },
+          {
+            label: "Move to trash",
+            onClick: () => {
+              const target = sessionToDelete;
+              setSessionToDelete(null);
+              if (!target) return;
+              void handleDeleteSession(target);
+            },
+            variant: "danger",
+          },
+        ]}
+      />
+    </>
+  );
 
   const historyAside =
     historyOpen && (
@@ -491,7 +552,7 @@ export function ChatPage({
                     </button>
                     <button
                       type="button"
-                      onClick={() => void handleDeleteSession(p)}
+                      onClick={() => setSessionToDelete(p)}
                       disabled={historyActionId === p.session.session_id}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50 text-red-500/80 hover:text-red-500"
                     >
@@ -530,19 +591,19 @@ export function ChatPage({
   );
 
   if (loading && sessionId) {
-    return (
+    return renderWithDialog(
       <div className="flex h-full w-full overflow-hidden">
         {historyAside}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {chatToolbar}
           <div className="flex-1 flex items-center justify-center text-secondary text-sm">Loading workspace…</div>
         </div>
-      </div>
+      </div>,
     );
   }
 
   if (!sessionId) {
-    return (
+    return renderWithDialog(
       <div className="flex h-full w-full overflow-hidden">
         {historyAside}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -587,7 +648,9 @@ export function ChatPage({
                   />
                   <button
                     type="button"
-                    className="p-2 text-secondary hover:bg-surface-container-high rounded-full transition-colors shrink-0 mb-0.5"
+                    disabled
+                    title="Voice input coming soon"
+                    className="p-2 text-secondary rounded-full transition-colors shrink-0 mb-0.5 cursor-not-allowed disabled:opacity-50"
                     aria-label="Voice input"
                   >
                     <Mic className="w-5 h-5" />
@@ -610,12 +673,12 @@ export function ChatPage({
             </div>
           </div>
         </div>
-      </div>
+      </div>,
     );
   }
 
   if (!project) {
-    return (
+    return renderWithDialog(
       <div className="flex h-full w-full overflow-hidden">
         {historyAside}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -646,7 +709,7 @@ export function ChatPage({
             )}
           </div>
         </div>
-      </div>
+      </div>,
     );
   }
 
@@ -668,7 +731,7 @@ export function ChatPage({
     });
   };
 
-  return (
+  return renderWithDialog(
     <div className="flex flex-row h-full w-full relative overflow-hidden">
       {historyAside}
       {/* 1. Main Chat Area */}
@@ -919,15 +982,9 @@ export function ChatPage({
                   {project.session.topic}
                 </p>
               </div>
-              {/* Dummy topics if none extracted yet */}
-              {turns.length > 2 ? (
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-2 py-1 rounded bg-accent-amber/10 border border-accent-amber/20 text-[10px] text-accent-amber font-bold uppercase">Context Established</span>
-                  <span className="px-2 py-1 rounded bg-primary/10 border border-outline text-[10px] text-primary font-bold uppercase">Core Perspective</span>
-                </div>
-              ) : (
-                <p className="text-[11px] text-outline italic">Analyzing conversation...</p>
-              )}
+              <p className="text-[11px] leading-relaxed text-secondary">
+                {turns.length} transcript turns recorded. Readiness gaps below are derived from the actual interview state.
+              </p>
             </div>
           </section>
 

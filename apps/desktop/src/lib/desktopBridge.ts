@@ -26,6 +26,10 @@ export type CreateSessionInput = {
   creationIntent: string;
 };
 
+export type RenderAudioOptions = {
+  providerOverride?: string;
+};
+
 export type DesktopBridgeError = {
   code: string;
   message: string;
@@ -51,8 +55,10 @@ export type ConfigureLLMInput = {
 };
 
 export interface DesktopBridge {
+  /** List lightweight session summaries for the shell and history views. */
   listProjects(options?: ListProjectsOptions): Promise<SessionProject[]>;
   createSession(input: CreateSessionInput): Promise<SessionProject>;
+  /** Load a full session project, optionally including soft-deleted data. */
   showSession(sessionId: string, options?: ShowSessionOptions): Promise<SessionProject>;
   renameSession(sessionId: string, topic: string): Promise<SessionProject>;
   deleteSession(sessionId: string): Promise<SessionProject>;
@@ -68,10 +74,12 @@ export interface DesktopBridge {
   ): Promise<InterviewTurnResult>;
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
   generateScript(sessionId: string): Promise<GenerationResult>;
-  renderAudio(sessionId: string): Promise<AudioRenderResult>;
+  /** Render audio once, optionally overriding the configured TTS provider. */
+  renderAudio(sessionId: string, options?: RenderAudioOptions): Promise<AudioRenderResult>;
   showLatestScript(sessionId: string): Promise<SessionProject>;
   showScript(sessionId: string, scriptId: string): Promise<SessionProject>;
   listScripts(sessionId: string): Promise<ScriptRecord[]>;
+  /** Persist a script snapshot's final text. */
   saveEditedScript(sessionId: string, scriptId: string, finalText: string): Promise<SessionProject>;
   deleteScript(sessionId: string, scriptId: string): Promise<SessionProject>;
   restoreScript(sessionId: string, scriptId: string): Promise<SessionProject>;

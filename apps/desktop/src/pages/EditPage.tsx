@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Clock3, Edit3, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useBridge } from "../lib/BridgeContext";
 import type { RequestState, ScriptRecord, ScriptRevisionRecord, SessionProject } from "../types";
 import {
@@ -27,6 +28,17 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const [error, setError] = useState<string | null>(null);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
   const [scriptSnapshots, setScriptSnapshots] = useState<ScriptRecord[]>([]);
+  const [dialogState, setDialogState] = useState<
+    | { kind: "delete-script" }
+    | { kind: "rollback"; revisionId: string }
+    | { kind: "unsaved" }
+    | null
+  >(null);
+  const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
+  const sortedRevisions = useMemo(
+    () => revisions.slice().sort((left, right) => right.created_at.localeCompare(left.created_at)),
+    [revisions],
+  );
 
   const reload = async () => {
     if (!sessionId || !scriptId) return;
@@ -64,8 +76,9 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
     void loadProject();
   }, [sessionId, scriptId, bridge]);
 
-  const handleSave = async () => {
-    if (!sessionId || !scriptId || project?.script?.deleted_at || project?.session.deleted_at) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!sessionId || !scriptId || project?.script?.deleted_at || project?.session.deleted_at) return false;
+    if (!isDirty) return true;
     try {
       setSaving(true);
       setError(null);
@@ -78,6 +91,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
       await bridge.saveEditedScript(sessionId, scriptId, script);
       await refreshWorkspace();
       setRequestState(buildRequestState("save_script", "succeeded", "Script saved."));
+      return true;
     } catch (err) {
       setError(getErrorMessage(err, "Failed to save script."));
       setRequestState(
@@ -86,6 +100,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
           buildRequestState("save_script", "failed", "Failed to save script."),
         ),
       );
+      return false;
     } finally {
       setSaving(false);
     }
@@ -93,7 +108,6 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   const handleDeleteScript = async () => {
     if (!sessionId || !scriptId || !project || project.script?.deleted_at || project.session.deleted_at) return;
-    if (!window.confirm("Move this script to trash?")) return;
     setBusyAction("delete-script");
     setError(null);
     setRequestState({
@@ -148,7 +162,6 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   const handleRollbackRevision = async (revisionId: string) => {
     if (!sessionId || !scriptId || project?.script?.deleted_at || project?.session.deleted_at) return;
-    if (!window.confirm("Rollback to this revision?")) return;
     setBusyAction(revisionId);
     setError(null);
     setRequestState({
@@ -201,14 +214,122 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
     }
   };
 
+  const runPendingAction = async () => {
+    const pendingAction = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (!pendingAction) return;
+    await pendingAction();
+  };
+
+  const closeDialog = () => {
+    pendingActionRef.current = null;
+    setDialogState(null);
+  };
+
+  const runWithUnsavedCheck = (action: () => Promise<void>) => {
+    if (!isDirty) {
+      void action();
+      return;
+    }
+    pendingActionRef.current = action;
+    setDialogState({ kind: "unsaved" });
+  };
+
   if (loading) {
     return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading editor...</div>;
   }
 
   const isScriptDeleted = Boolean(project?.script?.deleted_at);
   const isSessionDeleted = Boolean(project?.session.deleted_at);
+  const serverScript = project?.script?.final || project?.script?.draft || "";
+  const isDirty = !isScriptDeleted && !isSessionDeleted && script !== serverScript;
 
-  return (
+  const renderWithDialogs = (content: JSX.Element) => (
+    <>
+      {content}
+      <ConfirmDialog
+        open={dialogState?.kind === "delete-script"}
+        title="Move script to trash?"
+        message="The current script snapshot will be moved to trash, but its revision history remains available."
+        onClose={closeDialog}
+        actions={[
+          {
+            label: "Cancel",
+            onClick: closeDialog,
+          },
+          {
+            label: "Move to trash",
+            onClick: () => {
+              setDialogState(null);
+              void handleDeleteScript();
+            },
+            variant: "danger",
+            disabled: busyAction === "delete-script",
+          },
+        ]}
+      />
+      <ConfirmDialog
+        open={dialogState?.kind === "rollback"}
+        title="Roll back revision?"
+        message="The selected revision will replace the current script content and create a new revision entry."
+        onClose={closeDialog}
+        actions={[
+          {
+            label: "Cancel",
+            onClick: closeDialog,
+          },
+          {
+            label: "Roll back",
+            onClick: () => {
+              const revisionId = dialogState?.kind === "rollback" ? dialogState.revisionId : "";
+              setDialogState(null);
+              if (!revisionId) return;
+              void handleRollbackRevision(revisionId);
+            },
+            variant: "primary",
+            disabled: dialogState?.kind === "rollback" && busyAction === dialogState.revisionId,
+          },
+        ]}
+      />
+      <ConfirmDialog
+        open={dialogState?.kind === "unsaved"}
+        title="Unsaved changes"
+        message="Save the current script before continuing, or discard these edits for this action."
+        onClose={closeDialog}
+        actions={[
+          {
+            label: "Cancel",
+            onClick: closeDialog,
+          },
+          {
+            label: "Discard changes",
+            onClick: () => {
+              setScript(serverScript);
+              setDialogState(null);
+              void runPendingAction();
+            },
+            variant: "danger",
+            disabled: saving,
+          },
+          {
+            label: saving ? "Saving..." : "Save and continue",
+            onClick: () => {
+              void (async () => {
+                const saved = await handleSave();
+                if (!saved) return;
+                setDialogState(null);
+                await runPendingAction();
+              })();
+            },
+            variant: "primary",
+            disabled: saving,
+          },
+        ]}
+      />
+    </>
+  );
+
+  return renderWithDialogs(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -241,7 +362,10 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
                             key={snap.script_id}
                             type="button"
                             onClick={() => {
-                              if (!active) navigate(`/script/${sessionId}/${snap.script_id}`);
+                              if (active) return;
+                              runWithUnsavedCheck(async () => {
+                                navigate(`/script/${sessionId}/${snap.script_id}`);
+                              });
                             }}
                             disabled={active}
                             title={snap.name}
@@ -264,6 +388,9 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
                 {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
                 {!error && requestState?.phase === "running" && (
                   <p className="mt-2 text-xs text-secondary">{requestState.message}</p>
+                )}
+                {isDirty && !saving && (
+                  <p className="mt-2 text-xs font-medium text-accent-amber">Unsaved changes</p>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -317,7 +444,6 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
             <textarea
               value={script}
               onChange={(event) => setScript(event.target.value)}
-              onBlur={handleSave}
               disabled={isScriptDeleted || isSessionDeleted}
               className="w-full min-h-[480px] flex-1 bg-transparent resize-none outline-none text-[15px] leading-relaxed text-on-surface placeholder:text-outline/40 pb-20 focus:ring-0 border-none disabled:opacity-60"
               placeholder={script ? "" : "No script generated yet. Write yours here or go back to chat to generate one."}
@@ -352,7 +478,9 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => void handleDeleteScript()}
+                      onClick={() => runWithUnsavedCheck(async () => {
+                        setDialogState({ kind: "delete-script" });
+                      })}
                       disabled={busyAction === "delete-script"}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] font-medium bg-surface-container-high text-primary hover:bg-surface-container-highest transition-colors disabled:opacity-50"
                     >
@@ -362,7 +490,9 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
                   )}
                   <button
                     type="button"
-                    onClick={() => void reload()}
+                    onClick={() => runWithUnsavedCheck(async () => {
+                      await reload();
+                    })}
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[12px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary transition-colors"
                   >
                     <Clock3 className="w-3.5 h-3.5" />
@@ -386,10 +516,7 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
                     No revisions yet.
                   </div>
                 ) : (
-                  revisions
-                    .slice()
-                    .sort((left, right) => right.created_at.localeCompare(left.created_at))
-                    .map((revision) => {
+                  sortedRevisions.map((revision) => {
                       const isBusy = busyAction === revision.revision_id;
                       return (
                         <div
@@ -407,7 +534,12 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
                             </div>
                             <button
                               type="button"
-                              onClick={() => void handleRollbackRevision(revision.revision_id)}
+                              onClick={() => runWithUnsavedCheck(async () => {
+                                setDialogState({
+                                  kind: "rollback",
+                                  revisionId: revision.revision_id,
+                                });
+                              })}
                               disabled={isBusy || isScriptDeleted || isSessionDeleted}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary transition-colors disabled:opacity-50"
                             >
@@ -435,14 +567,14 @@ export function EditPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
         </div>
 
         <button
-          onClick={handleSave}
-          disabled={saving || isScriptDeleted || isSessionDeleted}
+          onClick={() => void handleSave()}
+          disabled={saving || isScriptDeleted || isSessionDeleted || !isDirty}
           className="text-xs font-medium text-secondary hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
         >
           <Edit3 className="w-3.5 h-3.5" />
-          {saving ? "Saving..." : "Save Draft"}
+          {saving ? "Saving..." : isDirty ? "Save script" : "Saved"}
         </button>
       </div>
-    </motion.div>
+    </motion.div>,
   );
 }

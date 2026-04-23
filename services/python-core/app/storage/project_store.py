@@ -207,7 +207,12 @@ class ProjectStore:
         search_query: str = "",
     ) -> list[SessionProject]:
         return [
-            self.load_project(session.session_id)
+            SessionProject(
+                session=session,
+                transcript=None,
+                script=None,
+                artifact=None,
+            )
             for session in self.list_sessions(
                 include_deleted=include_deleted,
                 search_query=search_query,

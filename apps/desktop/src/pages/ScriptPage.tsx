@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronRight, Edit3, Mic } from "lucide-react";
@@ -21,6 +21,10 @@ export function ScriptPage({
   const navigate = useNavigate();
   const bridge = useBridge();
   const [tab, setTab] = useState<TabId>("edit");
+
+  useEffect(() => {
+    setTab("edit");
+  }, [sessionId, scriptId]);
 
   const sorted = [...projects].sort((a, b) =>
     b.session.updated_at.localeCompare(a.session.updated_at),

@@ -152,6 +152,40 @@ class ProjectStoreTests(unittest.TestCase):
             self.assertEqual(len(filtered), 1)
             self.assertEqual(filtered[0].session_id, first.session_id)
 
+    def test_list_projects_returns_session_summaries_without_loading_full_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = AppConfig.from_cwd(Path(tmp_dir))
+            store = ProjectStore(config.data_dir)
+            store.bootstrap()
+
+            session = SessionRecord(topic="Summary", creation_intent="Lightweight list")
+            transcript = TranscriptRecord(session_id=session.session_id)
+            transcript.append(Speaker.USER, "Keep sidebar loads light.")
+            script = ScriptRecord(session_id=session.session_id, draft="Draft", final="Final")
+            artifact = ArtifactRecord(
+                session_id=session.session_id,
+                transcript_path="exports/transcript.txt",
+                audio_path="exports/audio.wav",
+                provider="mock_remote",
+            )
+
+            store.save_project(
+                SessionProject(
+                    session=session,
+                    transcript=transcript,
+                    script=script,
+                    artifact=artifact,
+                )
+            )
+
+            projects = store.list_projects()
+
+            self.assertEqual(len(projects), 1)
+            self.assertEqual(projects[0].session.session_id, session.session_id)
+            self.assertIsNone(projects[0].transcript)
+            self.assertIsNone(projects[0].script)
+            self.assertIsNone(projects[0].artifact)
+
 
 if __name__ == "__main__":
     unittest.main()

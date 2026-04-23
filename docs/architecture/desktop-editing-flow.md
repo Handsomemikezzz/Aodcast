@@ -37,6 +37,10 @@ The shell is implemented through:
 - session selection when no session is open
 - split sub-flow for script editing and text-to-speech generation
 - direct access to `EditPage` and `GeneratePage`
+- when switching sessions or script snapshots, the page returns to the `edit` tab by default
+- explicit save for script edits; the editor does not save on textarea blur
+- unsaved-change confirmation before refresh, rollback, trash, or script-snapshot switching
+- in-app confirmation dialogs for destructive actions instead of browser-native `window.confirm`
 
 ### `Models`
 

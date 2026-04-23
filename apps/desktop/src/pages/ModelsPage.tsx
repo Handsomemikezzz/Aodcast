@@ -8,6 +8,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useBridge } from "../lib/BridgeContext";
 import type { ModelStatus, RequestState } from "../types";
 import { cn } from "../lib/utils";
@@ -34,6 +35,7 @@ export function ModelsPage() {
   const [busyDownloadName, setBusyDownloadName] = useState<string | null>(null);
   const [busyDeleteName, setBusyDeleteName] = useState<string | null>(null);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
+  const [modelToDelete, setModelToDelete] = useState<ModelStatus | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -134,7 +136,6 @@ export function ModelsPage() {
   };
 
   const handleDelete = async (m: ModelStatus) => {
-    if (!window.confirm(`Remove ${m.display_name} from the local models folder?`)) return;
     setBusyDeleteName(m.model_name);
     setBusyDownloadName(null);
     setError(null);
@@ -161,7 +162,40 @@ export function ModelsPage() {
     }
   };
 
-  return (
+  const renderWithDialog = (content: JSX.Element) => (
+    <>
+      {content}
+      <ConfirmDialog
+        open={modelToDelete !== null}
+        title="Remove local model?"
+        message={
+          modelToDelete
+            ? `Remove ${modelToDelete.display_name} from the local models folder?`
+            : ""
+        }
+        onClose={() => setModelToDelete(null)}
+        actions={[
+          {
+            label: "Cancel",
+            onClick: () => setModelToDelete(null),
+          },
+          {
+            label: "Remove model",
+            onClick: () => {
+              const target = modelToDelete;
+              setModelToDelete(null);
+              if (!target) return;
+              void handleDelete(target);
+            },
+            variant: "danger",
+            disabled: modelToDelete !== null && busyDeleteName === modelToDelete.model_name,
+          },
+        ]}
+      />
+    </>
+  );
+
+  return renderWithDialog(
     <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
@@ -272,7 +306,7 @@ export function ModelsPage() {
                             <button
                               type="button"
                               title="Delete local files"
-                              onClick={() => void handleDelete(m)}
+                              onClick={() => setModelToDelete(m)}
                               disabled={isBusy}
                               className="p-1.5 rounded-md border border-outline text-secondary hover:text-primary hover:bg-surface-container-high"
                             >
@@ -298,7 +332,7 @@ export function ModelsPage() {
             </div>
           )}
         </div>
-      </div>
-    </motion.div>
+        </div>
+    </motion.div>,
   );
 }
