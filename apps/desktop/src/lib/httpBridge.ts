@@ -247,7 +247,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     let buffer = "";
     let finalPayload: BridgeEnvelope<InterviewTurnResult> | null = null;
 
-    const flushEvent = (chunk: string) => {
+    const flushEvent = (chunk: string): boolean => {
       const lines = chunk.split("\n");
       let eventName = "message";
       const dataLines: string[] = [];
@@ -258,18 +258,21 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           dataLines.push(line.slice(5).trimStart());
         }
       }
-      if (dataLines.length === 0) return;
+      if (dataLines.length === 0) return false;
       const parsed = JSON.parse(dataLines.join("\n")) as BridgeEnvelope<InterviewTurnResult> | { ok: true; type: "chunk"; delta: string };
       if ("type" in parsed && parsed.type === "chunk") {
         onChunk(parsed.delta);
-        return;
+        return false;
       }
       if (eventName === "final") {
         finalPayload = parsed as BridgeEnvelope<InterviewTurnResult>;
+        return true;
       }
+      return false;
     };
 
     try {
+      readLoop:
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -278,7 +281,15 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         while (separatorIndex >= 0) {
           const eventChunk = buffer.slice(0, separatorIndex);
           buffer = buffer.slice(separatorIndex + 2);
-          flushEvent(eventChunk);
+          const reachedFinalEvent = flushEvent(eventChunk);
+          if (reachedFinalEvent) {
+            try {
+              await reader.cancel();
+            } catch {
+              /* ignore */
+            }
+            break readLoop;
+          }
           separatorIndex = buffer.indexOf("\n\n");
         }
       }

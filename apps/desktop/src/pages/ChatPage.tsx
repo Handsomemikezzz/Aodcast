@@ -230,7 +230,7 @@ export function ChatPage({
   };
 
   const handleSubmit = async () => {
-    if (!sessionId || !inputValue.trim()) return;
+    if (!sessionId || !inputValue.trim() || submitting) return;
     const content = inputValue.trim();
     const previousTranscript = project
       ? {
@@ -896,6 +896,7 @@ export function ChatPage({
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
+                      if (submitting) return;
                       e.preventDefault();
                       handleSubmit();
                     }
@@ -903,7 +904,6 @@ export function ChatPage({
                   className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-[14px] text-on-surface placeholder:text-outline py-1.5 px-2 max-h-[200px] min-h-[44px] outline-none leading-relaxed" 
                   placeholder="Type your response... (Shift+Enter for newline)" 
                   rows={1}
-                  disabled={submitting}
                 />
                 <div className="flex items-center gap-1 shrink-0 p-1">
                   <button 
