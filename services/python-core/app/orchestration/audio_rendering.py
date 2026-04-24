@@ -49,18 +49,29 @@ class AudioRenderingService:
         self.config_store = config_store
         self.artifact_store = artifact_store
 
-    def render_audio(self, session_id: str, *, override_provider: str = "") -> AudioRenderResult:
-        return self.render_audio_with_cancellation(session_id, override_provider=override_provider)
+    def render_audio(
+        self,
+        session_id: str,
+        *,
+        script_id: str = "",
+        override_provider: str = "",
+    ) -> AudioRenderResult:
+        return self.render_audio_with_cancellation(
+            session_id,
+            script_id=script_id,
+            override_provider=override_provider,
+        )
 
     def render_audio_with_cancellation(
         self,
         session_id: str,
         *,
+        script_id: str = "",
         override_provider: str = "",
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
-        project = self.store.load_project(session_id)
+        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         script = project.script
         artifact = project.artifact
         if script is None or artifact is None:

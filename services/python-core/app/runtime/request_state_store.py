@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import tempfile
@@ -22,7 +23,10 @@ def _safe_task_file_name(task_id: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]", "_", task_id).strip("._")
     if not normalized:
         normalized = "task"
-    return normalized[:180]
+    digest = hashlib.sha1(task_id.encode("utf-8")).hexdigest()[:10]
+    max_prefix = max(1, 180 - len(digest) - 1)
+    prefix = normalized[:max_prefix].rstrip("._-") or "task"
+    return f"{prefix}-{digest}"
 
 
 class RequestStateStore:

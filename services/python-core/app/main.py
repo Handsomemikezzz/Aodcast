@@ -21,6 +21,8 @@ from app.orchestration.script_generation import (
     build_generation_context,
 )
 from app.models_catalog import build_models_status, delete_voice_model, download_voice_model
+from app.providers.llm.factory import validate_llm_provider
+from app.providers.tts_api.factory import validate_tts_provider
 from app.runtime.long_task_state import LongTaskStateManager
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
@@ -498,13 +500,17 @@ def build_request_state(
     phase: str,
     progress_percent: float,
     message: str,
+    run_token: str | None = None,
 ) -> dict[str, object]:
-    return {
+    state = {
         "operation": operation,
         "phase": phase,
         "progress_percent": progress_percent,
         "message": message,
     }
+    if run_token:
+        state["run_token"] = run_token
+    return state
 
 
 def progress_from_request_state(state: dict[str, object] | None, default: float = 0.0) -> float:
@@ -684,6 +690,7 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.configure_llm_provider:
+            validate_llm_provider(args.configure_llm_provider)
             llm_config = config_store.load_llm_config()
             llm_config.provider = args.configure_llm_provider
             if args.llm_model is not None:
@@ -696,6 +703,7 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, {"path": str(path), "llm_config": llm_config.to_dict()})
 
         if args.configure_tts_provider:
+            validate_tts_provider(args.configure_tts_provider)
             tts_config = config_store.load_tts_config()
             tts_config.provider = args.configure_tts_provider
             if args.tts_model is not None:
@@ -863,12 +871,14 @@ def run(argv: list[str] | None = None) -> int:
 
             operation = str(task_state.get("operation") or "task")
             progress_percent = progress_from_request_state(task_state)
+            run_token = str(task_state.get("run_token") or "").strip() or None
             request_state_store.request_cancel(task_id)
             cancelling_state = build_request_state(
                 operation=operation,
                 phase="cancelling",
                 progress_percent=progress_percent,
                 message=f"Cancellation requested for {task_id}.",
+                run_token=run_token,
             )
             request_state_store.save(task_id, cancelling_state)
             return output_payload(

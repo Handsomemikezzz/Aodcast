@@ -142,6 +142,40 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertTrue(Path(result.audio_path).exists())
         self.assertTrue(Path(artifact_store.exports_dir / session.session_id).exists())
 
+    def test_render_audio_targets_requested_script_snapshot(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+
+        session = SessionRecord(topic="Snapshot target", creation_intent="Render a specific script")
+        session.transition(SessionState.SCRIPT_EDITED)
+        first_script = ScriptRecord(
+            session_id=session.session_id,
+            script_id="script-first",
+            draft="First draft",
+            final="First final transcript.",
+            created_at="2026-04-24T00:00:00Z",
+            updated_at="2026-04-24T00:00:00Z",
+        )
+        second_script = ScriptRecord(
+            session_id=session.session_id,
+            script_id="script-second",
+            draft="Second draft",
+            final="Second final transcript.",
+            created_at="2026-04-24T01:00:00Z",
+            updated_at="2026-04-24T01:00:00Z",
+        )
+        artifact = ArtifactRecord(session_id=session.session_id)
+        store.save_project(SessionProject(session=session, script=second_script, artifact=artifact))
+        store.save_script(first_script)
+
+        result = service.render_audio_with_cancellation(session.session_id, script_id=first_script.script_id)
+
+        transcript_text = Path(result.transcript_path).read_text(encoding="utf-8")
+        self.assertEqual(transcript_text, first_script.final + "\n")
+        loaded_latest = store.load_project(session.session_id)
+        assert loaded_latest.script is not None
+        self.assertEqual(loaded_latest.script.script_id, second_script.script_id)
+
     def test_render_audio_cancellation_restores_previous_state(self) -> None:
         store, config_store, _, service = self.build_environment()
         config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))

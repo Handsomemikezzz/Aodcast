@@ -28,6 +28,7 @@ export type CreateSessionInput = {
 
 export type RenderAudioOptions = {
   providerOverride?: string;
+  scriptId?: string;
 };
 
 export type DesktopBridgeError = {
@@ -74,7 +75,7 @@ export interface DesktopBridge {
   ): Promise<InterviewTurnResult>;
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
   generateScript(sessionId: string): Promise<GenerationResult>;
-  /** Render audio once, optionally overriding the configured TTS provider. */
+  /** Render audio once, optionally overriding the configured TTS provider or targeting a specific script snapshot. */
   renderAudio(sessionId: string, options?: RenderAudioOptions): Promise<AudioRenderResult>;
   showLatestScript(sessionId: string): Promise<SessionProject>;
   showScript(sessionId: string, scriptId: string): Promise<SessionProject>;

@@ -83,7 +83,35 @@ class RequestStateStoreTests(unittest.TestCase):
         self.assertEqual([], failures)
         self.assertIsNotNone(self.store.load(task_id))
 
+    def test_safe_task_file_name_keeps_similarly_normalized_tasks_separate(self) -> None:
+        task_id_one = "render_audio:" + ("a" * 260) + "-one"
+        task_id_two = "render_audio:" + ("a" * 260) + "-two"
+
+        self.store.save(
+            task_id_one,
+            {
+                "operation": "render_audio",
+                "phase": "running",
+                "progress_percent": 10.0,
+                "message": "first",
+            },
+        )
+        self.store.save(
+            task_id_two,
+            {
+                "operation": "render_audio",
+                "phase": "running",
+                "progress_percent": 20.0,
+                "message": "second",
+            },
+        )
+
+        path_one = self.store._path(task_id_one)
+        path_two = self.store._path(task_id_two)
+        self.assertNotEqual(path_one, path_two)
+        self.assertEqual(self.store.load(task_id_one)["message"], "first")
+        self.assertEqual(self.store.load(task_id_two)["message"], "second")
+
 
 if __name__ == "__main__":
     unittest.main()
-

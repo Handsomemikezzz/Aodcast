@@ -147,7 +147,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       runtimePromise = (async () => {
         if (options?.ensureRuntime) return options.ensureRuntime();
         if (isTauriRuntime()) return ensureDesktopRuntime();
-        return { base_url: fallbackBaseUrl };
+        return ({ base_url: fallbackBaseUrl });
       })();
     }
     return runtimePromise;
@@ -175,12 +175,17 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         }
       })();
     }
-    return runtimeTokenPromise;
+    const token = await runtimeTokenPromise;
+    if (token === null) {
+      runtimeTokenPromise = null;
+    }
+    return token;
   }
 
   async function callHttp<T>(
     path: string,
     init?: RequestInit & { query?: Record<string, string | boolean | undefined>; needsToken?: boolean },
+    retryOnAuthFailure = true,
   ): Promise<BridgeShape<T>> {
     try {
       const runtime = await getRuntime();
@@ -195,6 +200,10 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         headers,
         body: init?.body,
       });
+      if (init?.needsToken && retryOnAuthFailure && (response.status === 401 || response.status === 403)) {
+        runtimeTokenPromise = null;
+        return callHttp<T>(path, init, false);
+      }
       let payload: BridgeEnvelope<BridgeShape<T>>;
       try {
         payload = (await response.json()) as BridgeEnvelope<BridgeShape<T>>;
@@ -411,6 +420,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           method: "POST",
           body: JSON.stringify({
             provider_override: options?.providerOverride ?? "",
+            script_id: options?.scriptId ?? "",
           }),
         },
       );

@@ -19,8 +19,22 @@ import {
 const POLL_INTERVAL_MS = 1000;
 const POLL_FAILURE_THRESHOLD = 3;
 
+function estimateWordCount(text: string): number {
+  const normalized = text.trim();
+  if (!normalized) return 0;
+  const cjkMatches = normalized.match(/[\u3400-\u9FFF\uF900-\uFAFF]/g);
+  if (cjkMatches && cjkMatches.length > 0) {
+    const latinWordCount = normalized
+      .replace(/[\u3400-\u9FFF\uF900-\uFAFF]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean).length;
+    return Math.max(latinWordCount, Math.ceil(cjkMatches.length / 2));
+  }
+  return normalized.split(/\s+/).filter(Boolean).length;
+}
+
 export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId, scriptId } = useParams<{ sessionId: string; scriptId?: string }>();
   const bridge = useBridge();
   const taskId = sessionId ? `render_audio:${sessionId}` : "";
 
@@ -49,7 +63,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
   const acceptPolledState = (state: RequestState | null): boolean => {
     if (!state) return false;
     const expected = expectedRunTokenRef.current;
-    if (expected && state.run_token && state.run_token !== expected) {
+    if (expected && state.run_token !== expected) {
       return false;
     }
     setRequestState((prev) => {
@@ -99,7 +113,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
     const state = await bridge.showTaskState(taskId);
     if (!state) return null;
     const expected = expectedRunTokenRef.current;
-    if (expected && state.run_token && state.run_token !== expected) {
+    if (expected && state.run_token !== expected) {
       return null;
     }
     setRequestState((prev) => {
@@ -118,7 +132,9 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         setLoading(true);
         setError(null);
         const [currentProject, cap, config] = await Promise.all([
-          bridge.showSession(sessionId, { includeDeleted: true }),
+          scriptId?.trim()
+            ? bridge.showScript(sessionId, scriptId)
+            : bridge.showSession(sessionId, { includeDeleted: true }),
           bridge.getLocalTTSCapability(),
           bridge.showTTSConfig(),
         ]);
@@ -133,7 +149,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
       }
     }
     loadData();
-  }, [sessionId, bridge]);
+  }, [sessionId, scriptId, bridge]);
 
   useEffect(() => {
     if (!taskId) return;
@@ -176,7 +192,8 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         progress_percent: 0,
         message: "Rendering audio...",
       });
-      const result = await bridge.renderAudio(sessionId, { providerOverride });
+      const targetScriptId = scriptId?.trim() || project?.script?.script_id || "";
+      const result = await bridge.renderAudio(sessionId, { providerOverride, scriptId: targetScriptId });
       const runToken =
         typeof result.run_token === "string" && result.run_token.length > 0
           ? result.run_token
@@ -250,10 +267,13 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
   }, [capability?.fallback_provider, ttsConfig?.provider]);
 
   const wordCount = useMemo(
-    () => project?.script?.final?.split(' ').length || project?.script?.draft?.split(' ').length || 0,
+    () => {
+      const source = project?.script?.final?.trim() || project?.script?.draft?.trim() || "";
+      return estimateWordCount(source);
+    },
     [project?.script?.final, project?.script?.draft],
   );
-  const estMinutes = Math.max(1, Math.round(wordCount / 150));
+  const estMinutes = wordCount === 0 ? 0 : Math.max(1, Math.round(wordCount / 150));
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading orchestration settings...</div>;

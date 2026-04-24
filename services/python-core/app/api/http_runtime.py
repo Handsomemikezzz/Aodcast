@@ -24,6 +24,8 @@ from app.orchestration.script_generation import (
     ScriptGenerationService,
     build_generation_context,
 )
+from app.providers.llm.factory import validate_llm_provider
+from app.providers.tts_api.factory import validate_tts_provider
 from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.runtime.long_task_state import LongTaskStateManager
@@ -272,8 +274,14 @@ class RuntimeContext:
             operation="runtime_bootstrap",
         )
 
-    def start_render_audio(self, session_id: str, *, override_provider: str = "") -> dict[str, object]:
-        project = self.store.load_project(session_id)
+    def start_render_audio(
+        self,
+        session_id: str,
+        *,
+        script_id: str = "",
+        override_provider: str = "",
+    ) -> dict[str, object]:
+        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.session.is_deleted():
             raise ValueError("Session is deleted. Restore it before continuing.")
         if project.script is None:
@@ -358,6 +366,7 @@ class RuntimeContext:
                 try:
                     self.audio_rendering.render_audio_with_cancellation(
                         session_id,
+                        script_id=script_id,
                         override_provider=override_provider,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
@@ -677,6 +686,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             provider = str(body.get("provider") or "").strip()
             if not provider:
                 raise ValueError("Field 'provider' is required.")
+            validate_llm_provider(provider)
             llm_config = self.context.config_store.load_llm_config()
             llm_config.provider = provider
             if "model" in body:
@@ -704,6 +714,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             provider = str(body.get("provider") or "").strip()
             if not provider:
                 raise ValueError("Field 'provider' is required.")
+            validate_tts_provider(provider)
             tts_config = self.context.config_store.load_tts_config()
             tts_config.provider = provider
             if "model" in body:
@@ -792,12 +803,14 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 return
             operation = str(task_state.get("operation") or "task")
             progress_percent = progress_from_request_state(task_state)
+            run_token = str(task_state.get("run_token") or "").strip() or None
             self.context.request_state_store.request_cancel(task_id)
             cancelling_state = build_request_state(
                 operation=operation,
                 phase="cancelling",
                 progress_percent=progress_percent,
                 message=f"Cancellation requested for {task_id}.",
+                run_token=run_token,
             )
             self.context.request_state_store.save(task_id, cancelling_state)
             self._send_bridge_envelope(
@@ -805,6 +818,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                     {"task_id": task_id, "task_state": cancelling_state},
                     operation="cancel_task",
                     message="cancellation_requested",
+                    run_token=run_token,
                 ),
                 origin=origin,
             )
@@ -981,7 +995,11 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         if self.command == "POST" and suffix == "/audio:render":
             provider = str(body.get("provider_override") or "")
-            self._send_bridge_envelope(self.context.start_render_audio(session_id, override_provider=provider), origin=origin)
+            script_id = str(body.get("script_id") or "").strip()
+            self._send_bridge_envelope(
+                self.context.start_render_audio(session_id, script_id=script_id, override_provider=provider),
+                origin=origin,
+            )
             return
         if self.command == "PUT" and suffix == "/script/final":
             final_text = str(body.get("final_text") or "")

@@ -720,15 +720,32 @@ export function ChatPage({
   const hasUserTurns = turns.some((turn) => turn.speaker === "user");
   const showChatComposer = !isDeletedSession && state !== "topic_defined";
 
-  const openLatestScript = () => {
+  const openLatestScript = async () => {
     if (!sessionId) return;
-    void bridge.showLatestScript(sessionId).then((p) => {
+    setError(null);
+    setRequestState({
+      operation: "show_latest_script",
+      phase: "running",
+      progress_percent: 0,
+      message: "Opening latest script...",
+    });
+    try {
+      const p = await bridge.showLatestScript(sessionId);
       if (p.script?.script_id) {
         navigate(`/script/${sessionId}/${p.script.script_id}`);
       } else {
         navigate(`/script/${sessionId}`);
       }
-    });
+      setRequestState(buildRequestState("show_latest_script", "succeeded", "Script opened."));
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to open the latest script."));
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("show_latest_script", "failed", "Failed to open the latest script."),
+        ),
+      );
+    }
   };
 
   return renderWithDialog(
@@ -875,7 +892,7 @@ export function ChatPage({
                 {(state === "script_generated" || state === "script_edited" || state === "completed") && (
                   <button
                     type="button"
-                    onClick={() => openLatestScript()}
+                    onClick={() => void openLatestScript()}
                     className="px-4 py-2 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg text-sm font-medium transition-colors shrink-0"
                   >
                     查看脚本
@@ -913,7 +930,12 @@ export function ChatPage({
                   >
                     生成脚本
                   </button>
-                  <button className="p-2 text-secondary hover:bg-surface-container-high transition-colors rounded">
+                  <button
+                    type="button"
+                    disabled
+                    title="Coming soon"
+                    className="p-2 text-secondary/50 transition-colors rounded cursor-not-allowed disabled:opacity-60"
+                  >
                     <Mic className="w-4 h-4" />
                   </button>
                   <button 

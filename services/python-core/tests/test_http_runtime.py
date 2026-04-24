@@ -84,12 +84,15 @@ class HttpRuntimeTests(unittest.TestCase):
         *,
         body: dict[str, object] | None = None,
         headers: dict[str, str] | None = None,
+        token: str | None = None,
     ) -> tuple[int, dict[str, str], dict[str, object]]:
         payload = None
         request_headers = dict(headers or {})
         if body is not None:
             payload = json.dumps(body).encode("utf-8")
             request_headers.setdefault("Content-Type", "application/json")
+        if token is not None:
+            request_headers.setdefault("X-AOD-Runtime-Token", token)
         request = urllib_request.Request(
             f"{self.base_url}{path}",
             data=payload,
@@ -207,7 +210,79 @@ class HttpRuntimeTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
-        mocked_start.assert_called_once_with(self.context, "session-123", override_provider="mock_remote")
+        mocked_start.assert_called_once_with(
+            self.context,
+            "session-123",
+            script_id="",
+            override_provider="mock_remote",
+        )
+
+    def test_audio_render_route_passes_script_id_to_runtime_context(self) -> None:
+        with patch.object(
+            RuntimeContext,
+            "start_render_audio",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_audio:session-123"}, operation="render_audio"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/sessions/session-123/audio:render",
+                body={"provider_override": "mock_remote", "script_id": "script-abc"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        mocked_start.assert_called_once_with(
+            self.context,
+            "session-123",
+            script_id="script-abc",
+            override_provider="mock_remote",
+        )
+
+    def test_cancel_task_preserves_run_token_in_cancelling_state(self) -> None:
+        task_id = "render_audio:session-123"
+        self.request_state_store.save(
+            task_id,
+            {
+                "operation": "render_audio",
+                "phase": "running",
+                "progress_percent": 42.0,
+                "message": "Rendering audio...",
+                "run_token": "token-abc",
+            },
+        )
+
+        status, _, payload = self.request_json(
+            "POST",
+            f"/api/v1/tasks/{task_id}:cancel",
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["task_state"]["phase"], "cancelling")
+        self.assertEqual(payload["data"]["task_state"]["run_token"], "token-abc")
+        self.assertEqual(payload["data"]["request_state"]["run_token"], "token-abc")
+
+    def test_config_routes_reject_unsupported_providers(self) -> None:
+        status, _, payload = self.request_json(
+            "PUT",
+            "/api/v1/config/llm",
+            body={"provider": "bad-provider"},
+            token="runtime-token",
+        )
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("Unsupported LLM provider", payload["error"]["message"])
+
+        status, _, payload = self.request_json(
+            "PUT",
+            "/api/v1/config/tts",
+            body={"provider": "bad-provider"},
+            token="runtime-token",
+        )
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertIn("Unsupported TTS provider", payload["error"]["message"])
 
 
 if __name__ == "__main__":
