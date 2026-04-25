@@ -15,6 +15,18 @@ export function ScriptPage({
   const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const navigate = useNavigate();
   const bridge = useBridge();
+  const handleOpenLatestScript = async (targetSessionId: string) => {
+    try {
+      const project = await bridge.showLatestScript(targetSessionId);
+      if (project.script?.script_id) {
+        navigate(`/script/${targetSessionId}/${project.script.script_id}`);
+        return;
+      }
+    } catch {
+      // Fall through to the session-level route when no latest script is available.
+    }
+    navigate(`/script/${targetSessionId}`);
+  };
 
   const sorted = [...projects].sort((a, b) =>
     b.session.updated_at.localeCompare(a.session.updated_at),
@@ -44,20 +56,7 @@ export function ScriptPage({
                 <button
                   key={p.session.session_id}
                   type="button"
-                  onClick={() => {
-                    void (async () => {
-                      try {
-                        const proj = await bridge.showLatestScript(p.session.session_id);
-                        if (proj.script?.script_id) {
-                          navigate(`/script/${p.session.session_id}/${proj.script.script_id}`);
-                        } else {
-                          navigate(`/script/${p.session.session_id}`);
-                        }
-                      } catch {
-                        navigate(`/script/${p.session.session_id}`);
-                      }
-                    })();
-                  }}
+                  onClick={() => void handleOpenLatestScript(p.session.session_id)}
                   className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-container transition-colors"
                 >
                   <div className="min-w-0">

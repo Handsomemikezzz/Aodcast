@@ -59,14 +59,21 @@ export type ConfigureLLMInput = {
 export interface DesktopBridge {
   /** List lightweight session summaries for the shell and history views. */
   listProjects(options?: ListProjectsOptions): Promise<SessionProject[]>;
+  /** Create a new interview session from the landing topic and creation intent. */
   createSession(input: CreateSessionInput): Promise<SessionProject>;
   /** Load a full session project, optionally including soft-deleted data. */
   showSession(sessionId: string, options?: ShowSessionOptions): Promise<SessionProject>;
+  /** Rename a session topic without changing its transcript or script snapshots. */
   renameSession(sessionId: string, topic: string): Promise<SessionProject>;
+  /** Soft-delete the session and its active workspace until it is restored. */
   deleteSession(sessionId: string): Promise<SessionProject>;
+  /** Restore a previously soft-deleted session. */
   restoreSession(sessionId: string): Promise<SessionProject>;
+  /** Start the guided interview for a session and return the next prompt plus readiness metadata. */
   startInterview(sessionId: string): Promise<InterviewTurnResult>;
+  /** Submit one user reply and wait for the assistant's next turn. */
   submitReply(sessionId: string, message: string, userRequestedFinish?: boolean): Promise<InterviewTurnResult>;
+  /** Stream the assistant reply token-by-token while preserving the final bridge envelope. */
   submitReplyStream(
     sessionId: string,
     message: string,
@@ -74,27 +81,40 @@ export interface DesktopBridge {
     userRequestedFinish?: boolean,
     signal?: AbortSignal,
   ): Promise<InterviewTurnResult>;
+  /** Ask the orchestrator to finish the interview and move into readiness evaluation. */
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;
+  /** Generate the current script draft from the interview transcript. */
   generateScript(sessionId: string): Promise<GenerationResult>;
   /** Render audio once, optionally overriding the configured TTS provider or targeting a specific script snapshot. */
   renderAudio(sessionId: string, options?: RenderAudioOptions): Promise<AudioRenderResult>;
+  /** Resolve the most recent script snapshot for a session-level navigation entry point. */
   showLatestScript(sessionId: string): Promise<SessionProject>;
+  /** Load a specific script snapshot workspace. */
   showScript(sessionId: string, scriptId: string): Promise<SessionProject>;
+  /** List every script snapshot that belongs to the session. */
   listScripts(sessionId: string): Promise<ScriptRecord[]>;
   /** Persist a script snapshot's final text. */
   saveEditedScript(sessionId: string, scriptId: string, finalText: string): Promise<SessionProject>;
+  /** Soft-delete one script snapshot without deleting the session. */
   deleteScript(sessionId: string, scriptId: string): Promise<SessionProject>;
+  /** Restore one soft-deleted script snapshot. */
   restoreScript(sessionId: string, scriptId: string): Promise<SessionProject>;
+  /** List the revision history for one script snapshot. */
   listScriptRevisions(sessionId: string, scriptId: string): Promise<ScriptRevisionRecord[]>;
+  /** Replace the current script contents with a saved revision. */
   rollbackScriptRevision(sessionId: string, scriptId: string, revisionId: string): Promise<SessionProject>;
+  /** Report whether local MLX TTS is available on this machine and why/why not. */
   getLocalTTSCapability(): Promise<TTSCapability>;
   showLLMConfig(): Promise<LLMProviderConfig>;
   configureLLMProvider(input: ConfigureLLMInput): Promise<LLMProviderConfig>;
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
   listModelsStatus(): Promise<ModelStatus[]>;
+  /** Start a long-running voice model download and return its task metadata. */
   downloadModel(modelName: string): Promise<{ message: string; path?: string; task_id?: string; request_state?: RequestState }>;
   deleteModel(modelName: string): Promise<{ message: string; path?: string }>;
+  /** Poll the latest persisted request state for a long-running task. */
   showTaskState(taskId: string): Promise<RequestState | null>;
+  /** Request cooperative cancellation for a long-running task. */
   cancelTask(taskId: string): Promise<RequestState | null>;
 }
