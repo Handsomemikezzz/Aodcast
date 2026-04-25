@@ -1025,6 +1025,9 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
+        if self.command == "GET" and path == "/api/v1/artifacts/audio":
+            self._serve_artifact_audio(query, origin=origin)
+            return
         if self.command == "GET" and path == "/api/v1/config/llm":
             self._send_bridge_envelope(
                 success_envelope({"llm_config": self.context.config_store.load_llm_config().to_dict()}, operation="show_llm_config"),
@@ -1407,6 +1410,30 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"\n")
         self.wfile.flush()
 
+    def _serve_artifact_audio(self, query: dict[str, list[str]], *, origin: str | None) -> None:
+        raw_path = (query.get("path") or [""])[-1].strip()
+        if not raw_path:
+            raise ValueError("Query parameter 'path' is required.")
+
+        exports_dir = self.context.artifact_store.exports_dir.resolve()
+        audio_path = Path(raw_path).resolve(strict=True)
+        try:
+            audio_path.relative_to(exports_dir)
+        except ValueError as exc:
+            raise ValueError("Artifact audio path must be inside the exports directory.") from exc
+        if not audio_path.is_file():
+            raise ValueError("Artifact audio path does not point to a file.")
+
+        content_type = {
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".m4a": "audio/mp4",
+            ".aac": "audio/aac",
+            ".ogg": "audio/ogg",
+            ".flac": "audio/flac",
+        }.get(audio_path.suffix.lower(), "application/octet-stream")
+        self._send_binary(HTTPStatus.OK, audio_path.read_bytes(), content_type=content_type, origin=origin)
+
     def _read_json_body(self) -> dict[str, Any]:
         content_length = int(self.headers.get("Content-Length") or "0")
         if content_length <= 0:
@@ -1490,6 +1517,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "list_voice_presets"
         if path == "/api/v1/voice-studio/preview":
             return "render_voice_preview"
+        if path == "/api/v1/artifacts/audio":
+            return "serve_artifact_audio"
         if "/voice-takes:render" in path:
             return "render_voice_take"
         if "/voice-takes/" in path and path.endswith(":final"):
@@ -1555,6 +1584,15 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self._send_cors_headers(origin)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_binary(self, status: HTTPStatus, body: bytes, *, content_type: str, origin: str | None = None) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self._send_cors_headers(origin)
         self.end_headers()
         self.wfile.write(body)

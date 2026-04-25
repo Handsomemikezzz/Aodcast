@@ -1,8 +1,8 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { motion } from "framer-motion";
 import { ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Pause, Play, RefreshCw, SlidersHorizontal, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { resolveAudioFileUrl } from "../lib/audioFile";
 import { useBridge } from "../lib/BridgeContext";
 import { getErrorMessage, isActiveRequestState, isTerminalRequestState } from "../lib/requestState";
 import { revealInFinder } from "../lib/shellOps";
@@ -18,15 +18,6 @@ import type {
 } from "../types";
 
 const POLL_INTERVAL_MS = 1000;
-
-function fileSrc(path: string): string {
-  if (!path) return "";
-  try {
-    return convertFileSrc(path);
-  } catch {
-    return `file://${path}`;
-  }
-}
 
 function estimateMinutes(script: string): string {
   const words = script.trim().split(/\s+/).filter(Boolean).length;
@@ -165,7 +156,7 @@ export function VoiceStudioPage() {
       setPreviewing(true);
       setError(null);
       const result = await bridge.renderVoicePreview(settings);
-      setPreviewSrc(fileSrc(result.audio_path));
+      setPreviewSrc(resolveAudioFileUrl(result.audio_path));
       window.setTimeout(() => {
         void previewAudioRef.current?.play().catch(() => undefined);
       }, 100);
@@ -217,7 +208,7 @@ export function VoiceStudioPage() {
   };
 
   const handleDownload = (take: AudioTakeRecord) => {
-    const src = fileSrc(take.audio_path);
+    const src = resolveAudioFileUrl(take.audio_path);
     const filename = take.audio_path.split("/").pop() || "voice-take.wav";
     const link = document.createElement("a");
     link.href = src;
@@ -449,7 +440,7 @@ export function VoiceStudioPage() {
                 {takes.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-outline p-5 text-center text-sm text-secondary">还没有 take。生成完整音频后可在这里对比。</div>
                 ) : takes.map((take) => {
-                  const src = fileSrc(take.audio_path);
+                  const src = resolveAudioFileUrl(take.audio_path);
                   return (
                     <div key={take.take_id} className="rounded-[22px] border border-outline bg-background p-4">
                       <div className="flex items-start justify-between gap-3">

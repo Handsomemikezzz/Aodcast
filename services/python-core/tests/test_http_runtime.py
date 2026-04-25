@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from urllib import error as urllib_error
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 if "openai" not in sys.modules:
@@ -111,6 +112,24 @@ class HttpRuntimeTests(unittest.TestCase):
             raw = exc.read().decode("utf-8")
             return exc.code, dict(exc.headers.items()), json.loads(raw)
 
+    def request_bytes(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, str], bytes]:
+        request = urllib_request.Request(
+            f"{self.base_url}{path}",
+            headers=dict(headers or {}),
+            method=method,
+        )
+        try:
+            with urllib_request.urlopen(request, timeout=5) as response:
+                return response.status, dict(response.headers.items()), response.read()
+        except urllib_error.HTTPError as exc:
+            return exc.code, dict(exc.headers.items()), exc.read()
+
     def seed_renderable_project(self, *, state: SessionState = SessionState.SCRIPT_EDITED) -> tuple[str, str]:
         session = SessionRecord(topic="Render test", creation_intent="Exercise render task state")
         session.transition(state)
@@ -122,6 +141,37 @@ class HttpRuntimeTests(unittest.TestCase):
         artifact = ArtifactRecord(session_id=session.session_id)
         self.store.save_project(SessionProject(session=session, script=script, artifact=artifact))
         return session.session_id, script.script_id
+
+    def test_artifact_audio_route_streams_export_audio_for_browser_playback(self) -> None:
+        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        encoded_path = urllib_parse.quote(str(audio_path), safe="")
+
+        status, headers, body = self.request_bytes(
+            "GET",
+            f"/api/v1/artifacts/audio?path={encoded_path}",
+            headers={"Origin": "http://localhost:1420"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "audio/wav")
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "http://localhost:1420")
+        self.assertEqual(body, b"RIFF-audio-bytes")
+
+    def test_artifact_audio_route_rejects_paths_outside_exports_dir(self) -> None:
+        outside_path = self.config.data_dir / "sessions" / "not-audio.wav"
+        outside_path.parent.mkdir(parents=True, exist_ok=True)
+        outside_path.write_bytes(b"not exported audio")
+        encoded_path = urllib_parse.quote(str(outside_path), safe="")
+
+        status, _, payload = self.request_json(
+            "GET",
+            f"/api/v1/artifacts/audio?path={encoded_path}",
+            headers={"Origin": "http://localhost:1420"},
+        )
+
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["request_state"]["operation"], "serve_artifact_audio")
 
     def test_healthz_is_ready_without_origin_or_auth_checks(self) -> None:
         status, headers, payload = self.request_json(

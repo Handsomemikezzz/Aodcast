@@ -5,7 +5,7 @@ import { Timer, FileText, Mic, CloudDownload, Cpu, CheckCircle2, PlayCircle, Set
 import { useBridge } from "../lib/BridgeContext";
 import { RequestState, SessionProject, TTSCapability, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { resolveAudioFileUrl } from "../lib/audioFile";
 import { revealInFinder } from "../lib/shellOps";
 import {
   buildRequestState,
@@ -294,11 +294,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
   const { artifact, session } = project;
   let audioSrc = "";
   if (artifact?.audio_path) {
-    try {
-      audioSrc = convertFileSrc(artifact.audio_path);
-    } catch {
-      audioSrc = `file://${artifact.audio_path}`;
-    }
+    audioSrc = resolveAudioFileUrl(artifact.audio_path);
   }
 
   const voices = [

@@ -1,5 +1,5 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { resolveAudioFileUrl } from "../../lib/audioFile";
 import type { DesktopBridge } from "../../lib/desktopBridge";
 import {
   buildRequestState,
@@ -72,12 +72,7 @@ export function useScriptWorkbenchAudio({
 
   const audioSrc = useMemo(() => {
     const audioPath = project?.artifact?.audio_path;
-    if (!audioPath) return "";
-    try {
-      return convertFileSrc(audioPath);
-    } catch {
-      return `file://${audioPath}`;
-    }
+    return audioPath ? resolveAudioFileUrl(audioPath) : "";
   }, [project?.artifact?.audio_path]);
 
   const stopTaskPolling = () => {
