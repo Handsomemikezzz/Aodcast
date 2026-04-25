@@ -77,8 +77,17 @@ export function ScriptPage({
 
   if (!scriptId) {
     return (
-      <div className="flex h-full items-center justify-center text-secondary text-sm">
-        Missing script id. Use the script list or open from chat.
+      <div className="flex h-full items-center justify-center p-8 text-center">
+        <div className="max-w-sm rounded-2xl border border-outline bg-surface p-6">
+          <p className="text-sm text-secondary">Missing script id. Use the script list or open from chat.</p>
+          <button
+            type="button"
+            onClick={() => navigate("/script")}
+            className="mt-4 rounded-xl border border-outline bg-surface-container-low px-4 py-2 text-sm font-medium text-primary hover:border-accent-amber/30"
+          >
+            返回脚本列表
+          </button>
+        </div>
       </div>
     );
   }

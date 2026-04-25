@@ -1,9 +1,17 @@
-import { Save, Wand2 } from "lucide-react";
+import { ArrowLeft, Save, Wand2 } from "lucide-react";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkbenchResult }) {
   return (
     <section className="rounded-[28px] border border-outline bg-[linear-gradient(180deg,rgba(33,33,37,0.96),rgba(25,25,28,0.94))] px-5 py-5 shadow-[0_24px_80px_rgba(0,0,0,0.38)] backdrop-blur-xl lg:px-6">
+      <button
+        type="button"
+        onClick={() => workbench.navigate("/script")}
+        className="mb-4 inline-flex items-center gap-2 rounded-full border border-outline bg-surface-container-low px-3 py-2 text-xs font-medium text-secondary transition-colors hover:border-accent-amber/30 hover:text-primary"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        返回脚本列表
+      </button>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
