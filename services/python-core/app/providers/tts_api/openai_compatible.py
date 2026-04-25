@@ -26,6 +26,8 @@ class OpenAICompatibleTTSProvider:
             "input": request.script_text,
             "format": self.config.audio_format or request.audio_format,
         }
+        if request.speed != 1.0:
+            payload["speed"] = request.speed
         req = urllib_request.Request(
             url=self.config.base_url.rstrip("/") + "/audio/speech",
             data=json.dumps(payload).encode("utf-8"),

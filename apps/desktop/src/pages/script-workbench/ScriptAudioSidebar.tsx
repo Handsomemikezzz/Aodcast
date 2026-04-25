@@ -47,6 +47,16 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               </div>
               <ChevronDown className="h-4 w-4 text-secondary" />
             </button>
+            {workbench.project?.script ? (
+              <button
+                type="button"
+                onClick={() => workbench.navigate(`/voice-studio/${workbench.project?.session.session_id}/${workbench.project?.script?.script_id}`)}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-sm font-medium text-accent-amber transition-colors hover:bg-accent-amber/15 hover:text-primary"
+              >
+                <Mic className="h-4 w-4" />
+                Open Voice Studio
+              </button>
+            ) : null}
           </div>
 
           <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-3">
@@ -174,7 +184,12 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-primary">{workbench.outputFilename}</p>
                   <p className="mt-1 text-xs text-secondary">
-                    {workbench.selectedEngine === "local_mlx" ? "Local MLX render" : `Cloud render via ${workbench.cloudProvider}`}
+                    {workbench.project?.artifact?.final_take_id && workbench.project.artifact.takes?.length
+                      ? (() => {
+                          const take = workbench.project?.artifact?.takes?.find((item) => item.take_id === workbench.project?.artifact?.final_take_id);
+                          return take ? `${take.voice_name} / ${take.style_name} / ${take.speed.toFixed(1)}x` : "Final Voice Studio take";
+                        })()
+                      : workbench.selectedEngine === "local_mlx" ? "Local MLX render" : `Cloud render via ${workbench.cloudProvider}`}
                   </p>
                 </div>
                 <button

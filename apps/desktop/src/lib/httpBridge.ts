@@ -24,6 +24,12 @@ import type {
   SessionProject,
   TTSCapability,
   TTSProviderConfig,
+  VoicePreset,
+  VoicePresetCatalog,
+  VoicePreviewResult,
+  VoiceRenderSettings,
+  VoiceStylePreset,
+  VoiceTakeRenderResult,
 } from "../types";
 
 export const HTTP_BACKEND_UNAVAILABLE =
@@ -64,6 +70,11 @@ type BridgeShape<T> = {
   message?: string;
   path?: string;
   runtime?: RuntimeInfo;
+  voices?: VoicePreset[];
+  styles?: VoiceStylePreset[];
+  standard_preview_text?: string;
+  take?: VoiceTakeRenderResult["take"];
+  settings?: VoiceRenderSettings;
 } & T;
 
 type RuntimeContext = {
@@ -163,6 +174,19 @@ function buildUrl(baseUrl: string, path: string, query?: Record<string, string |
     url.searchParams.set(key, String(value));
   }
   return url.toString();
+}
+
+function serializeVoiceSettings(settings: VoiceRenderSettings): Record<string, string | number> {
+  const payload: Record<string, string | number> = {
+    voice_id: settings.voice_id,
+    voice_name: settings.voice_name ?? "",
+    style_id: settings.style_id,
+    style_name: settings.style_name ?? "",
+    speed: settings.speed,
+    language: settings.language ?? "zh",
+    audio_format: settings.audio_format ?? "wav",
+  };
+  return payload;
 }
 
 export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
@@ -456,6 +480,48 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         response.run_token = response.request_state.run_token;
       }
       return response;
+    },
+    async listVoicePresets() {
+      const response = await callHttp<VoicePresetCatalog>("/api/v1/voice-studio/presets");
+      return {
+        voices: response.voices ?? [],
+        styles: response.styles ?? [],
+        standard_preview_text: response.standard_preview_text ?? "",
+        request_state: response.request_state,
+        runtime: response.runtime,
+      };
+    },
+    async renderVoicePreview(settings: VoiceRenderSettings) {
+      return callHttp<VoicePreviewResult>("/api/v1/voice-studio/preview", {
+        method: "POST",
+        body: JSON.stringify(serializeVoiceSettings(settings)),
+      });
+    },
+    async renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions) {
+      const response = await callHttp<VoiceTakeRenderResult>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/voice-takes:render`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...serializeVoiceSettings(settings),
+            provider_override: options?.providerOverride ?? "",
+          }),
+        },
+      );
+      if (typeof response.run_token !== "string" && typeof response.request_state?.run_token === "string") {
+        response.run_token = response.request_state.run_token;
+      }
+      return response;
+    },
+    async setFinalVoiceTake(sessionId: string, takeId: string) {
+      const response = await callHttp<{}>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/voice-takes/${encodeURIComponent(takeId)}:final`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      return response.project!;
     },
     async saveEditedScript(sessionId: string, scriptId: string, finalText: string) {
       const response = await callHttp<{}>(

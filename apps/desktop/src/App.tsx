@@ -9,6 +9,7 @@ import { ScriptPage } from "./pages/ScriptPage";
 import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
 import { ModelsPage } from "./pages/ModelsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { VoiceStudioPage } from "./pages/VoiceStudioPage";
 import { MessageSquare, Edit3, Mic, Package, Settings } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
 
@@ -58,6 +59,7 @@ export default function App() {
   let title = "Aodcast";
   if (pathSegment === "models") title = "Models";
   else if (pathSegment === "settings") title = "Settings";
+  else if (pathSegment === "voice-studio") title = "Voice Studio";
   else if (pathSegment === "chat" && !urlSessionId) title = "Chat";
   else if (pathSegment === "script" && !urlSessionId) title = "Script";
   else if (currentProject) title = currentProject.session.topic;
@@ -125,6 +127,23 @@ export default function App() {
             </div>
             Models
           </NavLink>
+
+          <NavLink
+            to="/voice-studio"
+            className={({ isActive }) =>
+              cn(
+                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-[13px] font-medium",
+                isActive || location.pathname.startsWith("/voice-studio/")
+                  ? "bg-primary/10 text-primary"
+                  : "text-secondary hover:bg-surface-container-high hover:text-primary",
+              )
+            }
+          >
+            <div className="w-6 h-6 flex items-center justify-center">
+              <Mic className="w-4 h-4" />
+            </div>
+            Voice Studio
+          </NavLink>
         </nav>
 
         <div className="flex-1 min-h-0" aria-hidden />
@@ -185,6 +204,8 @@ export default function App() {
             />
             <Route path="/script/:sessionId" element={<ScriptSessionResolve />} />
             <Route path="/models" element={<ModelsPage />} />
+            <Route path="/voice-studio" element={<VoiceStudioPage />} />
+            <Route path="/voice-studio/:sessionId/:scriptId" element={<VoiceStudioPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/interview" element={<RedirectInterviewToChat />} />
             <Route path="/interview/:sessionId" element={<RedirectInterviewToChat />} />

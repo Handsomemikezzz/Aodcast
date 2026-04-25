@@ -11,6 +11,10 @@ class TTSGenerationRequest:
     script_text: str
     voice: str
     audio_format: str
+    speed: float = 1.0
+    style_id: str = ""
+    style_prompt: str = ""
+    language: str = "zh"
     should_cancel: Callable[[], bool] | None = None
     # Optional callback that providers may invoke whenever they have new
     # chunk-level progress information. The ``event`` payload is provider

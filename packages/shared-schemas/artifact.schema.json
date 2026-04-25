@@ -9,7 +9,33 @@
     "transcript_path": { "type": "string" },
     "audio_path": { "type": "string" },
     "provider": { "type": "string" },
-    "created_at": { "type": "string", "format": "date-time" }
+    "created_at": { "type": "string", "format": "date-time" },
+    "final_take_id": { "type": "string" },
+    "takes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["take_id", "session_id", "script_id", "audio_path", "transcript_path", "provider", "model", "voice_id", "voice_name", "style_id", "style_name", "speed", "language", "audio_format", "created_at"],
+        "properties": {
+          "take_id": { "type": "string" },
+          "session_id": { "type": "string" },
+          "script_id": { "type": "string" },
+          "audio_path": { "type": "string" },
+          "transcript_path": { "type": "string" },
+          "provider": { "type": "string" },
+          "model": { "type": "string" },
+          "voice_id": { "type": "string" },
+          "voice_name": { "type": "string" },
+          "style_id": { "type": "string" },
+          "style_name": { "type": "string" },
+          "speed": { "type": "number" },
+          "language": { "type": "string" },
+          "audio_format": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "additionalProperties": false
 }

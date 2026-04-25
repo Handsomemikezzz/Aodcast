@@ -9,7 +9,8 @@ class MockRemoteTTSProvider:
     model_name = "mock-voice"
 
     def synthesize(self, request: TTSGenerationRequest) -> TTSGenerationResponse:
-        duration_seconds = min(max(len(request.script_text) // 120, 1), 4)
+        speed = min(1.2, max(0.8, request.speed or 1.0))
+        duration_seconds = min(max(int((len(request.script_text) // 120) / speed), 1), 4)
         return TTSGenerationResponse(
             audio_bytes=synthesize_sine_wave_bytes(duration_seconds),
             file_extension="wav",

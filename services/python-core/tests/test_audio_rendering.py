@@ -11,7 +11,7 @@ from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.tts_config import TTSProviderConfig
-from app.orchestration.audio_rendering import AudioRenderingService
+from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
 from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
@@ -65,6 +65,65 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertTrue(Path(loaded.artifact.audio_path).exists())
         self.assertTrue(Path(loaded.artifact.transcript_path).exists())
         self.assertEqual(loaded.session.tts_provider, "mock_remote")
+
+    def test_render_voice_preview_writes_preview_without_changing_final_artifact(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session_id = self.seed_script_project(store)
+
+        result = service.render_voice_preview(
+            VoiceRenderSettings(
+                voice_id="warm_narrator",
+                voice_name="Warm Narrator",
+                style_id="natural",
+                style_name="Natural",
+                speed=1.2,
+            )
+        )
+        loaded = store.load_project(session_id)
+
+        self.assertEqual(result.provider, "mock_remote")
+        self.assertTrue(Path(result.audio_path).exists())
+        assert loaded.artifact is not None
+        self.assertEqual(loaded.artifact.audio_path, "")
+        self.assertEqual(loaded.artifact.takes, [])
+
+    def test_render_voice_take_keeps_final_take_and_latest_candidate_only(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session_id = self.seed_script_project(store)
+        settings = VoiceRenderSettings(
+            voice_id="warm_narrator",
+            voice_name="Warm Narrator",
+            style_id="natural",
+            style_name="Natural",
+            speed=1.0,
+        )
+
+        first = service.render_voice_take(session_id, settings=settings)
+        service.set_final_voice_take(session_id, first.take.take_id)
+        second = service.render_voice_take(session_id, settings=settings)
+        third = service.render_voice_take(
+            session_id,
+            settings=VoiceRenderSettings(
+                voice_id="news_anchor",
+                voice_name="News Anchor",
+                style_id="news",
+                style_name="News",
+                speed=0.8,
+            ),
+        )
+        loaded = store.load_project(session_id)
+
+        assert loaded.artifact is not None
+        self.assertEqual(loaded.artifact.final_take_id, first.take.take_id)
+        self.assertEqual(loaded.artifact.audio_path, first.take.audio_path)
+        self.assertEqual({take.take_id for take in loaded.artifact.takes}, {first.take.take_id, third.take.take_id})
+        self.assertNotIn(second.take.take_id, {take.take_id for take in loaded.artifact.takes})
+        candidate = next(take for take in loaded.artifact.takes if take.take_id == third.take.take_id)
+        self.assertEqual(candidate.voice_id, "news_anchor")
+        self.assertEqual(candidate.style_id, "news")
+        self.assertEqual(candidate.speed, 0.8)
 
     def test_render_audio_failure_marks_session_failed(self) -> None:
         store, config_store, _, service = self.build_environment()

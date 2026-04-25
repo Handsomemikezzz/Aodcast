@@ -26,7 +26,7 @@ Current MVP:
 - frontend: Tauri app shell
 - backend: local Python orchestration core
 - input: text topic only
-- output: solo podcast script plus final audio
+- output: solo podcast script plus final audio, with Voice Studio take selection for final audio
 - LLM: user-configured API provider
 - TTS: remote API provider or local MLX-backed provider
 
@@ -61,6 +61,7 @@ Out of scope for the current MVP:
 - bridge success payloads and bridge failures must include a normalized `request_state` contract (`operation`, `phase`, `progress_percent`, `message`) so frontend pages can render consistent loading/error/task-state UX.
 - long-running HTTP bridge operations must persist pollable task states and surface incremental `progress_percent` through `show_task_state` before adding new UI long-task flows.
 - long-running HTTP bridge operations that expose `show_task_state` must also support `cancel_task` with cooperative phase transitions (`running -> cancelling -> cancelled`) for desktop-triggered cancellation.
+- Voice Studio full-audio generation uses the same long-task contract and stores at most the final take plus latest candidate take; setting a take as final must keep artifact compatibility fields (`audio_path`, `transcript_path`, `provider`) in sync for Script-page playback.
 - model-specific runtime logic belongs inside provider runner/runtime modules, not in orchestration or desktop files.
 
 ## Change Protocol
@@ -140,3 +141,4 @@ Feature and maintenance role definitions live in [docs/operations/subagents.md](
 - 2026-03-28: `git add .` may appear to succeed in the sandbox without actually staging changes. If `git status --short` still shows unstaged files after `git add .`, rerun the staging step with escalated permissions before assuming git is inconsistent.
 - 2026-04-25: `scripts/dev/run-dev-all.sh` now defaults to restarting the Python runtime on port `8765` to avoid stale in-memory code paths during local debugging. Use `--reuse-runtime` only when you intentionally need process continuity across runs.
 - 2026-04-25: For audio render debugging, check runtime metadata from `/healthz` first (pid/start/build token), then inspect `.local-data/runtime/request-state/*` and only then diagnose frontend `run_token` filtering behavior.
+- 2026-04-25: Voice Studio MVP routes are HTTP-bridge first (`listVoicePresets`, `renderVoicePreview`, `renderVoiceTake`, `setFinalVoiceTake`). Preserve bridge parity when changing them, and keep Voice Studio take retention to final take + latest candidate unless product requirements explicitly move to full version management.

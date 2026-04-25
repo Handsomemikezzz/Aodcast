@@ -288,6 +288,57 @@ class HttpRuntimeTests(unittest.TestCase):
             override_provider="mock_remote",
         )
 
+    def test_voice_presets_route_returns_packaged_cards(self) -> None:
+        status, _, payload = self.request_json("GET", "/api/v1/voice-studio/presets")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["request_state"]["operation"], "list_voice_presets")
+        self.assertGreaterEqual(len(payload["data"]["voices"]), 5)
+        self.assertGreaterEqual(len(payload["data"]["styles"]), 4)
+        self.assertEqual(payload["data"]["standard_preview_text"], "欢迎收听今天的节目，我们将用几分钟理清一个复杂但重要的话题。")
+
+    def test_voice_preview_route_returns_audio_without_session(self) -> None:
+        status, _, payload = self.request_json(
+            "POST",
+            "/api/v1/voice-studio/preview",
+            body={
+                "voice_id": "warm_narrator",
+                "voice_name": "Warm Narrator",
+                "style_id": "natural",
+                "style_name": "Natural",
+                "speed": 1.2,
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["request_state"]["operation"], "render_voice_preview")
+        self.assertTrue(Path(str(payload["data"]["audio_path"])).exists())
+
+    def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:
+        with patch.object(
+            RuntimeContext,
+            "start_render_voice_take",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_voice_take:session-123"}, operation="render_voice_take"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/sessions/session-123/scripts/script-abc/voice-takes:render",
+                body={"voice_id": "news_anchor", "style_id": "news", "speed": 0.8},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        mocked_start.assert_called_once()
+        _, args, kwargs = mocked_start.mock_calls[0]
+        self.assertEqual(args[1], "session-123")
+        self.assertEqual(kwargs["script_id"], "script-abc")
+        self.assertEqual(kwargs["settings"].voice_id, "news_anchor")
+        self.assertEqual(kwargs["settings"].style_id, "news")
+        self.assertEqual(kwargs["settings"].speed, 0.8)
+
     def test_cancel_task_preserves_run_token_in_cancelling_state(self) -> None:
         task_id = "render_audio:session-123"
         self.request_state_store.save(

@@ -232,6 +232,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Render final audio for a session id.",
     )
+    parser.add_argument("--list-voice-presets", action="store_true", help="List Voice Studio voice/style presets.")
+    parser.add_argument("--render-voice-preview", action="store_true", help="Render the Voice Studio standard preview sentence.")
+    parser.add_argument("--render-voice-take", default="", help="Render a Voice Studio candidate take for a session id.")
+    parser.add_argument("--set-final-voice-take", default="", help="Set a Voice Studio take as final for a session id.")
+    parser.add_argument("--take-id", default="", help="Take id for --set-final-voice-take.")
     parser.add_argument(
         "--configure-tts-provider",
         default="",
@@ -464,6 +469,14 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "generate_script"
     if args.render_audio:
         return "render_audio"
+    if args.list_voice_presets:
+        return "list_voice_presets"
+    if args.render_voice_preview:
+        return "render_voice_preview"
+    if args.render_voice_take:
+        return "render_voice_take"
+    if args.set_final_voice_take:
+        return "set_final_voice_take"
     if args.show_tts_config:
         return "show_tts_config"
     if args.configure_tts_provider:

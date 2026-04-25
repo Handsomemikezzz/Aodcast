@@ -61,6 +61,26 @@ export type ArtifactRecord = {
   audio_path: string;
   provider: string;
   created_at: string;
+  takes?: AudioTakeRecord[];
+  final_take_id?: string;
+};
+
+export type AudioTakeRecord = {
+  take_id: string;
+  session_id: string;
+  script_id: string;
+  audio_path: string;
+  transcript_path: string;
+  provider: string;
+  model: string;
+  voice_id: string;
+  voice_name: string;
+  style_id: string;
+  style_name: string;
+  speed: number;
+  language: string;
+  audio_format: string;
+  created_at: string;
 };
 
 export type SessionProject = {
@@ -135,6 +155,48 @@ export type AudioRenderResult = BridgeResultMeta & {
   transcript_path: string;
   task_id?: string;
   run_token?: string;
+};
+
+export type VoicePreset = {
+  voice_id: string;
+  name: string;
+  description: string;
+  scenario: string;
+  tags: string[];
+  provider_voice: string;
+};
+
+export type VoiceStylePreset = {
+  style_id: string;
+  name: string;
+  prompt: string;
+};
+
+export type VoiceRenderSettings = {
+  voice_id: string;
+  voice_name?: string;
+  style_id: string;
+  style_name?: string;
+  speed: number;
+  language?: string;
+  audio_format?: string;
+};
+
+export type VoicePresetCatalog = BridgeResultMeta & {
+  voices: VoicePreset[];
+  styles: VoiceStylePreset[];
+  standard_preview_text: string;
+};
+
+export type VoicePreviewResult = BridgeResultMeta & {
+  provider: string;
+  model: string;
+  audio_path: string;
+  settings: VoiceRenderSettings;
+};
+
+export type VoiceTakeRenderResult = AudioRenderResult & {
+  take?: AudioTakeRecord;
 };
 
 export type TTSCapability = {
