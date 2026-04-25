@@ -465,6 +465,112 @@ class RuntimeContext:
             run_token=run_token,
         )
 
+    def start_render_voice_preview(self, settings: VoiceRenderSettings) -> dict[str, object]:
+        task_id = "render_voice_preview"
+        with self.task_lock:
+            existing_thread = self.active_tasks.get(task_id)
+            if existing_thread is not None and existing_thread.is_alive():
+                existing_state = self.request_state_store.load(task_id)
+                if isinstance(existing_state, dict):
+                    return success_envelope(
+                        {"task_id": task_id},
+                        operation="render_voice_preview",
+                        message=str(existing_state.get("message") or "Rendering voice preview..."),
+                        phase=str(existing_state.get("phase") or "running"),
+                        progress_percent=progress_from_request_state(existing_state, default=5.0),
+                    )
+
+            progress = LongTaskStateManager(
+                request_state_store=self.request_state_store,
+                task_id=task_id,
+                operation="render_voice_preview",
+                build_request_state=build_request_state,
+                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
+            )
+            self.request_state_store.clear_cancel_request(task_id)
+            progress.start(progress_percent=5.0, message="Rendering voice preview...")
+
+            def worker() -> None:
+                heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
+                    start_percent=5.0,
+                    max_percent=85.0,
+                    step_percent=2.0,
+                    interval_seconds=1.0,
+                    message="Rendering voice preview...",
+                )
+
+                def on_progress(snapshot: AudioRenderProgress) -> None:
+                    progress.set_progress(snapshot.percent, snapshot.message, max_percent=98.0)
+
+                try:
+                    result = self.audio_rendering.render_voice_preview_with_cancellation(
+                        settings,
+                        should_cancel=progress.should_cancel,
+                        on_progress=on_progress,
+                    )
+                except TaskCancellationRequested as exc:
+                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+                    self.raise_task_cancelled(
+                        progress,
+                        task_id=task_id,
+                        operation="render_voice_preview",
+                        message=str(exc),
+                        default_progress=10.0,
+                    )
+                except Exception as exc:  # pragma: no cover - exercised by integration tests
+                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+                    if self.request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
+                        self.raise_task_cancelled(
+                            progress,
+                            task_id=task_id,
+                            operation="render_voice_preview",
+                            message="Voice preview rendering cancelled.",
+                            default_progress=10.0,
+                            source_error=exc,
+                        )
+                    self.fail_task(
+                        progress,
+                        task_id=task_id,
+                        message=_normalize_error_message(exc, fallback="Voice preview rendering failed."),
+                        fallback_message="Voice preview rendering failed.",
+                    )
+                else:
+                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+                    progress.save_finalizing(progress_percent=99.0, message="Finalizing voice preview...")
+                    self.request_state_store.save_if_current_phase(
+                        task_id,
+                        {
+                            **build_request_state(
+                                operation="render_voice_preview",
+                                phase="succeeded",
+                                progress_percent=100.0,
+                                message="Voice preview render finished.",
+                            ),
+                            "audio_path": result.audio_path,
+                            "provider": result.provider,
+                            "model": result.model,
+                            "settings": serialize_voice_settings(result.settings),
+                        },
+                        allowed_phases={"running"},
+                    )
+                    self.request_state_store.clear_cancel_request(task_id)
+                finally:
+                    with self.task_lock:
+                        self.active_tasks.pop(task_id, None)
+
+            thread = threading.Thread(target=worker, name=task_id, daemon=True)
+            self.active_tasks[task_id] = thread
+            thread.start()
+
+        started_state = self.request_state_store.load(task_id)
+        return success_envelope(
+            {"task_id": task_id},
+            operation="render_voice_preview",
+            message=str((started_state or {}).get("message") or "Rendering voice preview..."),
+            phase=str((started_state or {}).get("phase") or "running"),
+            progress_percent=progress_from_request_state(started_state, default=5.0),
+        )
+
     def start_render_voice_take(
         self,
         session_id: str,
@@ -1013,17 +1119,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             )
             return
         if self.command == "POST" and path == "/api/v1/voice-studio/preview":
-            result = self.context.audio_rendering.render_voice_preview(voice_settings_from_payload(body))
             self._send_bridge_envelope(
-                success_envelope(
-                    {
-                        "provider": result.provider,
-                        "model": result.model,
-                        "audio_path": result.audio_path,
-                        "settings": serialize_voice_settings(result.settings),
-                    },
-                    operation="render_voice_preview",
-                ),
+                self.context.start_render_voice_preview(voice_settings_from_payload(body)),
                 origin=origin,
             )
             return

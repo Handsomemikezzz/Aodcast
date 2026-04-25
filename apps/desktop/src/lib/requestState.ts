@@ -35,6 +35,21 @@ export function asRequestState(value: unknown): RequestState | null {
   if (typeof candidate.run_token === "string" && candidate.run_token.length > 0) {
     normalized.run_token = candidate.run_token;
   }
+  if (typeof candidate.task_id === "string" && candidate.task_id.length > 0) {
+    normalized.task_id = candidate.task_id;
+  }
+  if (typeof candidate.audio_path === "string" && candidate.audio_path.length > 0) {
+    normalized.audio_path = candidate.audio_path;
+  }
+  if (typeof candidate.provider === "string" && candidate.provider.length > 0) {
+    normalized.provider = candidate.provider;
+  }
+  if (typeof candidate.model === "string" && candidate.model.length > 0) {
+    normalized.model = candidate.model;
+  }
+  if (typeof candidate.settings === "object" && candidate.settings !== null) {
+    normalized.settings = candidate.settings as RequestState["settings"];
+  }
   return normalized;
 }
 

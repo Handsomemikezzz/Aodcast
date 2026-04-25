@@ -11,7 +11,7 @@ The first release targets a minimal local-first macOS workflow with a Tauri fron
 - **Navigation**: Deep link shape is `/script/:sessionId/:scriptId`. If only the session is specified, the UI resolves to the **latest** snapshot for that session.
 - **Editing**: Direct edits apply to the **currently open** `script_id` only; they do not rewrite chat history or other snapshots.
 - **Audio rendering**: TTS uses the currently open `script_id` snapshot. Rendering an older snapshot does not force the active interview session out of its current conversation state.
-- **Voice Studio**: `/voice-studio/:sessionId/:scriptId` is the dedicated audio production space. It packages provider voices into user-facing cards, supports editable preview text, speed/style settings, full-audio take generation, and a two-take retention model (final take + latest candidate).
+- **Voice Studio**: `/voice-studio/:sessionId/:scriptId` is the dedicated audio production space. It packages provider voices into user-facing cards, supports editable preview text with progress feedback, speed/style settings, full-audio take generation, and a two-take retention model (final take + latest candidate).
 - **Script handoff**: Script remains the project hub. When a Voice Studio take is marked as final, the artifact compatibility fields (`audio_path`, `transcript_path`, `provider`) point at that take so the Script audio sidebar can play, download, and reveal the final audio.
 - **UI**: The script route focuses on editing and final-audio review; Voice Studio owns expressive rendering controls and take comparison.
 

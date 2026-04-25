@@ -193,6 +193,15 @@ class AudioRenderingService:
         )
 
     def render_voice_preview(self, settings: VoiceRenderSettings) -> VoicePreviewResult:
+        return self.render_voice_preview_with_cancellation(settings)
+
+    def render_voice_preview_with_cancellation(
+        self,
+        settings: VoiceRenderSettings,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+        on_progress: Callable[[AudioRenderProgress], None] | None = None,
+    ) -> VoicePreviewResult:
         normalized = self._normalize_settings(settings)
         tts_config = self.config_store.load_tts_config()
         tts_config.voice = self._provider_voice_for(normalized)
@@ -200,6 +209,18 @@ class AudioRenderingService:
         provider = build_tts_provider(tts_config)
         style = resolve_style_preset(normalized.style_id)
         preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
+
+        def raise_if_cancelled() -> None:
+            if should_cancel is not None and should_cancel():
+                raise TaskCancellationRequested("Voice preview rendering cancelled.")
+
+        def forward_provider_event(event: Any) -> None:
+            if on_progress is None:
+                return
+            snapshot = _translate_provider_event(event)
+            if snapshot is not None:
+                on_progress(snapshot)
+
         request = TTSGenerationRequest(
             session_id="voice-preview",
             script_text=preview_text,
@@ -209,8 +230,16 @@ class AudioRenderingService:
             style_id=normalized.style_id,
             style_prompt=style.prompt,
             language=normalized.language,
+            should_cancel=should_cancel,
+            on_progress=forward_provider_event,
         )
+        raise_if_cancelled()
+        if on_progress is not None:
+            on_progress(AudioRenderProgress(percent=8.0, message="Preparing voice preview..."))
         response = provider.synthesize(request)
+        raise_if_cancelled()
+        if on_progress is not None:
+            on_progress(AudioRenderProgress(percent=96.0, message="Writing voice preview audio..."))
         audio_path = self.artifact_store.write_preview_audio(response.audio_bytes, response.file_extension)
         return VoicePreviewResult(
             provider=response.provider_name,

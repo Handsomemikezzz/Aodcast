@@ -35,6 +35,10 @@ export type RenderAudioOptions = {
   scriptId?: string;
 };
 
+export type RenderVoicePreviewOptions = {
+  onState?: (state: RequestState) => void;
+};
+
 export type DesktopBridgeError = {
   code: string;
   message: string;
@@ -93,8 +97,8 @@ export interface DesktopBridge {
   renderAudio(sessionId: string, options?: RenderAudioOptions): Promise<AudioRenderResult>;
   /** List packaged voice and style presets for the Voice Studio MVP. */
   listVoicePresets(): Promise<VoicePresetCatalog>;
-  /** Render the fixed standard sentence for quick voice/style comparison. */
-  renderVoicePreview(settings: VoiceRenderSettings): Promise<VoicePreviewResult>;
+  /** Render a short preview for quick voice/style/text comparison. */
+  renderVoicePreview(settings: VoiceRenderSettings, options?: RenderVoicePreviewOptions): Promise<VoicePreviewResult>;
   /** Render a candidate take for one script snapshot. */
   renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions): Promise<VoiceTakeRenderResult>;
   /** Mark a generated take as the final script audio. */

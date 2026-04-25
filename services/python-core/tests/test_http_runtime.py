@@ -380,8 +380,22 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["data"]["request_state"]["operation"], "render_voice_preview")
-        self.assertEqual(payload["data"]["settings"]["preview_text"], "自定义试音文本。")
-        self.assertTrue(Path(str(payload["data"]["audio_path"])).exists())
+        self.assertEqual(payload["data"]["request_state"]["phase"], "running")
+        task_id = str(payload["data"]["task_id"])
+
+        task_state: dict[str, object] | None = None
+        for _ in range(20):
+            state_status, _, state_payload = self.request_json("GET", f"/api/v1/tasks/{task_id}")
+            self.assertEqual(state_status, 200)
+            task_state = state_payload["data"]["task_state"]  # type: ignore[assignment]
+            if isinstance(task_state, dict) and task_state.get("phase") == "succeeded":
+                break
+            time.sleep(0.05)
+
+        assert isinstance(task_state, dict)
+        self.assertEqual(task_state["phase"], "succeeded")
+        self.assertEqual(task_state["settings"]["preview_text"], "自定义试音文本。")
+        self.assertTrue(Path(str(task_state["audio_path"])).exists())
 
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:
         with patch.object(

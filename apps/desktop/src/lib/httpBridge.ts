@@ -8,6 +8,7 @@ import type {
   DesktopBridgeError,
   ListProjectsOptions,
   RenderAudioOptions,
+  RenderVoicePreviewOptions,
   ShowSessionOptions,
 } from "./desktopBridge";
 import { asRequestState } from "./requestState";
@@ -174,6 +175,45 @@ function buildUrl(baseUrl: string, path: string, query?: Record<string, string |
     url.searchParams.set(key, String(value));
   }
   return url.toString();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function voicePreviewFromState(state: RequestState): VoicePreviewResult | null {
+  if (state.phase !== "succeeded" || !state.audio_path || !state.provider || !state.model || !state.settings) {
+    return null;
+  }
+  const result: VoicePreviewResult = {
+    provider: state.provider,
+    model: state.model,
+    audio_path: state.audio_path,
+    settings: state.settings,
+    request_state: state,
+  };
+  return result;
+}
+
+async function waitForVoicePreview(
+  showTaskState: (taskId: string) => Promise<RequestState | null>,
+  taskId: string,
+  options?: RenderVoicePreviewOptions,
+): Promise<VoicePreviewResult> {
+  const started = Date.now();
+  const timeoutMs = 10 * 60 * 1000;
+  while (Date.now() - started < timeoutMs) {
+    await delay(1000);
+    const state = await showTaskState(taskId);
+    if (!state) continue;
+    options?.onState?.(state);
+    const result = voicePreviewFromState(state);
+    if (result) return result;
+    if (state.phase === "failed" || state.phase === "cancelled") {
+      throw new Error(state.message || "Voice preview rendering failed.");
+    }
+  }
+  throw new Error("Voice preview rendering timed out.");
 }
 
 function serializeVoiceSettings(settings: VoiceRenderSettings): Record<string, string | number> {
@@ -492,11 +532,18 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         runtime: response.runtime,
       };
     },
-    async renderVoicePreview(settings: VoiceRenderSettings) {
-      return callHttp<VoicePreviewResult>("/api/v1/voice-studio/preview", {
+    async renderVoicePreview(settings: VoiceRenderSettings, options?: RenderVoicePreviewOptions) {
+      const response = await callHttp<VoicePreviewResult & { task_id?: string }>("/api/v1/voice-studio/preview", {
         method: "POST",
         body: JSON.stringify(serializeVoiceSettings(settings)),
       });
+      const initialState = asRequestState(response.request_state);
+      if (initialState) options?.onState?.(initialState);
+      if (response.audio_path) {
+        return response;
+      }
+      const taskId = response.task_id ?? initialState?.task_id ?? "render_voice_preview";
+      return waitForVoicePreview(this.showTaskState, taskId, options);
     },
     async renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions) {
       const response = await callHttp<VoiceTakeRenderResult>(

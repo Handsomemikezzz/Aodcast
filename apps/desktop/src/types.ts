@@ -119,6 +119,11 @@ export type RequestState = {
   progress_percent: number;
   message: string;
   run_token?: string;
+  task_id?: string;
+  audio_path?: string;
+  provider?: string;
+  model?: string;
+  settings?: VoiceRenderSettings;
 };
 
 export type RuntimeInfo = {

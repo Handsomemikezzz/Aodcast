@@ -53,6 +53,7 @@ export function VoiceStudioPage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [previewSrc, setPreviewSrc] = useState("");
   const [previewing, setPreviewing] = useState(false);
+  const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
   const [rendering, setRendering] = useState(false);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -156,13 +157,23 @@ export function VoiceStudioPage() {
     try {
       setPreviewing(true);
       setError(null);
-      const result = await bridge.renderVoicePreview(settings);
+      setPreviewRequestState({
+        operation: "render_voice_preview",
+        phase: "running",
+        progress_percent: 0,
+        message: "Rendering voice preview...",
+      });
+      const result = await bridge.renderVoicePreview(settings, {
+        onState: setPreviewRequestState,
+      });
+      setPreviewRequestState(result.request_state ?? null);
       setPreviewSrc(resolveAudioFileUrl(result.audio_path));
       window.setTimeout(() => {
         void previewAudioRef.current?.play().catch(() => undefined);
       }, 100);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to render preview."));
+      setPreviewRequestState(null);
     } finally {
       setPreviewing(false);
     }
@@ -381,6 +392,11 @@ export function VoiceStudioPage() {
                 className="mt-4 w-full resize-none rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/40"
               />
               <p className="mt-2 text-[11px] text-secondary">留空时使用系统标准试音句。</p>
+              {previewRequestState && previewRequestState.phase !== "succeeded" ? (
+                <div className="mt-3 rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-secondary">
+                  {Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}
+                </div>
+              ) : null}
               {previewSrc ? <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="mt-4 w-full" /> : null}
             </section>
           </div>
