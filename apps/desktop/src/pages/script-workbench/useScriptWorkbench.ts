@@ -62,6 +62,7 @@ export type UseScriptWorkbenchResult = {
   handleGenerateAudio: () => void;
   handleCancelAudio: () => Promise<void>;
   handlePreviewAudio: () => Promise<void>;
+  handleAudioLoadError: () => void;
   handleRevealInFinder: () => Promise<void>;
   handleDownloadAudio: () => void;
   handleShareAudio: () => Promise<void>;
@@ -164,6 +165,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     handleGenerateAudio,
     handleCancelAudio: audio.handleCancelAudio,
     handlePreviewAudio: audio.handlePreviewAudio,
+    handleAudioLoadError: audio.handleAudioLoadError,
     handleRevealInFinder: audio.handleRevealInFinder,
     handleDownloadAudio: audio.handleDownloadAudio,
     handleShareAudio,

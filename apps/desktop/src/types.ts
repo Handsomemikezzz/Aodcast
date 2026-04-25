@@ -180,6 +180,7 @@ export type VoiceRenderSettings = {
   speed: number;
   language?: string;
   audio_format?: string;
+  preview_text?: string;
 };
 
 export type VoicePresetCatalog = BridgeResultMeta & {

@@ -35,6 +35,7 @@ class VoiceRenderSettings:
     speed: float = 1.0
     language: str = "zh"
     audio_format: str = "wav"
+    preview_text: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,9 +199,10 @@ class AudioRenderingService:
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         style = resolve_style_preset(normalized.style_id)
+        preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
         request = TTSGenerationRequest(
             session_id="voice-preview",
-            script_text=STANDARD_PREVIEW_TEXT,
+            script_text=preview_text,
             voice=tts_config.voice,
             audio_format=tts_config.audio_format,
             speed=normalized.speed,
@@ -374,6 +376,7 @@ class AudioRenderingService:
             speed=clamp_speed(float(settings.speed or 1.0)),
             language=settings.language.strip() or "zh",
             audio_format=(settings.audio_format.strip() or "wav").lstrip("."),
+            preview_text=settings.preview_text.strip(),
         )
 
     def _provider_voice_for(self, settings: VoiceRenderSettings) -> str:

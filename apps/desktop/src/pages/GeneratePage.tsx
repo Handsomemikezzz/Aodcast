@@ -489,6 +489,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
                   controls 
                   className="w-full h-8 outline-none mb-3 [&::-webkit-media-controls-panel]:bg-background [&::-webkit-media-controls-panel]:border [&::-webkit-media-controls-panel]:border-outline"
                   src={audioSrc}
+                  onError={() => setError("无法加载音频文件。文件可能已移动或删除，请重新生成音频。")}
                 />
                 
                 <div className="bg-background rounded p-2 overflow-hidden mb-4">

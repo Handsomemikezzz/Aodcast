@@ -207,6 +207,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 ref={workbench.audioRef}
                 controls
                 src={workbench.audioSrc}
+                onError={workbench.handleAudioLoadError}
                 className="mt-4 w-full [&::-webkit-media-controls-panel]:bg-background [&::-webkit-media-controls-panel]:border [&::-webkit-media-controls-panel]:border-outline"
               />
             </div>

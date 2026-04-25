@@ -357,11 +357,14 @@ export function SettingsPage() {
                   <input
                     type="text"
                     autoComplete="off"
-                    placeholder="wav or mp3"
+                    placeholder="wav, mp3, m4a, or audio-only mp4"
                     value={ttsForm.audio_format}
                     onChange={(e) => updateTts("audio_format", e.target.value)}
                     className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
                   />
+                  <p className="mt-1 text-[11px] text-secondary">
+                    WAV is the safest default. M4A/MP4 here means audio-only output when the selected provider/runtime can produce it; this app does not create video MP4 files yet.
+                  </p>
                 </label>
                 <label className="block">
                   <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local runtime</span>

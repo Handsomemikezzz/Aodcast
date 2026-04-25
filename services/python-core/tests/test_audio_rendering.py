@@ -12,6 +12,7 @@ from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.tts_config import TTSProviderConfig
 from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
+from app.providers.tts_api.base import TTSGenerationResponse
 from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
@@ -87,6 +88,34 @@ class AudioRenderingTests(unittest.TestCase):
         assert loaded.artifact is not None
         self.assertEqual(loaded.artifact.audio_path, "")
         self.assertEqual(loaded.artifact.takes, [])
+
+    def test_render_voice_preview_uses_custom_preview_text(self) -> None:
+        _, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        captured: dict[str, str] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):
+                captured["script_text"] = request.script_text
+                return TTSGenerationResponse(
+                    audio_bytes=b"preview-audio",
+                    file_extension="wav",
+                    provider_name="capture",
+                    model_name="capture-model",
+                )
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=CapturingProvider()):
+            result = service.render_voice_preview(
+                VoiceRenderSettings(
+                    voice_id="warm_narrator",
+                    style_id="natural",
+                    preview_text="这是我自己输入的一句试音文本。",
+                )
+            )
+
+        self.assertEqual(captured["script_text"], "这是我自己输入的一句试音文本。")
+        self.assertEqual(result.settings.preview_text, "这是我自己输入的一句试音文本。")
+        self.assertTrue(Path(result.audio_path).exists())
 
     def test_render_voice_take_keeps_final_take_and_latest_candidate_only(self) -> None:
         store, config_store, _, service = self.build_environment()

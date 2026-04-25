@@ -41,7 +41,7 @@ export function VoiceStudioPage() {
   const [project, setProject] = useState<SessionProject | null>(null);
   const [voices, setVoices] = useState<VoicePreset[]>([]);
   const [styles, setStyles] = useState<VoiceStylePreset[]>([]);
-  const [standardText, setStandardText] = useState("");
+  const [previewText, setPreviewText] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState(routeSessionId ?? "");
   const [selectedScriptId, setSelectedScriptId] = useState(routeScriptId ?? "");
   const [selectedVoiceId, setSelectedVoiceId] = useState("warm_narrator");
@@ -73,8 +73,9 @@ export function VoiceStudioPage() {
       speed,
       language,
       audio_format: audioFormat,
+      preview_text: previewText,
     }),
-    [audioFormat, language, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
+    [audioFormat, language, previewText, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
   );
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
@@ -100,7 +101,7 @@ export function VoiceStudioPage() {
         const [catalog, loadedProjects] = await Promise.all([bridge.listVoicePresets(), bridge.listProjects()]);
         setVoices(catalog.voices);
         setStyles(catalog.styles);
-        setStandardText(catalog.standard_preview_text);
+        setPreviewText(catalog.standard_preview_text);
         setProjects(loadedProjects);
         const ttsConfig = await bridge.showTTSConfig().catch(() => null);
         if (ttsConfig?.audio_format) setAudioFormat(ttsConfig.audio_format);
@@ -205,6 +206,10 @@ export function VoiceStudioPage() {
     } catch (err) {
       setError(getErrorMessage(err, "Failed to set final take."));
     }
+  };
+
+  const handleAudioLoadError = () => {
+    setError("无法加载音频文件。文件可能已移动或删除，请重新生成音频。");
   };
 
   const handleDownload = (take: AudioTakeRecord) => {
@@ -368,8 +373,15 @@ export function VoiceStudioPage() {
                   生成组合试音
                 </button>
               </div>
-              <p className="mt-4 rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-secondary">{standardText}</p>
-              {previewSrc ? <audio ref={previewAudioRef} controls src={previewSrc} className="mt-4 w-full" /> : null}
+              <textarea
+                value={previewText}
+                onChange={(event) => setPreviewText(event.target.value)}
+                rows={3}
+                placeholder="输入一句你想用来比较音色与风格的试音文本"
+                className="mt-4 w-full resize-none rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/40"
+              />
+              <p className="mt-2 text-[11px] text-secondary">留空时使用系统标准试音句。</p>
+              {previewSrc ? <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="mt-4 w-full" /> : null}
             </section>
           </div>
 
@@ -392,6 +404,9 @@ export function VoiceStudioPage() {
                   </label>
                   <label className="text-xs text-secondary">输出格式
                     <input value={audioFormat} onChange={(event) => setAudioFormat(event.target.value)} className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary" />
+                    <p className="mt-1 text-[11px] text-secondary">
+                      只影响本次 Voice Studio take；Script 页“生成完整音频”仍使用 Settings 中保存的 TTS 格式。MP4 指 audio-only 容器，不含视频画面。
+                    </p>
                   </label>
                 </div>
               ) : null}
@@ -453,7 +468,7 @@ export function VoiceStudioPage() {
                           <FolderOpen className="h-4 w-4" />
                         </button>
                       </div>
-                      <audio controls src={src} className="mt-3 w-full" />
+                      <audio controls src={src} onError={handleAudioLoadError} className="mt-3 w-full" />
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <button type="button" onClick={() => void handleSetFinal(take)} disabled={take.take_id === finalTakeId} className="rounded-xl border border-outline px-3 py-2 text-xs font-medium text-primary disabled:opacity-50">
                           设为最终版本

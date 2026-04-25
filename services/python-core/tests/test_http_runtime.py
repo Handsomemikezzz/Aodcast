@@ -157,6 +157,21 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(headers["Access-Control-Allow-Origin"], "http://localhost:1420")
         self.assertEqual(body, b"RIFF-audio-bytes")
 
+    def test_artifact_audio_route_serves_mp4_as_audio_mp4(self) -> None:
+        audio_path = self.artifact_store.exports_dir / "sample.mp4"
+        audio_path.write_bytes(b"fake-mp4-audio")
+        encoded_path = urllib_parse.quote(str(audio_path), safe="")
+
+        status, headers, body = self.request_bytes(
+            "GET",
+            f"/api/v1/artifacts/audio?path={encoded_path}",
+            headers={"Origin": "http://localhost:1420"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "audio/mp4")
+        self.assertEqual(body, b"fake-mp4-audio")
+
     def test_artifact_audio_route_rejects_paths_outside_exports_dir(self) -> None:
         outside_path = self.config.data_dir / "sessions" / "not-audio.wav"
         outside_path.parent.mkdir(parents=True, exist_ok=True)
@@ -358,12 +373,14 @@ class HttpRuntimeTests(unittest.TestCase):
                 "style_id": "natural",
                 "style_name": "Natural",
                 "speed": 1.2,
+                "preview_text": "自定义试音文本。",
             },
         )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["data"]["request_state"]["operation"], "render_voice_preview")
+        self.assertEqual(payload["data"]["settings"]["preview_text"], "自定义试音文本。")
         self.assertTrue(Path(str(payload["data"]["audio_path"])).exists())
 
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:

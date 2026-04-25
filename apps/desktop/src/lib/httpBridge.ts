@@ -185,6 +185,7 @@ function serializeVoiceSettings(settings: VoiceRenderSettings): Record<string, s
     speed: settings.speed,
     language: settings.language ?? "zh",
     audio_format: settings.audio_format ?? "wav",
+    preview_text: settings.preview_text ?? "",
   };
   return payload;
 }

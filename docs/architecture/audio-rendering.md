@@ -51,3 +51,7 @@ Audio artifacts are written under:
 - session state moves to `failed`
 - the error message is stored in `session.last_error`
 - failed sessions can be retried after TTS configuration is fixed
+
+## Audio-only MP4 / M4A scope
+
+The current app can request provider/runtime output formats and serve common audio suffixes, but it does not transcode WAV to AAC/M4A/MP4 itself. `.mp4` means audio-only container support when the selected provider/runtime produces a valid file. True video MP4 and guaranteed WAV → AAC conversion require a separate ffmpeg/afconvert packaging decision.

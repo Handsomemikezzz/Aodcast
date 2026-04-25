@@ -39,6 +39,7 @@ type UseScriptWorkbenchAudioResult = {
   triggerRenderAudio: () => Promise<void>;
   handleCancelAudio: () => Promise<void>;
   handlePreviewAudio: () => Promise<void>;
+  handleAudioLoadError: () => void;
   handleRevealInFinder: () => Promise<void>;
   handleDownloadAudio: () => void;
   handleShareAudio: (scriptName: string) => Promise<void>;
@@ -300,6 +301,10 @@ export function useScriptWorkbenchAudio({
     }
   };
 
+  const handleAudioLoadError = () => {
+    setAudioError("无法加载音频文件。文件可能已移动或删除，请重新生成音频。");
+  };
+
   const handleRevealInFinder = async () => {
     if (!project?.artifact?.audio_path) return;
     try {
@@ -351,6 +356,7 @@ export function useScriptWorkbenchAudio({
     triggerRenderAudio,
     handleCancelAudio,
     handlePreviewAudio,
+    handleAudioLoadError,
     handleRevealInFinder,
     handleDownloadAudio,
     handleShareAudio,

@@ -208,6 +208,7 @@ def voice_settings_from_payload(payload: dict[str, object]) -> VoiceRenderSettin
         speed=float(payload.get("speed") or 1.0),
         language=str(payload.get("language") or "zh"),
         audio_format=str(payload.get("audio_format") or "wav"),
+        preview_text=str(payload.get("preview_text") or ""),
     )
 
 
@@ -220,6 +221,7 @@ def serialize_voice_settings(settings: VoiceRenderSettings) -> dict[str, object]
         "speed": settings.speed,
         "language": settings.language,
         "audio_format": settings.audio_format,
+        "preview_text": settings.preview_text,
     }
 
 
@@ -1428,6 +1430,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             ".mp3": "audio/mpeg",
             ".wav": "audio/wav",
             ".m4a": "audio/mp4",
+            ".mp4": "audio/mp4",
             ".aac": "audio/aac",
             ".ogg": "audio/ogg",
             ".flac": "audio/flac",
