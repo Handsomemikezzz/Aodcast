@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import threading
 import time
@@ -138,6 +139,11 @@ def error_envelope(
     }
 
 
+def _normalize_error_message(exc: Exception, *, fallback: str) -> str:
+    message = str(exc).strip()
+    return message or fallback
+
+
 def serialize_project(project: SessionProject) -> dict[str, object]:
     return {
         "session": project.session.to_dict(),
@@ -232,10 +238,19 @@ class RuntimeContext:
     runtime_token: str
     bootstrap_nonce: str | None
     bootstrap_created_at: float
-    allowed_origins: frozenset[str]
+    runtime_started_at: float = field(default_factory=time.time)
+    runtime_build_token: str = field(default_factory=lambda: uuid.uuid4().hex)
+    allowed_origins: frozenset[str] = field(default_factory=frozenset)
     task_lock: threading.Lock = field(default_factory=threading.Lock)
     active_tasks: dict[str, threading.Thread] = field(default_factory=dict)
     bootstrap_nonce_used: bool = False
+
+    def runtime_metadata(self) -> dict[str, object]:
+        return {
+            "pid": os.getpid(),
+            "started_at_unix": self.runtime_started_at,
+            "build_token": self.runtime_build_token,
+        }
 
     def get_allowed_origin(self, origin: str | None) -> str | None:
         if not origin:
@@ -360,7 +375,8 @@ class RuntimeContext:
                     ) from source_error
 
                 def fail_render(message: str) -> None:
-                    progress.save_failed(message=message)
+                    normalized_message = message.strip() or f"Audio rendering failed for session {session_id}."
+                    progress.save_failed(message=normalized_message)
                     self.request_state_store.clear_cancel_request(task_id)
 
                 try:
@@ -381,7 +397,7 @@ class RuntimeContext:
                             default_progress=10.0,
                             source_error=exc,
                         )
-                    fail_render(str(exc))
+                    fail_render(_normalize_error_message(exc, fallback=f"Audio rendering failed for session {session_id}."))
                 else:
                     progress.save_finalizing(
                         progress_percent=99.0,
@@ -605,7 +621,15 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
         if path == "/healthz":
-            self._send_json(HTTPStatus.OK, {"ok": True, "status": "ready", "service": "aodcast-python-core-http"})
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "status": "ready",
+                    "service": "aodcast-python-core-http",
+                    "runtime": self.context.runtime_metadata(),
+                },
+            )
             return
 
         origin = self._check_origin(preflight=False)
@@ -623,7 +647,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 error_envelope(
                     operation=self._infer_operation(path),
                     code="python_core_error",
-                    message=str(exc),
+                    message=_normalize_error_message(exc, fallback="HTTP runtime request failed."),
                 ),
                 origin=origin,
             )
@@ -632,7 +656,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 error_envelope(
                     operation=self._infer_operation(path),
                     code="python_core_error",
-                    message=str(exc),
+                    message=_normalize_error_message(exc, fallback="HTTP runtime request failed."),
                     details={"exception_type": exc.__class__.__name__},
                 ),
                 origin=origin,
@@ -1220,8 +1244,17 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         status: HTTPStatus | None = None,
         origin: str | None,
     ) -> None:
-        resolved_status = status or self._status_for_payload(payload)
-        self._send_json(resolved_status, payload, origin=origin)
+        payload_with_runtime = dict(payload)
+        payload_with_runtime["runtime"] = self.context.runtime_metadata()
+        if payload_with_runtime.get("ok") is False:
+            error = payload_with_runtime.get("error")
+            if isinstance(error, dict):
+                details = error.get("details")
+                details_dict = dict(details) if isinstance(details, dict) else {}
+                details_dict.setdefault("runtime", self.context.runtime_metadata())
+                error["details"] = details_dict
+        resolved_status = status or self._status_for_payload(payload_with_runtime)
+        self._send_json(resolved_status, payload_with_runtime, origin=origin)
 
     def _status_for_payload(self, payload: dict[str, object]) -> HTTPStatus:
         if payload.get("ok") is True:
@@ -1312,6 +1345,8 @@ def serve_http(
         runtime_token=runtime_token or "",
         bootstrap_nonce=bootstrap_nonce,
         bootstrap_created_at=time.time(),
+        runtime_started_at=time.time(),
+        runtime_build_token=uuid.uuid4().hex,
         allowed_origins=_normalize_allowed_origins(allowed_origins),
     )
 

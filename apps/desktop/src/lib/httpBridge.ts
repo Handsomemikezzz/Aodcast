@@ -18,6 +18,7 @@ import type {
   LLMProviderConfig,
   ModelStatus,
   RequestState,
+  RuntimeInfo,
   ScriptRecord,
   ScriptRevisionRecord,
   SessionProject,
@@ -62,6 +63,7 @@ type BridgeShape<T> = {
   task_id?: string;
   message?: string;
   path?: string;
+  runtime?: RuntimeInfo;
 } & T;
 
 type RuntimeContext = {
@@ -72,6 +74,7 @@ export class HttpBridgeInvocationError extends Error {
   readonly code: string;
   readonly details?: Record<string, unknown>;
   readonly requestState?: RequestState;
+  readonly runtime?: RuntimeInfo;
 
   constructor(
     message: string,
@@ -79,6 +82,7 @@ export class HttpBridgeInvocationError extends Error {
       code: string;
       details?: Record<string, unknown>;
       requestState?: RequestState;
+      runtime?: RuntimeInfo;
     },
   ) {
     super(message);
@@ -86,7 +90,29 @@ export class HttpBridgeInvocationError extends Error {
     this.code = options.code;
     this.details = options.details;
     this.requestState = options.requestState;
+    this.runtime = options.runtime;
   }
+}
+
+function asRuntimeInfo(value: unknown): RuntimeInfo | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const candidate = value as Partial<RuntimeInfo>;
+  if (
+    typeof candidate.pid !== "number"
+    || !Number.isFinite(candidate.pid)
+    || typeof candidate.started_at_unix !== "number"
+    || !Number.isFinite(candidate.started_at_unix)
+    || typeof candidate.build_token !== "string"
+    || candidate.build_token.length === 0
+  ) {
+    return undefined;
+  }
+  const runtimeInfo: RuntimeInfo = {
+    pid: candidate.pid,
+    started_at_unix: candidate.started_at_unix,
+    build_token: candidate.build_token,
+  };
+  return runtimeInfo;
 }
 
 function isTauriRuntime(): boolean {
@@ -115,10 +141,12 @@ function normalizeError(error: unknown): Error {
           ? (candidate.details as Record<string, unknown>)
           : undefined;
       const requestState = asRequestState(details?.request_state) ?? undefined;
+      const runtime = asRuntimeInfo(candidate.details?.runtime);
       return new HttpBridgeInvocationError(candidate.message, {
         code: candidate.code || "desktop_bridge_error",
         details,
         requestState,
+        runtime,
       });
     }
   }

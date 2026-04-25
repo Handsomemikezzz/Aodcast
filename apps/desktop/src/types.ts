@@ -101,8 +101,15 @@ export type RequestState = {
   run_token?: string;
 };
 
+export type RuntimeInfo = {
+  pid: number;
+  started_at_unix: number;
+  build_token: string;
+};
+
 type BridgeResultMeta = {
   request_state?: RequestState;
+  runtime?: RuntimeInfo;
 };
 
 export type InterviewTurnResult = BridgeResultMeta & {

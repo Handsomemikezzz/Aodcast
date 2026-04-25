@@ -13,6 +13,7 @@ import {
 } from "../../lib/requestState";
 import type {
   RequestState,
+  RuntimeInfo,
   SessionProject,
   TTSCapability,
   TTSProviderConfig,
@@ -132,6 +133,38 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     }
     pollingInFlightRef.current = false;
     pollFailureCountRef.current = 0;
+  };
+
+  const runtimeLabel = (runtime: RuntimeInfo): string => {
+    const startedAt = new Date(runtime.started_at_unix * 1000).toLocaleString();
+    const shortToken = runtime.build_token.slice(0, 8);
+    return `runtime pid=${runtime.pid}, started=${startedAt}, build=${shortToken}`;
+  };
+
+  const runtimeLabelFromError = (error: unknown): string | null => {
+    if (typeof error !== "object" || error === null) return null;
+    const candidate = error as {
+      runtime?: RuntimeInfo;
+      details?: { runtime?: RuntimeInfo };
+    };
+    if (
+      candidate.runtime
+      && typeof candidate.runtime.pid === "number"
+      && typeof candidate.runtime.started_at_unix === "number"
+      && typeof candidate.runtime.build_token === "string"
+    ) {
+      return runtimeLabel(candidate.runtime);
+    }
+    const nestedRuntime = candidate.details?.runtime;
+    if (
+      nestedRuntime
+      && typeof nestedRuntime.pid === "number"
+      && typeof nestedRuntime.started_at_unix === "number"
+      && typeof nestedRuntime.build_token === "string"
+    ) {
+      return runtimeLabel(nestedRuntime);
+    }
+    return null;
   };
 
   const acceptPolledState = (state: RequestState | null): boolean => {
@@ -529,10 +562,12 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
       await reload();
     } catch (err: unknown) {
       const errorState = getErrorRequestState(err);
+      const runtimeHint = runtimeLabelFromError(err);
       if (errorState?.phase === "cancelled") {
         setAudioError(null);
       } else {
-        setAudioError(getErrorMessage(err, "Failed to render audio."));
+        const baseMessage = getErrorMessage(err, "Failed to render audio.");
+        setAudioError(runtimeHint ? `${baseMessage} (${runtimeHint})` : baseMessage);
       }
       setAudioRequestState(
         withRequestStateFallback(errorState, buildRequestState("render_audio", "failed", "Failed to render audio.")),

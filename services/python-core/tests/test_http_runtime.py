@@ -25,7 +25,11 @@ if "openai" not in sys.modules:
 
 from app.api.http_runtime import RuntimeContext, RuntimeHttpServer, success_envelope
 from app.config import AppConfig
+from app.domain.artifact import ArtifactRecord
 from app.domain.provider_config import LLMProviderConfig
+from app.domain.project import SessionProject
+from app.domain.script import ScriptRecord
+from app.domain.session import SessionRecord, SessionState
 from app.orchestration.audio_rendering import AudioRenderingService
 from app.orchestration.interview_service import InterviewOrchestrator
 from app.orchestration.script_generation import ScriptGenerationService
@@ -107,6 +111,18 @@ class HttpRuntimeTests(unittest.TestCase):
             raw = exc.read().decode("utf-8")
             return exc.code, dict(exc.headers.items()), json.loads(raw)
 
+    def seed_renderable_project(self, *, state: SessionState = SessionState.SCRIPT_EDITED) -> tuple[str, str]:
+        session = SessionRecord(topic="Render test", creation_intent="Exercise render task state")
+        session.transition(state)
+        script = ScriptRecord(
+            session_id=session.session_id,
+            draft="Draft script",
+            final="Final script content for render test.",
+        )
+        artifact = ArtifactRecord(session_id=session.session_id)
+        self.store.save_project(SessionProject(session=session, script=script, artifact=artifact))
+        return session.session_id, script.script_id
+
     def test_healthz_is_ready_without_origin_or_auth_checks(self) -> None:
         status, headers, payload = self.request_json(
             "GET",
@@ -115,7 +131,12 @@ class HttpRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 200)
-        self.assertEqual(payload, {"ok": True, "status": "ready", "service": "aodcast-python-core-http"})
+        self.assertEqual(payload["ok"], True)
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["service"], "aodcast-python-core-http")
+        self.assertIsInstance(payload["runtime"]["pid"], int)
+        self.assertIsInstance(payload["runtime"]["started_at_unix"], float)
+        self.assertIsInstance(payload["runtime"]["build_token"], str)
         self.assertNotIn("Access-Control-Allow-Origin", headers)
 
     def test_create_and_list_projects_dispatch_through_cli_envelopes(self) -> None:
@@ -165,6 +186,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "python_core_error")
         self.assertEqual(payload["request_state"]["operation"], "http_runtime")
         self.assertEqual(payload["error"]["details"]["request_state"], payload["request_state"])
+        self.assertEqual(payload["error"]["details"]["runtime"], payload["runtime"])
         self.assertIn("Unknown route", payload["error"]["message"])
 
     def test_config_routes_require_runtime_token(self) -> None:
@@ -288,6 +310,38 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["data"]["task_state"]["phase"], "cancelling")
         self.assertEqual(payload["data"]["task_state"]["run_token"], "token-abc")
         self.assertEqual(payload["data"]["request_state"]["run_token"], "token-abc")
+
+    def test_start_render_audio_failure_persists_run_token_and_non_empty_message(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        with patch.object(
+            self.context.audio_rendering,
+            "render_audio_with_cancellation",
+            side_effect=Exception(""),
+        ):
+            result = self.context.start_render_audio(
+                session_id,
+                script_id=script_id,
+                override_provider="mock_remote",
+            )
+
+        task_id = str(result["data"]["task_id"])
+        deadline = time.time() + 2.0
+        state: dict[str, object] | None = None
+        while time.time() < deadline:
+            loaded_state = self.request_state_store.load(task_id)
+            if isinstance(loaded_state, dict) and str(loaded_state.get("phase")) == "failed":
+                state = loaded_state
+                break
+            time.sleep(0.02)
+
+        self.assertIsNotNone(state)
+        assert state is not None
+        self.assertEqual(state["operation"], "render_audio")
+        self.assertEqual(state["phase"], "failed")
+        self.assertIsInstance(state.get("message"), str)
+        self.assertNotEqual(str(state.get("message")).strip(), "")
+        self.assertIsInstance(state.get("run_token"), str)
+        self.assertNotEqual(str(state.get("run_token")).strip(), "")
 
     def test_config_routes_reject_unsupported_providers(self) -> None:
         status, _, payload = self.request_json(
