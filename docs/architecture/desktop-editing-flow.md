@@ -35,9 +35,9 @@ The shell is implemented through:
 ### `Script`
 
 - session selection when no session is open
-- split sub-flow for script editing and text-to-speech generation
-- direct access to `EditPage` and `GeneratePage`
-- when switching sessions or script snapshots, the page returns to the `edit` tab by default
+- single workbench layout that combines editing, voice settings, and generated-audio preview
+- prominent top-bar primary action for audio rendering, with secondary preview/save actions
+- script snapshots and revision history remain available in secondary panels instead of a separate audio tab
 - explicit save for script edits; the editor does not save on textarea blur
 - unsaved-change confirmation before refresh, rollback, trash, or script-snapshot switching
 - in-app confirmation dialogs for destructive actions instead of browser-native `window.confirm`

@@ -1,14 +1,9 @@
-import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ChevronRight, Edit3, Mic } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { SessionProject } from "../types";
-import { cn } from "../lib/utils";
 import { useBridge } from "../lib/BridgeContext";
-import { EditPage } from "./EditPage";
-import { GeneratePage } from "./GeneratePage";
-
-type TabId = "edit" | "audio";
+import { ScriptWorkbench } from "./ScriptWorkbench";
 
 export function ScriptPage({
   projects,
@@ -20,11 +15,6 @@ export function ScriptPage({
   const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const navigate = useNavigate();
   const bridge = useBridge();
-  const [tab, setTab] = useState<TabId>("edit");
-
-  useEffect(() => {
-    setTab("edit");
-  }, [sessionId, scriptId]);
 
   const sorted = [...projects].sort((a, b) =>
     b.session.updated_at.localeCompare(a.session.updated_at),
@@ -41,7 +31,7 @@ export function ScriptPage({
           <div className="mb-8 border-b border-outline pb-6">
             <h1 className="text-2xl font-headline font-bold text-primary mb-2">Script</h1>
             <p className="text-secondary text-sm">
-              Open a podcast to edit its script or generate speech with TTS.
+              Open a podcast to edit the script and render audio inside one workspace.
             </p>
           </div>
           <div className="rounded-xl border border-outline bg-surface-container-low overflow-hidden divide-y divide-outline-variant">
@@ -94,43 +84,5 @@ export function ScriptPage({
     );
   }
 
-  return (
-    <div className="flex flex-col h-full w-full min-h-0">
-      <div className="shrink-0 flex items-center gap-1 px-4 py-2 border-b border-outline bg-background/80">
-        <button
-          type="button"
-          onClick={() => setTab("edit")}
-          className={cn(
-            "flex items-center gap-2 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors",
-            tab === "edit"
-              ? "bg-primary/10 text-primary"
-              : "text-secondary hover:bg-surface-container-high hover:text-primary",
-          )}
-        >
-          <Edit3 className="w-3.5 h-3.5" />
-          Edit script
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("audio")}
-          className={cn(
-            "flex items-center gap-2 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors",
-            tab === "audio"
-              ? "bg-primary/10 text-primary"
-              : "text-secondary hover:bg-surface-container-high hover:text-primary",
-          )}
-        >
-          <Mic className="w-3.5 h-3.5" />
-          Text to speech
-        </button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {tab === "edit" ? (
-          <EditPage key={`${sessionId}-${scriptId}`} onRefresh={onRefresh} />
-        ) : (
-          <GeneratePage onRefresh={onRefresh} />
-        )}
-      </div>
-    </div>
-  );
+  return <ScriptWorkbench key={`${sessionId}-${scriptId}`} sessionId={sessionId} scriptId={scriptId} onRefresh={onRefresh} />;
 }

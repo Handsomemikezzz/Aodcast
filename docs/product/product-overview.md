@@ -10,4 +10,4 @@ The first release targets a minimal local-first macOS workflow with a Tauri fron
 - **Naming**: New snapshots are titled with the session topic plus a local timestamp, with **second-level** precision (for example `…-2026-04-18 09:04:32`) so back-to-back generations remain distinguishable.
 - **Navigation**: Deep link shape is `/script/:sessionId/:scriptId`. If only the session is specified, the UI resolves to the **latest** snapshot for that session.
 - **Editing**: Direct edits and revision history apply to the **currently open** `script_id` only; they do not rewrite chat history or other snapshots.
-- **UI**: The script editor lists snapshots for the current session so you can switch between them without hunting files on disk.
+- **UI**: The script route is a single workbench that combines script editing, TTS engine selection, and audio output preview. Snapshot switching and revision rollback stay in secondary panels so the main editing canvas remains focused.
