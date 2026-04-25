@@ -175,6 +175,32 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "bridge_auth_required")
         self.assertEqual(payload["request_state"]["operation"], "show_llm_config")
 
+    def test_configure_tts_persists_local_ref_audio_path(self) -> None:
+        status, _, bootstrap = self.request_json(
+            "POST",
+            "/api/v1/runtime/bootstrap",
+            body={"nonce": "bootstrap-nonce"},
+        )
+        self.assertEqual(status, 200)
+        token = bootstrap["data"]["token"]
+
+        status, _, payload = self.request_json(
+            "PUT",
+            "/api/v1/config/tts",
+            token=token,
+            body={
+                "provider": "local_mlx",
+                "model": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+                "local_runtime": "mlx",
+                "local_model_path": "/tmp/model",
+                "local_ref_audio_path": "/tmp/ref.wav",
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["tts_config"]["local_ref_audio_path"], "/tmp/ref.wav")
+
     def test_runtime_bootstrap_nonce_is_single_use(self) -> None:
         status, _, first = self.request_json(
             "POST",

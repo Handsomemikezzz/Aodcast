@@ -739,6 +739,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 tts_config.local_model_path = ""
             elif "local_model_path" in body:
                 tts_config.local_model_path = str(body.get("local_model_path") or "")
+            if "local_ref_audio_path" in body:
+                tts_config.local_ref_audio_path = str(body.get("local_ref_audio_path") or "")
             path_obj = self.context.config_store.save_tts_config(tts_config)
             self._send_bridge_envelope(
                 success_envelope(

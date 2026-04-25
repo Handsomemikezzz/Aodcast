@@ -44,6 +44,10 @@ class SessionRecord:
         self.last_error = message
         self.updated_at = utc_now_iso()
 
+    def record_error(self, message: str) -> None:
+        self.last_error = message
+        self.updated_at = utc_now_iso()
+
     def rename_topic(self, topic: str) -> None:
         cleaned = topic.strip()
         if not cleaned:

@@ -76,14 +76,8 @@ class AudioRenderingService:
         artifact = project.artifact
         if script is None or artifact is None:
             raise ValueError("Cannot render audio without script and artifact records.")
-        if project.session.state not in (
-            SessionState.SCRIPT_GENERATED,
-            SessionState.SCRIPT_EDITED,
-            SessionState.FAILED,
-        ):
-            raise ValueError(
-                f"Session must be in script_generated, script_edited, or failed state before audio rendering, got '{project.session.state.value}'."
-            )
+        if project.session.state == SessionState.AUDIO_RENDERING:
+            raise ValueError("Cannot render audio while another audio render is already in progress.")
 
         final_text = script.final.strip() or script.draft.strip()
         if not final_text:
@@ -142,7 +136,11 @@ class AudioRenderingService:
             self.store.save_project(project)
             raise
         except Exception as exc:
-            project.session.set_error(str(exc))
+            if _should_preserve_session_state(previous_state):
+                project.session.transition(previous_state)
+                project.session.record_error(str(exc))
+            else:
+                project.session.set_error(str(exc))
             self.store.save_project(project)
             raise
 
@@ -150,7 +148,7 @@ class AudioRenderingService:
         artifact.audio_path = str(audio_path)
         artifact.provider = response.provider_name
         project.session.tts_provider = response.provider_name
-        project.session.transition(SessionState.COMPLETED)
+        project.session.transition(_resolve_post_render_state(previous_state))
         self.store.save_project(project)
 
         return AudioRenderResult(
@@ -163,6 +161,23 @@ class AudioRenderingService:
 
 
 _PROVIDER_RENDER_WINDOW = (10.0, 90.0)
+
+_PRESERVED_SESSION_STATES = {
+    SessionState.TOPIC_DEFINED,
+    SessionState.INTERVIEW_IN_PROGRESS,
+    SessionState.READINESS_EVALUATION,
+    SessionState.READY_TO_GENERATE,
+}
+
+
+def _should_preserve_session_state(previous_state: SessionState) -> bool:
+    return previous_state in _PRESERVED_SESSION_STATES
+
+
+def _resolve_post_render_state(previous_state: SessionState) -> SessionState:
+    if _should_preserve_session_state(previous_state):
+        return previous_state
+    return SessionState.COMPLETED
 
 
 def _translate_provider_event(event: Any) -> AudioRenderProgress | None:

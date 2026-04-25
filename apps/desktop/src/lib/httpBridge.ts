@@ -514,6 +514,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           audio_format: input.audio_format,
           local_runtime: input.local_runtime,
           local_model_path: shouldClearLocalModelPath ? null : input.local_model_path,
+          local_ref_audio_path: input.local_ref_audio_path,
           clear_local_model_path: shouldClearLocalModelPath,
         }),
       });

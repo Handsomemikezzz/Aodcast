@@ -125,6 +125,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         config = TTSProviderConfig(
             provider="local_mlx",
             model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+            local_ref_audio_path="/tmp/ref.wav",
         )
 
         class FakeWorkerClient:
@@ -186,6 +187,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(result.file_extension, "wav")
         self.assertEqual(result.model_name, config.model)
         self.assertEqual(fake.last_kwargs["audio_format"], "wav")
+        self.assertEqual(fake.last_kwargs["ref_audio"], config.local_ref_audio_path)
         self.assertEqual(len(events), 2)
         self.assertEqual(getattr(events[0], "phase"), "chunk_started")
         self.assertEqual(getattr(events[1], "phase"), "chunk_done")

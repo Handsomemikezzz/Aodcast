@@ -46,6 +46,7 @@ export type ConfigureTTSInput = {
   audio_format: string;
   local_runtime: string;
   local_model_path: string;
+  local_ref_audio_path: string;
 };
 
 export type ConfigureLLMInput = {

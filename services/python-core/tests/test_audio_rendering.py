@@ -85,10 +85,11 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(loaded.session.state, SessionState.FAILED)
         self.assertIn("requires an api_key", loaded.session.last_error)
 
-    def test_render_audio_requires_script_state(self) -> None:
+    def test_render_audio_rejects_concurrent_audio_rendering_state(self) -> None:
         store, config_store, _, service = self.build_environment()
         config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
         session = SessionRecord(topic="Guard", creation_intent="Reject invalid state")
+        session.transition(SessionState.AUDIO_RENDERING)
         script = ScriptRecord(session_id=session.session_id, draft="Draft", final="Final")
         artifact = ArtifactRecord(session_id=session.session_id)
         store.save_project(SessionProject(session=session, script=script, artifact=artifact))
@@ -204,6 +205,52 @@ class AudioRenderingTests(unittest.TestCase):
 
         loaded = store.load_project(session_id)
         self.assertEqual(loaded.session.state, SessionState.SCRIPT_EDITED)
+
+    def test_render_audio_preserves_interview_state_for_historical_snapshot(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+
+        session = SessionRecord(topic="Historical snapshot", creation_intent="Render without leaving interview")
+        session.transition(SessionState.INTERVIEW_IN_PROGRESS)
+        script = ScriptRecord(
+            session_id=session.session_id,
+            draft="Draft script body",
+            final="Historical snapshot final text.",
+        )
+        artifact = ArtifactRecord(session_id=session.session_id)
+        store.save_project(SessionProject(session=session, script=script, artifact=artifact))
+
+        result = service.render_audio(session.session_id)
+        loaded = store.load_project(session.session_id)
+
+        self.assertEqual(result.provider, "mock_remote")
+        self.assertEqual(loaded.session.state, SessionState.INTERVIEW_IN_PROGRESS)
+        self.assertEqual(loaded.session.tts_provider, "mock_remote")
+        self.assertEqual(loaded.session.last_error, "")
+
+    def test_render_audio_failure_does_not_abort_active_interview(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(
+            TTSProviderConfig(
+                provider="openai_compatible",
+                model="tts-test",
+                base_url="https://example.invalid/v1",
+                api_key="",
+            )
+        )
+
+        session = SessionRecord(topic="Interview continues", creation_intent="Keep session active on TTS failure")
+        session.transition(SessionState.INTERVIEW_IN_PROGRESS)
+        script = ScriptRecord(session_id=session.session_id, draft="Draft", final="Final")
+        artifact = ArtifactRecord(session_id=session.session_id)
+        store.save_project(SessionProject(session=session, script=script, artifact=artifact))
+
+        with self.assertRaises(ValueError):
+            service.render_audio(session.session_id)
+
+        loaded = store.load_project(session.session_id)
+        self.assertEqual(loaded.session.state, SessionState.INTERVIEW_IN_PROGRESS)
+        self.assertIn("requires an api_key", loaded.session.last_error)
 
 
 if __name__ == "__main__":

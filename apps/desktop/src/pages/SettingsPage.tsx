@@ -27,6 +27,7 @@ type TTSForm = {
   audio_format: string;
   local_runtime: string;
   local_model_path: string;
+  local_ref_audio_path: string;
 };
 
 function toLLMForm(config: LLMProviderConfig): LLMForm {
@@ -48,6 +49,7 @@ function toTTSForm(config: TTSProviderConfig): TTSForm {
     audio_format: config.audio_format,
     local_runtime: config.local_runtime,
     local_model_path: config.local_model_path,
+    local_ref_audio_path: config.local_ref_audio_path,
   };
 }
 
@@ -68,6 +70,7 @@ export function SettingsPage() {
     audio_format: "wav",
     local_runtime: "mlx",
     local_model_path: "",
+    local_ref_audio_path: "",
   });
   const [loading, setLoading] = useState(true);
   const [savingLlm, setSavingLlm] = useState(false);
@@ -167,6 +170,7 @@ export function SettingsPage() {
         audio_format: ttsForm.audio_format,
         local_runtime: ttsForm.local_runtime,
         local_model_path: ttsForm.local_model_path,
+        local_ref_audio_path: ttsForm.local_ref_audio_path,
       });
       setTtsForm(toTTSForm(next));
       setRequestState({
@@ -378,6 +382,17 @@ export function SettingsPage() {
                     placeholder="/absolute/path/to/model (optional)"
                     value={ttsForm.local_model_path}
                     onChange={(e) => updateTts("local_model_path", e.target.value)}
+                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local ref audio path</span>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="/absolute/path/to/ref.wav (optional)"
+                    value={ttsForm.local_ref_audio_path}
+                    onChange={(e) => updateTts("local_ref_audio_path", e.target.value)}
                     className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
                   />
                 </label>

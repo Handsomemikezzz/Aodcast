@@ -86,7 +86,7 @@ export function ScriptWorkbench({
           {workbench.isScriptDeleted ? (
             <ScriptStateBanner
               title="This script snapshot is in trash."
-              description="Restore it to resume editing, rollback revisions, or render audio."
+              description="Restore it to resume editing or render audio."
               actionLabel="Restore Script"
               disabled={workbench.busyAction === "restore-script" || workbench.isSessionDeleted}
               onAction={workbench.handleRestoreScript}
@@ -121,7 +121,7 @@ export function ScriptWorkbench({
       <ConfirmDialog
         open={workbench.dialogState?.kind === "rollback"}
         title="Roll back revision?"
-        message="The selected revision will replace the current script content and create a new revision entry."
+              message="The selected script snapshot will replace the current script content."
         onClose={workbench.closeDialog}
         actions={[
           { label: "Cancel", onClick: workbench.closeDialog },

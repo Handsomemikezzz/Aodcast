@@ -13,8 +13,6 @@ import {
 } from "../../lib/requestState";
 import type {
   RequestState,
-  ScriptRecord,
-  ScriptRevisionRecord,
   SessionProject,
   TTSCapability,
   TTSProviderConfig,
@@ -41,8 +39,6 @@ export type UseScriptWorkbenchResult = {
   project: SessionProject | null;
   script: string;
   setScript: (value: string) => void;
-  revisions: ScriptRevisionRecord[];
-  scriptSnapshots: ScriptRecord[];
   capability: TTSCapability | null;
   ttsConfig: TTSProviderConfig | null;
   selectedEngine: "local_mlx" | "cloud";
@@ -112,8 +108,6 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
 
   const [project, setProject] = useState<SessionProject | null>(null);
   const [script, setScript] = useState("");
-  const [revisions, setRevisions] = useState<ScriptRevisionRecord[]>([]);
-  const [scriptSnapshots, setScriptSnapshots] = useState<ScriptRecord[]>([]);
   const [capability, setCapability] = useState<TTSCapability | null>(null);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
   const [selectedEngine, setSelectedEngine] = useState<"local_mlx" | "cloud">("cloud");
@@ -204,17 +198,13 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
   };
 
   const reload = async () => {
-    const [loadedProject, loadedRevisions, loadedSnapshots, loadedCapability, loadedConfig] = await Promise.all([
+    const [loadedProject, loadedCapability, loadedConfig] = await Promise.all([
       bridge.showScript(sessionId, scriptId),
-      bridge.listScriptRevisions(sessionId, scriptId),
-      bridge.listScripts(sessionId),
       bridge.getLocalTTSCapability(),
       bridge.showTTSConfig(),
     ]);
     setProject(loadedProject);
     setScript(loadedProject.script?.final || loadedProject.script?.draft || "");
-    setRevisions(loadedRevisions);
-    setScriptSnapshots(loadedSnapshots);
     setCapability(loadedCapability);
     setTtsConfig(loadedConfig);
   };
@@ -244,7 +234,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
   }, [bridge, sessionId, scriptId]);
 
   useEffect(() => {
-    const defaultEngine = capability?.available ? "local_mlx" : "cloud";
+    const defaultEngine = ttsConfig?.provider === "local_mlx" ? "local_mlx" : capability?.available ? "local_mlx" : "cloud";
     setSelectedEngine(defaultEngine);
   }, [capability?.available, ttsConfig?.provider]);
 
@@ -290,11 +280,6 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     }
     return capability?.fallback_provider || "mock_remote";
   }, [capability?.fallback_provider, ttsConfig?.provider]);
-
-  const sortedRevisions = useMemo(
-    () => revisions.slice().sort((left, right) => right.created_at.localeCompare(left.created_at)),
-    [revisions],
-  );
 
   const serverScript = project?.script?.final || project?.script?.draft || "";
   const isScriptDeleted = Boolean(project?.script?.deleted_at);
@@ -635,8 +620,6 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     project,
     script,
     setScript,
-    revisions,
-    scriptSnapshots,
     capability,
     ttsConfig,
     selectedEngine,

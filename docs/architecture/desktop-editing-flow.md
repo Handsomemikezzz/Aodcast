@@ -37,9 +37,9 @@ The shell is implemented through:
 - session selection when no session is open
 - single workbench layout that combines editing, voice settings, and generated-audio preview
 - prominent top-bar primary action for audio rendering, with secondary preview/save actions
-- script snapshots and revision history remain available in secondary panels instead of a separate audio tab
+- audio rendering targets the currently open `script_id` snapshot and does not forcibly replace an active interview state when rendering an older snapshot
 - explicit save for script edits; the editor does not save on textarea blur
-- unsaved-change confirmation before refresh, rollback, trash, or script-snapshot switching
+- unsaved-change confirmation before refresh and trash
 - in-app confirmation dialogs for destructive actions instead of browser-native `window.confirm`
 
 ### `Models`
