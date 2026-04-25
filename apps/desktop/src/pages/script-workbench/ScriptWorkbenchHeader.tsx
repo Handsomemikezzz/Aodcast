@@ -1,4 +1,4 @@
-import { Pause, Play, Save, Wand2 } from "lucide-react";
+import { Save, Wand2 } from "lucide-react";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkbenchResult }) {
@@ -27,15 +27,6 @@ export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkb
         </div>
 
         <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-          <button
-            type="button"
-            onClick={() => void workbench.handlePreviewAudio()}
-            disabled={!workbench.audioSrc}
-            className="inline-flex h-12 items-center gap-2 rounded-2xl border border-outline bg-surface-container-low px-4 text-sm font-medium text-primary transition-colors hover:border-accent-amber/30 hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {workbench.isAudioPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            {workbench.isAudioPlaying ? "Pause" : "Preview"}
-          </button>
           <button
             type="button"
             onClick={() => void workbench.handleSave()}

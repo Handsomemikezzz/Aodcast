@@ -646,15 +646,14 @@ export function ChatPage({
                     rows={1}
                     className="flex-1 min-h-[44px] max-h-[200px] resize-none bg-transparent border-none focus:ring-0 text-[15px] text-on-surface placeholder:text-outline py-2.5 outline-none leading-relaxed"
                   />
-                  <button
-                    type="button"
-                    disabled
+                  <span
                     title="Voice input coming soon"
-                    className="p-2 text-secondary rounded-full transition-colors shrink-0 mb-0.5 cursor-not-allowed disabled:opacity-50"
-                    aria-label="Voice input"
+                    className="inline-flex items-center gap-1 rounded-full border border-outline/70 bg-surface-container-low px-2.5 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-secondary shrink-0 mb-0.5"
+                    aria-label="Voice input coming soon"
                   >
                     <Mic className="w-5 h-5" />
-                  </button>
+                    Soon
+                  </span>
                   <button
                     type="button"
                     onClick={() => void handleLandingCreate()}

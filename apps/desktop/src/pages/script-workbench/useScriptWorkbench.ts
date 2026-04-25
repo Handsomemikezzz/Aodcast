@@ -1,38 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { RefObject } from "react";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { useBridge } from "../../lib/BridgeContext";
-import { revealInFinder } from "../../lib/shellOps";
-import {
-  buildRequestState,
-  getErrorMessage,
-  getErrorRequestState,
-  isActiveRequestState,
-  isTerminalRequestState,
-  withRequestStateFallback,
-} from "../../lib/requestState";
-import type {
-  RequestState,
-  RuntimeInfo,
-  SessionProject,
-  TTSCapability,
-  TTSProviderConfig,
-} from "../../types";
-import {
-  estimateWordCount,
-  formatEstimateMinutes,
-  formatSessionState,
-  type EditorTransform,
-} from "./workbenchUtils";
+import type { RequestState, SessionProject, TTSCapability, TTSProviderConfig } from "../../types";
+import type { EditorTransform } from "./workbenchUtils";
+import { useScriptWorkbenchAudio } from "./useScriptWorkbenchAudio";
+import { useScriptWorkbenchData } from "./useScriptWorkbenchData";
+import { useScriptWorkbenchEditor } from "./useScriptWorkbenchEditor";
+import type { PendingDialogState } from "./workbenchTypes";
 
-const POLL_INTERVAL_MS = 1000;
-const POLL_FAILURE_THRESHOLD = 3;
-
-export type PendingDialogState =
-  | { kind: "delete-script" }
-  | { kind: "rollback"; revisionId: string }
-  | { kind: "unsaved" }
-  | null;
+export type { PendingDialogState } from "./workbenchTypes";
 
 export type UseScriptWorkbenchResult = {
   navigate: NavigateFunction;
@@ -98,613 +74,102 @@ export type UseScriptWorkbenchResult = {
 export function useScriptWorkbench(sessionId: string, scriptId: string, onRefresh: () => Promise<void>): UseScriptWorkbenchResult {
   const bridge = useBridge();
   const navigate = useNavigate();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
-  const pollHandleRef = useRef<number | null>(null);
-  const pollingInFlightRef = useRef(false);
-  const pollFailureCountRef = useRef(0);
-  const expectedRunTokenRef = useRef<string | null>(null);
-  const taskId = `render_audio:${sessionId}`;
 
-  const [project, setProject] = useState<SessionProject | null>(null);
-  const [script, setScript] = useState("");
-  const [capability, setCapability] = useState<TTSCapability | null>(null);
-  const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
-  const [selectedEngine, setSelectedEngine] = useState<"local_mlx" | "cloud">("cloud");
-  const [loading, setLoading] = useState(true);
-  const [loadingError, setLoadingError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [editorError, setEditorError] = useState<string | null>(null);
-  const [audioError, setAudioError] = useState<string | null>(null);
-  const [editorRequestState, setEditorRequestState] = useState<RequestState | null>(null);
-  const [audioRequestState, setAudioRequestState] = useState<RequestState | null>(null);
-  const [pollWarning, setPollWarning] = useState<string | null>(null);
-  const [audioMessage, setAudioMessage] = useState<string | null>(null);
-  const [dialogState, setDialogState] = useState<PendingDialogState>(null);
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const data = useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh });
+  const editor = useScriptWorkbenchEditor({
+    bridge,
+    sessionId,
+    scriptId,
+    project: data.project,
+    script: data.script,
+    setScript: data.setScript,
+    refreshWorkspace: data.refreshWorkspace,
+    isScriptDeleted: data.isScriptDeleted,
+    isSessionDeleted: data.isSessionDeleted,
+    isDirty: data.isDirty,
+  });
+  const audio = useScriptWorkbenchAudio({
+    bridge,
+    sessionId,
+    scriptId,
+    onRefresh,
+    reload: data.reload,
+    project: data.project,
+    setProject: data.setProject,
+    selectedEngine: data.selectedEngine,
+    cloudProvider: data.cloudProvider,
+  });
 
-  const stopTaskPolling = () => {
-    if (pollHandleRef.current !== null) {
-      window.clearInterval(pollHandleRef.current);
-      pollHandleRef.current = null;
-    }
-    pollingInFlightRef.current = false;
-    pollFailureCountRef.current = 0;
-  };
-
-  const runtimeLabel = (runtime: RuntimeInfo): string => {
-    const startedAt = new Date(runtime.started_at_unix * 1000).toLocaleString();
-    const shortToken = runtime.build_token.slice(0, 8);
-    return `runtime pid=${runtime.pid}, started=${startedAt}, build=${shortToken}`;
-  };
-
-  const runtimeLabelFromError = (error: unknown): string | null => {
-    if (typeof error !== "object" || error === null) return null;
-    const candidate = error as {
-      runtime?: RuntimeInfo;
-      details?: { runtime?: RuntimeInfo };
-    };
-    if (
-      candidate.runtime
-      && typeof candidate.runtime.pid === "number"
-      && typeof candidate.runtime.started_at_unix === "number"
-      && typeof candidate.runtime.build_token === "string"
-    ) {
-      return runtimeLabel(candidate.runtime);
-    }
-    const nestedRuntime = candidate.details?.runtime;
-    if (
-      nestedRuntime
-      && typeof nestedRuntime.pid === "number"
-      && typeof nestedRuntime.started_at_unix === "number"
-      && typeof nestedRuntime.build_token === "string"
-    ) {
-      return runtimeLabel(nestedRuntime);
-    }
-    return null;
-  };
-
-  const acceptPolledState = (state: RequestState | null): boolean => {
-    if (!state) return false;
-    const expectedToken = expectedRunTokenRef.current;
-    if (expectedToken && state.run_token !== expectedToken) {
-      return false;
-    }
-    setAudioRequestState((previous) => {
-      if ((previous?.phase === "cancelling" || previous?.phase === "cancelled") && state.phase === "running") {
-        return previous;
-      }
-      return state;
-    });
-    if (isTerminalRequestState(state)) {
-      stopTaskPolling();
-      setGenerating(false);
-    } else {
-      setGenerating(true);
-    }
-    return true;
-  };
-
-  const startTaskPolling = () => {
-    if (pollHandleRef.current !== null) return;
-    pollFailureCountRef.current = 0;
-    setPollWarning(null);
-    pollHandleRef.current = window.setInterval(() => {
-      if (pollingInFlightRef.current) return;
-      pollingInFlightRef.current = true;
-      void bridge
-        .showTaskState(taskId)
-        .then((state) => {
-          pollFailureCountRef.current = 0;
-          setPollWarning((previous) => (previous ? null : previous));
-          acceptPolledState(state);
-        })
-        .catch((err: unknown) => {
-          pollFailureCountRef.current += 1;
-          if (pollFailureCountRef.current >= POLL_FAILURE_THRESHOLD) {
-            setPollWarning(getErrorMessage(err, "Lost connection to the rendering runtime."));
-          }
-        })
-        .finally(() => {
-          pollingInFlightRef.current = false;
-        });
-    }, POLL_INTERVAL_MS);
-  };
-
-  const syncTaskState = async (): Promise<RequestState | null> => {
-    const state = await bridge.showTaskState(taskId);
-    if (!state) return null;
-    const expectedToken = expectedRunTokenRef.current;
-    if (expectedToken && state.run_token !== expectedToken) {
-      return null;
-    }
-    setAudioRequestState((previous) => {
-      if ((previous?.phase === "cancelling" || previous?.phase === "cancelled") && state.phase === "running") {
-        return previous;
-      }
-      return state;
-    });
-    return state;
-  };
-
-  const reload = async () => {
-    const [loadedProject, loadedCapability, loadedConfig] = await Promise.all([
-      bridge.showScript(sessionId, scriptId),
-      bridge.getLocalTTSCapability(),
-      bridge.showTTSConfig(),
-    ]);
-    setProject(loadedProject);
-    setScript(loadedProject.script?.final || loadedProject.script?.draft || "");
-    setCapability(loadedCapability);
-    setTtsConfig(loadedConfig);
-  };
-
-  const refreshWorkspace = async () => {
-    await Promise.allSettled([reload(), onRefresh()]);
-  };
-
-  useEffect(() => {
-    const loadWorkspace = async () => {
-      try {
-        setLoading(true);
-        setLoadingError(null);
-        setEditorError(null);
-        setAudioError(null);
-        await reload();
-      } catch (err: unknown) {
-        setLoadingError(getErrorMessage(err, "Failed to load the script workspace."));
-        setEditorError(getErrorMessage(err, "Failed to load the script workspace."));
-        setEditorRequestState(getErrorRequestState(err));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadWorkspace();
-  }, [bridge, sessionId, scriptId]);
-
-  useEffect(() => {
-    const defaultEngine = ttsConfig?.provider === "local_mlx" ? "local_mlx" : capability?.available ? "local_mlx" : "cloud";
-    setSelectedEngine(defaultEngine);
-  }, [capability?.available, ttsConfig?.provider]);
-
-  useEffect(() => {
-    expectedRunTokenRef.current = null;
-    void syncTaskState()
-      .then((state) => {
-        if (state && isActiveRequestState(state)) {
-          expectedRunTokenRef.current = state.run_token ?? null;
-          setGenerating(true);
-          startTaskPolling();
-        } else {
-          setGenerating(false);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      stopTaskPolling();
-      expectedRunTokenRef.current = null;
-    };
-  }, [taskId]);
-
-  useEffect(() => {
-    const audioElement = audioRef.current;
-    if (!audioElement) return undefined;
-
-    const syncPlayback = () => setIsAudioPlaying(!audioElement.paused);
-    audioElement.addEventListener("play", syncPlayback);
-    audioElement.addEventListener("pause", syncPlayback);
-    audioElement.addEventListener("ended", syncPlayback);
-    return () => {
-      audioElement.removeEventListener("play", syncPlayback);
-      audioElement.removeEventListener("pause", syncPlayback);
-      audioElement.removeEventListener("ended", syncPlayback);
-    };
-  }, [project?.artifact?.audio_path]);
-
-  const cloudProvider = useMemo(() => {
-    const configuredProvider = ttsConfig?.provider?.trim();
-    if (configuredProvider && configuredProvider !== "local_mlx") {
-      return configuredProvider;
-    }
-    return capability?.fallback_provider || "mock_remote";
-  }, [capability?.fallback_provider, ttsConfig?.provider]);
-
-  const serverScript = project?.script?.final || project?.script?.draft || "";
-  const isScriptDeleted = Boolean(project?.script?.deleted_at);
-  const isSessionDeleted = Boolean(project?.session.deleted_at);
-  const isDirty = !isScriptDeleted && !isSessionDeleted && script !== serverScript;
-  const wordCount = useMemo(() => estimateWordCount(script), [script]);
-  const estMinutes = useMemo(() => formatEstimateMinutes(wordCount), [wordCount]);
-  const topic = project?.session.topic || "Untitled Project";
-  const scriptName = project?.script?.name || topic;
-  const updatedAt = project?.script?.updated_at || project?.session.updated_at || "";
-  const outputFilename = project?.artifact?.audio_path?.split("/").pop() || "";
-
-  const audioSrc = useMemo(() => {
-    const audioPath = project?.artifact?.audio_path;
-    if (!audioPath) return "";
-    try {
-      return convertFileSrc(audioPath);
-    } catch {
-      return `file://${audioPath}`;
-    }
-  }, [project?.artifact?.audio_path]);
-
-  const localEngineDisabled = generating || !capability?.available || isScriptDeleted || isSessionDeleted;
-  const cloudEngineDisabled = generating || isScriptDeleted || isSessionDeleted;
-  const sessionStateLabel = formatSessionState(project?.session.state);
-
-  const toolbarButtonClass =
-    "inline-flex h-10 min-w-10 items-center justify-center rounded-xl border border-outline bg-surface-container-low px-3 text-[12px] font-medium text-secondary transition-colors hover:border-accent-amber/30 hover:text-primary disabled:opacity-50";
-
-  const applyTransform = (transform: EditorTransform) => {
-    setScript(transform.nextValue);
-    window.requestAnimationFrame(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(transform.selectionStart, transform.selectionEnd);
-    });
-  };
-
-  const applyToolbarAction = (
-    formatter: (value: string, selectionStart: number, selectionEnd: number) => EditorTransform,
-  ) => {
-    const textarea = textareaRef.current;
-    if (!textarea || isScriptDeleted || isSessionDeleted) return;
-    applyTransform(formatter(script, textarea.selectionStart, textarea.selectionEnd));
-  };
-
-  const handleSave = async (): Promise<boolean> => {
-    if (!project?.script || isScriptDeleted || isSessionDeleted || !isDirty) return true;
-    try {
-      setSaving(true);
-      setEditorError(null);
-      setEditorRequestState({
-        operation: "save_script",
-        phase: "running",
-        progress_percent: 0,
-        message: "Saving script...",
-      });
-      await bridge.saveEditedScript(sessionId, scriptId, script);
-      await refreshWorkspace();
-      setEditorRequestState(buildRequestState("save_script", "succeeded", "Script saved."));
-      return true;
-    } catch (err: unknown) {
-      setEditorError(getErrorMessage(err, "Failed to save script."));
-      setEditorRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("save_script", "failed", "Failed to save script."),
-        ),
-      );
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteScript = async () => {
-    if (!project?.script || isScriptDeleted || isSessionDeleted) return;
-    setBusyAction("delete-script");
-    setEditorError(null);
-    setEditorRequestState({
-      operation: "delete_script",
-      phase: "running",
-      progress_percent: 0,
-      message: "Moving script to trash...",
-    });
-    try {
-      await bridge.deleteScript(sessionId, scriptId);
-      await refreshWorkspace();
-      setEditorRequestState(buildRequestState("delete_script", "succeeded", "Script moved to trash."));
-    } catch (err: unknown) {
-      setEditorError(getErrorMessage(err, "Failed to delete script."));
-      setEditorRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("delete_script", "failed", "Failed to delete script."),
-        ),
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleRestoreScript = async () => {
-    if (!isScriptDeleted) return;
-    setBusyAction("restore-script");
-    setEditorError(null);
-    setEditorRequestState({
-      operation: "restore_script",
-      phase: "running",
-      progress_percent: 0,
-      message: "Restoring script...",
-    });
-    try {
-      await bridge.restoreScript(sessionId, scriptId);
-      await refreshWorkspace();
-      setEditorRequestState(buildRequestState("restore_script", "succeeded", "Script restored."));
-    } catch (err: unknown) {
-      setEditorError(getErrorMessage(err, "Failed to restore script."));
-      setEditorRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("restore_script", "failed", "Failed to restore script."),
-        ),
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleRestoreSession = async () => {
-    if (!isSessionDeleted) return;
-    setBusyAction("restore-session");
-    setEditorError(null);
-    setEditorRequestState({
-      operation: "restore_session",
-      phase: "running",
-      progress_percent: 0,
-      message: "Restoring session...",
-    });
-    try {
-      await bridge.restoreSession(sessionId);
-      await refreshWorkspace();
-      setEditorRequestState(buildRequestState("restore_session", "succeeded", "Session restored."));
-    } catch (err: unknown) {
-      setEditorError(getErrorMessage(err, "Failed to restore session."));
-      setEditorRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("restore_session", "failed", "Failed to restore session."),
-        ),
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleRollbackRevision = async (revisionId: string) => {
-    if (isScriptDeleted || isSessionDeleted) return;
-    setBusyAction(revisionId);
-    setEditorError(null);
-    setEditorRequestState({
-      operation: "rollback_script_revision",
-      phase: "running",
-      progress_percent: 0,
-      message: "Rolling back revision...",
-    });
-    try {
-      await bridge.rollbackScriptRevision(sessionId, scriptId, revisionId);
-      await refreshWorkspace();
-      setEditorRequestState(buildRequestState("rollback_script_revision", "succeeded", "Revision restored."));
-    } catch (err: unknown) {
-      setEditorError(getErrorMessage(err, "Failed to roll back revision."));
-      setEditorRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("rollback_script_revision", "failed", "Failed to roll back revision."),
-        ),
-      );
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const runPendingAction = async () => {
-    const pendingAction = pendingActionRef.current;
-    pendingActionRef.current = null;
-    if (!pendingAction) return;
-    await pendingAction();
-  };
-
-  const closeDialog = () => {
-    pendingActionRef.current = null;
-    setDialogState(null);
-  };
-
-  const runWithUnsavedCheck = (action: () => Promise<void>) => {
-    if (!isDirty) {
-      void action();
-      return;
-    }
-    pendingActionRef.current = action;
-    setDialogState({ kind: "unsaved" });
-  };
-
-  const triggerRenderAudio = async () => {
-    try {
-      expectedRunTokenRef.current = null;
-      stopTaskPolling();
-      const existingState = await syncTaskState();
-      if (existingState && isActiveRequestState(existingState)) {
-        expectedRunTokenRef.current = existingState.run_token ?? null;
-        setGenerating(true);
-        startTaskPolling();
-        return;
-      }
-
-      setGenerating(true);
-      setAudioError(null);
-      setAudioMessage(null);
-      setAudioRequestState({
-        operation: "render_audio",
-        phase: "running",
-        progress_percent: 0,
-        message: "Rendering audio...",
-      });
-
-      const providerOverride = selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider;
-      const result = await bridge.renderAudio(sessionId, { providerOverride, scriptId });
-      const runToken = typeof result.run_token === "string" && result.run_token.length > 0 ? result.run_token : result.request_state?.run_token ?? null;
-      expectedRunTokenRef.current = runToken;
-      setProject(result.project);
-      const finalTaskId = result.task_id ?? taskId;
-      const finalState = await bridge.showTaskState(finalTaskId).catch(() => null);
-      const chosenState = finalState ?? result.request_state ?? buildRequestState("render_audio", "running", "Rendering audio...");
-      if (runToken && !chosenState.run_token) {
-        chosenState.run_token = runToken;
-      }
-      setAudioRequestState(chosenState);
-      if (isTerminalRequestState(chosenState)) {
-        setGenerating(false);
-      } else {
-        setGenerating(true);
-        startTaskPolling();
-      }
-      await onRefresh();
-      await reload();
-    } catch (err: unknown) {
-      const errorState = getErrorRequestState(err);
-      const runtimeHint = runtimeLabelFromError(err);
-      if (errorState?.phase === "cancelled") {
-        setAudioError(null);
-      } else {
-        const baseMessage = getErrorMessage(err, "Failed to render audio.");
-        setAudioError(runtimeHint ? `${baseMessage} (${runtimeHint})` : baseMessage);
-      }
-      setAudioRequestState(
-        withRequestStateFallback(errorState, buildRequestState("render_audio", "failed", "Failed to render audio.")),
-      );
-      setGenerating(false);
-      stopTaskPolling();
-    }
-  };
+  const localEngineDisabled = audio.generating || !data.capability?.available || data.isScriptDeleted || data.isSessionDeleted;
+  const cloudEngineDisabled = audio.generating || data.isScriptDeleted || data.isSessionDeleted;
 
   const handleGenerateAudio = () => {
-    if (isScriptDeleted || isSessionDeleted || script.trim().length === 0) return;
-    runWithUnsavedCheck(async () => {
-      await triggerRenderAudio();
+    if (data.isScriptDeleted || data.isSessionDeleted || data.script.trim().length === 0) return;
+    editor.runWithUnsavedCheck(async () => {
+      await audio.triggerRenderAudio();
     });
-  };
-
-  const handleCancelAudio = async () => {
-    try {
-      const state = await bridge.cancelTask(taskId);
-      if (state) {
-        setAudioRequestState(state);
-      } else {
-        setAudioRequestState(buildRequestState("render_audio", "cancelling", "Cancellation requested."));
-      }
-    } catch (err: unknown) {
-      setAudioError(getErrorMessage(err, "Failed to request cancellation."));
-    }
-  };
-
-  const handlePreviewAudio = async () => {
-    const audioElement = audioRef.current;
-    if (!audioElement || !audioSrc) return;
-    try {
-      if (audioElement.paused) {
-        await audioElement.play();
-      } else {
-        audioElement.pause();
-      }
-    } catch (err: unknown) {
-      setAudioError(getErrorMessage(err, "Failed to preview audio."));
-    }
-  };
-
-  const handleRevealInFinder = async () => {
-    if (!project?.artifact?.audio_path) return;
-    try {
-      await revealInFinder(project.artifact.audio_path);
-    } catch (err: unknown) {
-      setAudioError(getErrorMessage(err, "Failed to reveal audio in Finder."));
-    }
-  };
-
-  const handleDownloadAudio = () => {
-    if (!audioSrc || !outputFilename) return;
-    const link = document.createElement("a");
-    link.href = audioSrc;
-    link.download = outputFilename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
   };
 
   const handleShareAudio = async () => {
-    if (!project?.artifact?.audio_path) return;
-    const payload = {
-      title: `${scriptName} audio`,
-      text: project.artifact.audio_path,
-    };
-    try {
-      if (typeof navigator.share === "function") {
-        await navigator.share(payload);
-        setAudioMessage("Audio path shared.");
-        return;
-      }
-      await navigator.clipboard.writeText(project.artifact.audio_path);
-      setAudioMessage("Audio path copied to clipboard.");
-    } catch (err: unknown) {
-      setAudioError(getErrorMessage(err, "Failed to share audio path."));
-    }
+    await audio.handleShareAudio(data.scriptName);
   };
 
   return {
     navigate,
-    loading,
-    project,
-    script,
-    setScript,
-    capability,
-    ttsConfig,
-    selectedEngine,
-    setSelectedEngine,
-    loadingError,
-    saving,
-    generating,
-    busyAction,
-    editorError,
-    audioError,
-    editorRequestState,
-    audioRequestState,
-    pollWarning,
-    audioMessage,
-    dialogState,
-    setDialogState,
-    isAudioPlaying,
-    textareaRef,
-    audioRef,
-    toolbarButtonClass,
-    isScriptDeleted,
-    isSessionDeleted,
-    isDirty,
-    topic,
-    scriptName,
-    updatedAt,
-    wordCount,
-    estMinutes,
-    cloudProvider,
-    audioSrc,
-    outputFilename,
+    loading: data.loading,
+    project: data.project,
+    script: data.script,
+    setScript: data.setScript,
+    capability: data.capability,
+    ttsConfig: data.ttsConfig,
+    selectedEngine: data.selectedEngine,
+    setSelectedEngine: data.setSelectedEngine,
+    loadingError: data.loadingError,
+    saving: editor.saving,
+    generating: audio.generating,
+    busyAction: editor.busyAction,
+    editorError: editor.editorError,
+    audioError: audio.audioError,
+    editorRequestState: editor.editorRequestState,
+    audioRequestState: audio.audioRequestState,
+    pollWarning: audio.pollWarning,
+    audioMessage: audio.audioMessage,
+    dialogState: editor.dialogState,
+    setDialogState: editor.setDialogState,
+    isAudioPlaying: audio.isAudioPlaying,
+    textareaRef: editor.textareaRef,
+    audioRef: audio.audioRef,
+    toolbarButtonClass: editor.toolbarButtonClass,
+    isScriptDeleted: data.isScriptDeleted,
+    isSessionDeleted: data.isSessionDeleted,
+    isDirty: data.isDirty,
+    topic: data.topic,
+    scriptName: data.scriptName,
+    updatedAt: data.updatedAt,
+    wordCount: data.wordCount,
+    estMinutes: data.estMinutes,
+    cloudProvider: data.cloudProvider,
+    audioSrc: audio.audioSrc,
+    outputFilename: data.outputFilename,
     localEngineDisabled,
     cloudEngineDisabled,
-    sessionStateLabel,
-    runWithUnsavedCheck,
-    applyToolbarAction,
-    handleSave,
-    handleDeleteScript,
-    handleRestoreScript,
-    handleRestoreSession,
-    handleRollbackRevision,
+    sessionStateLabel: data.sessionStateLabel,
+    runWithUnsavedCheck: editor.runWithUnsavedCheck,
+    applyToolbarAction: editor.applyToolbarAction,
+    handleSave: editor.handleSave,
+    handleDeleteScript: editor.handleDeleteScript,
+    handleRestoreScript: editor.handleRestoreScript,
+    handleRestoreSession: editor.handleRestoreSession,
+    handleRollbackRevision: editor.handleRollbackRevision,
     handleGenerateAudio,
-    handleCancelAudio,
-    handlePreviewAudio,
-    handleRevealInFinder,
-    handleDownloadAudio,
+    handleCancelAudio: audio.handleCancelAudio,
+    handlePreviewAudio: audio.handlePreviewAudio,
+    handleRevealInFinder: audio.handleRevealInFinder,
+    handleDownloadAudio: audio.handleDownloadAudio,
     handleShareAudio,
-    reload,
-    refreshWorkspace,
-    closeDialog,
-    runPendingAction,
+    reload: data.reload,
+    refreshWorkspace: data.refreshWorkspace,
+    closeDialog: editor.closeDialog,
+    runPendingAction: editor.runPendingAction,
   };
 }

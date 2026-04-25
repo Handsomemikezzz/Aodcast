@@ -186,7 +186,8 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "python_core_error")
         self.assertEqual(payload["request_state"]["operation"], "http_runtime")
         self.assertEqual(payload["error"]["details"]["request_state"], payload["request_state"])
-        self.assertEqual(payload["error"]["details"]["runtime"], payload["runtime"])
+        self.assertNotIn("runtime", payload)
+        self.assertIsInstance(payload["error"]["details"]["runtime"]["pid"], int)
         self.assertIn("Unknown route", payload["error"]["message"])
 
     def test_config_routes_require_runtime_token(self) -> None:

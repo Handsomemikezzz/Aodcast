@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import threading
 import time
 import uuid
@@ -353,32 +352,6 @@ class RuntimeContext:
                         max_percent=99.0,
                     )
 
-                def raise_render_cancelled(
-                    message: str,
-                    *,
-                    default_progress: float,
-                    source_error: Exception | None = None,
-                ) -> None:
-                    cancel_progress = progress.current_progress(default=default_progress)
-                    progress.save_cancelled(progress_percent=cancel_progress, message=message)
-                    self.request_state_store.clear_cancel_request(task_id)
-                    if source_error is None:
-                        raise BridgeTaskCancelledError(
-                            message,
-                            operation="render_audio",
-                            progress_percent=cancel_progress,
-                        )
-                    raise BridgeTaskCancelledError(
-                        message,
-                        operation="render_audio",
-                        progress_percent=cancel_progress,
-                    ) from source_error
-
-                def fail_render(message: str) -> None:
-                    normalized_message = message.strip() or f"Audio rendering failed for session {session_id}."
-                    progress.save_failed(message=normalized_message)
-                    self.request_state_store.clear_cancel_request(task_id)
-
                 try:
                     self.audio_rendering.render_audio_with_cancellation(
                         session_id,
@@ -388,33 +361,41 @@ class RuntimeContext:
                         on_progress=on_progress,
                     )
                 except TaskCancellationRequested as exc:
-                    raise_render_cancelled(str(exc), default_progress=10.0)
+                    self.raise_task_cancelled(
+                        progress,
+                        task_id=task_id,
+                        operation="render_audio",
+                        message=str(exc),
+                        default_progress=10.0,
+                    )
                 except Exception as exc:  # pragma: no cover - exercised by integration tests
                     current_phase = progress.current_phase()
                     if self.request_state_store.is_cancel_requested(task_id) or current_phase == "cancelling":
-                        raise_render_cancelled(
-                            f"Audio rendering cancelled for session {session_id}.",
+                        self.raise_task_cancelled(
+                            progress,
+                            task_id=task_id,
+                            operation="render_audio",
+                            message=f"Audio rendering cancelled for session {session_id}.",
                             default_progress=10.0,
                             source_error=exc,
                         )
-                    fail_render(_normalize_error_message(exc, fallback=f"Audio rendering failed for session {session_id}."))
+                    self.fail_task(
+                        progress,
+                        task_id=task_id,
+                        message=_normalize_error_message(exc, fallback=f"Audio rendering failed for session {session_id}."),
+                        fallback_message=f"Audio rendering failed for session {session_id}.",
+                    )
                 else:
-                    progress.save_finalizing(
-                        progress_percent=99.0,
-                        message=f"Finalizing rendered artifacts for session {session_id}...",
+                    self.complete_task_success(
+                        progress,
+                        task_id=task_id,
+                        operation="render_audio",
+                        finalizing_progress=99.0,
+                        finalizing_message=f"Finalizing rendered artifacts for session {session_id}...",
+                        success_message=f"Audio render finished for session {session_id}.",
+                        fallback_failure_message=f"Unable to finalize audio render for session {session_id}.",
+                        cancellation_message=f"Audio rendering cancelled for session {session_id}.",
                     )
-                    saved_succeeded = progress.save_succeeded(
-                        message=f"Audio render finished for session {session_id}.",
-                    )
-                    if not saved_succeeded:
-                        current_phase = progress.current_phase()
-                        if current_phase == "cancelling" or self.request_state_store.is_cancel_requested(task_id):
-                            raise_render_cancelled(
-                                f"Audio rendering cancelled for session {session_id}.",
-                                default_progress=99.0,
-                            )
-                        fail_render(f"Unable to finalize audio render for session {session_id}.")
-                    self.request_state_store.clear_cancel_request(task_id)
                 finally:
                     with self.task_lock:
                         self.active_tasks.pop(task_id, None)
@@ -474,31 +455,6 @@ class RuntimeContext:
                     message=f"Downloading model {model_name}...",
                 )
 
-                def raise_download_cancelled(
-                    message: str,
-                    *,
-                    default_progress: float,
-                    source_error: Exception | None = None,
-                ) -> None:
-                    cancel_progress = progress.current_progress(default=default_progress)
-                    progress.save_cancelled(progress_percent=cancel_progress, message=message)
-                    self.request_state_store.clear_cancel_request(task_id)
-                    if source_error is None:
-                        raise BridgeTaskCancelledError(
-                            message,
-                            operation="download_model",
-                            progress_percent=cancel_progress,
-                        )
-                    raise BridgeTaskCancelledError(
-                        message,
-                        operation="download_model",
-                        progress_percent=cancel_progress,
-                    ) from source_error
-
-                def fail_download(message: str) -> None:
-                    progress.save_failed(message=message)
-                    self.request_state_store.clear_cancel_request(task_id)
-
                 progress_pattern = __import__("re").compile(rf"{DOWNLOAD_PROGRESS_MARKER}\s+(\d{{1,3}})")
 
                 def on_download_output_line(line: str) -> None:
@@ -521,34 +477,42 @@ class RuntimeContext:
                     )
                 except TaskCancellationRequested as exc:
                     progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    raise_download_cancelled(str(exc), default_progress=5.0)
+                    self.raise_task_cancelled(
+                        progress,
+                        task_id=task_id,
+                        operation="download_model",
+                        message=str(exc),
+                        default_progress=5.0,
+                    )
                 except Exception as exc:  # pragma: no cover - exercised by integration tests
                     progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
                     if self.request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
-                        raise_download_cancelled(
-                            f"Model {model_name} download cancelled.",
+                        self.raise_task_cancelled(
+                            progress,
+                            task_id=task_id,
+                            operation="download_model",
+                            message=f"Model {model_name} download cancelled.",
                             default_progress=5.0,
                             source_error=exc,
                         )
-                    fail_download(str(exc))
+                    self.fail_task(
+                        progress,
+                        task_id=task_id,
+                        message=str(exc),
+                        fallback_message=f"Model {model_name} download failed.",
+                    )
                 else:
                     progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    progress.save_finalizing(
-                        progress_percent=98.0,
-                        message=f"Finalizing model {model_name}...",
+                    self.complete_task_success(
+                        progress,
+                        task_id=task_id,
+                        operation="download_model",
+                        finalizing_progress=98.0,
+                        finalizing_message=f"Finalizing model {model_name}...",
+                        success_message=f"Model {model_name} is ready.",
+                        fallback_failure_message=f"Unable to finalize download state for {model_name}.",
+                        cancellation_message=f"Model {model_name} download cancelled.",
                     )
-                    saved_succeeded = progress.save_succeeded(message=f"Model {model_name} is ready.")
-                    if not saved_succeeded and (
-                        self.request_state_store.is_cancel_requested(task_id)
-                        or progress.current_phase() == "cancelling"
-                    ):
-                        raise_download_cancelled(
-                            f"Model {model_name} download cancelled.",
-                            default_progress=98.0,
-                        )
-                    if not saved_succeeded:
-                        fail_download(f"Unable to finalize download state for {model_name}.")
-                    self.request_state_store.clear_cancel_request(task_id)
                 finally:
                     with self.task_lock:
                         self.active_tasks.pop(task_id, None)
@@ -565,6 +529,75 @@ class RuntimeContext:
             phase=str((started_state or {}).get("phase") or "running"),
             progress_percent=progress_from_request_state(started_state, default=5.0),
         )
+
+    def raise_task_cancelled(
+        self,
+        progress: LongTaskStateManager,
+        *,
+        task_id: str,
+        operation: str,
+        message: str,
+        default_progress: float,
+        source_error: Exception | None = None,
+    ) -> None:
+        cancel_progress = progress.current_progress(default=default_progress)
+        progress.save_cancelled(progress_percent=cancel_progress, message=message)
+        self.request_state_store.clear_cancel_request(task_id)
+        error = BridgeTaskCancelledError(
+            message,
+            operation=operation,
+            progress_percent=cancel_progress,
+        )
+        if source_error is not None:
+            raise error from source_error
+        raise error
+
+    def fail_task(
+        self,
+        progress: LongTaskStateManager,
+        *,
+        task_id: str,
+        message: str,
+        fallback_message: str,
+    ) -> None:
+        normalized_message = message.strip() or fallback_message
+        progress.save_failed(message=normalized_message)
+        self.request_state_store.clear_cancel_request(task_id)
+
+    def complete_task_success(
+        self,
+        progress: LongTaskStateManager,
+        *,
+        task_id: str,
+        operation: str,
+        finalizing_progress: float,
+        finalizing_message: str,
+        success_message: str,
+        fallback_failure_message: str,
+        cancellation_message: str,
+    ) -> None:
+        progress.save_finalizing(
+            progress_percent=finalizing_progress,
+            message=finalizing_message,
+        )
+        saved_succeeded = progress.save_succeeded(message=success_message)
+        if not saved_succeeded:
+            if self.request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
+                self.raise_task_cancelled(
+                    progress,
+                    task_id=task_id,
+                    operation=operation,
+                    message=cancellation_message,
+                    default_progress=finalizing_progress,
+                )
+            self.fail_task(
+                progress,
+                task_id=task_id,
+                message=fallback_failure_message,
+                fallback_message=fallback_failure_message,
+            )
+            return
+        self.request_state_store.clear_cancel_request(task_id)
 
     def list_projects_payload(self, *, include_deleted: bool = False, search_query: str = "") -> dict[str, object]:
         projects = sorted(
@@ -661,6 +694,100 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 ),
                 origin=origin,
             )
+
+    def _load_script_project(
+        self,
+        session_id: str,
+        *,
+        script_id: str = "",
+        require_active_script: bool = True,
+    ) -> SessionProject:
+        project = self.context.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.context.store.load_project(session_id)
+        ensure_session_is_active(project)
+        if require_active_script:
+            ensure_script_is_active(project)
+        return project
+
+    def _save_script_final(
+        self,
+        session_id: str,
+        *,
+        final_text: str,
+        origin: str | None,
+        script_id: str = "",
+    ) -> None:
+        if not final_text.strip():
+            raise ValueError("Field 'final_text' is required.")
+        project = self._load_script_project(session_id, script_id=script_id)
+        project.script.save_final(final_text)
+        project.session.transition(SessionState.SCRIPT_EDITED)
+        self.context.store.save_project(project)
+        self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="save_script"), origin=origin)
+
+    def _delete_script(
+        self,
+        session_id: str,
+        *,
+        origin: str | None,
+        script_id: str = "",
+    ) -> None:
+        project = self._load_script_project(session_id, script_id=script_id)
+        if project.script.is_deleted():
+            raise ValueError("Script is already deleted.")
+        project.script.soft_delete()
+        self.context.store.save_project(project)
+        self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="delete_script"), origin=origin)
+
+    def _restore_script(
+        self,
+        session_id: str,
+        *,
+        origin: str | None,
+        script_id: str = "",
+    ) -> None:
+        project = self._load_script_project(session_id, script_id=script_id, require_active_script=False)
+        if project.script is None:
+            raise ValueError("Cannot restore script because no script record exists.")
+        if not project.script.is_deleted():
+            raise ValueError("Script is not deleted.")
+        project.script.restore()
+        self.context.store.save_project(project)
+        self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_script"), origin=origin)
+
+    def _list_script_revisions(
+        self,
+        session_id: str,
+        *,
+        origin: str | None,
+        script_id: str = "",
+    ) -> None:
+        project = self._load_script_project(session_id, script_id=script_id, require_active_script=False)
+        if project.script is None:
+            raise ValueError("Cannot list revisions because no script record exists.")
+        payload = {
+            "session_id": session_id,
+            "revisions": serialize_script_revisions(project),
+        }
+        if script_id.strip():
+            payload["script_id"] = script_id
+        self._send_bridge_envelope(
+            success_envelope(payload, operation="list_script_revisions"),
+            origin=origin,
+        )
+
+    def _rollback_script_revision(
+        self,
+        session_id: str,
+        *,
+        revision_id: str,
+        origin: str | None,
+        script_id: str = "",
+    ) -> None:
+        project = self._load_script_project(session_id, script_id=script_id)
+        project.script.rollback_to_revision(revision_id)
+        project.session.transition(SessionState.SCRIPT_EDITED)
+        self.context.store.save_project(project)
+        self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rollback_script_revision"), origin=origin)
 
     def _route(
         self,
@@ -948,16 +1075,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 return
         if self.command == "PUT" and suffix.startswith("/scripts/") and suffix.endswith("/final"):
             rest = suffix.removeprefix("/scripts/").removesuffix("/final").strip("/")
-            final_text = str(body.get("final_text") or "")
-            if not final_text.strip():
-                raise ValueError("Field 'final_text' is required.")
-            project = self.context.store.load_project_for_script(session_id, rest)
-            ensure_session_is_active(project)
-            ensure_script_is_active(project)
-            project.script.save_final(final_text)
-            project.session.transition(SessionState.SCRIPT_EDITED)
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="save_script"), origin=origin)
+            self._save_script_final(session_id, final_text=str(body.get("final_text") or ""), origin=origin, script_id=rest)
             return
         if self.command == "GET" and suffix.startswith("/scripts/") and "/revisions" in suffix:
             # /scripts/{id}/revisions
@@ -965,53 +1083,22 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             if not rest.endswith("/revisions"):
                 raise ValueError(f"Unknown route: {path}")
             script_id = rest[: -len("/revisions")].strip("/")
-            project = self.context.store.load_project_for_script(session_id, script_id)
-            ensure_session_is_active(project)
-            if project.script is None:
-                raise ValueError("Cannot list revisions because no script record exists.")
-            self._send_bridge_envelope(
-                success_envelope(
-                    {"session_id": session_id, "script_id": script_id, "revisions": serialize_script_revisions(project)},
-                    operation="list_script_revisions",
-                ),
-                origin=origin,
-            )
+            self._list_script_revisions(session_id, origin=origin, script_id=script_id)
             return
         if self.command == "POST" and suffix.startswith("/scripts/") and "/revisions/" in suffix and suffix.endswith(":rollback"):
             rest = suffix.removeprefix("/scripts/").strip("/")
             # {script_id}/revisions/{rev}:rollback
             mid, _, revpart = rest.partition("/revisions/")
             revision_id = revpart.removesuffix(":rollback")
-            project = self.context.store.load_project_for_script(session_id, mid)
-            ensure_session_is_active(project)
-            ensure_script_is_active(project)
-            project.script.rollback_to_revision(revision_id)
-            project.session.transition(SessionState.SCRIPT_EDITED)
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rollback_script_revision"), origin=origin)
+            self._rollback_script_revision(session_id, revision_id=revision_id, origin=origin, script_id=mid)
             return
         if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith(":delete"):
             script_id = suffix.removeprefix("/scripts/").removesuffix(":delete").strip("/")
-            project = self.context.store.load_project_for_script(session_id, script_id)
-            ensure_session_is_active(project)
-            ensure_script_is_active(project)
-            if project.script.is_deleted():
-                raise ValueError("Script is already deleted.")
-            project.script.soft_delete()
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="delete_script"), origin=origin)
+            self._delete_script(session_id, origin=origin, script_id=script_id)
             return
         if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith(":restore"):
             script_id = suffix.removeprefix("/scripts/").removesuffix(":restore").strip("/")
-            project = self.context.store.load_project_for_script(session_id, script_id)
-            ensure_session_is_active(project)
-            if project.script is None:
-                raise ValueError("Cannot restore script because no script record exists.")
-            if not project.script.is_deleted():
-                raise ValueError("Script is not deleted.")
-            project.script.restore()
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_script"), origin=origin)
+            self._restore_script(session_id, origin=origin, script_id=script_id)
             return
         if self.command == "POST" and suffix == "/script:generate":
             project = self.context.store.load_project(session_id)
@@ -1028,59 +1115,20 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             )
             return
         if self.command == "PUT" and suffix == "/script/final":
-            final_text = str(body.get("final_text") or "")
-            if not final_text.strip():
-                raise ValueError("Field 'final_text' is required.")
-            project = self.context.store.load_project(session_id)
-            ensure_session_is_active(project)
-            ensure_script_is_active(project)
-            project.script.save_final(final_text)
-            project.session.transition(SessionState.SCRIPT_EDITED)
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="save_script"), origin=origin)
+            self._save_script_final(session_id, final_text=str(body.get("final_text") or ""), origin=origin)
             return
         if self.command == "POST" and suffix == "/script:delete":
-            project = self.context.store.load_project(session_id)
-            ensure_session_is_active(project)
-            ensure_script_is_active(project)
-            if project.script is None:
-                raise ValueError("Cannot delete script because no script record exists.")
-            if project.script.is_deleted():
-                raise ValueError("Script is already deleted.")
-            project.script.soft_delete()
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="delete_script"), origin=origin)
+            self._delete_script(session_id, origin=origin)
             return
         if self.command == "POST" and suffix == "/script:restore":
-            project = self.context.store.load_project(session_id)
-            ensure_session_is_active(project)
-            if project.script is None:
-                raise ValueError("Cannot restore script because no script record exists.")
-            if not project.script.is_deleted():
-                raise ValueError("Script is not deleted.")
-            project.script.restore()
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_script"), origin=origin)
+            self._restore_script(session_id, origin=origin)
             return
         if self.command == "GET" and suffix == "/script/revisions":
-            project = self.context.store.load_project(session_id)
-            ensure_session_is_active(project)
-            if project.script is None:
-                raise ValueError("Cannot list revisions because no script record exists.")
-            self._send_bridge_envelope(
-                success_envelope({"session_id": session_id, "revisions": serialize_script_revisions(project)}, operation="list_script_revisions"),
-                origin=origin,
-            )
+            self._list_script_revisions(session_id, origin=origin)
             return
         if self.command == "POST" and suffix.startswith("/script/revisions/") and suffix.endswith(":rollback"):
             revision_id = suffix.removeprefix("/script/revisions/").removesuffix(":rollback")
-            project = self.context.store.load_project(session_id)
-            ensure_session_is_active(project)
-            ensure_script_is_active(project)
-            project.script.rollback_to_revision(revision_id)
-            project.session.transition(SessionState.SCRIPT_EDITED)
-            self.context.store.save_project(project)
-            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rollback_script_revision"), origin=origin)
+            self._rollback_script_revision(session_id, revision_id=revision_id, origin=origin)
             return
         raise ValueError(f"Unknown route: {path}")
 
@@ -1245,14 +1293,16 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         origin: str | None,
     ) -> None:
         payload_with_runtime = dict(payload)
-        payload_with_runtime["runtime"] = self.context.runtime_metadata()
+        runtime_metadata = self.context.runtime_metadata()
         if payload_with_runtime.get("ok") is False:
             error = payload_with_runtime.get("error")
             if isinstance(error, dict):
                 details = error.get("details")
                 details_dict = dict(details) if isinstance(details, dict) else {}
-                details_dict.setdefault("runtime", self.context.runtime_metadata())
+                details_dict.setdefault("runtime", runtime_metadata)
                 error["details"] = details_dict
+        else:
+            payload_with_runtime["runtime"] = runtime_metadata
         resolved_status = status or self._status_for_payload(payload_with_runtime)
         self._send_json(resolved_status, payload_with_runtime, origin=origin)
 

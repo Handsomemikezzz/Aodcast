@@ -385,14 +385,12 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
                <h3 className="font-headline font-semibold text-primary">Voice Persona</h3>
-               <button
-                 type="button"
-                 disabled
-                 title="Coming soon"
-                 className="text-xs font-medium text-accent-amber/60 flex items-center gap-1 cursor-not-allowed disabled:opacity-60"
+               <span
+                 title="Voice management coming soon"
+                 className="inline-flex items-center gap-1 rounded-full border border-accent-amber/20 bg-accent-amber/8 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-amber/80"
                >
-                 <Settings className="w-3 h-3" /> Manage Voices
-               </button>
+                 <Settings className="w-3 h-3" /> Coming Soon
+               </span>
             </div>
             
             <div className="space-y-3">
