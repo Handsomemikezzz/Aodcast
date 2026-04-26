@@ -51,12 +51,36 @@ type ProblemRecord = {
   createdAt: string;
 };
 
+type Notice = {
+  message: string;
+  actionModelName?: string;
+};
+
 const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
 
 function resolvedTtsModel(config: TTSProviderConfig | null): string {
   const raw = config?.model?.trim() ?? "";
   if (!raw || raw === "mock-voice") return DEFAULT_QWEN3_TTS_MODEL;
   return raw;
+}
+
+function modelRecommendation(modelName: string): { badge: string; description: string } {
+  if (modelName === "qwen-tts-0.6B") {
+    return {
+      badge: "Recommended default",
+      description: "Faster previews and lower memory use; best first local voice model.",
+    };
+  }
+  if (modelName === "qwen-tts-1.7B") {
+    return {
+      badge: "Higher quality",
+      description: "Better for final exports; expect slower generation and higher memory use.",
+    };
+  }
+  return {
+    badge: "Voice model",
+    description: "Local TTS model for voice preview and final audio generation.",
+  };
 }
 
 function ProgressBar({ value }: { value?: number }) {
@@ -83,6 +107,7 @@ export function ModelsPage() {
   const [modelToDelete, setModelToDelete] = useState<ModelStatus | null>(null);
   const [problemsOpen, setProblemsOpen] = useState(false);
   const [problems, setProblems] = useState<ProblemRecord[]>([]);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   const currentStoragePath = storage?.current_base ?? "";
   const desktopShellAvailable = isTauriRuntime();
@@ -153,6 +178,7 @@ export function ModelsPage() {
     setBusyDownloadName(m.model_name);
     setBusyDeleteName(null);
     setError(null);
+    setNotice(null);
     setRequestState(buildRequestState("download_model", "running", `Downloading model ${m.display_name}...`));
     try {
       const result = await bridge.downloadModel(m.model_name);
@@ -165,6 +191,7 @@ export function ModelsPage() {
         ),
       );
       await refresh();
+      setNotice({ message: `${m.display_name} is ready. Use it as the default voice model when you want Voice Studio and Script renders to use it.`, actionModelName: m.model_name });
     } catch (e) {
       const errorState = getErrorRequestState(e);
       const message = getErrorMessage(e, "Download failed");
@@ -214,6 +241,7 @@ export function ModelsPage() {
     if (!m.hf_repo_id) return;
     setBusySelectName(m.model_name);
     setError(null);
+    setNotice(null);
     setRequestState(buildRequestState("configure_tts_provider", "running", `Setting ${m.display_name} as the default voice model...`));
     try {
       const current = ttsConfig ?? await bridge.showTTSConfig();
@@ -231,6 +259,7 @@ export function ModelsPage() {
       setTtsConfig(next);
       setRequestState(buildRequestState("configure_tts_provider", "succeeded", `${m.display_name} is now the default voice model.`));
       await refresh();
+      setNotice({ message: `${m.display_name} is now the global default voice model. Voice Studio and Script rendering will use it next.` });
     } catch (e) {
       const message = getErrorMessage(e, "Failed to select default voice model");
       setError(message);
@@ -258,6 +287,7 @@ export function ModelsPage() {
       if (!destination) return;
       setBusyStorageAction("migrate");
       setError(null);
+      setNotice(null);
       setRequestState(buildRequestState("migrate_model_storage", "running", "Preparing model storage migration..."));
       const result = await bridge.migrateModelStorage(destination);
       const finalState = await pollTaskUntilTerminal(result.task_id ?? "migrate_model_storage", "migrate_model_storage");
@@ -278,6 +308,7 @@ export function ModelsPage() {
   const handleResetStorage = async () => {
     setBusyStorageAction("reset");
     setError(null);
+    setNotice(null);
     setRequestState(buildRequestState("reset_model_storage", "running", "Resetting model storage..."));
     try {
       const status = await bridge.resetModelStorage();
@@ -306,6 +337,9 @@ export function ModelsPage() {
     busyStorageAction === "migrate" && isActiveRequestState(requestState)
       ? requestState
       : null;
+  const noticeActionModel = notice?.actionModelName
+    ? models.find((model) => model.model_name === notice.actionModelName && model.downloaded)
+    : null;
 
   const renderWithDialog = (content: JSX.Element) => (
     <>
@@ -375,6 +409,22 @@ export function ModelsPage() {
 
           {error && <div className="mb-4 p-3 rounded-lg border border-red-500/20 bg-red-500/10 text-red-400 text-sm">{error}</div>}
 
+          {!error && notice && (
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-accent-amber/25 bg-accent-amber/10 p-3 text-sm text-accent-amber sm:flex-row sm:items-center sm:justify-between">
+              <span>{notice.message}</span>
+              {noticeActionModel ? (
+                <button
+                  type="button"
+                  onClick={() => void handleUseAsDefault(noticeActionModel)}
+                  disabled={busySelectName !== null}
+                  className="shrink-0 rounded-md bg-accent-amber px-3 py-1.5 text-xs font-semibold text-black hover:bg-accent-amber/90 disabled:opacity-50"
+                >
+                  Use as default
+                </button>
+              ) : null}
+            </div>
+          )}
+
           {pageTaskState && (
             <div className="mb-4 p-3 rounded-lg border border-outline text-secondary text-xs space-y-2">
               <div className="flex items-center justify-between gap-3">
@@ -403,6 +453,7 @@ export function ModelsPage() {
                           && resolvedTtsModel(ttsConfig) === m.hf_repo_id,
                       );
                     const rowState = busyDownloadName === m.model_name ? activeDownloadState : null;
+                    const recommendation = modelRecommendation(m.model_name);
                     return (
                       <div key={m.model_name} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-high/40 transition-colors group">
                         <div className="shrink-0">
@@ -411,6 +462,10 @@ export function ModelsPage() {
 
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-primary">{m.display_name}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-full border border-outline px-2 py-0.5 text-[10px] font-medium text-secondary">{recommendation.badge}</span>
+                            <span className="text-[10px] text-secondary">{recommendation.description}</span>
+                          </div>
                           {m.hf_repo_id && <a href={`https://huggingface.co/${m.hf_repo_id}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-secondary hover:text-accent-amber inline-flex items-center gap-0.5 truncate max-w-full"><span className="truncate">{m.hf_repo_id}</span><ExternalLink className="h-2.5 w-2.5 shrink-0" /></a>}
                           {rowState && (
                             <div className="mt-1.5 space-y-1">
