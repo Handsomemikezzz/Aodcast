@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, Volume2 } from "lucide-react";
+import { ChevronDown, Loader2, Sparkles, SlidersHorizontal, Volume2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useBridge } from "../lib/BridgeContext";
 import { LLMProviderConfig, RequestState, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
@@ -55,6 +56,7 @@ function toTTSForm(config: TTSProviderConfig): TTSForm {
 
 export function SettingsPage() {
   const bridge = useBridge();
+  const navigate = useNavigate();
   const [llmForm, setLlmForm] = useState<LLMForm>({
     provider: "openai_compatible",
     model: "",
@@ -79,6 +81,8 @@ export function SettingsPage() {
   const [savedFlashLlm, setSavedFlashLlm] = useState(false);
   const [savedFlashTts, setSavedFlashTts] = useState(false);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
+  const [advancedTtsOpen, setAdvancedTtsOpen] = useState(false);
+  const ttsUsesLocalModels = ttsForm.provider === "local_mlx";
 
   useEffect(() => {
     let active = true;
@@ -295,6 +299,10 @@ export function SettingsPage() {
                 <Volume2 className="w-4 h-4" />
                 <h2 className="text-[11px] font-semibold uppercase tracking-wider">Text-to-speech</h2>
               </div>
+              <p className="text-[12px] text-outline mb-3">
+                Choose the speech provider used by Script rendering. Local MLX model downloads and default model
+                selection live in Models Center.
+              </p>
               <div className="space-y-4 rounded-xl border border-outline bg-surface-container p-4">
                 <label className="block">
                   <span className="text-[12px] font-medium text-secondary mb-1.5 block">Provider</span>
@@ -308,50 +316,68 @@ export function SettingsPage() {
                     <option value="local_mlx">local_mlx</option>
                   </select>
                 </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">Model</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    placeholder="qwen-tts-0.6B / gpt-4o-mini-tts / ..."
-                    value={ttsForm.model}
-                    onChange={(e) => updateTts("model", e.target.value)}
-                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">Base URL</span>
-                  <input
-                    type="url"
-                    autoComplete="off"
-                    placeholder="https://..."
-                    value={ttsForm.base_url}
-                    onChange={(e) => updateTts("base_url", e.target.value)}
-                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">API key</span>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    placeholder="TTS service API key"
-                    value={ttsForm.api_key}
-                    onChange={(e) => updateTts("api_key", e.target.value)}
-                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40 font-mono"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">Voice</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    placeholder="alloy"
-                    value={ttsForm.voice}
-                    onChange={(e) => updateTts("voice", e.target.value)}
-                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
-                  />
-                </label>
+                {ttsUsesLocalModels ? (
+                  <div className="rounded-lg border border-accent-amber/25 bg-accent-amber/10 p-3">
+                    <p className="text-[12px] font-medium text-accent-amber">Local voice models are managed in Models Center.</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-secondary">
+                      Download Qwen TTS models, choose the global default, and manage storage from the Models page.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/models")}
+                      className="mt-3 rounded-lg border border-accent-amber/30 px-3 py-1.5 text-[12px] font-medium text-accent-amber hover:bg-accent-amber/10"
+                    >
+                      Open Models Center
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-secondary mb-1.5 block">Cloud model</span>
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        placeholder="gpt-4o-mini-tts / your provider model"
+                        value={ttsForm.model}
+                        onChange={(e) => updateTts("model", e.target.value)}
+                        className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-secondary mb-1.5 block">Base URL</span>
+                      <input
+                        type="url"
+                        autoComplete="off"
+                        placeholder="https://..."
+                        value={ttsForm.base_url}
+                        onChange={(e) => updateTts("base_url", e.target.value)}
+                        className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-secondary mb-1.5 block">API key</span>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        placeholder="TTS service API key"
+                        value={ttsForm.api_key}
+                        onChange={(e) => updateTts("api_key", e.target.value)}
+                        className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40 font-mono"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-secondary mb-1.5 block">Voice</span>
+                      <input
+                        type="text"
+                        autoComplete="off"
+                        placeholder="alloy"
+                        value={ttsForm.voice}
+                        onChange={(e) => updateTts("voice", e.target.value)}
+                        className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                      />
+                    </label>
+                  </>
+                )}
                 <label className="block">
                   <span className="text-[12px] font-medium text-secondary mb-1.5 block">Audio format</span>
                   <input
@@ -366,39 +392,71 @@ export function SettingsPage() {
                     WAV is the safest default. M4A/MP4 here means audio-only output when the selected provider/runtime can produce it; this app does not create video MP4 files yet.
                   </p>
                 </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local runtime</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    placeholder="mlx"
-                    value={ttsForm.local_runtime}
-                    onChange={(e) => updateTts("local_runtime", e.target.value)}
-                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local model path</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    placeholder="/absolute/path/to/model (optional)"
-                    value={ttsForm.local_model_path}
-                    onChange={(e) => updateTts("local_model_path", e.target.value)}
-                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local ref audio path</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    placeholder="/absolute/path/to/ref.wav (optional)"
-                    value={ttsForm.local_ref_audio_path}
-                    onChange={(e) => updateTts("local_ref_audio_path", e.target.value)}
-                    className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
-                  />
-                </label>
+                <div className="rounded-lg border border-outline bg-background/50">
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedTtsOpen((v) => !v)}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                  >
+                    <span className="inline-flex items-center gap-2 text-[12px] font-medium text-secondary">
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Advanced TTS fields
+                    </span>
+                    <ChevronDown className={cn("h-4 w-4 text-secondary transition-transform", advancedTtsOpen && "rotate-180")} />
+                  </button>
+                  {advancedTtsOpen ? (
+                    <div className="space-y-4 border-t border-outline p-3">
+                      {ttsUsesLocalModels ? (
+                        <label className="block">
+                          <span className="text-[12px] font-medium text-secondary mb-1.5 block">Raw local model repo id</span>
+                          <input
+                            type="text"
+                            autoComplete="off"
+                            placeholder="mlx-community/Qwen3-TTS-..."
+                            value={ttsForm.model}
+                            onChange={(e) => updateTts("model", e.target.value)}
+                            className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                          />
+                          <p className="mt-1 text-[11px] text-secondary">Prefer Models Center for normal model switching.</p>
+                        </label>
+                      ) : null}
+                      <label className="block">
+                        <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local runtime</span>
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          placeholder="mlx"
+                          value={ttsForm.local_runtime}
+                          onChange={(e) => updateTts("local_runtime", e.target.value)}
+                          className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local model path override</span>
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          placeholder="/absolute/path/to/model (optional)"
+                          value={ttsForm.local_model_path}
+                          onChange={(e) => updateTts("local_model_path", e.target.value)}
+                          className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                        />
+                        <p className="mt-1 text-[11px] text-secondary">Overrides Models Center default selection when set.</p>
+                      </label>
+                      <label className="block">
+                        <span className="text-[12px] font-medium text-secondary mb-1.5 block">Local ref audio path</span>
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          placeholder="/absolute/path/to/ref.wav (optional)"
+                          value={ttsForm.local_ref_audio_path}
+                          onChange={(e) => updateTts("local_ref_audio_path", e.target.value)}
+                          className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
               </div>
               <div className="flex items-center gap-3 mt-4">
                 <button

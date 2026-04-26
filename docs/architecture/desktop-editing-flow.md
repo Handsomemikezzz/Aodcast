@@ -57,7 +57,9 @@ The shell is implemented through:
 
 ### `Settings`
 
-- global TTS provider configuration
+- global LLM and TTS provider configuration
+- cloud TTS connection/model fields in the default view
+- local MLX model switching delegated to `Models`, with raw local overrides kept behind an advanced foldout
 - bridge-backed persistence into Python core config files
 
 ## Bridge Boundary
