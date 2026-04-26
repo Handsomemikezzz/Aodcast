@@ -21,7 +21,22 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_BASE = Path.home() / "Library" / "Application Support" / "Aodcast" / "models"
+def _default_base_dir() -> Path:
+    env_base = os.environ.get("AODCAST_HF_MODEL_BASE")
+    if env_base:
+        return Path(env_base)
+    hf_cache = os.environ.get("HF_HUB_CACHE")
+    if hf_cache:
+        return Path(hf_cache)
+    try:
+        from huggingface_hub import constants as hf_constants
+
+        return Path(hf_constants.HF_HUB_CACHE)
+    except Exception:
+        return Path.home() / ".cache" / "huggingface" / "hub"
+
+
+DEFAULT_BASE = _default_base_dir()
 DEFAULT_REPO = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit"
 PROGRESS_MARKER = "AODCAST_PROGRESS"
 
@@ -63,7 +78,6 @@ def _build_progress_tqdm():
 
 
 def main() -> int:
-    env_base = os.environ.get("AODCAST_HF_MODEL_BASE")
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument(
         "--repo-id",
@@ -73,7 +87,7 @@ def main() -> int:
     parser.add_argument(
         "--base-dir",
         type=Path,
-        default=Path(env_base) if env_base else DEFAULT_BASE,
+        default=DEFAULT_BASE,
         help=f"Parent folder for the model directory (default: {DEFAULT_BASE})",
     )
     parser.add_argument(

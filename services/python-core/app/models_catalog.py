@@ -51,7 +51,15 @@ def _default_download_base(cwd: Path) -> Path:
     env = os.environ.get("AODCAST_HF_MODEL_BASE")
     if env:
         return Path(env)
-    return cwd / "models"
+    hf_env = os.environ.get("HF_HUB_CACHE")
+    if hf_env:
+        return Path(hf_env)
+    try:
+        from huggingface_hub import constants as hf_constants
+
+        return Path(hf_constants.HF_HUB_CACHE)
+    except Exception:
+        return cwd / "models"
 
 
 def expected_voice_model_dir(cwd: Path, hf_repo_id: str) -> Path:

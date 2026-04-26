@@ -78,4 +78,4 @@ OpenAI-compatible remote speech path:
 
 ## Environment variables
 
-Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper-script variables such as `AODCAST_HF_MODEL_BASE` and `HF_TOKEN`.
+Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper-script variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, and `HF_TOKEN`.

@@ -115,7 +115,7 @@ Download the default model to a user-owned model folder:
 ```bash
 uv run --with huggingface_hub --with tqdm \
   scripts/model-download/download_qwen3_tts_mlx.py \
-  --base-dir "$HOME/Library/Application Support/Aodcast/models"
+  --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
 Check capability before selecting local MLX:

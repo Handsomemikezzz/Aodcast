@@ -326,8 +326,9 @@ export function ModelsPage() {
                 Voice downloads use{" "}
                 <code className="text-secondary">scripts/model-download/download_qwen3_tts_mlx.py</code> (requires{" "}
                 <code className="text-secondary">huggingface_hub</code>
-                ). Set <code className="text-secondary">AODCAST_HF_MODEL_BASE</code> to choose a storage folder; default
-                is <code className="text-secondary">&lt;repo&gt;/models</code>.
+                ). Set <code className="text-secondary">AODCAST_HF_MODEL_BASE</code> (or{" "}
+                <code className="text-secondary">HF_HUB_CACHE</code>) to choose a storage folder; default uses{" "}
+                <code className="text-secondary">HF_HUB_CACHE</code>.
               </p>
             </div>
           )}

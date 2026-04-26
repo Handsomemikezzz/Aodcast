@@ -254,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delete-model",
         default="",
-        help="Delete a voice model directory under AODCAST_HF_MODEL_BASE or <cwd>/models.",
+        help="Delete a voice model directory under AODCAST_HF_MODEL_BASE or HF_HUB_CACHE.",
     )
     parser.add_argument(
         "--show-task-state",

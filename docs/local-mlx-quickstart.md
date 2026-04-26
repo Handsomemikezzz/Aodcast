@@ -36,7 +36,7 @@ Download into a user-owned model directory:
 ```bash
 uv run --with huggingface_hub --with tqdm \
   scripts/model-download/download_qwen3_tts_mlx.py \
-  --base-dir "$HOME/Library/Application Support/Aodcast/models"
+  --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
 If a repository requires authentication, pass `--token` or set `HF_TOKEN` locally. Do not commit tokens.
@@ -64,7 +64,7 @@ Or use an explicit local model directory:
 ```bash
 ./scripts/dev/run-python-core.sh \
   --configure-tts-provider local_mlx \
-  --tts-local-model-path "$HOME/Library/Application Support/Aodcast/models/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/Qwen3-TTS-12Hz-0.6B-Base-8bit"
 ```
 
 A local model directory must contain a real MLX export, including `.safetensors` weights. Placeholder directories are useful for docs/tests but are not executable model bundles.
