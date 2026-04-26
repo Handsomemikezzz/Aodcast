@@ -180,11 +180,18 @@ export function VoiceStudioPage() {
   };
 
   const handleRenderTake = async () => {
-    if (!selectedSessionId || !selectedScriptId) return;
+    setError(null);
+    setMessage(null);
+    if (!selectedSessionId || !selectedScriptId) {
+      setError("请先选择 Session 和脚本，再生成完整音频。");
+      return;
+    }
+    if (!scriptText) {
+      setError("当前脚本没有可生成的内容，请先选择包含正文的脚本。");
+      return;
+    }
     try {
       setRendering(true);
-      setError(null);
-      setMessage(null);
       const result = await bridge.renderVoiceTake(selectedSessionId, selectedScriptId, settings, {
         providerOverride,
         scriptId: selectedScriptId,
@@ -445,7 +452,7 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handleRenderTake()}
-                  disabled={rendering || !selectedSessionId || !selectedScriptId || !scriptText}
+                  disabled={rendering}
                   className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
