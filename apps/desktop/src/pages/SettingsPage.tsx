@@ -31,6 +31,8 @@ type TTSForm = {
   local_ref_audio_path: string;
 };
 
+type TTSProviderChoice = "local_mlx" | "openai_compatible";
+
 function toLLMForm(config: LLMProviderConfig): LLMForm {
   return {
     provider: config.provider,
@@ -52,6 +54,10 @@ function toTTSForm(config: TTSProviderConfig): TTSForm {
     local_model_path: config.local_model_path,
     local_ref_audio_path: config.local_ref_audio_path,
   };
+}
+
+function normalizeTtsProviderChoice(provider: string): TTSProviderChoice {
+  return provider === "local_mlx" ? "local_mlx" : "openai_compatible";
 }
 
 export function SettingsPage() {
@@ -82,7 +88,8 @@ export function SettingsPage() {
   const [savedFlashTts, setSavedFlashTts] = useState(false);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
   const [advancedTtsOpen, setAdvancedTtsOpen] = useState(false);
-  const ttsUsesLocalModels = ttsForm.provider === "local_mlx";
+  const ttsProviderChoice = normalizeTtsProviderChoice(ttsForm.provider);
+  const ttsUsesLocalModels = ttsProviderChoice === "local_mlx";
 
   useEffect(() => {
     let active = true;
@@ -307,14 +314,18 @@ export function SettingsPage() {
                 <label className="block">
                   <span className="text-[12px] font-medium text-secondary mb-1.5 block">Provider</span>
                   <select
-                    value={ttsForm.provider}
+                    value={ttsProviderChoice}
                     onChange={(e) => updateTts("provider", e.target.value)}
                     className="w-full rounded-lg border border-outline bg-background px-3 py-2 text-[13px] text-primary outline-none focus:border-accent-amber/40"
                   >
-                    <option value="mock_remote">mock_remote</option>
-                    <option value="openai_compatible">openai_compatible</option>
-                    <option value="local_mlx">local_mlx</option>
+                    <option value="local_mlx">Local · MLX on this Mac</option>
+                    <option value="openai_compatible">Remote API · OpenAI-compatible</option>
                   </select>
+                  {ttsForm.provider === "mock_remote" ? (
+                    <p className="mt-1 text-[11px] text-amber-300">
+                      Existing mock test provider detected. Saving will switch this setting to Remote API unless you choose Local.
+                    </p>
+                  ) : null}
                 </label>
                 {ttsUsesLocalModels ? (
                   <div className="rounded-lg border border-accent-amber/25 bg-accent-amber/10 p-3">
