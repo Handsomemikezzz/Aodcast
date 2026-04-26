@@ -11,8 +11,8 @@ Implement session/script lifecycle management aligned with the approved design:
 
 Primary references:
 
-- [Session and script management design](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-04-02-session-and-script-management-design.md)
-- [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)
+- [Session and script management design](../specs/2026-04-02-session-and-script-management-design.md)
+- [AGENTS.md](../../../AGENTS.md)
 
 ## 2. Delivery Slices
 

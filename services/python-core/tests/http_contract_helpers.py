@@ -10,6 +10,7 @@ HTTP_BRIDGE_PATH = REPO_ROOT / "apps/desktop/src/lib/httpBridge.ts"
 BRIDGE_FACTORY_PATH = REPO_ROOT / "apps/desktop/src/lib/bridgeFactory.ts"
 TAURI_COMMANDS_PATH = REPO_ROOT / "apps/desktop/src-tauri/src/commands.rs"
 MAIN_PATH = REPO_ROOT / "services/python-core/app/main.py"
+CLI_PARSER_PATH = REPO_ROOT / "services/python-core/app/cli/parser.py"
 HTTP_RUNTIME_PATH = REPO_ROOT / "services/python-core/app/api/http_runtime.py"
 RUNTIME_TOKEN_HEADER = "X-AOD-Runtime-Token"
 LOOPBACK_ONLY_HOSTS = ("127.0.0.1", "::1")

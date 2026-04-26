@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_BASE = Path("/Users/chuhaonan/codeMIni-hn/model")
+DEFAULT_BASE = Path.home() / "Library" / "Application Support" / "Aodcast" / "models"
 DEFAULT_REPO = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit"
 PROGRESS_MARKER = "AODCAST_PROGRESS"
 

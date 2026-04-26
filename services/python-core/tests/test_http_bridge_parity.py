@@ -6,6 +6,7 @@ from tests.http_contract_helpers import (
     HTTP_BRIDGE_CONTRACTS,
     HTTP_BRIDGE_PATH,
     HTTP_RUNTIME_PATH,
+    CLI_PARSER_PATH,
     MAIN_PATH,
     extract_interface_methods,
     extract_return_object_methods,
@@ -31,6 +32,7 @@ class HttpBridgeParityTests(unittest.TestCase):
 
     def test_cli_flags_and_infer_operation_returns_stay_in_sync(self) -> None:
         main_text = read_text(MAIN_PATH)
+        cli_text = main_text + "\n" + read_text(CLI_PARSER_PATH)
         infer_operation_returns = {
             line.split('return "', 1)[1].split('"', 1)[0]
             for line in main_text.splitlines()
@@ -38,7 +40,7 @@ class HttpBridgeParityTests(unittest.TestCase):
         }
         for contract in HTTP_BRIDGE_CONTRACTS:
             with self.subTest(method=contract.desktop_method):
-                self.assertIn(contract.cli_args[0], main_text)
+                self.assertIn(contract.cli_args[0], cli_text)
                 self.assertIn(contract.operation, infer_operation_returns)
 
     def test_stream_contract_preserves_existing_chunk_marker_and_operation(self) -> None:

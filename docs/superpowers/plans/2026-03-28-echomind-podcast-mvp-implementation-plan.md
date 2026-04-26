@@ -6,9 +6,9 @@ This plan turns the approved MVP design into a staged implementation roadmap for
 
 Primary sources of truth:
 
-- [MVP design spec](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
-- [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)
-- [Multi-agent workflow](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/multi-agent-workflow.md)
+- [MVP design spec](../specs/2026-03-28-echomind-podcast-mvp-design.md)
+- [AGENTS.md](../../../AGENTS.md)
+- [Multi-agent workflow](../../operations/multi-agent-workflow.md)
 
 ## 2. Delivery Strategy
 

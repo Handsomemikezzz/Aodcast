@@ -14,9 +14,9 @@ This document explains how Aodcast should be developed and maintained by multipl
 
 ## Canonical Governance Files
 
-- [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)
-- [subagents.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/subagents.md)
-- [maintenance-playbook.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/maintenance-playbook.md)
+- [AGENTS.md](../../AGENTS.md)
+- [subagents.md](subagents.md)
+- [maintenance-playbook.md](maintenance-playbook.md)
 
 ## Change Rules
 

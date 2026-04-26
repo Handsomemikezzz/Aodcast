@@ -16,9 +16,9 @@ If implementation changes invalidate this file, update `AGENTS.md` in the same c
 
 ## Product Scope
 
-Current source of truth: [docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
-Implementation plan: [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md)
-Product overview (sessions, multi-script snapshots): [docs/product/product-overview.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/product/product-overview.md)
+Current source of truth: [docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md](docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
+Implementation plan: [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md)
+Product overview (sessions, multi-script snapshots): [docs/product/product-overview.md](docs/product/product-overview.md)
 
 Current MVP:
 
@@ -28,7 +28,7 @@ Current MVP:
 - input: text topic only
 - output: solo podcast script plus final audio, with Voice Studio take selection for final audio
 - LLM: user-configured API provider
-- TTS: remote API provider or local MLX-backed provider
+- TTS: local MLX-backed provider as the primary first-release path, plus remote API provider support
 
 Out of scope for the current MVP:
 
@@ -46,6 +46,7 @@ Out of scope for the current MVP:
 - `docs/product`: product-facing docs
 - `docs/architecture`: architecture and repository layout docs
 - `docs/operations`: agent governance, maintenance playbooks, subagent definitions
+- `docs/configuration.md` and `docs/local-mlx-quickstart.md`: public setup, provider, and local MLX guidance
 - `.agent`: prompts, checklists, templates, and reports used by agents
 
 ## Ownership Rules
@@ -76,7 +77,7 @@ Before substantial implementation work:
 
 When a change affects the product flow, architecture, or repo governance, update:
 
-- [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)
+- [AGENTS.md](AGENTS.md)
 - the active spec or architecture doc under `docs/`
 
 ## Code Generation Rules
@@ -95,7 +96,7 @@ When a change affects the product flow, architecture, or repo governance, update
 
 ## Maintenance Subagents
 
-The repository should be maintained continuously by specialized cleanup-oriented subagents. Their definitions live in [docs/operations/subagents.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/subagents.md).
+The repository should be maintained continuously by specialized cleanup-oriented subagents. Their definitions live in [docs/operations/subagents.md](docs/operations/subagents.md).
 
 Minimum maintenance roles:
 
@@ -105,11 +106,11 @@ Minimum maintenance roles:
 - `doc-syncer`
 - `repo-curator`
 
-Maintenance cadence and triggers live in [docs/operations/maintenance-playbook.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/maintenance-playbook.md).
+Maintenance cadence and triggers live in [docs/operations/maintenance-playbook.md](docs/operations/maintenance-playbook.md).
 
 ## Delivery Workflow
 
-Feature delivery should follow the staged plan in [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md).
+Feature delivery should follow the staged plan in [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md).
 
 When using multiple agents:
 
@@ -119,7 +120,7 @@ When using multiple agents:
 - run maintenance agents after structural or cross-boundary changes
 - if teammate spawning is unavailable in the current runtime, the lead agent must still follow the same task boundaries and keep status updates in `docs/operations/progress-tracker.md`
 
-Feature and maintenance role definitions live in [docs/operations/subagents.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/subagents.md).
+Feature and maintenance role definitions live in [docs/operations/subagents.md](docs/operations/subagents.md).
 
 ## Known Execution Notes
 
@@ -145,3 +146,7 @@ Feature and maintenance role definitions live in [docs/operations/subagents.md](
 - 2026-04-26: Artifact audio playback URLs intentionally use the localhost HTTP route (`/api/v1/artifacts/audio`) in both Web and Tauri shells. Do not reintroduce `convertFileSrc` for generated audio unless Tauri asset protocol scope/capabilities are explicitly configured and parity-tested.
 - 2026-04-26: Voice Studio preview rendering is a pollable long task (`render_voice_preview`), not a synchronous POST. Keep preview UI progress wired to task state; local MLX cold starts can otherwise look stuck.
 - 2026-04-25: Voice Studio MVP routes are HTTP-bridge first (`listVoicePresets`, `renderVoicePreview`, `renderVoiceTake`, `setFinalVoiceTake`). Preserve bridge parity when changing them, and keep Voice Studio take retention to final take + latest candidate unless product requirements explicitly move to full version management.
+
+## Open-source Release Docs
+
+Public GitHub releases must keep `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, `docs/configuration.md`, and `docs/local-mlx-quickstart.md` in sync with install, provider, and release behavior. API keys are user-managed local configuration; do not claim secure vaulting unless Keychain or equivalent support is implemented.

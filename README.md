@@ -1,80 +1,169 @@
 # Aodcast
 
-Aodcast is an open source macOS desktop app for AI-guided podcast creation.
+Aodcast is an open source, local-first macOS desktop app for AI-guided podcast creation.
 
-The MVP is scoped to a local-first workflow:
+The current release target is a **GitHub source-code alpha**, not a polished packaged desktop distribution. The app is designed for developers and early testers who are comfortable running a Tauri frontend and a local Python orchestration runtime.
 
-1. User enters a topic in text.
+## What it does
+
+1. You enter a podcast topic in text.
 2. AI conducts an interview to gather usable material.
-3. The system generates a solo podcast script.
-4. The user edits the script directly.
-5. The system renders final audio through a remote TTS API or a local MLX-backed TTS provider.
+3. Aodcast generates a solo podcast script.
+4. You edit and manage script snapshots.
+5. Voice Studio renders preview and final audio, with local MLX TTS as the primary first-release path.
 
-When the UI runs inside Tauri, desktop actions are routed into the Python orchestration core through a Tauri command bridge. Browser-only runs still fall back to the mock bridge for UI iteration.
+## Current scope
 
-The current desktop shell is route-based and organized around four workspaces:
+In scope for the alpha:
 
-- `Chat`
-- `Script`
-- `Models`
-- `Settings`
+- macOS desktop development workflow
+- Tauri app shell plus local Python HTTP runtime
+- text-topic input
+- interview-driven solo script generation
+- script snapshots and editing
+- Voice Studio preview/take flow
+- local MLX-backed TTS as the primary first-release capability
+- mock providers for smoke testing and development fallback
+- OpenAI-compatible LLM/TTS adapters for user-configured providers
 
-The repository is organized for long-term multi-agent collaboration. Start with:
+Out of scope for the alpha:
 
-- [AGENTS.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/AGENTS.md)
-- [MVP design spec](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
-- [Agent governance](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/operations/agent-governance.md)
+- speech-to-text input
+- long-term user memory
+- multi-host podcast formats
+- cloud backend dependency
+- voice cloning
+- polished signed/notarized macOS app distribution
 
-## Bootstrap Commands
+## Repository map
 
-Run from the repository root:
+- `apps/desktop`: Tauri UI and app shell
+- `services/python-core`: interview orchestration, script generation, provider dispatch, storage, and HTTP runtime
+- `packages/shared-schemas`: shared data contracts and schemas
+- `docs/architecture`: architecture notes
+- `docs/operations`: agent governance and maintenance docs
+- `docs/superpowers`: implementation specs/plans from development milestones
+- `examples`: sample placeholders and examples
+- `scripts`: development, maintenance, release, and model-download helpers
 
-- `cd apps/desktop && pnpm install`
-- `cd services/python-core && uv venv .venv`
-- `cd services/python-core && uv pip install --python .venv/bin/python '.[local-mlx]'`
-- `./scripts/dev/check-toolchain.sh`
-- `./scripts/dev/run-desktop.sh`
-- `./scripts/maintenance/run-repo-hygiene-check.sh`
+Start with:
 
-Smoke path (mock providers):
+- [Product overview](docs/product/product-overview.md)
+- [Local MLX quickstart](docs/local-mlx-quickstart.md)
+- [Configuration](docs/configuration.md)
+- [Repository layout](docs/architecture/repository-layout.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
-- `./scripts/dev/run-python-core.sh --create-demo-session`
-- `./scripts/dev/run-python-core.sh --configure-llm-provider mock`
-- `./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote`
+## Prerequisites
 
-Real path (non-mock render):
+- macOS for the full desktop/local MLX path
+- Python 3.13+
+- `uv`
+- Node.js and `pnpm`
+- Rust and Cargo
 
-- `./scripts/dev/run-python-core.sh --create-session --topic "<topic>" --intent "<intent>"`
-- `./scripts/dev/run-python-core.sh --start-interview <session-id>`
-- `./scripts/dev/run-python-core.sh --reply-session <session-id> --message "your answer"`
-- `./scripts/dev/run-python-core.sh --finish-session <session-id>`
-- `./scripts/dev/run-python-core.sh --generate-script <session-id>`
-- `./scripts/dev/run-python-core.sh --save-script <session-id> --script-final-text "edited final script"`
-- `./scripts/dev/run-python-core.sh --show-local-tts-capability`
-- `./scripts/dev/run-python-core.sh --render-audio <session-id>`
+Local MLX works best on compatible Apple Silicon machines and requires model weights. The capability checker is the source of truth for whether the local path is available on a given machine.
 
-Current environment note:
+## Bootstrap
 
-- The Python core can be bootstrapped locally today.
-- Frontend dependency installation may require network-enabled execution in this environment.
-- Native compile checks can run with local `cargo`, while full macOS packaging is currently blocked at the DMG bundling stage (`bundle_dmg.sh`).
+From the repository root:
 
-## Local MLX Notes
+```bash
+cd services/python-core
+uv venv .venv
+uv pip install --python .venv/bin/python -e .
 
-- The Python runner script prefers `services/python-core/.venv/bin/python` when it exists.
-- Use `./scripts/dev/run-python-core.sh --show-local-tts-capability` before selecting `local_mlx`.
-- Install the full local stack with `uv pip install --python .venv/bin/python '.[local-mlx]'` so both `mlx` and `mlx-audio` are available.
-- The default local model target is `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit`.
-- Use `./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx --clear-tts-local-model-path` to switch from a stale local path back to the default Hugging Face repo-id mode.
-- A local model directory must now look like a real MLX export and include at least one `.safetensors` file. The placeholder sample directory is useful for docs and path examples, but it is not treated as an executable model bundle anymore.
+# Install the primary local MLX TTS stack on supported macOS machines:
+uv pip install --python .venv/bin/python -e '.[local-mlx]'
 
-## Maintenance
+cd ../../apps/desktop
+pnpm install
+```
 
-- Use `./scripts/maintenance/run-repo-hygiene-check.sh` for the default Milestone 7 maintenance sweep.
-- Store maintenance outcomes in `.agent/reports/`.
+## Run the app during development
 
-## Desktop Bridge
+```bash
+./scripts/dev/check-toolchain.sh
+./scripts/dev/run-dev-all.sh
+```
 
-- The real desktop path is `React -> Tauri invoke -> Rust commands -> scripts/dev/run-python-core.sh -> app.main`.
-- Python bridge calls should use `--bridge-json` so stdout remains a single JSON envelope for Rust to parse.
-- If full native packaging is blocked at DMG bundling, continue validating the Python bridge, frontend types, and `cargo check` independently.
+The Tauri/web UI talks to the Python orchestration core through a localhost HTTP runtime. Browser-only development and Tauri development both use the HTTP bridge path.
+
+## Smoke test with mock providers
+
+Mock providers are for development and CI smoke paths. They are not the primary product experience.
+
+```bash
+./scripts/dev/run-python-core.sh --create-demo-session
+./scripts/dev/run-python-core.sh --configure-llm-provider mock
+./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+```
+
+## Local MLX quickstart
+
+Install local MLX dependencies:
+
+```bash
+cd services/python-core
+uv pip install --python .venv/bin/python -e '.[local-mlx]'
+cd ../..
+```
+
+Download the default model to a user-owned model folder:
+
+```bash
+uv run --with huggingface_hub --with tqdm \
+  scripts/model-download/download_qwen3_tts_mlx.py \
+  --base-dir "$HOME/Library/Application Support/Aodcast/models"
+```
+
+Check capability before selecting local MLX:
+
+```bash
+./scripts/dev/run-python-core.sh --show-local-tts-capability
+```
+
+Configure local MLX in repo-id mode:
+
+```bash
+./scripts/dev/run-python-core.sh \
+  --configure-tts-provider local_mlx \
+  --clear-tts-local-model-path
+```
+
+See [Local MLX quickstart](docs/local-mlx-quickstart.md) for details and troubleshooting.
+
+## Provider configuration and API keys
+
+See [Configuration](docs/configuration.md).
+
+Aodcast stores provider configuration locally for a local-first workflow. API keys entered by users are managed on the user's own machine. Users are responsible for protecting local config files, backups, shell history, logs, screenshots, and generated project data.
+
+## Verification
+
+Run before opening a PR or merging release-prep work:
+
+```bash
+./scripts/maintenance/run-repo-hygiene-check.sh
+
+cd apps/desktop
+pnpm check
+pnpm build:web
+
+cd src-tauri
+cargo check
+
+cd ../../../services/python-core
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+Notes:
+
+- `run-repo-hygiene-check.sh` includes Python tests, frontend typecheck, and frontend web build.
+- `cargo check` is run separately under `apps/desktop/src-tauri`.
+- Full macOS packaging/signing/notarization is not part of the source-code alpha release gate.
+
+## License
+
+Aodcast is released under the [MIT License](LICENSE).

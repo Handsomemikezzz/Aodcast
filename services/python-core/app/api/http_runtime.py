@@ -12,6 +12,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from app.api.bridge_envelope import (
+    build_request_state,
+    error_envelope,
+    progress_from_request_state,
+    success_envelope,
+)
+from app.api.serializers import (
+    serialize_generation_result,
+    serialize_project,
+    serialize_script_revisions,
+    serialize_turn_result,
+    serialize_voice_settings,
+    serialize_voice_take_result,
+    voice_settings_from_payload,
+)
 from app.config import AppConfig
 from app.domain.project import SessionProject
 from app.domain.session import SessionRecord, SessionState
@@ -21,15 +36,9 @@ from app.models_catalog import build_models_status, delete_voice_model, download
 from app.orchestration.audio_rendering import (
     AudioRenderingService,
     AudioRenderProgress,
-    VoiceRenderSettings,
-    VoiceTakeRenderResult,
 )
-from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
-from app.orchestration.script_generation import (
-    ScriptGenerationResult,
-    ScriptGenerationService,
-    build_generation_context,
-)
+from app.orchestration.interview_service import InterviewOrchestrator
+from app.orchestration.script_generation import ScriptGenerationService
 from app.providers.llm.factory import validate_llm_provider
 from app.providers.tts_api.factory import validate_tts_provider
 from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
@@ -68,179 +77,11 @@ class BridgeTaskCancelledError(RuntimeError):
         self.progress_percent = progress_percent
 
 
-def build_request_state(
-    *,
-    operation: str,
-    phase: str,
-    progress_percent: float,
-    message: str,
-    run_token: str | None = None,
-) -> dict[str, object]:
-    state: dict[str, object] = {
-        "operation": operation,
-        "phase": phase,
-        "progress_percent": progress_percent,
-        "message": message,
-    }
-    if run_token:
-        state["run_token"] = run_token
-    return state
-
-
-def progress_from_request_state(state: dict[str, object] | None, default: float = 0.0) -> float:
-    if not isinstance(state, dict):
-        return default
-    value = state.get("progress_percent")
-    if isinstance(value, (int, float)):
-        return float(min(100.0, max(0.0, value)))
-    return default
-
-
-def success_envelope(
-    data: dict[str, object],
-    *,
-    operation: str,
-    message: str = "completed",
-    phase: str = "succeeded",
-    progress_percent: float = 100.0,
-    run_token: str | None = None,
-) -> dict[str, object]:
-    payload = dict(data)
-    payload["request_state"] = build_request_state(
-        operation=operation,
-        phase=phase,
-        progress_percent=progress_percent,
-        message=message,
-        run_token=run_token,
-    )
-    return {"ok": True, "data": payload}
-
-
-def error_envelope(
-    *,
-    operation: str,
-    code: str,
-    message: str,
-    details: dict[str, object] | None = None,
-    phase: str = "failed",
-    progress_percent: float = 0.0,
-) -> dict[str, object]:
-    request_state = build_request_state(
-        operation=operation,
-        phase=phase,
-        progress_percent=progress_percent,
-        message=message,
-    )
-    payload_details = dict(details or {})
-    payload_details["request_state"] = request_state
-    return {
-        "ok": False,
-        "request_state": request_state,
-        "error": {
-            "code": code,
-            "message": message,
-            "details": payload_details,
-        },
-    }
-
 
 def _normalize_error_message(exc: Exception, *, fallback: str) -> str:
     message = str(exc).strip()
     return message or fallback
 
-
-def serialize_project(project: SessionProject) -> dict[str, object]:
-    return {
-        "session": project.session.to_dict(),
-        "transcript": project.transcript.to_dict() if project.transcript else None,
-        "script": project.script.to_dict() if project.script else None,
-        "artifact": project.artifact.to_dict() if project.artifact else None,
-    }
-
-
-def serialize_turn_result(result: InterviewTurnResult) -> dict[str, object]:
-    return {
-        "project": serialize_project(result.project),
-        "readiness": {
-            "topic_context": result.readiness.topic_context,
-            "core_viewpoint": result.readiness.core_viewpoint,
-            "example_or_detail": result.readiness.example_or_detail,
-            "conclusion": result.readiness.conclusion,
-            "is_ready": result.readiness.is_ready,
-            "missing_dimensions": result.readiness.missing_dimensions(),
-        },
-        "prompt_input": result.prompt_input.to_dict(),
-        "next_question": result.next_question,
-        "ai_can_finish": result.ai_can_finish,
-    }
-
-
-def serialize_generation_result(result: ScriptGenerationResult) -> dict[str, object]:
-    project = result.project
-    payload: dict[str, object] = {
-        "project": serialize_project(project),
-        "provider": result.provider,
-        "model": result.model,
-        "generation_context": build_generation_context(project),
-    }
-    if project.script is not None:
-        payload["script_id"] = project.script.script_id
-    return payload
-
-
-def serialize_voice_take_result(result: VoiceTakeRenderResult) -> dict[str, object]:
-    return {
-        "project": serialize_project(result.project),
-        "provider": result.provider,
-        "model": result.model,
-        "audio_path": result.audio_path,
-        "transcript_path": result.transcript_path,
-        "take": result.take.to_dict(),
-    }
-
-
-def voice_settings_from_payload(payload: dict[str, object]) -> VoiceRenderSettings:
-    return VoiceRenderSettings(
-        voice_id=str(payload.get("voice_id") or "warm_narrator"),
-        voice_name=str(payload.get("voice_name") or ""),
-        style_id=str(payload.get("style_id") or "natural"),
-        style_name=str(payload.get("style_name") or ""),
-        speed=float(payload.get("speed") or 1.0),
-        language=str(payload.get("language") or "zh"),
-        audio_format=str(payload.get("audio_format") or "wav"),
-        preview_text=str(payload.get("preview_text") or ""),
-    )
-
-
-def serialize_voice_settings(settings: VoiceRenderSettings) -> dict[str, object]:
-    return {
-        "voice_id": settings.voice_id,
-        "voice_name": settings.voice_name,
-        "style_id": settings.style_id,
-        "style_name": settings.style_name,
-        "speed": settings.speed,
-        "language": settings.language,
-        "audio_format": settings.audio_format,
-        "preview_text": settings.preview_text,
-    }
-
-
-def serialize_script_revisions(project: SessionProject) -> list[dict[str, object]]:
-    if project.script is None:
-        return []
-    revisions: list[dict[str, object]] = []
-    for revision in project.script.list_revisions():
-        revisions.append(
-            {
-                "revision_id": revision.revision_id,
-                "session_id": project.session.session_id,
-                "content": revision.final or revision.draft,
-                "kind": revision.reason,
-                "label": revision.reason.replace("_", " "),
-                "created_at": revision.created_at,
-            }
-        )
-    return revisions
 
 
 def create_project(topic: str, intent: str) -> SessionProject:

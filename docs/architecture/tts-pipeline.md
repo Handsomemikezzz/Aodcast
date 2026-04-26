@@ -4,7 +4,7 @@
 
 This document describes the end-to-end audio rendering pipeline, from the
 desktop "Generate" page down to the MLX worker subprocess that produces the
-final audio artifact. It complements [local-mlx-tts.md](/Users/chuhaonan/codeMIni-hn/github/Aodcast/docs/architecture/local-mlx-tts.md), which documents the
+final audio artifact. It complements [local-mlx-tts.md](local-mlx-tts.md), which documents the
 MLX capability report and runtime requirements in isolation.
 
 ## Components
