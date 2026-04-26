@@ -22,6 +22,7 @@ import type {
 
 const POLL_INTERVAL_MS = 1000;
 const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
+type PreviewTextMode = "standard" | "script_opening" | "custom";
 
 function estimateMinutes(script: string): string {
   const words = script.trim().split(/\s+/).filter(Boolean).length;
@@ -43,6 +44,10 @@ function shortRepoName(repo: string): string {
   return repo.split("/").pop()?.replace("Qwen3-TTS-12Hz-", "Qwen TTS ")?.replace("-Base-8bit", "") ?? repo;
 }
 
+function scriptOpeningText(script: string): string {
+  return script.trim().replace(/\s+/g, " ").slice(0, 180);
+}
+
 export function VoiceStudioPage() {
   const { sessionId: routeSessionId, scriptId: routeScriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const bridge = useBridge();
@@ -58,6 +63,8 @@ export function VoiceStudioPage() {
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
   const [ttsCapability, setTtsCapability] = useState<TTSCapability | null>(null);
+  const [standardPreviewText, setStandardPreviewText] = useState("");
+  const [previewTextMode, setPreviewTextMode] = useState<PreviewTextMode>("standard");
   const [previewText, setPreviewText] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState(routeSessionId ?? "");
   const [selectedScriptId, setSelectedScriptId] = useState(routeScriptId ?? "");
@@ -77,6 +84,13 @@ export function VoiceStudioPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const scriptText = project?.script?.final?.trim() || project?.script?.draft?.trim() || "";
+  const scriptOpening = scriptOpeningText(scriptText);
+  const effectivePreviewText =
+    previewTextMode === "script_opening"
+      ? scriptOpening || standardPreviewText
+      : previewTextMode === "standard"
+        ? standardPreviewText
+        : previewText;
   const takes = project?.artifact?.takes ?? [];
   const finalTakeId = project?.artifact?.final_take_id ?? "";
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
@@ -88,6 +102,8 @@ export function VoiceStudioPage() {
   const localCatalogModelInstalled = Boolean(currentModel?.downloaded);
   const localPathReady = Boolean(localPathConfigured && ttsCapability?.model_path_exists && ttsCapability?.available);
   const localEngineReady = Boolean(ttsConfig) && (!isLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
+  const renderUsesLocalEngine = providerOverride ? providerOverride === "local_mlx" : isLocalEngine;
+  const renderEngineReady = Boolean(ttsConfig) && (!renderUsesLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
   const engineLabel = isLocalEngine
     ? `Local MLX · ${localPathConfigured ? "Custom local path" : currentModel?.display_name ?? shortRepoName(resolvedModel)}`
     : ttsConfig?.provider
@@ -114,9 +130,9 @@ export function VoiceStudioPage() {
       speed,
       language,
       audio_format: audioFormat,
-      preview_text: previewText,
+      preview_text: effectivePreviewText,
     }),
-    [audioFormat, language, previewText, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
+    [audioFormat, effectivePreviewText, language, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
   );
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
@@ -148,6 +164,7 @@ export function VoiceStudioPage() {
         ]);
         setVoices(catalog.voices);
         setStyles(catalog.styles);
+        setStandardPreviewText(catalog.standard_preview_text);
         setPreviewText(catalog.standard_preview_text);
         setProjects(loadedProjects);
         setTtsConfig(tts);
@@ -233,8 +250,8 @@ export function VoiceStudioPage() {
       setError("请先选择 Session 和脚本，再生成完整音频。");
       return;
     }
-    if (!localEngineReady) {
-      setError("当前本地语音模型尚未准备好。请先在 Models Center 下载或选择可用模型。");
+    if (!renderEngineReady) {
+      setError("当前本地语音模型尚未准备好。请先在 Models Center 下载或选择可用模型，或在高级设置中临时切换到云端 TTS。");
       return;
     }
     if (!scriptText) {
@@ -465,21 +482,50 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handlePreview()}
-                  disabled={previewing || !selectedVoice || !selectedStyle || !localEngineReady}
+                  disabled={previewing || !selectedVoice || !selectedStyle || !renderEngineReady}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                   生成组合试音
                 </button>
               </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewTextMode("standard")}
+                  className={cn("rounded-full border px-3 py-1.5 text-xs font-medium", previewTextMode === "standard" ? "border-accent-amber bg-accent-amber/10 text-accent-amber" : "border-outline text-secondary hover:text-primary")}
+                >
+                  标准试音句
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewTextMode("script_opening")}
+                  disabled={!scriptOpening}
+                  className={cn("rounded-full border px-3 py-1.5 text-xs font-medium disabled:opacity-40", previewTextMode === "script_opening" ? "border-accent-amber bg-accent-amber/10 text-accent-amber" : "border-outline text-secondary hover:text-primary")}
+                >
+                  使用脚本开头
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewTextMode("custom")}
+                  className={cn("rounded-full border px-3 py-1.5 text-xs font-medium", previewTextMode === "custom" ? "border-accent-amber bg-accent-amber/10 text-accent-amber" : "border-outline text-secondary hover:text-primary")}
+                >
+                  自定义文本
+                </button>
+              </div>
               <textarea
                 value={previewText}
-                onChange={(event) => setPreviewText(event.target.value)}
+                onChange={(event) => {
+                  setPreviewTextMode("custom");
+                  setPreviewText(event.target.value);
+                }}
                 rows={3}
                 placeholder="输入一句你想用来比较音色与风格的试音文本"
-                className={cn("mt-4 w-full resize-none rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/40", !advancedOpen && "hidden")}
+                className={cn("mt-4 w-full resize-none rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/40", !advancedOpen && previewTextMode !== "custom" && "hidden")}
               />
-              <p className="mt-2 text-[11px] text-secondary">{advancedOpen ? "留空时使用系统标准试音句。" : "展开高级设置可自定义试音文本。"}</p>
+              <p className="mt-2 text-[11px] text-secondary">
+                当前试音文本：{effectivePreviewText ? `${effectivePreviewText.slice(0, 60)}${effectivePreviewText.length > 60 ? "…" : ""}` : "系统标准试音句"}
+              </p>
               {previewRequestState && previewRequestState.phase !== "succeeded" ? (
                 <div className="mt-3 rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-secondary">
                   {Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}
@@ -543,7 +589,7 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handleRenderTake()}
-                  disabled={rendering || !localEngineReady}
+                  disabled={rendering || !renderEngineReady}
                   className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
@@ -553,7 +599,7 @@ export function VoiceStudioPage() {
                   <button type="button" onClick={() => void handleCancel()} className="rounded-2xl border border-outline px-4 py-3 text-sm text-primary">取消</button>
                 ) : null}
               </div>
-              {!localEngineReady ? (
+              {!renderEngineReady ? (
                 <button type="button" onClick={() => navigate("/models")} className="mt-3 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-100 hover:bg-amber-500/15">
                   Open Models Center to prepare a voice model
                 </button>

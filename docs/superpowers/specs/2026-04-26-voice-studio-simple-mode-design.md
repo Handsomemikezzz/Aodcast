@@ -39,3 +39,13 @@ Advanced voice controls stay collapsed by default and expose voice presets, styl
 - If the global engine is Local MLX and its model is not installed/available, Voice Studio shows an actionable Models Center CTA.
 - A user can still preview, render, set final take, reveal, and download takes as before.
 - Existing bridge parity and request-state tests continue to pass.
+
+## Phase 2 preview refinement
+
+Voice Studio preview supports three text sources:
+
+- Standard preview sentence for consistent voice comparisons.
+- Current script opening for checking how the selected voice handles real content.
+- Custom text for user-specified pronunciation/style tests.
+
+If the global engine is Local MLX but not ready, users can still force a cloud provider from Advanced controls; that per-render override bypasses the local-model readiness gate for preview/render actions.
