@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import patch
 from app.models_catalog import (
     CATALOG,
     build_models_status,
+    download_voice_model,
     expected_voice_model_dir,
     migrate_model_storage,
     model_storage_status,
@@ -40,6 +42,35 @@ class ModelsCatalogTests(unittest.TestCase):
             cwd = Path(tmp)
             d = expected_voice_model_dir(cwd, "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit")
             self.assertTrue(str(d).endswith("Qwen3-TTS-12Hz-0.6B-Base-8bit"))
+
+    def test_download_voice_model_disables_xet_for_subprocess(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            script = cwd / "scripts" / "model-download" / "download_qwen3_tts_mlx.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+            captured_env: dict[str, str] = {}
+
+            class FakeProcess:
+                stdout = io.StringIO("")
+                returncode = 0
+
+                def poll(self) -> int:
+                    return 0
+
+                def wait(self, timeout: float | None = None) -> int:
+                    return 0
+
+            def fake_popen(*args: object, **kwargs: object) -> FakeProcess:
+                captured_env.update(kwargs.get("env") or {})
+                return FakeProcess()
+
+            with patch("app.models_catalog.subprocess.Popen", side_effect=fake_popen):
+                result = download_voice_model(cwd, "qwen-tts-0.6B")
+
+            self.assertEqual(result["message"], "ok")
+            self.assertEqual(captured_env["HF_HUB_DISABLE_XET"], "1")
+            self.assertEqual(captured_env["PYTHONUNBUFFERED"], "1")
 
     @patch.dict("os.environ", {"AODCAST_HF_MODEL_BASE": "", "HF_HUB_CACHE": ""}, clear=False)
     def test_storage_status_reports_custom_base(self) -> None:

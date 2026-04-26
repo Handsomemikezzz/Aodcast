@@ -17,7 +17,7 @@ import {
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useBridge } from "../lib/BridgeContext";
 import { pickDirectory, revealInFinder } from "../lib/shellOps";
-import type { ModelStatus, ModelStorageStatus, RequestState } from "../types";
+import type { ModelStatus, ModelStorageStatus, RequestState, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
 import {
   buildRequestState,
@@ -51,6 +51,14 @@ type ProblemRecord = {
   createdAt: string;
 };
 
+const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
+
+function resolvedTtsModel(config: TTSProviderConfig | null): string {
+  const raw = config?.model?.trim() ?? "";
+  if (!raw || raw === "mock-voice") return DEFAULT_QWEN3_TTS_MODEL;
+  return raw;
+}
+
 function ProgressBar({ value }: { value?: number }) {
   const width = formatProgress(value);
   return (
@@ -64,10 +72,12 @@ export function ModelsPage() {
   const bridge = useBridge();
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [storage, setStorage] = useState<ModelStorageStatus | null>(null);
+  const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyDownloadName, setBusyDownloadName] = useState<string | null>(null);
   const [busyDeleteName, setBusyDeleteName] = useState<string | null>(null);
+  const [busySelectName, setBusySelectName] = useState<string | null>(null);
   const [busyStorageAction, setBusyStorageAction] = useState<"migrate" | "reset" | null>(null);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
   const [modelToDelete, setModelToDelete] = useState<ModelStatus | null>(null);
@@ -94,12 +104,14 @@ export function ModelsPage() {
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      const [list, storageStatus] = await Promise.all([
+      const [list, storageStatus, tts] = await Promise.all([
         bridge.listModelsStatus(),
         bridge.showModelStorage(),
+        bridge.showTTSConfig(),
       ]);
       setModels(list);
       setStorage(storageStatus);
+      setTtsConfig(tts);
     } catch (e) {
       setError(getErrorMessage(e, "Failed to load models"));
     } finally {
@@ -195,6 +207,37 @@ export function ModelsPage() {
       setRequestState(withRequestStateFallback(getErrorRequestState(e), buildRequestState("delete_model", "failed", "Delete failed.")));
     } finally {
       setBusyDeleteName(null);
+    }
+  };
+
+  const handleUseAsDefault = async (m: ModelStatus) => {
+    if (!m.hf_repo_id) return;
+    setBusySelectName(m.model_name);
+    setError(null);
+    setRequestState(buildRequestState("configure_tts_provider", "running", `Setting ${m.display_name} as the default voice model...`));
+    try {
+      const current = ttsConfig ?? await bridge.showTTSConfig();
+      const next = await bridge.configureTTSProvider({
+        provider: "local_mlx",
+        model: m.hf_repo_id,
+        base_url: current.base_url ?? "",
+        api_key: current.api_key ?? "",
+        voice: current.voice ?? "",
+        audio_format: current.audio_format || "wav",
+        local_runtime: current.local_runtime || "mlx",
+        local_model_path: "",
+        local_ref_audio_path: current.local_ref_audio_path ?? "",
+      });
+      setTtsConfig(next);
+      setRequestState(buildRequestState("configure_tts_provider", "succeeded", `${m.display_name} is now the default voice model.`));
+      await refresh();
+    } catch (e) {
+      const message = getErrorMessage(e, "Failed to select default voice model");
+      setError(message);
+      addProblem("configure_tts_provider", message, m.model_name);
+      setRequestState(withRequestStateFallback(getErrorRequestState(e), buildRequestState("configure_tts_provider", "failed", message)));
+    } finally {
+      setBusySelectName(null);
     }
   };
 
@@ -351,12 +394,19 @@ export function ModelsPage() {
                 <div className="rounded-xl border border-outline overflow-hidden divide-y divide-outline-variant bg-surface-container-low/30">
                   {models.map((m) => {
                     const isDownloading = busyDownloadName === m.model_name || m.downloading;
-                    const isBusy = busyDownloadName !== null || busyDeleteName !== null || busyStorageAction !== null;
+                    const isBusy = busyDownloadName !== null || busyDeleteName !== null || busySelectName !== null || busyStorageAction !== null;
+                    const isCurrent =
+                      Boolean(
+                        ttsConfig?.provider === "local_mlx"
+                          && !ttsConfig.local_model_path
+                          && m.hf_repo_id
+                          && resolvedTtsModel(ttsConfig) === m.hf_repo_id,
+                      );
                     const rowState = busyDownloadName === m.model_name ? activeDownloadState : null;
                     return (
                       <div key={m.model_name} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-high/40 transition-colors group">
                         <div className="shrink-0">
-                          {isDownloading ? <Loader2 className="h-4 w-4 animate-spin text-secondary" /> : m.downloaded ? <CircleCheck className={cn("h-4 w-4", m.loaded ? "text-accent-amber" : "text-emerald-500/90")} /> : <Download className="h-4 w-4 text-secondary/50" />}
+                          {isDownloading ? <Loader2 className="h-4 w-4 animate-spin text-secondary" /> : m.downloaded ? <CircleCheck className={cn("h-4 w-4", isCurrent ? "text-accent-amber" : "text-emerald-500/90")} /> : <Download className="h-4 w-4 text-secondary/50" />}
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -371,10 +421,19 @@ export function ModelsPage() {
                         </div>
 
                         <div className="shrink-0 flex items-center gap-2">
-                          {m.loaded && <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-accent-amber/15 text-accent-amber border border-accent-amber/25">Loaded</span>}
+                          {isCurrent ? (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-accent-amber/15 text-accent-amber border border-accent-amber/25">Current</span>
+                          ) : m.downloaded && !isDownloading ? (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-md border border-outline text-secondary">Installed</span>
+                          ) : null}
                           {m.downloaded && !isDownloading && <span className="text-xs text-secondary tabular-nums">{formatSizeMb(m.size_mb)}</span>}
                           {isDownloading && busyDownloadName === m.model_name && requestState?.phase === "running" && <button type="button" onClick={() => void handleCancelDownload()} className="px-2 py-1 rounded border border-outline text-[11px] font-medium hover:bg-surface-container">Cancel</button>}
                           {!m.downloaded && !isDownloading && <button type="button" onClick={() => void handleDownload(m)} disabled={isBusy} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-container-high text-primary border border-outline hover:bg-surface-container-highest disabled:opacity-50"><Download className="h-3.5 w-3.5" />Download</button>}
+                          {m.downloaded && !isDownloading && !isCurrent && (
+                            <button type="button" onClick={() => void handleUseAsDefault(m)} disabled={isBusy || !m.hf_repo_id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-accent-amber text-black hover:bg-accent-amber/90 disabled:opacity-50">
+                              {busySelectName === m.model_name ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CircleCheck className="h-3.5 w-3.5" />}Use as default
+                            </button>
+                          )}
                           {m.downloaded && !isDownloading && <button type="button" title="Delete local files" onClick={() => setModelToDelete(m)} disabled={isBusy} className="p-1.5 rounded-md border border-outline text-secondary hover:text-primary hover:bg-surface-container-high disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /></button>}
                         </div>
 

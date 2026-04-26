@@ -45,8 +45,15 @@ The shell is implemented through:
 ### `Models`
 
 - voice model status listing
+- global default local voice-model selection for `local_mlx`
 - model storage folder display, open, change/migrate, and reset controls
 - inline download progress, cancellation, retry/error recovery, and delete controls for voice models
+
+### `Voice Studio`
+
+- simple-default audio production workspace with current engine/model status
+- script summary, voice recipe summary, preview, full-audio take generation, and final/candidate take comparison
+- advanced controls for voice/style/speed/language/output/provider override; local model switching remains in `Models`
 
 ### `Settings`
 

@@ -46,6 +46,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
 )
 
 _BY_NAME: dict[str, CatalogEntry] = {e.model_name: e for e in CATALOG}
+DOWNLOAD_STALL_TIMEOUT_SECONDS = 180.0
 
 
 def _storage_config_file(config_store: ConfigStore) -> Path:
@@ -104,6 +105,32 @@ def _default_download_base(cwd: Path, config_store: ConfigStore | None = None) -
         if custom is not None:
             return custom
     return _base_default_download_base(cwd)
+
+
+def _download_subprocess_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+    # hf_xet can stall indefinitely behind local proxy/VPN setups after the UI
+    # has already advanced to its heartbeat cap. The direct HTTP path is slower
+    # but more predictable for first-run desktop model downloads.
+    env["HF_HUB_DISABLE_XET"] = "1"
+    return env
+
+
+def _safe_tree_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    total = 0
+    try:
+        for item in path.rglob("*"):
+            if item.is_file():
+                try:
+                    total += item.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return total
+    return total
 
 
 def model_storage_status(config_store: ConfigStore, cwd: Path) -> dict[str, object]:
@@ -203,6 +230,7 @@ def download_voice_model(
     if not script.is_file():
         raise FileNotFoundError(f"Download script not found: {script}")
     base = _default_download_base(cwd, config_store)
+    out_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
     base.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable,
@@ -219,12 +247,17 @@ def download_voice_model(
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=_download_subprocess_env(),
     )
     tail_lines: deque[str] = deque(maxlen=40)
     stream = proc.stdout
     reader_done = threading.Event()
+    activity_lock = threading.Lock()
+    last_activity_at = time.monotonic()
+    last_observed_size = _safe_tree_size(out_dir)
 
     def read_output() -> None:
+        nonlocal last_activity_at
         if stream is None:
             reader_done.set()
             return
@@ -233,6 +266,8 @@ def download_voice_model(
                 line = raw_line.rstrip()
                 if not line:
                     continue
+                with activity_lock:
+                    last_activity_at = time.monotonic()
                 tail_lines.append(line)
                 if on_output_line is not None:
                     on_output_line(line)
@@ -243,9 +278,29 @@ def download_voice_model(
     reader_thread.start()
 
     cancelled = False
+    stalled = False
+    last_size_check_at = 0.0
     while proc.poll() is None:
         if should_cancel is not None and should_cancel():
             cancelled = True
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            break
+        now = time.monotonic()
+        if now - last_size_check_at >= 2.0:
+            current_size = _safe_tree_size(out_dir)
+            if current_size != last_observed_size:
+                last_observed_size = current_size
+                with activity_lock:
+                    last_activity_at = now
+            last_size_check_at = now
+        with activity_lock:
+            idle_seconds = now - last_activity_at
+        if DOWNLOAD_STALL_TIMEOUT_SECONDS > 0 and idle_seconds >= DOWNLOAD_STALL_TIMEOUT_SECONDS:
+            stalled = True
             proc.terminate()
             try:
                 proc.wait(timeout=2.0)
@@ -260,10 +315,14 @@ def download_voice_model(
     reader_thread.join(timeout=2.0)
     if cancelled:
         raise TaskCancellationRequested(f"Download cancelled for {model_name}.")
+    if stalled:
+        raise RuntimeError(
+            f"Download stalled for {model_name}: no output or file growth for "
+            f"{int(DOWNLOAD_STALL_TIMEOUT_SECONDS)} seconds. Please retry the download."
+        )
     if proc.returncode != 0:
         msg = "\n".join(tail_lines).strip() or "download failed"
         raise RuntimeError(msg)
-    out_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
     return {"message": "ok", "path": str(out_dir.resolve())}
 
 

@@ -575,8 +575,8 @@ class RuntimeContext:
             def worker() -> None:
                 heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
                     start_percent=5.0,
-                    max_percent=95.0,
-                    step_percent=1.5,
+                    max_percent=65.0,
+                    step_percent=0.8,
                     interval_seconds=1.2,
                     message=f"Downloading model {model_name}...",
                 )

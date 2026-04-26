@@ -51,6 +51,10 @@ The desktop **Models** page is the preferred way to manage local model files:
 - it can reset storage back to the default cache base
 - it shows inline download progress and recoverable error details
 
+For first-run reliability behind local proxy/VPN setups, Aodcast disables the
+Hugging Face Xet transfer path for app-managed model downloads and uses the
+direct HTTP downloader instead.
+
 The app stores the chosen custom model base in local config. Resetting storage clears that custom app setting; environment variables such as `AODCAST_HF_MODEL_BASE` or `HF_HUB_CACHE` still affect the computed default base.
 
 CLI equivalents:

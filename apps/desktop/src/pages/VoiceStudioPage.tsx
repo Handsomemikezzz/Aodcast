@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Pause, Play, RefreshCw, SlidersHorizontal, Wand2 } from "lucide-react";
+import { ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
@@ -9,15 +9,19 @@ import { revealInFinder } from "../lib/shellOps";
 import { cn } from "../lib/utils";
 import type {
   AudioTakeRecord,
+  ModelStatus,
   RequestState,
   ScriptRecord,
   SessionProject,
+  TTSCapability,
+  TTSProviderConfig,
   VoicePreset,
   VoiceRenderSettings,
   VoiceStylePreset,
 } from "../types";
 
 const POLL_INTERVAL_MS = 1000;
+const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
 
 function estimateMinutes(script: string): string {
   const words = script.trim().split(/\s+/).filter(Boolean).length;
@@ -27,6 +31,16 @@ function estimateMinutes(script: string): string {
 
 function takeStatus(take: AudioTakeRecord, finalTakeId: string): string {
   return take.take_id === finalTakeId ? "最终版本" : "候选版本";
+}
+
+function resolvedTtsModel(config: TTSProviderConfig | null): string {
+  const raw = config?.model?.trim() ?? "";
+  if (!raw || raw === "mock-voice") return DEFAULT_QWEN3_TTS_MODEL;
+  return raw;
+}
+
+function shortRepoName(repo: string): string {
+  return repo.split("/").pop()?.replace("Qwen3-TTS-12Hz-", "Qwen TTS ")?.replace("-Base-8bit", "") ?? repo;
 }
 
 export function VoiceStudioPage() {
@@ -41,6 +55,9 @@ export function VoiceStudioPage() {
   const [project, setProject] = useState<SessionProject | null>(null);
   const [voices, setVoices] = useState<VoicePreset[]>([]);
   const [styles, setStyles] = useState<VoiceStylePreset[]>([]);
+  const [models, setModels] = useState<ModelStatus[]>([]);
+  const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
+  const [ttsCapability, setTtsCapability] = useState<TTSCapability | null>(null);
   const [previewText, setPreviewText] = useState("");
   const [selectedSessionId, setSelectedSessionId] = useState(routeSessionId ?? "");
   const [selectedScriptId, setSelectedScriptId] = useState(routeScriptId ?? "");
@@ -64,6 +81,29 @@ export function VoiceStudioPage() {
   const finalTakeId = project?.artifact?.final_take_id ?? "";
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
   const selectedStyle = styles.find((style) => style.style_id === selectedStyleId) ?? styles[0];
+  const resolvedModel = resolvedTtsModel(ttsConfig);
+  const currentModel = models.find((model) => model.hf_repo_id === resolvedModel);
+  const localPathConfigured = Boolean(ttsConfig?.local_model_path?.trim());
+  const isLocalEngine = ttsConfig?.provider === "local_mlx";
+  const localCatalogModelInstalled = Boolean(currentModel?.downloaded);
+  const localPathReady = Boolean(localPathConfigured && ttsCapability?.model_path_exists && ttsCapability?.available);
+  const localEngineReady = Boolean(ttsConfig) && (!isLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
+  const engineLabel = isLocalEngine
+    ? `Local MLX · ${localPathConfigured ? "Custom local path" : currentModel?.display_name ?? shortRepoName(resolvedModel)}`
+    : ttsConfig?.provider
+      ? `${ttsConfig.provider} · ${ttsConfig.model || "default model"}`
+      : "Loading engine...";
+  const engineStatus = !ttsConfig
+    ? "Loading"
+    : !isLocalEngine
+      ? "Cloud / remote"
+      : localEngineReady
+        ? "Ready"
+        : localPathConfigured && !ttsCapability?.model_path_exists
+          ? "Model path missing"
+          : !localPathConfigured && !localCatalogModelInstalled
+            ? "Model not installed"
+            : "Runtime unavailable";
 
   const settings: VoiceRenderSettings = useMemo(
     () => ({
@@ -99,14 +139,21 @@ export function VoiceStudioPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const [catalog, loadedProjects] = await Promise.all([bridge.listVoicePresets(), bridge.listProjects()]);
+        const [catalog, loadedProjects, tts, modelStatus, capability] = await Promise.all([
+          bridge.listVoicePresets(),
+          bridge.listProjects(),
+          bridge.showTTSConfig(),
+          bridge.listModelsStatus(),
+          bridge.getLocalTTSCapability(),
+        ]);
         setVoices(catalog.voices);
         setStyles(catalog.styles);
         setPreviewText(catalog.standard_preview_text);
         setProjects(loadedProjects);
-        const ttsConfig = await bridge.showTTSConfig().catch(() => null);
-        if (ttsConfig?.audio_format) setAudioFormat(ttsConfig.audio_format);
-        if (ttsConfig?.provider) setProviderOverride(ttsConfig.provider);
+        setTtsConfig(tts);
+        setModels(modelStatus);
+        setTtsCapability(capability);
+        if (tts?.audio_format) setAudioFormat(tts.audio_format);
       } catch (err) {
         setError(getErrorMessage(err, "Failed to load Voice Studio."));
       }
@@ -186,6 +233,10 @@ export function VoiceStudioPage() {
       setError("请先选择 Session 和脚本，再生成完整音频。");
       return;
     }
+    if (!localEngineReady) {
+      setError("当前本地语音模型尚未准备好。请先在 Models Center 下载或选择可用模型。");
+      return;
+    }
     if (!scriptText) {
       setError("当前脚本没有可生成的内容，请先选择包含正文的脚本。");
       return;
@@ -261,6 +312,23 @@ export function VoiceStudioPage() {
           </div>
         </section>
 
+        <section className={cn("rounded-[24px] border p-4", localEngineReady ? "border-outline bg-surface-container-low/40" : "border-amber-500/30 bg-amber-500/10")}>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">Current engine</p>
+              <p className="mt-1 text-sm font-semibold text-primary">{engineLabel}</p>
+              <p className={cn("mt-1 text-xs", localEngineReady ? "text-secondary" : "text-amber-200")}>{engineStatus}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/models")}
+              className="rounded-2xl border border-outline bg-background px-4 py-2 text-sm font-medium text-primary hover:bg-surface-container"
+            >
+              Change model
+            </button>
+          </div>
+        </section>
+
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-5">
             <section className="rounded-[28px] border border-outline bg-surface p-5">
@@ -310,6 +378,19 @@ export function VoiceStudioPage() {
             </section>
 
             <section className="rounded-[28px] border border-outline bg-surface p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-primary">当前声音方案</h2>
+                  <p className="mt-2 text-lg font-semibold text-primary">{selectedVoice?.name ?? "未选择音色"} · {selectedStyle?.name ?? "默认风格"} · {speed.toFixed(1)}x</p>
+                  <p className="mt-1 text-xs text-secondary">{selectedVoice?.description ?? "展开高级设置选择音色、风格和语速。"}</p>
+                </div>
+                <button type="button" onClick={() => setAdvancedOpen(true)} className="rounded-2xl border border-outline bg-background px-4 py-2 text-sm font-medium text-primary hover:bg-surface-container">
+                  Customize
+                </button>
+              </div>
+            </section>
+
+            {advancedOpen ? <section className="rounded-[28px] border border-outline bg-surface p-5">
               <h2 className="text-sm font-semibold text-primary">主播音色</h2>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {voices.map((voice) => (
@@ -336,9 +417,9 @@ export function VoiceStudioPage() {
                   </button>
                 ))}
               </div>
-            </section>
+            </section> : null}
 
-            <section className="rounded-[28px] border border-outline bg-surface p-5">
+            {advancedOpen ? <section className="rounded-[28px] border border-outline bg-surface p-5">
               <h2 className="text-sm font-semibold text-primary">表达设置</h2>
               <div className="mt-4 rounded-[22px] border border-outline bg-background p-4">
                 <div className="flex items-center justify-between text-sm">
@@ -373,7 +454,7 @@ export function VoiceStudioPage() {
                   </button>
                 ))}
               </div>
-            </section>
+            </section> : null}
 
             <section className="rounded-[28px] border border-outline bg-surface p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -384,7 +465,7 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handlePreview()}
-                  disabled={previewing || !selectedVoice || !selectedStyle}
+                  disabled={previewing || !selectedVoice || !selectedStyle || !localEngineReady}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
@@ -396,9 +477,9 @@ export function VoiceStudioPage() {
                 onChange={(event) => setPreviewText(event.target.value)}
                 rows={3}
                 placeholder="输入一句你想用来比较音色与风格的试音文本"
-                className="mt-4 w-full resize-none rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/40"
+                className={cn("mt-4 w-full resize-none rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/40", !advancedOpen && "hidden")}
               />
-              <p className="mt-2 text-[11px] text-secondary">留空时使用系统标准试音句。</p>
+              <p className="mt-2 text-[11px] text-secondary">{advancedOpen ? "留空时使用系统标准试音句。" : "展开高级设置可自定义试音文本。"}</p>
               {previewRequestState && previewRequestState.phase !== "succeeded" ? (
                 <div className="mt-3 rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-secondary">
                   {Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}
@@ -412,15 +493,25 @@ export function VoiceStudioPage() {
             <section className="rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-5">
               <button type="button" onClick={() => setAdvancedOpen(!advancedOpen)} className="flex w-full items-center justify-between gap-3 text-left">
                 <span>
-                  <span className="flex items-center gap-2 text-sm font-semibold text-primary"><SlidersHorizontal className="h-4 w-4 text-accent-amber" /> 高级设置：模型、语言与输出格式</span>
-                  <span className="mt-1 block text-xs text-secondary">通常无需修改。默认设置会根据所选音色自动选择合适模型。</span>
+                  <span className="flex items-center gap-2 text-sm font-semibold text-primary"><SlidersHorizontal className="h-4 w-4 text-accent-amber" /> Advanced voice controls</span>
+                  <span className="mt-1 block text-xs text-secondary">展开后可调整音色、表达、语言、输出格式和本次渲染引擎。全局模型在 Models Center 管理。</span>
                 </span>
                 <ChevronDown className={cn("h-4 w-4 text-secondary transition-transform", advancedOpen && "rotate-180")} />
               </button>
               {advancedOpen ? (
                 <div className="mt-4 grid gap-3">
-                  <label className="text-xs text-secondary">引擎 / Provider override
-                    <input value={providerOverride} onChange={(event) => setProviderOverride(event.target.value)} className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary" />
+                  <div className="rounded-2xl border border-outline bg-background px-3 py-2">
+                    <p className="text-xs text-secondary">Global model</p>
+                    <p className="mt-1 text-sm font-medium text-primary">{engineLabel}</p>
+                    <button type="button" onClick={() => navigate("/models")} className="mt-2 text-xs font-medium text-accent-amber hover:underline">Change in Models Center</button>
+                  </div>
+                  <label className="text-xs text-secondary">本次渲染引擎
+                    <select value={providerOverride} onChange={(event) => setProviderOverride(event.target.value)} className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary">
+                      <option value="">Use global engine</option>
+                      <option value="local_mlx">Force Local MLX</option>
+                      <option value="openai_compatible">Force cloud TTS</option>
+                      <option value="mock_remote">Mock remote</option>
+                    </select>
                   </label>
                   <label className="text-xs text-secondary">语言
                     <input value={language} onChange={(event) => setLanguage(event.target.value)} className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary" />
@@ -452,7 +543,7 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handleRenderTake()}
-                  disabled={rendering}
+                  disabled={rendering || !localEngineReady}
                   className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
@@ -462,6 +553,11 @@ export function VoiceStudioPage() {
                   <button type="button" onClick={() => void handleCancel()} className="rounded-2xl border border-outline px-4 py-3 text-sm text-primary">取消</button>
                 ) : null}
               </div>
+              {!localEngineReady ? (
+                <button type="button" onClick={() => navigate("/models")} className="mt-3 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-100 hover:bg-amber-500/15">
+                  Open Models Center to prepare a voice model
+                </button>
+              ) : null}
               {error ? <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
               {message ? <p className="mt-4 rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
             </section>
@@ -485,6 +581,7 @@ export function VoiceStudioPage() {
                         <div>
                           <p className="text-sm font-semibold text-primary">{takeStatus(take, finalTakeId)}</p>
                           <p className="mt-1 text-xs text-secondary">{take.voice_name} / {take.style_name} / {take.speed.toFixed(1)}x</p>
+                          <p className="mt-1 text-[11px] text-secondary">{take.provider} · {take.model || "default model"} · {take.audio_format}</p>
                           <p className="mt-1 text-[11px] text-secondary">{new Date(take.created_at).toLocaleString()}</p>
                         </div>
                         <button type="button" onClick={() => void revealInFinder(take.audio_path)} className="rounded-xl border border-outline p-2 text-secondary hover:text-primary">

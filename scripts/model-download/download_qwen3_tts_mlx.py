@@ -20,6 +20,12 @@ import os
 import sys
 from pathlib import Path
 
+# Xet acceleration can stall behind local proxy/VPN setups while leaving the
+# parent UI at its optimistic progress cap. Use Hugging Face's direct HTTP path
+# by default; callers can still override this environment variable explicitly
+# when running the script outside the desktop app.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
 
 def _default_base_dir() -> Path:
     env_base = os.environ.get("AODCAST_HF_MODEL_BASE")
