@@ -15,10 +15,10 @@ from tests.http_contract_helpers import (
 
 
 class HttpBridgeParityTests(unittest.TestCase):
-    def test_contract_matrix_covers_all_34_bridge_methods(self) -> None:
-        self.assertEqual(len(HTTP_BRIDGE_CONTRACTS), 34)
-        self.assertEqual(len({contract.desktop_method for contract in HTTP_BRIDGE_CONTRACTS}), 34)
-        self.assertEqual(len({(contract.http_method, contract.http_path) for contract in HTTP_BRIDGE_CONTRACTS}), 34)
+    def test_contract_matrix_covers_all_37_bridge_methods(self) -> None:
+        self.assertEqual(len(HTTP_BRIDGE_CONTRACTS), 37)
+        self.assertEqual(len({contract.desktop_method for contract in HTTP_BRIDGE_CONTRACTS}), 37)
+        self.assertEqual(len({(contract.http_method, contract.http_path) for contract in HTTP_BRIDGE_CONTRACTS}), 37)
 
     def test_contract_matrix_matches_desktop_bridge_interface(self) -> None:
         contract_methods = {contract.desktop_method for contract in HTTP_BRIDGE_CONTRACTS}

@@ -31,6 +31,7 @@ from app.domain.provider_config import LLMProviderConfig
 from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
+from app.models_catalog import save_custom_model_storage_base
 from app.orchestration.audio_rendering import AudioRenderingService
 from app.orchestration.interview_service import InterviewOrchestrator
 from app.orchestration.script_generation import ScriptGenerationService
@@ -288,6 +289,50 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["data"]["tts_config"]["local_ref_audio_path"], "/tmp/ref.wav")
+
+    def test_model_storage_status_route(self) -> None:
+        status, _, payload = self.request_json("GET", "/api/v1/models/storage")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["request_state"]["operation"], "show_model_storage")
+        storage = payload["data"]["model_storage"]
+        self.assertIn("current_base", storage)
+        self.assertFalse(storage["is_custom"])
+
+    def test_model_storage_reset_route(self) -> None:
+        status, _, payload = self.request_json("POST", "/api/v1/models/storage:reset", body={})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["request_state"]["operation"], "reset_model_storage")
+        self.assertIn("model_storage", payload["data"])
+
+    def test_model_storage_migrate_route_persists_task_state(self) -> None:
+        save_custom_model_storage_base(self.config_store, self.cwd / "source-models")
+        destination = self.cwd / "migrated-models"
+
+        status, _, payload = self.request_json(
+            "POST",
+            "/api/v1/models/storage:migrate",
+            body={"destination": str(destination)},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["request_state"]["operation"], "migrate_model_storage")
+        task_id = str(payload["data"]["task_id"])
+        self.assertEqual(task_id, "migrate_model_storage")
+        task_state: dict[str, object] | None = None
+        for _ in range(50):
+            state_status, _, state_payload = self.request_json("GET", f"/api/v1/tasks/{task_id}")
+            self.assertEqual(state_status, 200)
+            task_state = state_payload["data"]["task_state"]  # type: ignore[assignment]
+            if isinstance(task_state, dict) and task_state.get("phase") == "succeeded":
+                break
+            time.sleep(0.05)
+        assert isinstance(task_state, dict)
+        self.assertEqual(task_state["phase"], "succeeded")
 
     def test_runtime_bootstrap_nonce_is_single_use(self) -> None:
         status, _, first = self.request_json(

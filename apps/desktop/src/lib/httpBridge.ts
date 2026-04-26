@@ -17,6 +17,7 @@ import type {
   GenerationResult,
   InterviewTurnResult,
   LLMProviderConfig,
+  ModelStorageStatus,
   ModelStatus,
   RequestState,
   RuntimeInfo,
@@ -65,6 +66,7 @@ type BridgeShape<T> = {
   tts_capability?: TTSCapability;
   tts_config?: TTSProviderConfig;
   models?: ModelStatus[];
+  model_storage?: ModelStorageStatus;
   request_state?: RequestState;
   task_state?: RequestState | null;
   task_id?: string;
@@ -665,6 +667,30 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     async listModelsStatus() {
       const response = await callHttp<{}>("/api/v1/models");
       return response.models ?? [];
+    },
+    async showModelStorage() {
+      const response = await callHttp<{}>("/api/v1/models/storage");
+      if (!response.model_storage) throw new Error("Model storage response was missing storage details.");
+      return response.model_storage;
+    },
+    async migrateModelStorage(destination: string) {
+      const response = await callHttp<{}>("/api/v1/models/storage:migrate", {
+        method: "POST",
+        body: JSON.stringify({ destination }),
+      });
+      return {
+        message: typeof response.message === "string" ? response.message : "Migrating model storage...",
+        task_id: typeof response.task_id === "string" ? response.task_id : undefined,
+        request_state: asRequestState(response.request_state) ?? undefined,
+      };
+    },
+    async resetModelStorage() {
+      const response = await callHttp<{}>("/api/v1/models/storage:reset", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (!response.model_storage) throw new Error("Model storage response was missing storage details.");
+      return response.model_storage;
     },
     async downloadModel(modelName: string) {
       const response = await callHttp<{}>(`/api/v1/models/${encodeURIComponent(modelName)}:download`, {

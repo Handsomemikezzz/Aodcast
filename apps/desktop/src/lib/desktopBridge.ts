@@ -3,6 +3,7 @@ import {
   GenerationResult,
   InterviewTurnResult,
   LLMProviderConfig,
+  ModelStorageStatus,
   ModelStatus,
   RequestState,
   ScriptRecord,
@@ -126,6 +127,9 @@ export interface DesktopBridge {
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
   listModelsStatus(): Promise<ModelStatus[]>;
+  showModelStorage(): Promise<ModelStorageStatus>;
+  migrateModelStorage(destination: string): Promise<{ message: string; task_id?: string; request_state?: RequestState }>;
+  resetModelStorage(): Promise<ModelStorageStatus>;
   /** Start a long-running voice model download and return its task metadata. */
   downloadModel(modelName: string): Promise<{ message: string; path?: string; task_id?: string; request_state?: RequestState }>;
   deleteModel(modelName: string): Promise<{ message: string; path?: string }>;

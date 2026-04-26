@@ -41,6 +41,26 @@ uv run --with huggingface_hub --with tqdm \
 
 If a repository requires authentication, pass `--token` or set `HF_TOKEN` locally. Do not commit tokens.
 
+### Manage model storage in the desktop app
+
+The desktop **Models** page is the preferred way to manage local model files:
+
+- it shows the active model storage folder
+- it can open that folder in Finder from the Tauri shell
+- it can change the storage folder and migrate existing Aodcast model directories
+- it can reset storage back to the default cache base
+- it shows inline download progress and recoverable error details
+
+The app stores the chosen custom model base in local config. Resetting storage clears that custom app setting; environment variables such as `AODCAST_HF_MODEL_BASE` or `HF_HUB_CACHE` still affect the computed default base.
+
+CLI equivalents:
+
+```bash
+./scripts/dev/run-python-core.sh --show-model-storage
+./scripts/dev/run-python-core.sh --migrate-model-storage /path/to/aodcast-models
+./scripts/dev/run-python-core.sh --reset-model-storage
+```
+
 ## Check capability
 
 ```bash

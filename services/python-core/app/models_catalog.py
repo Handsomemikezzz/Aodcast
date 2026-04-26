@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import json
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -47,7 +48,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
 _BY_NAME: dict[str, CatalogEntry] = {e.model_name: e for e in CATALOG}
 
 
-def _default_download_base(cwd: Path) -> Path:
+def _storage_config_file(config_store: ConfigStore) -> Path:
+    return config_store.config_dir / "model-storage.json"
+
+
+def _base_default_download_base(cwd: Path) -> Path:
     env = os.environ.get("AODCAST_HF_MODEL_BASE")
     if env:
         return Path(env)
@@ -62,9 +67,61 @@ def _default_download_base(cwd: Path) -> Path:
         return cwd / "models"
 
 
-def expected_voice_model_dir(cwd: Path, hf_repo_id: str) -> Path:
+def _load_custom_model_storage_base(config_store: ConfigStore) -> Path | None:
+    path = _storage_config_file(config_store)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    custom = str(payload.get("custom_base") or "").strip()
+    if not custom:
+        return None
+    return Path(custom)
+
+
+def save_custom_model_storage_base(config_store: ConfigStore, base: Path) -> Path:
+    resolved = base.expanduser().resolve()
+    path = _storage_config_file(config_store)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"custom_base": str(resolved)}, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _clear_custom_model_storage_base(config_store: ConfigStore) -> None:
+    path = _storage_config_file(config_store)
+    if path.exists():
+        path.unlink()
+
+
+def _default_download_base(cwd: Path, config_store: ConfigStore | None = None) -> Path:
+    if config_store is not None:
+        custom = _load_custom_model_storage_base(config_store)
+        if custom is not None:
+            return custom
+    return _base_default_download_base(cwd)
+
+
+def model_storage_status(config_store: ConfigStore, cwd: Path) -> dict[str, object]:
+    default_base = _base_default_download_base(cwd).expanduser().resolve()
+    custom_base = _load_custom_model_storage_base(config_store)
+    current_base = (custom_base or default_base).expanduser().resolve()
+    return {
+        "current_base": str(current_base),
+        "default_base": str(default_base),
+        "custom_base": str(custom_base.expanduser().resolve()) if custom_base is not None else "",
+        "is_custom": custom_base is not None,
+        "exists": current_base.exists(),
+    }
+
+
+def expected_voice_model_dir(cwd: Path, hf_repo_id: str, config_store: ConfigStore | None = None) -> Path:
     tail = hf_repo_id.rstrip("/").split("/")[-1]
-    return _default_download_base(cwd) / tail
+    return _default_download_base(cwd, config_store) / tail
 
 
 def _path_matches_qwen_variant(model_name: str, path_str: str) -> bool:
@@ -105,7 +162,7 @@ def build_models_status(config_store: ConfigStore, cwd: Path) -> list[dict[str, 
         downloaded = False
         loaded = False
         if entry.category == "voice" and entry.hf_repo_id:
-            expected_dir = expected_voice_model_dir(cwd, entry.hf_repo_id)
+            expected_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
             on_disk = expected_dir.is_dir() and any(expected_dir.glob("*.safetensors"))
             repo = entry.hf_repo_id.rstrip("/")
             hf_resolved = resolved == repo
@@ -135,6 +192,7 @@ def download_voice_model(
     cwd: Path,
     model_name: str,
     *,
+    config_store: ConfigStore | None = None,
     on_output_line: Callable[[str], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, object]:
@@ -144,7 +202,7 @@ def download_voice_model(
     script = cwd / "scripts" / "model-download" / "download_qwen3_tts_mlx.py"
     if not script.is_file():
         raise FileNotFoundError(f"Download script not found: {script}")
-    base = _default_download_base(cwd)
+    base = _default_download_base(cwd, config_store)
     base.mkdir(parents=True, exist_ok=True)
     cmd = [
         sys.executable,
@@ -205,16 +263,16 @@ def download_voice_model(
     if proc.returncode != 0:
         msg = "\n".join(tail_lines).strip() or "download failed"
         raise RuntimeError(msg)
-    out_dir = expected_voice_model_dir(cwd, entry.hf_repo_id)
+    out_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
     return {"message": "ok", "path": str(out_dir.resolve())}
 
 
-def delete_voice_model(cwd: Path, model_name: str) -> dict[str, object]:
+def delete_voice_model(cwd: Path, model_name: str, config_store: ConfigStore | None = None) -> dict[str, object]:
     entry = _BY_NAME.get(model_name)
     if entry is None or entry.category != "voice" or not entry.hf_repo_id:
         raise ValueError(f"Unknown or non-removable model: {model_name}")
-    target = expected_voice_model_dir(cwd, entry.hf_repo_id).resolve()
-    base = _default_download_base(cwd).resolve()
+    target = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store).resolve()
+    base = _default_download_base(cwd, config_store).resolve()
     try:
         target.relative_to(base)
     except ValueError as exc:
@@ -223,3 +281,109 @@ def delete_voice_model(cwd: Path, model_name: str) -> dict[str, object]:
         raise FileNotFoundError(f"Model directory not found: {target}")
     shutil.rmtree(target)
     return {"message": "deleted", "path": str(target)}
+
+
+def _directory_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    total = 0
+    for item in path.rglob("*"):
+        if item.is_file():
+            total += item.stat().st_size
+    return total
+
+
+def _copytree_with_progress(
+    source: Path,
+    destination: Path,
+    *,
+    total_bytes: int,
+    copied_so_far: int,
+    on_progress: Callable[[int, int, str], None] | None,
+    should_cancel: Callable[[], bool] | None,
+) -> int:
+    destination.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        if should_cancel is not None and should_cancel():
+            raise TaskCancellationRequested("Model storage migration cancelled.")
+        target = destination / item.name
+        if item.is_dir():
+            copied_so_far = _copytree_with_progress(
+                item,
+                target,
+                total_bytes=total_bytes,
+                copied_so_far=copied_so_far,
+                on_progress=on_progress,
+                should_cancel=should_cancel,
+            )
+            continue
+        size = item.stat().st_size
+        shutil.copy2(item, target)
+        copied_so_far += size
+        if on_progress is not None:
+            on_progress(copied_so_far, total_bytes, item.name)
+    return copied_so_far
+
+
+def migrate_model_storage(
+    config_store: ConfigStore,
+    cwd: Path,
+    destination: Path,
+    *,
+    on_progress: Callable[[int, int, str], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, object]:
+    source_base = _default_download_base(cwd, config_store).expanduser().resolve()
+    dest_base = destination.expanduser().resolve()
+    if source_base == dest_base:
+        raise ValueError("Destination is already the current model storage directory.")
+    try:
+        dest_base.relative_to(source_base)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("Destination cannot be inside the current model storage directory.")
+
+    dest_base.mkdir(parents=True, exist_ok=True)
+    model_dirs: list[tuple[Path, Path]] = []
+    for entry in CATALOG:
+        if entry.category != "voice" or not entry.hf_repo_id:
+            continue
+        source = source_base / entry.hf_repo_id.rstrip("/").split("/")[-1]
+        if source.is_dir():
+            model_dirs.append((source, dest_base / source.name))
+
+    total_bytes = sum(_directory_size(source) for source, _ in model_dirs)
+    copied = 0
+    moved = 0
+    for source, target in model_dirs:
+        if should_cancel is not None and should_cancel():
+            raise TaskCancellationRequested("Model storage migration cancelled.")
+        if target.exists():
+            shutil.rmtree(target)
+        copied = _copytree_with_progress(
+            source,
+            target,
+            total_bytes=max(total_bytes, 1),
+            copied_so_far=copied,
+            on_progress=on_progress,
+            should_cancel=should_cancel,
+        )
+        shutil.rmtree(source)
+        moved += 1
+        if on_progress is not None:
+            on_progress(copied, max(total_bytes, 1), source.name)
+
+    save_custom_model_storage_base(config_store, dest_base)
+    return {
+        "message": "migrated",
+        "source": str(source_base),
+        "destination": str(dest_base),
+        "moved": moved,
+        "total_bytes": total_bytes,
+    }
+
+
+def reset_model_storage(config_store: ConfigStore, cwd: Path) -> dict[str, object]:
+    _clear_custom_model_storage_base(config_store)
+    return model_storage_status(config_store, cwd)

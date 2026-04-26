@@ -45,7 +45,8 @@ The shell is implemented through:
 ### `Models`
 
 - voice model status listing
-- download and delete controls for voice models
+- model storage folder display, open, change/migrate, and reset controls
+- inline download progress, cancellation, retry/error recovery, and delete controls for voice models
 
 ### `Settings`
 

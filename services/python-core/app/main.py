@@ -25,7 +25,14 @@ from app.domain.transcript import TranscriptRecord
 from app.orchestration.audio_rendering import AudioRenderingService
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import ScriptGenerationService
-from app.models_catalog import build_models_status, delete_voice_model, download_voice_model
+from app.models_catalog import (
+    build_models_status,
+    delete_voice_model,
+    download_voice_model,
+    migrate_model_storage,
+    model_storage_status,
+    reset_model_storage,
+)
 from app.providers.llm.factory import validate_llm_provider
 from app.providers.tts_api.factory import validate_tts_provider
 from app.runtime.long_task_state import LongTaskStateManager
@@ -154,6 +161,12 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "show_local_tts_capability"
     if args.list_models_status:
         return "list_models_status"
+    if args.show_model_storage:
+        return "show_model_storage"
+    if args.migrate_model_storage.strip():
+        return "migrate_model_storage"
+    if args.reset_model_storage:
+        return "reset_model_storage"
     if args.download_model.strip():
         return "download_model"
     if args.delete_model.strip():
@@ -391,6 +404,70 @@ def run(argv: list[str] | None = None) -> int:
             models = build_models_status(config_store, Path(args.cwd))
             return output_payload(args, {"models": models})
 
+        if args.show_model_storage:
+            return output_payload(
+                args,
+                {"model_storage": model_storage_status(config_store, Path(args.cwd))},
+            )
+
+        if args.reset_model_storage:
+            return output_payload(
+                args,
+                {"model_storage": reset_model_storage(config_store, Path(args.cwd))},
+            )
+
+        if args.migrate_model_storage.strip():
+            destination = args.migrate_model_storage.strip()
+            task_id = "migrate_model_storage"
+            progress = LongTaskStateManager(
+                request_state_store=request_state_store,
+                task_id=task_id,
+                operation="migrate_model_storage",
+                build_request_state=build_request_state,
+                should_cancel=lambda: request_state_store.is_cancel_requested(task_id),
+            )
+            request_state_store.clear_cancel_request(task_id)
+            progress.start(progress_percent=5.0, message="Preparing model storage migration...")
+
+            def on_migration_progress(current: int, total: int, filename: str) -> None:
+                percent = 5.0 if total <= 0 else 5.0 + min(90.0, (current / total) * 90.0)
+                progress.update_running(
+                    percent,
+                    f"Migrating model storage... {filename}",
+                    max_percent=95.0,
+                )
+
+            try:
+                result = migrate_model_storage(
+                    config_store,
+                    Path(args.cwd),
+                    Path(destination),
+                    on_progress=on_migration_progress,
+                    should_cancel=progress.should_cancel,
+                )
+            except TaskCancellationRequested as exc:
+                cancel_progress = progress.current_progress(default=5.0)
+                progress.save_cancelled(progress_percent=cancel_progress, message=str(exc))
+                request_state_store.clear_cancel_request(task_id)
+                raise BridgeTaskCancelledError(
+                    str(exc),
+                    operation="migrate_model_storage",
+                    progress_percent=cancel_progress,
+                ) from exc
+            except Exception as exc:
+                progress.save_failed(message=str(exc) or "Model storage migration failed.")
+                request_state_store.clear_cancel_request(task_id)
+                raise
+            progress.save_finalizing(
+                progress_percent=98.0,
+                message="Finalizing model storage migration...",
+            )
+            progress.save_succeeded(message=f"Model storage migrated to {Path(destination).expanduser().resolve()}.")
+            request_state_store.clear_cancel_request(task_id)
+            payload = dict(result)
+            payload["task_id"] = task_id
+            return output_payload(args, payload)
+
         if args.download_model.strip():
             model_name = args.download_model.strip()
             task_id = f"download_model:{model_name}"
@@ -452,6 +529,7 @@ def run(argv: list[str] | None = None) -> int:
                 result = download_voice_model(
                     Path(args.cwd),
                     model_name,
+                    config_store=config_store,
                     on_output_line=on_download_output_line,
                     should_cancel=progress.should_cancel,
                 )
@@ -490,7 +568,7 @@ def run(argv: list[str] | None = None) -> int:
             return output_payload(args, payload)
 
         if args.delete_model.strip():
-            result = delete_voice_model(Path(args.cwd), args.delete_model.strip())
+            result = delete_voice_model(Path(args.cwd), args.delete_model.strip(), config_store)
             return output_payload(args, result)
 
         if args.show_task_state.strip():

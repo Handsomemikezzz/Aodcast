@@ -11,3 +11,12 @@ export async function revealInFinder(path: string): Promise<void> {
   }
   await invoke("reveal_in_finder", { path });
 }
+
+export async function pickDirectory(title?: string): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    throw new Error("Directory picking is only available inside the desktop shell.");
+  }
+  const result = await invoke<{ path?: string | null }>("pick_directory", { title });
+  const path = typeof result?.path === "string" ? result.path.trim() : "";
+  return path || null;
+}

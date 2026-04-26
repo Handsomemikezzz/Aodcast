@@ -146,6 +146,7 @@ Feature and maintenance role definitions live in [docs/operations/subagents.md](
 - 2026-04-26: Artifact audio playback URLs intentionally use the localhost HTTP route (`/api/v1/artifacts/audio`) in both Web and Tauri shells. Do not reintroduce `convertFileSrc` for generated audio unless Tauri asset protocol scope/capabilities are explicitly configured and parity-tested.
 - 2026-04-26: Voice Studio preview rendering is a pollable long task (`render_voice_preview`), not a synchronous POST. Keep preview UI progress wired to task state; local MLX cold starts can otherwise look stuck.
 - 2026-04-25: Voice Studio MVP routes are HTTP-bridge first (`listVoicePresets`, `renderVoicePreview`, `renderVoiceTake`, `setFinalVoiceTake`). Preserve bridge parity when changing them, and keep Voice Studio take retention to final take + latest candidate unless product requirements explicitly move to full version management.
+- 2026-04-26: Models page now owns local model storage management (`showModelStorage`, `migrateModelStorage`, `resetModelStorage`) while Finder opening and directory picking remain Tauri-only shell helpers in `shellOps.ts`/Rust commands. Keep migration on the existing `request_state` polling contract; do not introduce SSE model-download progress without an explicit architecture decision.
 
 ## Open-source Release Docs
 

@@ -247,6 +247,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="List local voice models (Voicebox-aligned ids) with install status.",
     )
     parser.add_argument(
+        "--show-model-storage",
+        action="store_true",
+        help="Show local model storage directory status.",
+    )
+    parser.add_argument(
+        "--migrate-model-storage",
+        default="",
+        help="Migrate downloaded local model directories to a new parent directory.",
+    )
+    parser.add_argument(
+        "--reset-model-storage",
+        action="store_true",
+        help="Reset local model storage to the default base directory.",
+    )
+    parser.add_argument(
         "--download-model",
         default="",
         help="Download a catalog voice model (e.g. qwen-tts-0.6B). Uses scripts/model-download/.",
@@ -277,5 +292,4 @@ def build_parser() -> argparse.ArgumentParser:
         help="Clear the configured local model path for MLX TTS.",
     )
     return parser
-
 

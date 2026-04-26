@@ -53,10 +53,13 @@ The runtime bridge is expected to cover:
 - TTS config load and save for the `Settings` page
 - local TTS capability inspection
 - model catalog listing
+- model storage status, migration, and reset
 - voice-model download and deletion
-- task-state polling through `show_task_state` for long-running operations (`download_model:*`, `render_audio:*`)
+- task-state polling through `show_task_state` for long-running operations (`download_model:*`, `migrate_model_storage`, `render_audio:*`)
 - task-state polling now includes incremental `progress_percent` updates (download marker parsing + render heartbeat updates)
 - task cancellation through `cancel_task` for long-running operations, with cooperative `cancelling` and `cancelled` task-state phases
+
+Folder reveal and directory picking remain Tauri-only shell helpers. They are intentionally not part of the `DesktopBridge` HTTP parity surface because browser-mode clients cannot open Finder or present native desktop pickers.
 
 The bridge contract must also preserve:
 

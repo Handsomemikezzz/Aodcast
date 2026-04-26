@@ -251,3 +251,11 @@ export type ModelStatus = {
   size_mb?: number;
   loaded: boolean;
 };
+
+export type ModelStorageStatus = {
+  current_base: string;
+  default_base: string;
+  custom_base: string;
+  is_custom: boolean;
+  exists: boolean;
+};
