@@ -19,9 +19,13 @@ __pycache__/
 
 # Tauri / Rust (build artifacts)
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/target/debug
 
 # Local scratch (experiments, tokens; not for version control)
 /temp/
-apps/desktop/src-tauri/target/debug
 .omx/
 docs-local/
+voicebox
+
+# Local model weights and downloads
+/models/
