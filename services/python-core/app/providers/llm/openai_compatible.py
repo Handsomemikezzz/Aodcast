@@ -80,8 +80,16 @@ class OpenAICompatibleProvider:
             f"Priority dimension to explore next: {request.suggested_focus}\n"
             f"Still missing (for a complete solo episode): {missing}\n\n"
             f"Transcript so far:\n{transcript_block}\n\n"
-            "Reply with exactly one concise follow-up question (one or two sentences). "
-            "No bullets, no greeting, no role-play labels — only the question."
+            "Respond as a reflective interview partner in the same language as the user. "
+            "Your reply must have three parts in this order:\n"
+            "1) Brief understanding summary (2-4 sentences) of the user's latest point.\n"
+            "2) Your analysis/viewpoint (2-4 sentences) that highlights tensions, assumptions, "
+            "or hidden motivations grounded in the transcript.\n"
+            "3) End with 2-3 gentle, companion-style follow-up questions that help the user "
+            "uncover their deeper true view.\n"
+            "Questions should feel warm and invitational, not interrogative: avoid rapid-fire "
+            "cross-examination tone, and allow reflective space in wording.\n"
+            "Keep the response focused, concrete, and non-generic. Do not write a podcast script."
         )
         client = OpenAI(
             base_url=self.config.base_url,
@@ -93,9 +101,12 @@ class OpenAICompatibleProvider:
                 {
                     "role": "system",
                     "content": (
-                        "You are a skilled podcast interviewer preparing a solo episode. "
-                        "Ask one sharp, specific follow-up that helps the guest deepen the story "
-                        "or clarify their viewpoint. Stay on topic; do not write a script."
+                        "You are The Archivist, a perceptive conversation partner for deep "
+                        "self-exploration. In each turn, first demonstrate understanding, then "
+                        "offer your own thoughtful analysis, and finally ask 2-3 progressive "
+                        "questions that invite deeper introspection. Use a warm, companion-like "
+                        "tone with emotional safety; avoid sounding like an interrogation. Keep "
+                        "everything tightly grounded in the user's context and avoid generic advice."
                     ),
                 },
                 {"role": "user", "content": user_content},
