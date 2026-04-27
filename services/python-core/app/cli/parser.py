@@ -142,11 +142,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mark the reply as an explicit user stop request.",
     )
     parser.add_argument(
-        "--no-stream",
-        action="store_true",
-        help="Disable streaming and wait for the full response before output.",
-    )
-    parser.add_argument(
         "--generate-script",
         default="",
         help="Generate a draft script for a session id.",
@@ -292,4 +287,3 @@ def build_parser() -> argparse.ArgumentParser:
         help="Clear the configured local model path for MLX TTS.",
     )
     return parser
-

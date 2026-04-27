@@ -53,13 +53,14 @@ That means HTTP does not need a new push model for long tasks; it needs parity w
 
 ### 4. Streaming reply is the main adapter-sensitive path
 
-`submitReplyStream` currently uses a Tauri `Channel` callback. The HTTP upgrade must replace that transport detail without changing the higher-level `onChunk(delta)` contract consumed by `ChatPage`.
+`submitReplyStream` is the only Chat reply transport exposed through the desktop bridge. It uses HTTP/SSE while preserving the higher-level `onChunk(delta)` contract consumed by `ChatPage`.
 
 The practical implication is:
 
 - use SSE on the Python side
 - add a shared stream parser on the client side
 - keep the final event shape compatible with the existing structured `InterviewTurnResult`
+- do not reintroduce a parallel Chat reply endpoint
 
 ### 5. Browser parity is mostly a runtime/bootstrap problem
 

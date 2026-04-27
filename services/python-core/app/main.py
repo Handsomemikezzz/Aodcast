@@ -632,37 +632,27 @@ def run(argv: list[str] | None = None) -> int:
                 raise ValueError("--message is required when using --reply-session")
             project = store.load_project(args.reply_session)
             ensure_session_is_active(project)
-            
-            if args.no_stream:
-                result = orchestrator.submit_user_response(
-                    args.reply_session,
-                    args.message,
-                    user_requested_finish=args.user_requested_finish,
-                )
-                return output_payload(args, serialize_turn_result(result))
-            else:
-                final_result = None
-                for chunk in orchestrator.submit_user_response_stream(
-                    args.reply_session,
-                    args.message,
-                    user_requested_finish=args.user_requested_finish,
-                ):
-                    if isinstance(chunk, InterviewTurnResult):
-                        final_result = chunk
-                    else:
-                        # Emit a chunk JSON envelope
-                        chunk_payload = {
-                            "ok": True,
-                            "type": "chunk",
-                            "delta": chunk,
-                        }
-                        print(json.dumps(chunk_payload))
-                        sys.stdout.flush()
 
-                if final_result:
-                    return output_payload(args, serialize_turn_result(final_result))
+            final_result = None
+            for chunk in orchestrator.submit_user_response_stream(
+                args.reply_session,
+                args.message,
+                user_requested_finish=args.user_requested_finish,
+            ):
+                if isinstance(chunk, InterviewTurnResult):
+                    final_result = chunk
                 else:
-                    raise RuntimeError("Streaming finished without a final result record.")
+                    chunk_payload = {
+                        "ok": True,
+                        "type": "chunk",
+                        "delta": chunk,
+                    }
+                    print(json.dumps(chunk_payload))
+                    sys.stdout.flush()
+
+            if final_result:
+                return output_payload(args, serialize_turn_result(final_result))
+            raise RuntimeError("Streaming finished without a final result record.")
 
         if args.finish_session:
             project = store.load_project(args.finish_session)

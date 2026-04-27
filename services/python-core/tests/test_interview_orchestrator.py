@@ -10,6 +10,7 @@ from app.domain.provider_config import LLMProviderConfig
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker
 from app.orchestration.interview_service import InterviewOrchestrator
+from app.orchestration.interview_service import InterviewTurnResult
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 
@@ -29,6 +30,31 @@ class InterviewOrchestratorTests(unittest.TestCase):
         temp_dir = getattr(self, "temp_dir", None)
         if temp_dir is not None:
             temp_dir.cleanup()
+
+    def submit_streaming_reply(
+        self,
+        orchestrator: InterviewOrchestrator,
+        session_id: str,
+        content: str,
+        *,
+        user_requested_finish: bool = False,
+    ) -> InterviewTurnResult:
+        final_result: InterviewTurnResult | None = None
+        chunks: list[str] = []
+        for chunk in orchestrator.submit_user_response_stream(
+            session_id,
+            content,
+            user_requested_finish=user_requested_finish,
+        ):
+            if isinstance(chunk, InterviewTurnResult):
+                final_result = chunk
+            else:
+                chunks.append(chunk)
+        self.assertIsNotNone(final_result)
+        if not user_requested_finish:
+            self.assertTrue(chunks)
+        assert final_result is not None
+        return final_result
 
     def test_start_interview_appends_first_agent_question(self) -> None:
         store, orchestrator = self.build_orchestrator()
@@ -51,7 +77,8 @@ class InterviewOrchestratorTests(unittest.TestCase):
         store.save_project(SessionProject(session=session))
         orchestrator.start_interview(session.session_id)
 
-        result = orchestrator.submit_user_response(
+        result = self.submit_streaming_reply(
+            orchestrator,
             session.session_id,
             "I want to talk about AI tooling because it keeps changing.",
         )
@@ -70,7 +97,8 @@ class InterviewOrchestratorTests(unittest.TestCase):
         store.save_project(SessionProject(session=session))
         orchestrator.start_interview(session.session_id)
 
-        result = orchestrator.submit_user_response(
+        result = self.submit_streaming_reply(
+            orchestrator,
             session.session_id,
             (
                 "I think local-first AI tools matter because teams need reliable workflows. "
@@ -90,7 +118,8 @@ class InterviewOrchestratorTests(unittest.TestCase):
         store.save_project(SessionProject(session=session))
         orchestrator.start_interview(session.session_id)
 
-        result = orchestrator.submit_user_response(
+        result = self.submit_streaming_reply(
+            orchestrator,
             session.session_id,
             "I think this matters.",
             user_requested_finish=True,

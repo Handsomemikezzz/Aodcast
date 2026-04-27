@@ -80,8 +80,6 @@ export interface DesktopBridge {
   restoreSession(sessionId: string): Promise<SessionProject>;
   /** Start the guided interview for a session and return the next prompt plus readiness metadata. */
   startInterview(sessionId: string): Promise<InterviewTurnResult>;
-  /** Submit one user reply and wait for the assistant's next turn. */
-  submitReply(sessionId: string, message: string, userRequestedFinish?: boolean): Promise<InterviewTurnResult>;
   /** Stream the assistant reply token-by-token while preserving the final bridge envelope. */
   submitReplyStream(
     sessionId: string,

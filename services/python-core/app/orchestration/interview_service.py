@@ -36,32 +36,6 @@ class InterviewOrchestrator:
         self.store = store
         self.config_store = config_store
 
-    def _next_question(
-        self,
-        project: SessionProject,
-        prompt_input: InterviewPromptInput,
-        transcript: TranscriptRecord,
-    ) -> str:
-        llm_config = self.config_store.load_llm_config()
-        provider = build_llm_provider(llm_config)
-        request = InterviewQuestionRequest(
-            session_id=prompt_input.session_id,
-            topic=prompt_input.topic,
-            creation_intent=prompt_input.creation_intent,
-            transcript_text=_transcript_text(transcript),
-            suggested_focus=prompt_input.suggested_focus,
-            missing_dimensions=list(prompt_input.missing_dimensions),
-        )
-        try:
-            response = provider.generate_interview_question(request)
-            question = response.question.strip()
-            if question:
-                return question
-        except Exception:
-            if llm_config.provider != "mock":
-                raise
-        return build_question(prompt_input)
-
     def _stream_next_question(
         self,
         project: SessionProject,
@@ -83,8 +57,16 @@ class InterviewOrchestrator:
         except Exception:
             if llm_config.provider != "mock":
                 raise
-            # Fallback to mock behavior if streaming fails and we are in mock mode
-            yield self._next_question(project, prompt_input, transcript)
+            yield build_question(prompt_input)
+
+    def _collect_streamed_next_question(
+        self,
+        project: SessionProject,
+        prompt_input: InterviewPromptInput,
+        transcript: TranscriptRecord,
+    ) -> str:
+        question = "".join(self._stream_next_question(project, prompt_input, transcript)).strip()
+        return question or build_question(prompt_input)
 
     def start_interview(self, session_id: str) -> InterviewTurnResult:
         project = self.store.load_project(session_id)
@@ -95,7 +77,7 @@ class InterviewOrchestrator:
             project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
             readiness = evaluate_readiness(transcript)
             prompt_input = build_prompt_input(project.session, transcript, readiness)
-            next_question = self._next_question(project, prompt_input, transcript)
+            next_question = self._collect_streamed_next_question(project, prompt_input, transcript)
             transcript.append(Speaker.AGENT, next_question)
             self.store.save_project(project)
             return InterviewTurnResult(
@@ -113,50 +95,6 @@ class InterviewOrchestrator:
             readiness=readiness,
             prompt_input=prompt_input,
             next_question=None,
-            ai_can_finish=readiness.is_ready,
-        )
-
-    def submit_user_response(
-        self,
-        session_id: str,
-        content: str,
-        *,
-        user_requested_finish: bool = False,
-    ) -> InterviewTurnResult:
-        project = self.store.load_project(session_id)
-        transcript = project.transcript or TranscriptRecord(session_id=session_id)
-        project.transcript = transcript
-
-        project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
-        transcript.append(Speaker.USER, content)
-        # Persist the user turn before any provider work so reopening the session
-        # still shows the message if generation hangs, fails, or the client disconnects.
-        self.store.save_project(project)
-
-        project.session.transition(SessionState.READINESS_EVALUATION)
-        readiness = evaluate_readiness(transcript)
-        prompt_input = build_prompt_input(project.session, transcript, readiness)
-
-        if user_requested_finish:
-            project.session.transition(SessionState.READY_TO_GENERATE)
-            self.store.save_project(project)
-            return InterviewTurnResult(
-                project=project,
-                readiness=readiness,
-                prompt_input=prompt_input,
-                next_question=None,
-                ai_can_finish=True,
-            )
-
-        project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
-        next_question = self._next_question(project, prompt_input, transcript)
-        transcript.append(Speaker.AGENT, next_question)
-        self.store.save_project(project)
-        return InterviewTurnResult(
-            project=project,
-            readiness=readiness,
-            prompt_input=prompt_input,
-            next_question=next_question,
             ai_can_finish=readiness.is_ready,
         )
 
@@ -194,16 +132,19 @@ class InterviewOrchestrator:
             return
 
         project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
-        
+
         full_question = []
         for chunk in self._stream_next_question(project, prompt_input, transcript):
             full_question.append(chunk)
             yield chunk
 
         next_question = "".join(full_question).strip()
+        if not next_question:
+            next_question = build_question(prompt_input)
+            yield next_question
         transcript.append(Speaker.AGENT, next_question)
         self.store.save_project(project)
-        
+
         yield InterviewTurnResult(
             project=project,
             readiness=readiness,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app.providers.llm.base import (
     InterviewQuestionRequest,
-    InterviewQuestionResponse,
     ScriptGenerationRequest,
     ScriptGenerationResponse,
 )
@@ -48,9 +47,7 @@ class MockLLMProvider:
             model_name=self.model_name,
         )
 
-    def generate_interview_question(
-        self, request: InterviewQuestionRequest
-    ) -> InterviewQuestionResponse:
+    def _build_interview_question(self, request: InterviewQuestionRequest) -> str:
         missing = ", ".join(request.missing_dimensions) or "none"
         tail = (
             " What feels most important to you about that right now?"
@@ -61,15 +58,10 @@ class MockLLMProvider:
             f"[mock interviewer] Regarding «{request.topic}» "
             f"(next: {request.suggested_focus}; still need: {missing}) —{tail}"
         )
-        return InterviewQuestionResponse(
-            question=question,
-            provider_name=self.provider_name,
-            model_name=self.model_name,
-        )
+        return question
 
     def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:
-        full_response = self.generate_interview_question(request).question
-        # Simulate streaming by splitting into words
+        full_response = self._build_interview_question(request)
         for word in full_response.split(" "):
             yield word + " "
             time.sleep(0.05)

@@ -470,15 +470,6 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({}),
       });
     },
-    async submitReply(sessionId: string, message: string, userRequestedFinish = false) {
-      return callHttp<InterviewTurnResult>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/interview:reply`, {
-        method: "POST",
-        body: JSON.stringify({
-          message,
-          user_requested_finish: userRequestedFinish,
-        }),
-      });
-    },
     async submitReplyStream(sessionId, message, onChunk, userRequestedFinish = false, signal?: AbortSignal) {
       return streamReply(sessionId, message, onChunk, userRequestedFinish, signal);
     },

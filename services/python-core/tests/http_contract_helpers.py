@@ -37,7 +37,6 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("deleteSession", "delete_session", "POST", "/api/v1/sessions/{session_id}:delete", "delete_session", ("--delete-session", "session-123"), "P1-complete"),
     BridgeContract("restoreSession", "restore_session", "POST", "/api/v1/sessions/{session_id}:restore", "restore_session", ("--restore-session", "session-123"), "P1-complete"),
     BridgeContract("startInterview", "start_interview", "POST", "/api/v1/sessions/{session_id}/interview:start", "start_interview", ("--start-interview", "session-123"), "P1-core"),
-    BridgeContract("submitReply", "submit_reply", "POST", "/api/v1/sessions/{session_id}/interview:reply", "submit_reply", ("--reply-session", "session-123", "--message", "hello"), "P1-core"),
     BridgeContract("submitReplyStream", "submit_reply_stream", "POST", "/api/v1/sessions/{session_id}/interview:reply-stream", "submit_reply", ("--reply-session", "session-123", "--message", "hello"), "P1-core", streaming=True),
     BridgeContract("requestFinish", "request_finish", "POST", "/api/v1/sessions/{session_id}/interview:finish", "request_finish", ("--finish-session", "session-123"), "P1-core"),
     BridgeContract("generateScript", "generate_script", "POST", "/api/v1/sessions/{session_id}/script:generate", "generate_script", ("--generate-script", "session-123"), "P1-core"),

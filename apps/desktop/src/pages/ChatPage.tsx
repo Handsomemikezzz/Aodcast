@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   AlertCircle,
   BookOpen,
@@ -46,6 +46,7 @@ export function ChatPage({
 }) {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const bridge = useBridge();
 
   const [project, setProject] = useState<SessionProject | null>(null);
@@ -72,9 +73,13 @@ export function ChatPage({
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const replyStreamAbortRef = useRef<AbortController | null>(null);
+  const consumedInitialReplyRef = useRef<string | null>(null);
   const historyRequestIdRef = useRef(0);
   const optimisticTranscriptRef = useRef<TranscriptRecord | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<SessionProject | null>(null);
+
+  const routeState = location.state as { initialReply?: string } | null;
+  const initialReply = typeof routeState?.initialReply === "string" ? routeState.initialReply : "";
 
   const toDisplayText = (value: unknown): string => {
     if (typeof value === "string") return value;
@@ -137,9 +142,8 @@ export function ChatPage({
         creationIntent: `Discuss ${message}`,
       });
       const sid = created.session.session_id;
-      await bridge.submitReply(sid, message, false);
       await onRefresh();
-      navigate(`/chat/${sid}`);
+      navigate(`/chat/${sid}`, { state: { initialReply: message } });
       setLandingInput("");
     } catch (err) {
       setLandingError(getErrorMessage(err, "Failed to start conversation."));
@@ -229,9 +233,9 @@ export function ChatPage({
     }
   };
 
-  const handleSubmit = async () => {
-    if (!sessionId || !inputValue.trim() || submitting) return;
-    const content = inputValue.trim();
+  const submitReplyContent = async (content: string) => {
+    if (!sessionId || !content.trim() || submitting) return;
+    content = content.trim();
     const previousTranscript = project
       ? {
           session_id: project.transcript?.session_id ?? project.session.session_id,
@@ -310,6 +314,19 @@ export function ChatPage({
       setSubmitting(false);
     }
   };
+
+  const handleSubmit = async () => {
+    await submitReplyContent(inputValue);
+  };
+
+  useEffect(() => {
+    if (!sessionId || loading || submitting || !initialReply.trim()) return;
+    const key = `${sessionId}:${initialReply}`;
+    if (consumedInitialReplyRef.current === key) return;
+    consumedInitialReplyRef.current = key;
+    navigate(`/chat/${sessionId}`, { replace: true, state: null });
+    void submitReplyContent(initialReply);
+  }, [sessionId, loading, submitting, initialReply]);
 
   const handleGenerateScript = async () => {
     if (!sessionId || submitting) return;

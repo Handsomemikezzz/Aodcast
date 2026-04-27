@@ -44,7 +44,7 @@ from app.orchestration.audio_rendering import (
     AudioRenderingService,
     AudioRenderProgress,
 )
-from app.orchestration.interview_service import InterviewOrchestrator
+from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import ScriptGenerationService
 from app.providers.llm.factory import validate_llm_provider
 from app.providers.tts_api.factory import validate_tts_provider
@@ -1298,19 +1298,6 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             result = self.context.orchestrator.start_interview(session_id)
             self._send_bridge_envelope(success_envelope(serialize_turn_result(result), operation="start_interview"), origin=origin)
             return
-        if self.command == "POST" and suffix == "/interview:reply":
-            message = str(body.get("message") or "").strip()
-            if not message:
-                raise ValueError("Field 'message' is required.")
-            project = self.context.store.load_project(session_id)
-            ensure_session_is_active(project)
-            result = self.context.orchestrator.submit_user_response(
-                session_id,
-                message,
-                user_requested_finish=bool(body.get("user_requested_finish")),
-            )
-            self._send_bridge_envelope(success_envelope(serialize_turn_result(result), operation="submit_reply"), origin=origin)
-            return
         if self.command == "POST" and suffix == "/interview:reply-stream":
             self._handle_stream_reply(session_id, body, origin)
             return
@@ -1570,7 +1557,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "list_projects"
         if path == "/api/v1/sessions":
             return "create_session"
-        if "/interview:reply" in path:
+        if "/interview:reply-stream" in path:
             return "submit_reply"
         if "/interview:start" in path:
             return "start_interview"
