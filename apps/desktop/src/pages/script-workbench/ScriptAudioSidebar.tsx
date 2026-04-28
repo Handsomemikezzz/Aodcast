@@ -1,5 +1,6 @@
 import { ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Mic, Pause, Play, Settings2, Share2, Wand2 } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { ProgressBar } from "../../components/ProgressBar";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenchResult }) {
@@ -163,6 +164,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   </button>
                 ) : null}
               </div>
+              <ProgressBar value={workbench.audioRequestState.progress_percent} className="mt-3" />
             </div>
           ) : null}
         </div>

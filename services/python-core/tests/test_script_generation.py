@@ -57,8 +57,10 @@ class ScriptGenerationTests(unittest.TestCase):
         self.assertEqual(result.provider, "mock")
         self.assertEqual(loaded.session.state, SessionState.SCRIPT_GENERATED)
         assert loaded.script is not None
+        assert loaded.artifact is not None
         self.assertIn("Opening", loaded.script.draft)
         self.assertEqual(loaded.session.llm_provider, "mock")
+        self.assertEqual(loaded.artifact.session_id, session_id)
 
     def test_generate_script_failure_preserves_project_and_marks_failed(self) -> None:
         store, config_store, service = self.build_environment()

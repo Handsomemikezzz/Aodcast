@@ -9,12 +9,13 @@ This document describes the current audio-rendering path after script generation
 The Python core now supports a render-audio path after a session reaches `script_generated` or `script_edited`.
 
 1. Load the persisted session project.
-2. Load the active TTS configuration from local config storage.
-3. Optionally apply a one-shot desktop-side provider override for the current render request.
-4. Build the selected TTS provider adapter.
-5. Render audio bytes from the final script text.
-6. Write transcript and audio artifacts under local export storage.
-7. Transition the session to `completed`.
+2. Ensure the session has an artifact record. New HTTP sessions create one up front, and audio rendering backfills one for older projects that have a valid script but no artifact metadata.
+3. Load the active TTS configuration from local config storage.
+4. Optionally apply a one-shot desktop-side provider override for the current render request.
+5. Build the selected TTS provider adapter.
+6. Render audio bytes from the final script text.
+7. Write transcript and audio artifacts under local export storage.
+8. Transition the session to `completed`.
 
 The desktop `GeneratePage` uses this override path for its engine buttons:
 

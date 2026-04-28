@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from app.domain.common import utc_now_iso
+from app.domain.artifact import ArtifactRecord
 from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionState
@@ -70,6 +71,11 @@ class ScriptGenerationService:
 
         script.replace_with_generated_draft(response.draft)
         project.script = script
+        if project.artifact is None:
+            project.artifact = ArtifactRecord(
+                session_id=session_id,
+                transcript_path=f"sessions/{session_id}/transcript.json",
+            )
 
         project.session.llm_provider = response.provider_name
         project.session.transition(SessionState.SCRIPT_GENERATED)

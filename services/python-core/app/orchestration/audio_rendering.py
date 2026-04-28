@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from app.domain.artifact import AudioTakeRecord
+from app.domain.artifact import ArtifactRecord, AudioTakeRecord
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, clamp_speed, resolve_style_preset, resolve_voice_preset
@@ -102,8 +102,15 @@ class AudioRenderingService:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         script = project.script
         artifact = project.artifact
-        if script is None or artifact is None:
-            raise ValueError("Cannot render audio without script and artifact records.")
+        if script is None:
+            raise ValueError("Cannot render audio without a script record.")
+        if artifact is None:
+            artifact = ArtifactRecord(
+                session_id=session_id,
+                transcript_path=f"sessions/{session_id}/transcript.json",
+            )
+            project.artifact = artifact
+            self.store.save_project(project)
         if project.session.state == SessionState.AUDIO_RENDERING:
             raise ValueError("Cannot render audio while another audio render is already in progress.")
 

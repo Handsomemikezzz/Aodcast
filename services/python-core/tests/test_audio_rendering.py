@@ -67,6 +67,26 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertTrue(Path(loaded.artifact.transcript_path).exists())
         self.assertEqual(loaded.session.tts_provider, "mock_remote")
 
+    def test_render_audio_initializes_missing_artifact_record(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session = SessionRecord(topic="Recovered artifact", creation_intent="Render older data")
+        session.transition(SessionState.SCRIPT_GENERATED)
+        script = ScriptRecord(
+            session_id=session.session_id,
+            draft="Draft body",
+            final="Final script body for recovered artifact rendering.",
+        )
+        store.save_project(SessionProject(session=session, script=script, artifact=None))
+
+        result = service.render_audio(session.session_id, script_id=script.script_id)
+        loaded = store.load_project(session.session_id)
+
+        self.assertEqual(result.provider, "mock_remote")
+        assert loaded.artifact is not None
+        self.assertTrue(Path(loaded.artifact.audio_path).exists())
+        self.assertTrue(Path(loaded.artifact.transcript_path).exists())
+
     def test_render_voice_preview_writes_preview_without_changing_final_artifact(self) -> None:
         store, config_store, _, service = self.build_environment()
         config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))

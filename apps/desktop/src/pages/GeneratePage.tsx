@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from 'framer-motion';
 import { Timer, FileText, Mic, CloudDownload, Cpu, CheckCircle2, PlayCircle, Settings, Wand2 } from 'lucide-react';
+import { ProgressBar } from "../components/ProgressBar";
 import { useBridge } from "../lib/BridgeContext";
 import { RequestState, SessionProject, TTSCapability, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
@@ -341,17 +342,20 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
             </div>
           )}
           {!error && isActiveRequestState(requestState) && (
-            <div className="mb-6 p-3 border border-outline rounded-lg text-secondary text-xs flex items-center justify-between gap-3">
-              <span>{`${Math.round(requestState!.progress_percent)}% · ${requestState!.message}`}</span>
-              {generating && requestState?.phase === "running" && (
-                <button
-                  type="button"
-                  onClick={() => void handleCancelAudio()}
-                  className="px-2 py-1 rounded border border-outline text-[11px] font-medium hover:bg-surface-container"
-                >
-                  Cancel
-                </button>
-              )}
+            <div className="mb-6 p-3 border border-outline rounded-lg text-secondary text-xs space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span>{`${Math.round(requestState!.progress_percent)}% · ${requestState!.message}`}</span>
+                {generating && requestState?.phase === "running" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCancelAudio()}
+                    className="px-2 py-1 rounded border border-outline text-[11px] font-medium hover:bg-surface-container"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+              <ProgressBar value={requestState!.progress_percent} />
             </div>
           )}
           {!error && requestState?.phase === "cancelled" && (

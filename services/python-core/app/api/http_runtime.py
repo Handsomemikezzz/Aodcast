@@ -28,6 +28,7 @@ from app.api.serializers import (
     voice_settings_from_payload,
 )
 from app.config import AppConfig
+from app.domain.artifact import ArtifactRecord
 from app.domain.project import SessionProject
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import TranscriptRecord
@@ -94,11 +95,15 @@ def _normalize_error_message(exc: Exception, *, fallback: str) -> str:
 def create_project(topic: str, intent: str) -> SessionProject:
     session = SessionRecord(topic=topic, creation_intent=intent)
     transcript = TranscriptRecord(session_id=session.session_id)
+    artifact = ArtifactRecord(
+        session_id=session.session_id,
+        transcript_path=f"sessions/{session.session_id}/transcript.json",
+    )
     return SessionProject(
         session=session,
         transcript=transcript,
         script=None,
-        artifact=None,
+        artifact=artifact,
     )
 
 

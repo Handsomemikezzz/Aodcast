@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ProgressBar } from "../components/ProgressBar";
 import { useBridge } from "../lib/BridgeContext";
 import {
   SessionProject,
@@ -970,6 +971,15 @@ export function ChatPage({
                     : "The Archivist is listening. You can dictate or type your thoughts."}
                 </p>
               </div>
+              {requestState?.phase === "running" ? (
+                <div className="rounded-lg border border-outline bg-background/80 px-3 py-2">
+                  <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px] text-secondary">
+                    <span className="truncate">{requestState.message}</span>
+                    <span className="shrink-0">{Math.round(requestState.progress_percent)}%</span>
+                  </div>
+                  <ProgressBar value={requestState.progress_percent} />
+                </div>
+              ) : null}
             </div>
           </div>
         )}

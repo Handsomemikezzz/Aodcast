@@ -215,6 +215,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertTrue(created["ok"])
         self.assertEqual(created["data"]["request_state"]["operation"], "create_session")
         session_id = created["data"]["project"]["session"]["session_id"]
+        self.assertIsNotNone(created["data"]["project"]["artifact"])
 
         status, _, listed = self.request_json("GET", "/api/v1/projects?search=runtime")
         self.assertEqual(status, 200)
