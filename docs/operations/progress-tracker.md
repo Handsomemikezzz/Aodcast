@@ -87,6 +87,8 @@ Active milestone: `Post-MVP slice - Desktop UI / backend integration`
 - long local MLX text rendering now passes `--join_audio` and extended token budget so output duration scales with script length instead of truncating to a short fixed clip
 - render-task request-state persistence now uses per-task cross-process file locks to keep `save_if_current_phase` atomic under concurrent `render_audio` and `cancel_task` calls
 - long-task bridge state flow is now centralized in `LongTaskStateManager`, and both `download_model` + `render_audio` reuse the same start/heartbeat/cancel/success-finalize semantics
+- localhost HTTP runtime is now the canonical desktop/browser business-operation transport; legacy subprocess bridge milestones are historical only
+- repository layout docs now separate source directories from ignored local/generated paths
 
 ### In Progress
 
@@ -184,19 +186,19 @@ Current execution constraints and environment notes should be read from `AGENTS.
 
 | Task | Owner Role | Status | Notes |
 | --- | --- | --- | --- |
-| Extract frontend bridge contract from mock implementation | `desktop-builder` | done | `desktopBridge.ts` remains the stable UI contract and survives the transport swap |
+| Extract frontend bridge contract from mock implementation | `desktop-builder` | done | `desktopBridge.ts` remains the stable UI contract above the HTTP transport |
 | Add machine-readable Python CLI bridge mode | `orchestration-builder` | superseded | Legacy subprocess/stdout bridge path; retained here only as historical record |
-| Add Rust command gateway | `desktop-builder` | superseded | Historical subprocess bridge milestone; replaced by the localhost HTTP runtime path during strong convergence cleanup |
+| Add Rust command gateway | `desktop-builder` | superseded | Historical subprocess bridge milestone; replaced by the localhost HTTP runtime path |
 | Validate bridge protocol and desktop types | `quality-runner` | superseded | Historical validation of the removed bridge path |
 
 ## Shared Runtime HTTP Convergence
 
 | Task | Owner Role | Status | Notes |
 | --- | --- | --- | --- |
-| Add stdlib localhost HTTP runtime | `orchestration-builder` | in progress | `services/python-core/app/api/http_runtime.py` now exists and is being converged away from legacy CLI-bridge internals |
-| Add HTTP runtime tests | `quality-runner` | in progress | HTTP parity, security, runtime smoke, and browser parity tests are now in the repo |
+| Add stdlib localhost HTTP runtime | `orchestration-builder` | done | `services/python-core/app/api/http_runtime.py` is the canonical localhost business-operation runtime |
+| Add HTTP runtime tests | `quality-runner` | done | HTTP parity, security, runtime smoke, and browser parity tests are now in the repo |
 | Restore browser fallback bridge parity | `desktop-builder` | done | Browser fallback now uses the same HTTP bridge contract rather than a desktop-only hard stop |
-| Replace legacy subprocess bridge | `desktop-builder` | in progress | Frontend and Rust now converge on HTTP runtime startup + HTTP transport; remaining cleanup is inside python-core CLI-bridge internals and stale historical docs/tests |
+| Replace legacy subprocess bridge | `desktop-builder` | done | Business-operation transport now flows through localhost HTTP; Rust retains only runtime lifecycle and native shell helpers |
 
 ## Post-MVP Slice: MLX Qwen3 Runner
 

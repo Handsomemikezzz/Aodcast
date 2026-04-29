@@ -1,33 +1,28 @@
-# Shared Runtime HTTP Upgrade
+# Shared Runtime HTTP Architecture
 
 ## Purpose
 
-This document turns the approved plan in `.omx/plans/ralplan-shared-runtime-http-upgrade-2026-04-12.md` into an implementation-facing architecture note for the repo.
-
-It does two things:
-
-1. records the grounded review findings from the current desktop bridge and Python runtime code
-2. defines the migration shape for the localhost HTTP runtime, the desktop/browser adapters, and the verification gates that must hold during cutover
+This document records the implemented localhost HTTP runtime architecture that replaced the historical subprocess/stdout JSON bridge for business operations. It also captures the extension rules and verification gates that keep desktop and browser flows on one contract.
 
 ## Current Ground Truth
 
-The repo now contains the first HTTP runtime slice under `services/python-core/app/api/http_runtime.py`, but the codebase still contains legacy subprocess bridge paths that must be removed during convergence.
+The repo now uses `services/python-core/app/api/http_runtime.py` as the canonical business-operation runtime. Tauri may still spawn and supervise that runtime process, but React business calls go through the HTTP bridge rather than a subprocess/stdout JSON bridge.
 
-The repo already has a few constraints that strongly shape the migration:
+The current architecture is shaped by these constraints:
 
 - `apps/desktop/src/lib/desktopBridge.ts` is the canonical UI contract and already exposes the full session/script/model/task surface the app depends on.
-- the frontend now converges on `apps/desktop/src/lib/httpBridge.ts` as the shared transport boundary for desktop and same-machine browser flows.
-- `apps/desktop/src/lib/requestState.ts` is the normalization boundary for `request_state` semantics and should remain the single frontend validator during the transport swap.
+- `apps/desktop/src/lib/httpBridge.ts` is the shared transport boundary for desktop and same-machine browser flows.
+- `apps/desktop/src/lib/requestState.ts` is the normalization boundary for `request_state`, run-token, and cancellation-transition semantics.
 - Script Workbench, Voice Studio, and `apps/desktop/src/pages/ModelsPage.tsx` assume the long-task parity contract of immediate ack + later `showTaskState(task_id)` polling.
 - `apps/desktop/src/pages/ChatPage.tsx` already assumes incremental streaming deltas plus a final structured envelope.
 - the previous browser hard-stop path has been removed; browser flows now target the same localhost HTTP runtime contract.
-- `services/python-core/pyproject.toml` declares no runtime dependencies, so phase 1 must remain stdlib-only on the server side.
+- `services/python-core/pyproject.toml` keeps the HTTP server path stdlib-only; provider integrations remain isolated behind adapters.
 
 ## Review Findings
 
-### 1. The `DesktopBridge` interface is the migration anchor
+### 1. The `DesktopBridge` interface is the contract anchor
 
-The safest cutover is to preserve the `DesktopBridge` method set and swap transport underneath it. That keeps page components stable while the runtime moves from subprocess CLI calls to localhost HTTP.
+Preserve the `DesktopBridge` method set when extending runtime behavior. Page components should stay stable while transport details remain inside `httpBridge.ts` and the Python HTTP runtime.
 
 ### 2. `request_state` parity is already encoded in UI behavior
 
@@ -64,23 +59,19 @@ The practical implication is:
 - keep the final event shape compatible with the existing structured `InterviewTurnResult`
 - do not reintroduce a parallel Chat reply endpoint
 
-### 5. Browser parity is mostly a runtime/bootstrap problem
+### 5. Browser parity is a runtime/bootstrap contract
 
-The browser path is not blocked on UI contracts. It is blocked on:
+The browser path is intentionally contract-compatible with Tauri flows. It depends on:
 
 - a loopback-only runtime that can be started or attached safely
 - a same-machine bootstrap/token flow for protected endpoints
 - a browser bridge implementation that matches desktop payload shapes
 
-## Approved Target Architecture
+## Current Architecture
 
 ### Canonical transport
 
-The target transport is a Python-native localhost HTTP runtime hosted from `services/python-core`, implemented with the standard library only in phase 1.
-
-### Compatibility window
-
-The repository may temporarily contain partially migrated code while cleanup is in progress, but the intended end state is **no subprocess/stdout JSON bridge and no compatibility shim**.
+The canonical transport is a Python-native localhost HTTP runtime hosted from `services/python-core` and implemented with the standard library server stack.
 
 ### Ownership boundaries
 
@@ -88,9 +79,9 @@ The repository may temporarily contain partially migrated code while cleanup is 
 - **Desktop runtime wrapper owns** start, health-check, port attach/retry, shutdown, and token injection for protected calls.
 - **Frontend bridge layer owns** transport adaptation and response normalization, not business logic.
 
-## Lane-by-Lane Execution Notes
+## Extension Notes
 
-### Lane 1 — Python core HTTP runtime
+### Python core HTTP runtime
 
 Required shape:
 
@@ -104,27 +95,27 @@ Required shape:
 
 Implementation guardrails:
 
-- no new server dependency in phase 1
+- do not add a server framework dependency unless an explicit architecture decision changes the stdlib runtime constraint
 - reuse existing orchestration and store modules instead of duplicating logic in a second backend layer
 - treat the HTTP handler as a thin facade over the current Python core
 
-### Lane 2 — Desktop lifecycle and client cutover
+### Desktop lifecycle and client boundary
 
 Required shape:
 
 - desktop starts or attaches to the localhost runtime
 - desktop injects the runtime token on protected requests
 - desktop keeps the current `DesktopBridge` contract stable
-- desktop streaming switches from Tauri `Channel` plumbing to HTTP/SSE parsing
-- browser gets the same-machine HTTP bridge instead of a hard failure path
+- desktop streaming uses HTTP/SSE parsing through the shared bridge layer
+- browser uses the same-machine HTTP bridge instead of a desktop-only hard stop
 
 Implementation guardrails:
 
 - keep lifecycle ownership in the desktop layer
 - avoid teaching page components about transport differences
-- do not leave a compatibility shim behind once HTTP is validated
+- do not reintroduce a compatibility shim for business operations
 
-### Lane 3 — Parity, security, and browser verification
+### Parity, security, and browser verification
 
 Required coverage:
 
@@ -139,31 +130,31 @@ Implementation guardrails:
 
 - negative-path tests must verify `error.details.request_state`
 - browser parity should compare schemas and behavior, not just HTTP status codes
-- the shim should never become the only passing path late in the migration
+- parity tests should fail if a new transport-specific shortcut becomes the only passing path
 
 ## Migration Pressure Points To Watch
 
 1. **Do not weaken `request_state` validation.** `apps/desktop/src/lib/requestState.ts` already rejects malformed shapes; transport changes must adapt to it instead of loosening it.
 2. **Do not collapse long-task responses into terminal responses.** Script Workbench, Voice Studio, and `ModelsPage` depend on immediate acks plus polling.
 3. **Do not add browser-only response variants.** Desktop and browser should share one payload contract.
-4. **Do not keep two first-class transports indefinitely.** The subprocess bridge must be deleted, not merely deprioritized.
+4. **Do not keep two first-class business transports.** New UI business operations must use the HTTP bridge contract.
 5. **Do not move business logic into the Tauri layer.** The current layering is a strength and should survive the HTTP cutover.
 
 ## Verification Gates
 
-The approved plan already defines the exact verification commands. The important repo-level interpretation is:
+The important repo-level verification interpretation is:
 
 - `services/python-core` must prove envelope, task-state, and security parity
 - `apps/desktop` must prove frontend/type/runtime integration still holds
 - `apps/desktop/src-tauri` must prove the native shell still builds against the new lifecycle/client boundary
 - browser parity must be treated as a first-class gate, not a follow-up cleanup task
 
-Until those gates pass, the HTTP path should be treated as incomplete and the repository should not claim convergence is done.
+These gates are the proof that the HTTP path remains converged after future cleanup or feature work.
 
 ## Recommended Documentation Handoff
 
-As implementation lands, keep this document aligned with:
+When implementation changes, keep this document aligned with:
 
-- `docs/architecture/desktop-tauri-bridge.md` for current-vs-target bridge boundaries
+- `docs/architecture/desktop-tauri-bridge.md` for current bridge boundaries
 - `README.md` for developer bootstrap and runtime expectations
 - parity/security/browser test files for executable proof of the documented contract
