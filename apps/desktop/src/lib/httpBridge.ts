@@ -11,7 +11,7 @@ import type {
   RenderVoicePreviewOptions,
   ShowSessionOptions,
 } from "./desktopBridge";
-import { asRequestState } from "./requestState";
+import { asRequestState, copyRequestStateRunToken } from "./requestState";
 import type {
   AudioRenderResult,
   GenerationResult,
@@ -513,10 +513,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           }),
         },
       );
-      if (typeof response.run_token !== "string" && typeof response.request_state?.run_token === "string") {
-        response.run_token = response.request_state.run_token;
-      }
-      return response;
+      return copyRequestStateRunToken(response);
     },
     async deleteGeneratedAudio(sessionId: string, options?: { scriptId?: string }) {
       const query = options?.scriptId ? `?script_id=${encodeURIComponent(options.scriptId)}` : "";
@@ -576,10 +573,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           }),
         },
       );
-      if (typeof response.run_token !== "string" && typeof response.request_state?.run_token === "string") {
-        response.run_token = response.request_state.run_token;
-      }
-      return response;
+      return copyRequestStateRunToken(response);
     },
     async setFinalVoiceTake(sessionId: string, takeId: string) {
       const response = await callHttp<{}>(

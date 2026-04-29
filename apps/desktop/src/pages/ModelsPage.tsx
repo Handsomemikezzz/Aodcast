@@ -25,6 +25,7 @@ import {
   getErrorRequestState,
   isActiveRequestState,
   isTerminalRequestState,
+  keepCancellationProgress,
   withRequestStateFallback,
 } from "../lib/requestState";
 
@@ -160,10 +161,7 @@ export function ModelsPage() {
         const state = await bridge.showTaskState(taskId).catch(() => null);
         if (state) {
           latest = state;
-          setRequestState((prev) => {
-            if ((prev?.phase === "cancelling" || prev?.phase === "cancelled") && state.phase === "running") return prev;
-            return state;
-          });
+          setRequestState((prev) => keepCancellationProgress(prev, state));
           if (isTerminalRequestState(state)) return state;
         }
         await new Promise((resolve) => window.setTimeout(resolve, 1000));

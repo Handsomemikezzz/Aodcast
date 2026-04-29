@@ -4,9 +4,12 @@ import type { DesktopBridge } from "../../lib/desktopBridge";
 import {
   buildRequestState,
   getErrorMessage,
+  ensureRequestStateRunToken,
   getErrorRequestState,
   isActiveRequestState,
   isTerminalRequestState,
+  keepCancellationProgress,
+  requestStateRunToken,
   withRequestStateFallback,
 } from "../../lib/requestState";
 import { revealInFinder } from "../../lib/shellOps";
@@ -126,10 +129,7 @@ export function useScriptWorkbenchAudio({
       return false;
     }
     setAudioRequestState((previous: RequestState | null) => {
-      if ((previous?.phase === "cancelling" || previous?.phase === "cancelled") && state.phase === "running") {
-        return previous;
-      }
-      return state;
+      return keepCancellationProgress(previous, state);
     });
     if (isTerminalRequestState(state)) {
       stopTaskPolling();
@@ -174,10 +174,7 @@ export function useScriptWorkbenchAudio({
       return null;
     }
     setAudioRequestState((previous: RequestState | null) => {
-      if ((previous?.phase === "cancelling" || previous?.phase === "cancelled") && state.phase === "running") {
-        return previous;
-      }
-      return state;
+      return keepCancellationProgress(previous, state);
     });
     return state;
   };
@@ -187,7 +184,7 @@ export function useScriptWorkbenchAudio({
     void syncTaskState()
       .then((state) => {
         if (state && isActiveRequestState(state)) {
-          expectedRunTokenRef.current = state.run_token ?? null;
+          expectedRunTokenRef.current = requestStateRunToken(state);
           setGenerating(true);
           startTaskPolling();
         } else {
@@ -223,7 +220,7 @@ export function useScriptWorkbenchAudio({
       stopTaskPolling();
       const existingState = await syncTaskState();
       if (existingState && isActiveRequestState(existingState)) {
-        expectedRunTokenRef.current = existingState.run_token ?? null;
+        expectedRunTokenRef.current = requestStateRunToken(existingState);
         setGenerating(true);
         startTaskPolling();
         return;
@@ -245,15 +242,15 @@ export function useScriptWorkbenchAudio({
         scriptId,
         voiceSettings: resolveProjectVoiceSettings(project),
       });
-      const runToken = typeof result.run_token === "string" && result.run_token.length > 0 ? result.run_token : result.request_state?.run_token ?? null;
+      const runToken = typeof result.run_token === "string" && result.run_token.length > 0 ? result.run_token : requestStateRunToken(result.request_state);
       expectedRunTokenRef.current = runToken;
       setProject(result.project);
       const finalTaskId = result.task_id ?? taskId;
       const finalState = await bridge.showTaskState(finalTaskId).catch(() => null);
-      const chosenState = finalState ?? result.request_state ?? buildRequestState("render_audio", "running", "Rendering audio...");
-      if (runToken && !chosenState.run_token) {
-        chosenState.run_token = runToken;
-      }
+      const chosenState = ensureRequestStateRunToken(
+        finalState ?? result.request_state ?? buildRequestState("render_audio", "running", "Rendering audio..."),
+        runToken,
+      );
       setAudioRequestState(chosenState);
       if (isTerminalRequestState(chosenState)) {
         setGenerating(false);
