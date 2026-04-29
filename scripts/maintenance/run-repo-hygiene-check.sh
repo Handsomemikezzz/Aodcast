@@ -14,7 +14,15 @@ git -C "$repo_root" status --short
 
 echo
 echo "== placeholder scan =="
-if rg -n --glob '!scripts/maintenance/run-repo-hygiene-check.sh' "TODO|TBD|FIXME" "$repo_root/AGENTS.md" "$repo_root/README.md" "$repo_root/docs" "$repo_root/apps" "$repo_root/services" "$repo_root/scripts" "$repo_root/packages" "$repo_root/examples"; then
+if rg -n \
+  --glob '!scripts/maintenance/run-repo-hygiene-check.sh' \
+  --glob '!apps/desktop/dist/**' \
+  --glob '!apps/desktop/node_modules/**' \
+  --glob '!apps/desktop/src-tauri/target/**' \
+  --glob '!services/python-core/.venv/**' \
+  --glob '!**/__pycache__/**' \
+  "TODO|TBD|FIXME" \
+  "$repo_root/AGENTS.md" "$repo_root/README.md" "$repo_root/docs" "$repo_root/apps" "$repo_root/services" "$repo_root/scripts" "$repo_root/packages" "$repo_root/examples"; then
   true
 else
   echo "No TODO/TBD/FIXME markers found."
