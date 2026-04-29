@@ -42,7 +42,7 @@ def evaluate_readiness(transcript: TranscriptRecord) -> ReadinessReport:
     ]
     combined = "\n".join(user_turns)
 
-    topic_context = len(user_turns) >= 1 and any(len(turn.split()) >= 8 for turn in user_turns)
+    topic_context = len(user_turns) >= 1 and any(_has_enough_topic_context(turn) for turn in user_turns)
     core_viewpoint = _contains_viewpoint(combined)
     example_or_detail = _contains_example_or_detail(combined)
     conclusion = _contains_conclusion(combined)
@@ -53,6 +53,14 @@ def evaluate_readiness(transcript: TranscriptRecord) -> ReadinessReport:
         example_or_detail=example_or_detail,
         conclusion=conclusion,
     )
+
+
+def _has_enough_topic_context(text: str) -> bool:
+    latin_word_count = len(text.split())
+    cjk_char_count = sum(1 for char in text if "\u3400" <= char <= "\u9fff" or "\uf900" <= char <= "\ufaff")
+    # CJK languages do not use spaces between words; a short reflective sentence
+    # with roughly 16+ Han characters carries enough context for the first pass.
+    return latin_word_count >= 8 or cjk_char_count >= 16
 
 
 def _contains_viewpoint(text: str) -> bool:
@@ -67,6 +75,16 @@ def _contains_viewpoint(text: str) -> bool:
         "what matters",
         "important",
         "because",
+        "我认为",
+        "我覺得",
+        "我觉得",
+        "我的观点",
+        "我的看法",
+        "我相信",
+        "我意识到",
+        "重要",
+        "因为",
+        "原因是",
     )
     return any(keyword in text for keyword in keywords)
 
@@ -83,6 +101,15 @@ def _contains_example_or_detail(text: str) -> bool:
         "example",
         "specifically",
         "in practice",
+        "比如",
+        "例如",
+        "举例",
+        "有一次",
+        "上周",
+        "昨天",
+        "具体来说",
+        "实际",
+        "实践中",
     )
     return any(keyword in text for keyword in keywords)
 
@@ -97,5 +124,16 @@ def _contains_conclusion(text: str) -> bool:
         "that means",
         "therefore",
         "what i want people to know",
+        "所以",
+        "总之",
+        "總之",
+        "最后",
+        "最後",
+        "结论",
+        "結論",
+        "我的结论",
+        "我的結論",
+        "我希望大家记住",
+        "我希望大家記住",
     )
     return any(keyword in text for keyword in keywords)

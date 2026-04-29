@@ -3,14 +3,14 @@
 ## Purpose
 
 This document describes the end-to-end audio rendering pipeline, from the
-desktop "Generate" page down to the MLX worker subprocess that produces the
+desktop Script Workbench / Voice Studio pages down to the MLX worker subprocess that produces the
 final audio artifact. It complements [local-mlx-tts.md](local-mlx-tts.md), which documents the
 MLX capability report and runtime requirements in isolation.
 
 ## Components
 
-- `apps/desktop/src/pages/GeneratePage.tsx` - UI that starts renders,
-  polls progress, and displays artifacts
+- `apps/desktop/src/pages/script-workbench/useScriptWorkbenchAudio.ts` - Script Workbench audio controls that start renders, poll progress, and display final artifacts
+- `apps/desktop/src/pages/VoiceStudioPage.tsx` - Voice Studio preview/take controls for expressive voice selection and full-audio take generation
 - `apps/desktop/src/lib/httpBridge.ts` - HTTP bridge that talks to the
   Python runtime over `localhost`
 - `apps/desktop/src/lib/shellOps.ts` - Tauri-only helpers such as
@@ -40,7 +40,8 @@ cannot satisfy a newer click.
 ```mermaid
 graph TD
     subgraph desktopUI[Desktop UI]
-        generate[GeneratePage]
+        scriptUi[Script Workbench]
+        voiceStudio[Voice Studio]
         bridge[httpBridge]
         shell[shellOps]
     end
@@ -58,7 +59,8 @@ graph TD
         chunker[chunker.py]
     end
 
-    generate -->|renderAudio| bridge
+    scriptUi -->|renderAudio| bridge
+    voiceStudio -->|renderVoicePreview/renderVoiceTake| bridge
     bridge -->|POST audio:render| startRender
     startRender --> orchestration
     orchestration --> chunker
@@ -69,7 +71,8 @@ graph TD
     orchestration -->|AudioRenderProgress| progressMgr
     progressMgr --> taskApi
     bridge -->|showTaskState 1s poll| taskApi
-    generate -->|revealInFinder| shell
+    scriptUi -->|revealInFinder| shell
+    voiceStudio -->|revealInFinder| shell
 ```
 
 ## Chunked Synthesis

@@ -13,6 +13,7 @@ Current top-level routes:
 - `Chat`
 - `Script`
 - `Models`
+- `Voice Studio`
 - `Settings`
 
 The shell is implemented through:

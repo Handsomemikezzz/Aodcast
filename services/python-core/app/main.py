@@ -721,7 +721,6 @@ def run(argv: list[str] | None = None) -> int:
         if args.generate_script:
             project = store.load_project(args.generate_script)
             ensure_session_is_active(project)
-            ensure_script_is_active(project)
             result = script_generation.generate_draft(
                 args.generate_script,
                 override_provider=args.llm_provider_override,

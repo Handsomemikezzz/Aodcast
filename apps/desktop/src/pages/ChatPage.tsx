@@ -26,6 +26,7 @@ import { ProgressBar } from "../components/ProgressBar";
 import { useBridge } from "../lib/BridgeContext";
 import {
   SessionProject,
+  LLMProviderConfig,
   Readiness,
   PromptInput,
   RequestState,
@@ -39,6 +40,20 @@ import {
   getErrorRequestState,
   withRequestStateFallback,
 } from "../lib/requestState";
+
+function getLlmConfigIssue(config: LLMProviderConfig): string | null {
+  if (config.provider === "mock") return null;
+  if (config.provider !== "openai_compatible") {
+    return `Unsupported language model provider "${config.provider}". Open Settings and choose a supported provider.`;
+  }
+  const missing = [
+    !config.base_url.trim() ? "Base URL" : "",
+    !config.model.trim() ? "Model" : "",
+    !config.api_key.trim() ? "API key" : "",
+  ].filter(Boolean);
+  if (missing.length === 0) return null;
+  return `Language model setup is incomplete: ${missing.join(", ")} required. Open Settings to configure the interview model, or choose the mock provider for a demo.`;
+}
 
 export function ChatPage({
   onRefresh,
@@ -71,6 +86,7 @@ export function ChatPage({
   const [landingInput, setLandingInput] = useState("");
   const [landingSubmitting, setLandingSubmitting] = useState(false);
   const [landingError, setLandingError] = useState<string | null>(null);
+  const [showLlmSetupAction, setShowLlmSetupAction] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const replyStreamAbortRef = useRef<AbortController | null>(null);
@@ -105,6 +121,34 @@ export function ChatPage({
     }
   };
 
+  const ensureLlmReady = async (): Promise<boolean> => {
+    try {
+      const config = await bridge.showLLMConfig();
+      const issue = getLlmConfigIssue(config);
+      if (!issue) {
+        setShowLlmSetupAction(false);
+        return true;
+      }
+      setShowLlmSetupAction(true);
+      setLandingError(issue);
+      setError(issue);
+      setRequestState(buildRequestState("show_llm_config", "failed", issue));
+      return false;
+    } catch (err) {
+      const message = getErrorMessage(err, "Failed to check language model settings.");
+      setShowLlmSetupAction(true);
+      setLandingError(message);
+      setError(message);
+      setRequestState(
+        withRequestStateFallback(
+          getErrorRequestState(err),
+          buildRequestState("show_llm_config", "failed", message),
+        ),
+      );
+      return false;
+    }
+  };
+
   const loadHistory = async (searchValue = historyQuery) => {
     const requestId = ++historyRequestIdRef.current;
     try {
@@ -136,6 +180,7 @@ export function ChatPage({
     if (!message || landingSubmitting) return;
     setLandingSubmitting(true);
     setLandingError(null);
+    setShowLlmSetupAction(false);
     try {
       const topic = message.length > 200 ? `${message.slice(0, 197)}…` : message;
       const created = await bridge.createSession({
@@ -210,6 +255,8 @@ export function ChatPage({
       message: "Starting interview...",
     });
     try {
+      const ready = await ensureLlmReady();
+      if (!ready) return;
       const result = await bridge.startInterview(sessionId);
       setProject(result.project);
       setReadiness(result.readiness);
@@ -235,46 +282,52 @@ export function ChatPage({
   };
 
   const submitReplyContent = async (content: string) => {
-    if (!sessionId || !content.trim() || submitting) return;
+    if (!sessionId || !content.trim() || submittingRef.current) return;
     content = content.trim();
-    const previousTranscript = project
-      ? {
-          session_id: project.transcript?.session_id ?? project.session.session_id,
-          turns: [...(project.transcript?.turns ?? [])],
-        }
-      : null;
-    const optimisticTurn: TranscriptTurn = {
-      speaker: "user",
-      content,
-      created_at: new Date().toISOString(),
-    };
 
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
-    setStreamingMessage("");
-    setInputValue("");
-    setRequestState({
-      operation: "submit_reply",
-      phase: "running",
-      progress_percent: 0,
-      message: "Submitting reply...",
-    });
-
-    optimisticTranscriptRef.current = previousTranscript;
-    setProject((prev) => {
-      if (!prev) return prev;
-      const newTranscript: TranscriptRecord = {
-        session_id: prev.transcript?.session_id ?? prev.session.session_id,
-        turns: [...(prev.transcript?.turns ?? []), optimisticTurn],
-      };
-      return { ...prev, transcript: newTranscript };
-    });
-
-    replyStreamAbortRef.current?.abort();
-    const replyAbort = new AbortController();
-    replyStreamAbortRef.current = replyAbort;
 
     try {
+      const ready = await ensureLlmReady();
+      if (!ready) return;
+
+      const previousTranscript = project
+        ? {
+            session_id: project.transcript?.session_id ?? project.session.session_id,
+            turns: [...(project.transcript?.turns ?? [])],
+          }
+        : null;
+      const optimisticTurn: TranscriptTurn = {
+        speaker: "user",
+        content,
+        created_at: new Date().toISOString(),
+      };
+
+      setStreamingMessage("");
+      setInputValue("");
+      setRequestState({
+        operation: "submit_reply",
+        phase: "running",
+        progress_percent: 0,
+        message: "Submitting reply...",
+      });
+
+      optimisticTranscriptRef.current = previousTranscript;
+      setProject((prev) => {
+        if (!prev) return prev;
+        const newTranscript: TranscriptRecord = {
+          session_id: prev.transcript?.session_id ?? prev.session.session_id,
+          turns: [...(prev.transcript?.turns ?? []), optimisticTurn],
+        };
+        return { ...prev, transcript: newTranscript };
+      });
+
+      replyStreamAbortRef.current?.abort();
+      const replyAbort = new AbortController();
+      replyStreamAbortRef.current = replyAbort;
+
       const result = await bridge.submitReplyStream(
         sessionId,
         content,
@@ -312,6 +365,7 @@ export function ChatPage({
       replyStreamAbortRef.current = null;
       optimisticTranscriptRef.current = null;
       setStreamingMessage(null);
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -341,6 +395,8 @@ export function ChatPage({
       message: "Preparing script generation...",
     });
     try {
+      const ready = await ensureLlmReady();
+      if (!ready) return;
       await bridge.requestFinish(sessionId);
       setRequestState({
         operation: "generate_script",
@@ -633,7 +689,18 @@ export function ChatPage({
               </h2>
               <div className="w-full flex flex-col gap-2">
                 {landingError ? (
-                  <p className="text-sm text-red-400 text-center">{landingError}</p>
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
+                    <p>{landingError}</p>
+                    {showLlmSetupAction ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate("/settings")}
+                        className="mt-3 rounded-lg border border-accent-amber/30 px-3 py-1.5 text-[12px] font-medium text-accent-amber hover:bg-accent-amber/10"
+                      >
+                        Open Settings
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
                 <div
                   className={cn(
@@ -799,6 +866,15 @@ export function ChatPage({
               {error && (
                 <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
                   {error}
+                  {showLlmSetupAction ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate("/settings")}
+                      className="ml-3 rounded-md border border-accent-amber/30 px-2 py-1 text-[12px] font-medium text-accent-amber hover:bg-accent-amber/10"
+                    >
+                      Open Settings
+                    </button>
+                  ) : null}
                 </div>
               )}
               {turns.map((turn, i) => {

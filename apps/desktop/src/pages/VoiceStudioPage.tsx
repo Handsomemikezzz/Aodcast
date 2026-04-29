@@ -284,7 +284,7 @@ export function VoiceStudioPage() {
       };
       setRequestState(state);
       startPolling(result.task_id ?? `render_voice_take:${selectedSessionId}`);
-      setMessage("已开始使用这套 Voice Studio 配置生成；完成后会自动成为 Script 页和 Generate 页的默认音频。");
+      setMessage("已开始使用这套 Voice Studio 配置生成；完成后会自动成为 Script 页的默认音频。");
     } catch (err) {
       setRendering(false);
       setError(getErrorMessage(err, "Failed to render voice take."));
@@ -617,7 +617,7 @@ export function VoiceStudioPage() {
                   <label className="text-xs text-secondary">输出格式
                     <input value={audioFormat} onChange={(event) => setAudioFormat(event.target.value)} className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary" />
                     <p className="mt-1 text-[11px] text-secondary">
-                      这会保存为当前脚本的 Voice Studio 默认配置；Script 页和 Generate 页生成音频会使用同一配置。MP4 指 audio-only 容器，不含视频画面。
+                      这会保存为当前脚本的 Voice Studio 默认配置；Script 页生成音频会使用同一配置。MP4 指 audio-only 容器，不含视频画面。
                     </p>
                   </label>
                 </div>

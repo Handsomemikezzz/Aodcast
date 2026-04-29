@@ -112,6 +112,29 @@ class InterviewOrchestratorTests(unittest.TestCase):
         self.assertTrue(result.readiness.is_ready)
         self.assertIsNotNone(result.next_question)
 
+    def test_chinese_ready_response_is_recognized_as_complete(self) -> None:
+        store, orchestrator = self.build_orchestrator()
+        session = SessionRecord(topic="本地优先工具", creation_intent="测试中文完整度")
+        store.save_project(SessionProject(session=session))
+        orchestrator.start_interview(session.session_id)
+
+        result = self.submit_streaming_reply(
+            orchestrator,
+            session.session_id,
+            (
+                "我认为本地优先的 AI 工具很重要，因为团队需要在网络不稳定时也能继续工作。"
+                "比如上周我在没有外网的情况下修复了一个项目，具体来说我只能依赖本地缓存和日志。"
+                "所以我的结论是，好的工具应该让用户在出错时也能恢复。"
+            ),
+        )
+
+        self.assertTrue(result.ai_can_finish)
+        self.assertTrue(result.readiness.topic_context)
+        self.assertTrue(result.readiness.core_viewpoint)
+        self.assertTrue(result.readiness.example_or_detail)
+        self.assertTrue(result.readiness.conclusion)
+        self.assertEqual(result.readiness.missing_dimensions(), [])
+
     def test_explicit_finish_request_moves_to_ready_even_if_not_ready(self) -> None:
         store, orchestrator = self.build_orchestrator()
         session = SessionRecord(topic="AI workflow", creation_intent="Test stop")

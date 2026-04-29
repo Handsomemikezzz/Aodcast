@@ -18,7 +18,7 @@ The repo already has a few constraints that strongly shape the migration:
 - `apps/desktop/src/lib/desktopBridge.ts` is the canonical UI contract and already exposes the full session/script/model/task surface the app depends on.
 - the frontend now converges on `apps/desktop/src/lib/httpBridge.ts` as the shared transport boundary for desktop and same-machine browser flows.
 - `apps/desktop/src/lib/requestState.ts` is the normalization boundary for `request_state` semantics and should remain the single frontend validator during the transport swap.
-- `apps/desktop/src/pages/GeneratePage.tsx` and `apps/desktop/src/pages/ModelsPage.tsx` already assume the long-task parity contract of immediate ack + later `showTaskState(task_id)` polling.
+- Script Workbench, Voice Studio, and `apps/desktop/src/pages/ModelsPage.tsx` assume the long-task parity contract of immediate ack + later `showTaskState(task_id)` polling.
 - `apps/desktop/src/pages/ChatPage.tsx` already assumes incremental streaming deltas plus a final structured envelope.
 - the previous browser hard-stop path has been removed; browser flows now target the same localhost HTTP runtime contract.
 - `services/python-core/pyproject.toml` declares no runtime dependencies, so phase 1 must remain stdlib-only on the server side.
@@ -31,7 +31,7 @@ The safest cutover is to preserve the `DesktopBridge` method set and swap transp
 
 ### 2. `request_state` parity is already encoded in UI behavior
 
-`GeneratePage`, `ModelsPage`, and the shared request-state helpers already rely on:
+Script Workbench, Voice Studio, `ModelsPage`, and the shared request-state helpers already rely on:
 
 - stable `operation`
 - progress-bearing `running` updates
@@ -142,7 +142,7 @@ Implementation guardrails:
 ## Migration Pressure Points To Watch
 
 1. **Do not weaken `request_state` validation.** `apps/desktop/src/lib/requestState.ts` already rejects malformed shapes; transport changes must adapt to it instead of loosening it.
-2. **Do not collapse long-task responses into terminal responses.** `GeneratePage` and `ModelsPage` depend on immediate acks plus polling.
+2. **Do not collapse long-task responses into terminal responses.** Script Workbench, Voice Studio, and `ModelsPage` depend on immediate acks plus polling.
 3. **Do not add browser-only response variants.** Desktop and browser should share one payload contract.
 4. **Do not keep two first-class transports indefinitely.** The subprocess bridge must be deleted, not merely deprioritized.
 5. **Do not move business logic into the Tauri layer.** The current layering is a strength and should survive the HTTP cutover.
