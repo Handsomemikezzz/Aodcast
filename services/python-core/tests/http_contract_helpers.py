@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DESKTOP_BRIDGE_PATH = REPO_ROOT / "apps/desktop/src/lib/desktopBridge.ts"
 HTTP_BRIDGE_PATH = REPO_ROOT / "apps/desktop/src/lib/httpBridge.ts"
 BRIDGE_FACTORY_PATH = REPO_ROOT / "apps/desktop/src/lib/bridgeFactory.ts"
+APP_PATH = REPO_ROOT / "apps/desktop/src/App.tsx"
 TAURI_COMMANDS_PATH = REPO_ROOT / "apps/desktop/src-tauri/src/commands.rs"
 MAIN_PATH = REPO_ROOT / "services/python-core/app/main.py"
 CLI_PARSER_PATH = REPO_ROOT / "services/python-core/app/cli/parser.py"
@@ -58,6 +59,7 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("rollbackScriptRevision", "rollback_script_revision", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/revisions/{revision_id}:rollback", "rollback_script_revision", ("--rollback-script-revision", "session-123", "--revision-id", "rev-1"), "P1-complete"),
     BridgeContract("getLocalTTSCapability", "show_local_tts_capability", "GET", "/api/v1/runtime/tts/local-capability", "show_local_tts_capability", ("--show-local-tts-capability",), "P1-complete"),
     BridgeContract("showLLMConfig", "show_llm_config", "GET", "/api/v1/config/llm", "show_llm_config", ("--show-llm-config",), "P1-complete"),
+    BridgeContract("checkLLMConfig", "check_llm_config", "GET", "/api/v1/config/llm/preflight", "check_llm_config", ("--check-llm-config",), "P1-complete"),
     BridgeContract("configureLLMProvider", "configure_llm_provider", "PUT", "/api/v1/config/llm", "configure_llm_provider", ("--configure-llm-provider", "openai"), "P1-complete"),
     BridgeContract("showTTSConfig", "show_tts_config", "GET", "/api/v1/config/tts", "show_tts_config", ("--show-tts-config",), "P1-complete"),
     BridgeContract("configureTTSProvider", "configure_tts_provider", "PUT", "/api/v1/config/tts", "configure_tts_provider", ("--configure-tts-provider", "mock"), "P1-complete"),

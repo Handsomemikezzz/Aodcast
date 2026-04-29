@@ -26,7 +26,6 @@ import { ProgressBar } from "../components/ProgressBar";
 import { useBridge } from "../lib/BridgeContext";
 import {
   SessionProject,
-  LLMProviderConfig,
   Readiness,
   PromptInput,
   RequestState,
@@ -40,20 +39,6 @@ import {
   getErrorRequestState,
   withRequestStateFallback,
 } from "../lib/requestState";
-
-function getLlmConfigIssue(config: LLMProviderConfig): string | null {
-  if (config.provider === "mock") return null;
-  if (config.provider !== "openai_compatible") {
-    return `Unsupported language model provider "${config.provider}". Open Settings and choose a supported provider.`;
-  }
-  const missing = [
-    !config.base_url.trim() ? "Base URL" : "",
-    !config.model.trim() ? "Model" : "",
-    !config.api_key.trim() ? "API key" : "",
-  ].filter(Boolean);
-  if (missing.length === 0) return null;
-  return `Language model setup is incomplete: ${missing.join(", ")} required. Open Settings to configure the interview model, or choose the mock provider for a demo.`;
-}
 
 export function ChatPage({
   onRefresh,
@@ -123,16 +108,15 @@ export function ChatPage({
 
   const ensureLlmReady = async (): Promise<boolean> => {
     try {
-      const config = await bridge.showLLMConfig();
-      const issue = getLlmConfigIssue(config);
-      if (!issue) {
+      const preflight = await bridge.checkLLMConfig();
+      if (preflight.ready) {
         setShowLlmSetupAction(false);
         return true;
       }
       setShowLlmSetupAction(true);
-      setLandingError(issue);
-      setError(issue);
-      setRequestState(buildRequestState("show_llm_config", "failed", issue));
+      setLandingError(preflight.message);
+      setError(preflight.message);
+      setRequestState(buildRequestState("check_llm_config", "failed", preflight.message));
       return false;
     } catch (err) {
       const message = getErrorMessage(err, "Failed to check language model settings.");
@@ -142,7 +126,7 @@ export function ChatPage({
       setRequestState(
         withRequestStateFallback(
           getErrorRequestState(err),
-          buildRequestState("show_llm_config", "failed", message),
+          buildRequestState("check_llm_config", "failed", message),
         ),
       );
       return false;

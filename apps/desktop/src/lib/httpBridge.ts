@@ -16,6 +16,7 @@ import type {
   AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
+  LLMConfigPreflight,
   LLMProviderConfig,
   ModelStorageStatus,
   ModelStatus,
@@ -63,6 +64,7 @@ type BridgeShape<T> = {
   script_id?: string;
   revisions?: ScriptRevisionRecord[];
   llm_config?: LLMProviderConfig;
+  llm_preflight?: LLMConfigPreflight;
   tts_capability?: TTSCapability;
   tts_config?: TTSProviderConfig;
   models?: ModelStatus[];
@@ -649,6 +651,10 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     async showLLMConfig() {
       const response = await callHttp<{}>("/api/v1/config/llm", { needsToken: true });
       return response.llm_config!;
+    },
+    async checkLLMConfig() {
+      const response = await callHttp<{}>("/api/v1/config/llm/preflight", { needsToken: true });
+      return response.llm_preflight!;
     },
     async configureLLMProvider(input: ConfigureLLMInput) {
       const response = await callHttp<{}>("/api/v1/config/llm", {

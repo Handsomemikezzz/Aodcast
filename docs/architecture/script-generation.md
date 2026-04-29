@@ -9,10 +9,11 @@ This document describes the current Milestone 3 script generation flow.
 The Python core now supports a draft-generation path after the interview reaches `ready_to_generate`.
 
 1. Load the persisted session project.
-2. Load the active LLM configuration from local config storage.
-3. Build a provider adapter from the configured provider name.
-4. Generate a draft from the transcript.
-5. Persist the draft and transition the session to `script_generated`.
+2. Check LLM configuration readiness through the shared preflight contract when the request comes from the desktop shell.
+3. Load the active LLM configuration from local config storage.
+4. Build a provider adapter from the configured provider name.
+5. Generate a draft from the transcript.
+6. Persist the draft and transition the session to `script_generated`.
 
 ## Provider Layer
 
@@ -37,6 +38,8 @@ The config contains:
 - model
 - base_url
 - api_key
+
+The same readiness rules are exposed through `--check-llm-config` and `GET /api/v1/config/llm/preflight`. Chat and script-generation UI should display that preflight result instead of duplicating provider-specific validation rules in React components.
 
 ## Failure Behavior
 

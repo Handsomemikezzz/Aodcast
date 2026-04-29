@@ -49,6 +49,12 @@ OpenAI-compatible path:
   --llm-api-key "<your-key>"
 ```
 
+Check whether the saved LLM configuration is ready for interview and script generation:
+
+```bash
+./scripts/dev/run-python-core.sh --check-llm-config
+```
+
 ### TTS provider
 
 Development smoke path:

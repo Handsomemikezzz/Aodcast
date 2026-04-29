@@ -172,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the persisted LLM configuration.",
     )
     parser.add_argument(
+        "--check-llm-config",
+        action="store_true",
+        help="Check whether the persisted LLM configuration can run interview and script generation.",
+    )
+    parser.add_argument(
         "--llm-provider-override",
         default="",
         help="Temporarily override the configured LLM provider for script generation.",

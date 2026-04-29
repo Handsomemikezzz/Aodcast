@@ -1,17 +1,22 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Routes, Route, NavLink, useNavigate, useLocation, Navigate, useParams } from "react-router-dom";
 import { useBridge } from "./lib/BridgeContext";
 import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
 
-import { ChatPage } from "./pages/ChatPage";
-import { ScriptPage } from "./pages/ScriptPage";
 import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
-import { ModelsPage } from "./pages/ModelsPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { VoiceStudioPage } from "./pages/VoiceStudioPage";
 import { MessageSquare, Edit3, Mic, Package, Settings } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
+
+const ChatPage = lazy(() => import("./pages/ChatPage").then((module) => ({ default: module.ChatPage })));
+const ScriptPage = lazy(() => import("./pages/ScriptPage").then((module) => ({ default: module.ScriptPage })));
+const ModelsPage = lazy(() => import("./pages/ModelsPage").then((module) => ({ default: module.ModelsPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const VoiceStudioPage = lazy(() => import("./pages/VoiceStudioPage").then((module) => ({ default: module.VoiceStudioPage })));
+
+function RouteFallback() {
+  return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading workspace…</div>;
+}
 
 function RedirectInterviewToChat() {
   const { sessionId } = useParams<{ sessionId?: string }>();
@@ -186,34 +191,36 @@ export default function App() {
         ) : null}
 
         <div className="flex-1 overflow-hidden relative">
-          <Routes>
-            <Route path="/" element={<Navigate to="/chat" replace />} />
-            <Route path="/history" element={<Navigate to="/chat" replace />} />
-            <Route
-              path="/chat"
-              element={<ChatPage onRefresh={fetchProjects} />}
-            />
-            <Route
-              path="/chat/:sessionId"
-              element={<ChatPage onRefresh={fetchProjects} />}
-            />
-            <Route path="/script" element={<ScriptPage projects={projects} onRefresh={fetchProjects} />} />
-            <Route
-              path="/script/:sessionId/:scriptId"
-              element={<ScriptPage projects={projects} onRefresh={fetchProjects} />}
-            />
-            <Route path="/script/:sessionId" element={<ScriptSessionResolve />} />
-            <Route path="/models" element={<ModelsPage />} />
-            <Route path="/voice-studio" element={<VoiceStudioPage />} />
-            <Route path="/voice-studio/:sessionId/:scriptId" element={<VoiceStudioPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/interview" element={<RedirectInterviewToChat />} />
-            <Route path="/interview/:sessionId" element={<RedirectInterviewToChat />} />
-            <Route path="/voice" element={<RedirectVoiceOrExportToScript />} />
-            <Route path="/voice/:sessionId" element={<RedirectVoiceOrExportToScript />} />
-            <Route path="/export" element={<RedirectVoiceOrExportToScript />} />
-            <Route path="/export/:sessionId" element={<RedirectVoiceOrExportToScript />} />
-          </Routes>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/chat" replace />} />
+              <Route path="/history" element={<Navigate to="/chat" replace />} />
+              <Route
+                path="/chat"
+                element={<ChatPage onRefresh={fetchProjects} />}
+              />
+              <Route
+                path="/chat/:sessionId"
+                element={<ChatPage onRefresh={fetchProjects} />}
+              />
+              <Route path="/script" element={<ScriptPage projects={projects} onRefresh={fetchProjects} />} />
+              <Route
+                path="/script/:sessionId/:scriptId"
+                element={<ScriptPage projects={projects} onRefresh={fetchProjects} />}
+              />
+              <Route path="/script/:sessionId" element={<ScriptSessionResolve />} />
+              <Route path="/models" element={<ModelsPage />} />
+              <Route path="/voice-studio" element={<VoiceStudioPage />} />
+              <Route path="/voice-studio/:sessionId/:scriptId" element={<VoiceStudioPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/interview" element={<RedirectInterviewToChat />} />
+              <Route path="/interview/:sessionId" element={<RedirectInterviewToChat />} />
+              <Route path="/voice" element={<RedirectVoiceOrExportToScript />} />
+              <Route path="/voice/:sessionId" element={<RedirectVoiceOrExportToScript />} />
+              <Route path="/export" element={<RedirectVoiceOrExportToScript />} />
+              <Route path="/export/:sessionId" element={<RedirectVoiceOrExportToScript />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
     </div>

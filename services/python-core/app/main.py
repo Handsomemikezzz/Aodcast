@@ -36,6 +36,7 @@ from app.models_catalog import (
     reset_model_storage,
 )
 from app.providers.llm.factory import validate_llm_provider
+from app.providers.llm.preflight import check_llm_config
 from app.providers.tts_api.factory import validate_tts_provider
 from app.runtime.long_task_state import LongTaskStateManager
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
@@ -157,6 +158,8 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "configure_tts_provider"
     if args.show_llm_config:
         return "show_llm_config"
+    if args.check_llm_config:
+        return "check_llm_config"
     if args.configure_llm_provider:
         return "configure_llm_provider"
     if args.show_local_tts_capability:
@@ -404,6 +407,12 @@ def run(argv: list[str] | None = None) -> int:
 
         if args.show_llm_config:
             return output_payload(args, {"llm_config": config_store.load_llm_config().to_dict()})
+
+        if args.check_llm_config:
+            return output_payload(
+                args,
+                {"llm_preflight": check_llm_config(config_store.load_llm_config()).to_dict()},
+            )
 
         if args.show_tts_config:
             return output_payload(args, {"tts_config": config_store.load_tts_config().to_dict()})

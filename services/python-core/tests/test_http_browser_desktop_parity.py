@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from tests.http_contract_helpers import (
+    APP_PATH,
     BRIDGE_FACTORY_PATH,
     DESKTOP_BRIDGE_PATH,
     HTTP_BRIDGE_PATH,
@@ -32,6 +33,14 @@ class HttpBrowserDesktopParityPrepTests(unittest.TestCase):
         http_text = read_text(HTTP_BRIDGE_PATH)
         self.assertIn("local HTTP runtime", http_text)
         self.assertNotIn("plain Vite in a browser has no Python/LLM bridge", http_text)
+
+    def test_app_routes_lazy_load_heavy_pages(self) -> None:
+        app_text = read_text(APP_PATH)
+        self.assertIn("lazy(", app_text)
+        self.assertIn("<Suspense", app_text)
+        for page in ("ChatPage", "ScriptPage", "ModelsPage", "SettingsPage", "VoiceStudioPage"):
+            with self.subTest(page=page):
+                self.assertNotIn(f'import {{ {page} }} from "./pages/{page}"', app_text)
 
 
 if __name__ == "__main__":

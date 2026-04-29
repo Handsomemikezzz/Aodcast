@@ -316,6 +316,46 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "bridge_auth_required")
         self.assertEqual(payload["request_state"]["operation"], "show_llm_config")
 
+    def test_llm_preflight_reports_missing_openai_compatible_fields(self) -> None:
+        self.config_store.save_llm_config(
+            LLMProviderConfig(
+                provider="openai_compatible",
+                model="",
+                base_url=" ",
+                api_key="",
+            )
+        )
+
+        status, _, payload = self.request_json(
+            "GET",
+            "/api/v1/config/llm/preflight",
+            token="runtime-token",
+        )
+
+        self.assertEqual(status, 200)
+        data = payload["data"]["llm_preflight"]
+        self.assertFalse(data["ready"])
+        self.assertEqual(data["provider"], "openai_compatible")
+        self.assertEqual(data["missing_fields"], ["base_url", "model", "api_key"])
+        self.assertEqual(data["supported_actions"], ["start_interview", "submit_reply", "generate_script"])
+        self.assertIn("Language model setup is incomplete", data["message"])
+
+    def test_llm_preflight_reports_mock_as_ready(self) -> None:
+        self.config_store.save_llm_config(LLMProviderConfig(provider="mock"))
+
+        status, _, payload = self.request_json(
+            "GET",
+            "/api/v1/config/llm/preflight",
+            token="runtime-token",
+        )
+
+        self.assertEqual(status, 200)
+        data = payload["data"]["llm_preflight"]
+        self.assertTrue(data["ready"])
+        self.assertEqual(data["provider"], "mock")
+        self.assertEqual(data["missing_fields"], [])
+        self.assertIn("ready", data["message"].lower())
+
     def test_configure_tts_persists_local_ref_audio_path(self) -> None:
         status, _, bootstrap = self.request_json(
             "POST",

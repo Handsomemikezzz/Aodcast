@@ -48,6 +48,7 @@ from app.orchestration.audio_rendering import (
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import ScriptGenerationService
 from app.providers.llm.factory import validate_llm_provider
+from app.providers.llm.preflight import check_llm_config
 from app.providers.tts_api.factory import validate_tts_provider
 from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
@@ -1127,6 +1128,13 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
+        if self.command == "GET" and path == "/api/v1/config/llm/preflight":
+            preflight = check_llm_config(self.context.config_store.load_llm_config())
+            self._send_bridge_envelope(
+                success_envelope({"llm_preflight": preflight.to_dict()}, operation="check_llm_config"),
+                origin=origin,
+            )
+            return
         if self.command == "PUT" and path == "/api/v1/config/llm":
             provider = str(body.get("provider") or "").strip()
             if not provider:
@@ -1674,6 +1682,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "download_model"
         if path.startswith("/api/v1/models/") and path.endswith(":delete"):
             return "delete_model"
+        if path == "/api/v1/config/llm/preflight":
+            return "check_llm_config"
         if path.startswith("/api/v1/config/llm"):
             return "configure_llm_provider" if self.command == "PUT" else "show_llm_config"
         if path.startswith("/api/v1/config/tts"):

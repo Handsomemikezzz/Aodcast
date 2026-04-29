@@ -239,6 +239,14 @@ export type LLMProviderConfig = {
   api_key: string;
 };
 
+export type LLMConfigPreflight = {
+  ready: boolean;
+  provider: string;
+  missing_fields: string[];
+  supported_actions: string[];
+  message: string;
+};
+
 export type TTSProviderConfig = {
   provider: string;
   model: string;

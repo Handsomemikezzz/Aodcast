@@ -40,6 +40,8 @@ Script Workbench, Voice Studio, `ModelsPage`, and the shared request-state helpe
 
 The HTTP runtime should preserve those semantics exactly instead of teaching the UI a new error model.
 
+LLM-dependent UI actions use the protected `GET /api/v1/config/llm/preflight` route to decide whether interview and script-generation actions can run. Keep provider readiness rules in the Python runtime so new providers do not require duplicated React-side validation.
+
 ### 3. Long-running task behavior is already poll-oriented
 
 `renderAudio` and `downloadModel` already work as:

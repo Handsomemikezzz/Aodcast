@@ -2,6 +2,7 @@ import {
   AudioRenderResult,
   GenerationResult,
   InterviewTurnResult,
+  LLMConfigPreflight,
   LLMProviderConfig,
   ModelStorageStatus,
   ModelStatus,
@@ -135,6 +136,7 @@ export interface DesktopBridge {
   /** Report whether local MLX TTS is available on this machine and why/why not. */
   getLocalTTSCapability(): Promise<TTSCapability>;
   showLLMConfig(): Promise<LLMProviderConfig>;
+  checkLLMConfig(): Promise<LLMConfigPreflight>;
   configureLLMProvider(input: ConfigureLLMInput): Promise<LLMProviderConfig>;
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
