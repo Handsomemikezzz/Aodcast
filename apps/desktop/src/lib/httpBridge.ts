@@ -507,6 +507,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           body: JSON.stringify({
             provider_override: options?.providerOverride ?? "",
             script_id: options?.scriptId ?? "",
+            voice_settings: options?.voiceSettings ? serializeVoiceSettings(options.voiceSettings) : undefined,
           }),
         },
       );
@@ -514,6 +515,25 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         response.run_token = response.request_state.run_token;
       }
       return response;
+    },
+    async deleteGeneratedAudio(sessionId: string, options?: { scriptId?: string }) {
+      const query = options?.scriptId ? `?script_id=${encodeURIComponent(options.scriptId)}` : "";
+      const response = await callHttp<{ project?: SessionProject }>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/audio${query}`,
+        { method: "DELETE" },
+      );
+      return response.project!;
+    },
+    async deleteArtifactAudio(path: string) {
+      const response = await callHttp<{ path?: string; deleted?: boolean; message?: string }>(
+        `/api/v1/artifacts/audio?path=${encodeURIComponent(path)}`,
+        { method: "DELETE" },
+      );
+      return {
+        path: response.path,
+        deleted: response.deleted,
+        message: response.message,
+      };
     },
     async listVoicePresets() {
       const response = await callHttp<VoicePresetCatalog>("/api/v1/voice-studio/presets");
@@ -528,7 +548,12 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     async renderVoicePreview(settings: VoiceRenderSettings, options?: RenderVoicePreviewOptions) {
       const response = await callHttp<VoicePreviewResult & { task_id?: string }>("/api/v1/voice-studio/preview", {
         method: "POST",
-        body: JSON.stringify(serializeVoiceSettings(settings)),
+        body: JSON.stringify({
+          ...serializeVoiceSettings(settings),
+          session_id: options?.sessionId ?? "",
+          script_id: options?.scriptId ?? "",
+          provider_override: options?.providerOverride ?? "",
+        }),
       });
       const initialState = asRequestState(response.request_state);
       if (initialState) options?.onState?.(initialState);
@@ -561,6 +586,13 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           method: "POST",
           body: JSON.stringify({}),
         },
+      );
+      return response.project!;
+    },
+    async deleteVoiceTake(sessionId: string, takeId: string) {
+      const response = await callHttp<{}>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/voice-takes/${encodeURIComponent(takeId)}`,
+        { method: "DELETE" },
       );
       return response.project!;
     },

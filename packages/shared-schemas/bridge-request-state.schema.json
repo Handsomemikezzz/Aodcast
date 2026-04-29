@@ -19,6 +19,33 @@
     "run_token": {
       "type": "string",
       "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audio_path": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "voice_id": { "type": "string" },
+        "voice_name": { "type": "string" },
+        "style_id": { "type": "string" },
+        "style_name": { "type": "string" },
+        "speed": { "type": "number" },
+        "language": { "type": "string" },
+        "audio_format": { "type": "string" },
+        "preview_text": { "type": "string" }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

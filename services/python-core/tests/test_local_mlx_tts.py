@@ -121,6 +121,50 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(response.file_extension, "wav")
         self.assertEqual(response.audio_bytes, b"runner-bytes")
 
+
+    def test_local_provider_forwards_voice_style_speed_and_language_to_runner(self) -> None:
+        provider = LocalMLXTTSProvider(
+            TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model")
+        )
+        captured: dict[str, object] = {}
+
+        def capture_runner(text: str, **kwargs: object) -> LocalMLXRunResult:
+            captured["text"] = text
+            captured.update(kwargs)
+            return LocalMLXRunResult(
+                audio_bytes=b"runner-bytes",
+                file_extension="wav",
+                model_name="mlx-voice",
+                output_path="/tmp/render.wav",
+            )
+
+        with patch(
+            "app.providers.tts_local_mlx.provider.detect_local_mlx_capability",
+            return_value=type(
+                "Capability",
+                (),
+                {"available": True, "reasons": [], "fallback_provider": "mock_remote"},
+            )(),
+        ), patch.object(provider.runner, "synthesize", side_effect=capture_runner):
+            provider.synthesize(
+                TTSGenerationRequest(
+                    session_id="session-1",
+                    script_text="一段中文试音。",
+                    voice="Vivian",
+                    audio_format="wav",
+                    speed=0.8,
+                    style_id="story",
+                    style_prompt="Use a slower, immersive storytelling tone.",
+                    language="zh",
+                )
+            )
+
+        self.assertEqual(captured["text"], "一段中文试音。")
+        self.assertEqual(captured["voice"], "Vivian")
+        self.assertEqual(captured["speed"], 0.8)
+        self.assertEqual(captured["style_prompt"], "Use a slower, immersive storytelling tone.")
+        self.assertEqual(captured["language"], "zh")
+
     def test_runner_submits_chunks_to_worker_and_returns_audio(self) -> None:
         config = TTSProviderConfig(
             provider="local_mlx",
@@ -139,6 +183,9 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                 chunks,
                 voice: str,
                 audio_format: str,
+                speed: float,
+                style_prompt: str,
+                language: str,
                 output_dir: Path,
                 ref_audio,
                 should_cancel,
@@ -149,6 +196,9 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                     "chunks": list(chunks),
                     "voice": voice,
                     "audio_format": audio_format,
+                    "speed": speed,
+                    "style_prompt": style_prompt,
+                    "language": language,
                     "ref_audio": ref_audio,
                 }
                 if on_event is not None:
@@ -187,6 +237,9 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(result.file_extension, "wav")
         self.assertEqual(result.model_name, config.model)
         self.assertEqual(fake.last_kwargs["audio_format"], "wav")
+        self.assertEqual(fake.last_kwargs["speed"], 1.0)
+        self.assertEqual(fake.last_kwargs["style_prompt"], "")
+        self.assertEqual(fake.last_kwargs["language"], "zh")
         self.assertEqual(fake.last_kwargs["ref_audio"], config.local_ref_audio_path)
         self.assertEqual(len(events), 2)
         self.assertEqual(getattr(events[0], "phase"), "chunk_started")

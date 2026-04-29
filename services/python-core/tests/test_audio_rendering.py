@@ -137,6 +137,35 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(result.settings.preview_text, "这是我自己输入的一句试音文本。")
         self.assertTrue(Path(result.audio_path).exists())
 
+
+    def test_render_voice_preview_applies_provider_override(self) -> None:
+        _, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                return TTSGenerationResponse(
+                    audio_bytes=b"preview-audio",
+                    file_extension=request.audio_format,
+                    provider_name="capture",
+                    model_name="capture-model",
+                )
+
+        def build_provider(config):  # type: ignore[no-untyped-def]
+            captured["provider"] = config.provider
+            captured["voice"] = config.voice
+            return CapturingProvider()
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", side_effect=build_provider):
+            service.render_voice_preview_with_cancellation(
+                VoiceRenderSettings(voice_id="news_anchor", style_id="news"),
+                override_provider="mock_remote",
+            )
+
+        self.assertEqual(captured["provider"], "mock_remote")
+        self.assertEqual(captured["voice"], "onyx")
+
     def test_render_voice_take_keeps_final_take_and_latest_candidate_only(self) -> None:
         store, config_store, _, service = self.build_environment()
         config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
@@ -150,7 +179,6 @@ class AudioRenderingTests(unittest.TestCase):
         )
 
         first = service.render_voice_take(session_id, settings=settings)
-        service.set_final_voice_take(session_id, first.take.take_id)
         second = service.render_voice_take(session_id, settings=settings)
         third = service.render_voice_take(
             session_id,
@@ -165,14 +193,271 @@ class AudioRenderingTests(unittest.TestCase):
         loaded = store.load_project(session_id)
 
         assert loaded.artifact is not None
-        self.assertEqual(loaded.artifact.final_take_id, first.take.take_id)
-        self.assertEqual(loaded.artifact.audio_path, first.take.audio_path)
-        self.assertEqual({take.take_id for take in loaded.artifact.takes}, {first.take.take_id, third.take.take_id})
-        self.assertNotIn(second.take.take_id, {take.take_id for take in loaded.artifact.takes})
+        self.assertEqual(loaded.artifact.final_take_id, third.take.take_id)
+        self.assertEqual(loaded.artifact.audio_path, third.take.audio_path)
+        self.assertEqual(loaded.artifact.voice_settings["voice_id"], "news_anchor")
+        self.assertEqual({take.take_id for take in loaded.artifact.takes}, {second.take.take_id, third.take.take_id})
+        self.assertNotIn(first.take.take_id, {take.take_id for take in loaded.artifact.takes})
         candidate = next(take for take in loaded.artifact.takes if take.take_id == third.take.take_id)
         self.assertEqual(candidate.voice_id, "news_anchor")
         self.assertEqual(candidate.style_id, "news")
         self.assertEqual(candidate.speed, 0.8)
+
+
+
+    def test_voice_settings_are_isolated_per_script_snapshot(self) -> None:
+        store, _, _, service = self.build_environment()
+        session = SessionRecord(topic="Two scripts", creation_intent="Isolate voices")
+        session.transition(SessionState.SCRIPT_EDITED)
+        first = ScriptRecord(session_id=session.session_id, script_id="script-a", draft="A draft", final="A final")
+        second = ScriptRecord(session_id=session.session_id, script_id="script-b", draft="B draft", final="B final")
+        store.save_project(SessionProject(session=session, script=second, artifact=ArtifactRecord(session_id=session.session_id)))
+        store.save_script(first)
+
+        service.save_voice_settings(
+            session.session_id,
+            VoiceRenderSettings(voice_id="news_anchor", style_id="news", speed=0.8),
+            script_id=first.script_id,
+        )
+
+        first_project = store.load_project_for_script(session.session_id, first.script_id)
+        second_project = store.load_project_for_script(session.session_id, second.script_id)
+        assert first_project.artifact is not None
+        assert second_project.artifact is not None
+        self.assertEqual(first_project.artifact.voice_settings["voice_id"], "news_anchor")
+        self.assertEqual(second_project.artifact.voice_settings, {})
+
+    def test_voice_take_audio_is_isolated_per_script_snapshot(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session = SessionRecord(topic="Two scripts", creation_intent="Isolate takes")
+        session.transition(SessionState.SCRIPT_EDITED)
+        first = ScriptRecord(session_id=session.session_id, script_id="script-a", draft="A draft", final="A final")
+        second = ScriptRecord(session_id=session.session_id, script_id="script-b", draft="B draft", final="B final")
+        store.save_project(SessionProject(session=session, script=second, artifact=ArtifactRecord(session_id=session.session_id)))
+        store.save_script(first)
+
+        take = service.render_voice_take(
+            session.session_id,
+            script_id=first.script_id,
+            settings=VoiceRenderSettings(voice_id="deep_story", style_id="story"),
+        )
+
+        first_project = store.load_project_for_script(session.session_id, first.script_id)
+        second_project = store.load_project_for_script(session.session_id, second.script_id)
+        assert first_project.artifact is not None
+        assert second_project.artifact is not None
+        self.assertEqual(first_project.artifact.audio_path, take.audio_path)
+        self.assertEqual(first_project.artifact.final_take_id, take.take.take_id)
+        self.assertEqual(second_project.artifact.audio_path, "")
+        self.assertEqual(second_project.artifact.final_take_id, "")
+        self.assertEqual(second_project.artifact.takes, [])
+
+    def test_delete_generated_audio_targets_requested_script_snapshot(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session = SessionRecord(topic="Two scripts", creation_intent="Delete one script audio")
+        session.transition(SessionState.SCRIPT_EDITED)
+        first = ScriptRecord(session_id=session.session_id, script_id="script-a", draft="A draft", final="A final")
+        second = ScriptRecord(session_id=session.session_id, script_id="script-b", draft="B draft", final="B final")
+        store.save_project(SessionProject(session=session, script=second, artifact=ArtifactRecord(session_id=session.session_id)))
+        store.save_script(first)
+        first_take = service.render_voice_take(
+            session.session_id,
+            script_id=first.script_id,
+            settings=VoiceRenderSettings(voice_id="deep_story", style_id="story"),
+        )
+        second_take = service.render_voice_take(
+            session.session_id,
+            script_id=second.script_id,
+            settings=VoiceRenderSettings(voice_id="news_anchor", style_id="news"),
+        )
+
+        service.delete_generated_audio(session.session_id, script_id=first.script_id)
+
+        first_project = store.load_project_for_script(session.session_id, first.script_id)
+        second_project = store.load_project_for_script(session.session_id, second.script_id)
+        assert first_project.artifact is not None
+        assert second_project.artifact is not None
+        self.assertFalse(Path(first_take.audio_path).exists())
+        self.assertEqual(first_project.artifact.audio_path, "")
+        self.assertEqual(first_project.artifact.final_take_id, "")
+        self.assertTrue(Path(second_take.audio_path).exists())
+        self.assertEqual(second_project.artifact.audio_path, second_take.audio_path)
+        self.assertEqual(second_project.artifact.final_take_id, second_take.take.take_id)
+
+    def test_render_audio_uses_artifact_voice_studio_settings_as_default(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote", voice="onyx", audio_format="wav"))
+        session_id = self.seed_script_project(store)
+        loaded = store.load_project(session_id)
+        assert loaded.artifact is not None
+        loaded.artifact.voice_settings = {
+            "voice_id": "casual_chat",
+            "voice_name": "轻松聊天",
+            "style_id": "casual",
+            "style_name": "轻松聊天",
+            "speed": 0.9,
+            "language": "zh",
+            "audio_format": "mp3",
+        }
+        store.save_project(loaded)
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"voice-studio-audio",
+                    file_extension=request.audio_format,
+                    provider_name="capture",
+                    model_name="capture-model",
+                )
+
+        def build_provider(config):  # type: ignore[no-untyped-def]
+            captured["config_voice"] = config.voice
+            captured["config_audio_format"] = config.audio_format
+            return CapturingProvider()
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", side_effect=build_provider):
+            result = service.render_audio(session_id)
+
+        request = captured["request"]
+        self.assertEqual(captured["config_voice"], "nova")
+        self.assertEqual(captured["config_audio_format"], "mp3")
+        self.assertEqual(request.voice, "nova")
+        self.assertEqual(request.style_id, "casual")
+        self.assertEqual(request.speed, 0.9)
+        self.assertEqual(request.language, "zh")
+        self.assertEqual(result.provider, "capture")
+        reloaded = store.load_project(session_id)
+        assert reloaded.artifact is not None
+        self.assertEqual(reloaded.artifact.voice_settings["voice_id"], "casual_chat")
+
+    def test_render_audio_uses_explicit_voice_studio_settings_over_saved_default(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote", voice="onyx", audio_format="wav"))
+        session_id = self.seed_script_project(store)
+        loaded = store.load_project(session_id)
+        assert loaded.artifact is not None
+        loaded.artifact.voice_settings = {"voice_id": "casual_chat", "style_id": "casual", "speed": 0.9}
+        store.save_project(loaded)
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"explicit-voice-audio",
+                    file_extension=request.audio_format,
+                    provider_name="capture",
+                    model_name="capture-model",
+                )
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=CapturingProvider()):
+            service.render_audio(
+                session_id,
+                settings=VoiceRenderSettings(
+                    voice_id="deep_story",
+                    voice_name="低沉故事感",
+                    style_id="story",
+                    style_name="故事感",
+                    speed=0.8,
+                    language="zh",
+                    audio_format="wav",
+                ),
+            )
+
+        request = captured["request"]
+        self.assertEqual(request.voice, "echo")
+        self.assertEqual(request.style_id, "story")
+        self.assertEqual(request.speed, 0.8)
+        reloaded = store.load_project(session_id)
+        assert reloaded.artifact is not None
+        self.assertEqual(reloaded.artifact.voice_settings["voice_id"], "deep_story")
+
+
+
+    def test_local_mlx_render_maps_voice_studio_preset_to_qwen_voice(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"local-audio",
+                    file_extension=request.audio_format,
+                    provider_name="local_mlx",
+                    model_name="mlx-voice",
+                )
+
+        def build_provider(config):  # type: ignore[no-untyped-def]
+            captured["config_voice"] = config.voice
+            return CapturingProvider()
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", side_effect=build_provider):
+            service.render_audio(
+                session_id,
+                settings=VoiceRenderSettings(
+                    voice_id="deep_story",
+                    style_id="story",
+                    speed=0.8,
+                    language="zh",
+                    audio_format="wav",
+                ),
+            )
+
+        request = captured["request"]
+        self.assertEqual(captured["config_voice"], "Uncle_Fu")
+        self.assertEqual(request.voice, "Uncle_Fu")
+        self.assertEqual(request.style_id, "story")
+        self.assertEqual(request.speed, 0.8)
+        self.assertEqual(request.language, "zh")
+
+    def test_delete_generated_audio_removes_files_and_clears_artifact_audio(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session_id = self.seed_script_project(store)
+        result = service.render_audio(session_id)
+        audio_path = Path(result.audio_path)
+        transcript_path = Path(result.transcript_path)
+        self.assertTrue(audio_path.exists())
+        self.assertTrue(transcript_path.exists())
+
+        project = service.delete_generated_audio(session_id)
+
+        self.assertFalse(audio_path.exists())
+        self.assertFalse(transcript_path.exists())
+        assert project.artifact is not None
+        self.assertEqual(project.artifact.audio_path, "")
+        self.assertEqual(project.artifact.transcript_path, "")
+        self.assertEqual(project.artifact.provider, "")
+        self.assertEqual(project.artifact.final_take_id, "")
+
+    def test_delete_voice_take_removes_take_files_and_clears_final_audio(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))
+        session_id = self.seed_script_project(store)
+        take_result = service.render_voice_take(
+            session_id,
+            settings=VoiceRenderSettings(voice_id="casual_chat", style_id="casual"),
+        )
+        audio_path = Path(take_result.take.audio_path)
+        transcript_path = Path(take_result.take.transcript_path)
+        self.assertTrue(audio_path.exists())
+        self.assertTrue(transcript_path.exists())
+
+        project = service.delete_voice_take(session_id, take_result.take.take_id)
+
+        self.assertFalse(audio_path.exists())
+        self.assertFalse(transcript_path.exists())
+        assert project.artifact is not None
+        self.assertEqual(project.artifact.takes, [])
+        self.assertEqual(project.artifact.final_take_id, "")
+        self.assertEqual(project.artifact.audio_path, "")
 
     def test_render_audio_failure_marks_session_failed(self) -> None:
         store, config_store, _, service = self.build_environment()

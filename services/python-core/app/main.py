@@ -15,6 +15,7 @@ from app.api.serializers import (
     serialize_project,
     serialize_script_revisions,
     serialize_turn_result,
+    serialize_voice_take_result,
 )
 from app.api.http_runtime import serve_http
 from app.domain.artifact import ArtifactRecord
@@ -22,7 +23,8 @@ from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import TranscriptRecord
-from app.orchestration.audio_rendering import AudioRenderingService
+from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, STYLE_PRESETS, VOICE_PRESETS
+from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import ScriptGenerationService
 from app.models_catalog import (
@@ -182,6 +184,12 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "show_script"
     if False:  # pragma: no cover
         return "list_scripts"
+    if False:  # pragma: no cover
+        return "delete_generated_audio"
+    if False:  # pragma: no cover
+        return "delete_artifact_audio"
+    if False:  # pragma: no cover
+        return "delete_voice_take"
     return "bridge_ping"
 
 
@@ -620,6 +628,56 @@ def run(argv: list[str] | None = None) -> int:
         if args.show_local_tts_capability:
             capability = detect_local_mlx_capability(config_store.load_tts_config()).to_dict()
             return output_payload(args, {"tts_capability": capability})
+
+        if args.list_voice_presets:
+            return output_payload(
+                args,
+                {
+                    "voices": [voice.to_dict() for voice in VOICE_PRESETS],
+                    "styles": [style.to_dict() for style in STYLE_PRESETS],
+                    "standard_preview_text": STANDARD_PREVIEW_TEXT,
+                },
+            )
+
+        if args.render_voice_preview:
+            result = audio_rendering.render_voice_preview(VoiceRenderSettings())
+            return output_payload(
+                args,
+                {
+                    "provider": result.provider,
+                    "model": result.model,
+                    "audio_path": result.audio_path,
+                    "settings": {
+                        "voice_id": result.settings.voice_id,
+                        "voice_name": result.settings.voice_name,
+                        "style_id": result.settings.style_id,
+                        "style_name": result.settings.style_name,
+                        "speed": result.settings.speed,
+                        "language": result.settings.language,
+                        "audio_format": result.settings.audio_format,
+                        "preview_text": result.settings.preview_text,
+                    },
+                },
+            )
+
+        if args.render_voice_take:
+            project = store.load_project(args.render_voice_take)
+            ensure_script_is_active(project)
+            if project.script is None:
+                raise ValueError("Cannot render voice take because no script record exists.")
+            result = audio_rendering.render_voice_take(
+                args.render_voice_take,
+                script_id=project.script.script_id,
+                override_provider=args.tts_provider_override,
+                settings=VoiceRenderSettings(),
+            )
+            return output_payload(args, serialize_voice_take_result(result))
+
+        if args.set_final_voice_take:
+            if not args.take_id.strip():
+                raise ValueError("--take-id is required when using --set-final-voice-take")
+            project = audio_rendering.set_final_voice_take(args.set_final_voice_take, args.take_id.strip())
+            return output_payload(args, {"project": serialize_project(project)})
 
         if args.start_interview:
             project = store.load_project(args.start_interview)

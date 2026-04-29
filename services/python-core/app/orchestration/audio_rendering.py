@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -83,11 +84,13 @@ class AudioRenderingService:
         *,
         script_id: str = "",
         override_provider: str = "",
+        settings: VoiceRenderSettings | None = None,
     ) -> AudioRenderResult:
         return self.render_audio_with_cancellation(
             session_id,
             script_id=script_id,
             override_provider=override_provider,
+            settings=settings,
         )
 
     def render_audio_with_cancellation(
@@ -96,6 +99,7 @@ class AudioRenderingService:
         *,
         script_id: str = "",
         override_provider: str = "",
+        settings: VoiceRenderSettings | None = None,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
@@ -108,6 +112,7 @@ class AudioRenderingService:
             artifact = ArtifactRecord(
                 session_id=session_id,
                 transcript_path=f"sessions/{session_id}/transcript.json",
+                active_script_id=script.script_id,
             )
             project.artifact = artifact
             self.store.save_project(project)
@@ -118,10 +123,12 @@ class AudioRenderingService:
         if not final_text:
             raise ValueError("Cannot render audio without script content.")
 
-        settings = VoiceRenderSettings()
+        render_settings = self._resolve_render_settings(artifact, settings)
         tts_config = self.config_store.load_tts_config()
         if override_provider:
             tts_config.provider = override_provider
+        tts_config.voice = self._provider_voice_for(render_settings, tts_config.provider)
+        tts_config.audio_format = render_settings.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         previous_state = project.session.state
 
@@ -143,15 +150,16 @@ class AudioRenderingService:
                 return
             on_progress(snapshot)
 
+        style = resolve_style_preset(render_settings.style_id)
         request = TTSGenerationRequest(
             session_id=session_id,
             script_text=final_text,
             voice=tts_config.voice,
             audio_format=tts_config.audio_format,
-            speed=settings.speed,
-            style_id=settings.style_id,
-            style_prompt="",
-            language=settings.language,
+            speed=render_settings.speed,
+            style_id=render_settings.style_id,
+            style_prompt=style.prompt,
+            language=render_settings.language,
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
         )
@@ -187,6 +195,8 @@ class AudioRenderingService:
         artifact.transcript_path = str(transcript_path)
         artifact.audio_path = str(audio_path)
         artifact.provider = response.provider_name
+        artifact.voice_settings = self._settings_to_dict(render_settings)
+        artifact.final_take_id = ""
         project.session.tts_provider = response.provider_name
         project.session.transition(_resolve_post_render_state(previous_state))
         self.store.save_project(project)
@@ -199,19 +209,48 @@ class AudioRenderingService:
             transcript_path=str(transcript_path),
         )
 
-    def render_voice_preview(self, settings: VoiceRenderSettings) -> VoicePreviewResult:
-        return self.render_voice_preview_with_cancellation(settings)
+    def render_voice_preview(
+        self,
+        settings: VoiceRenderSettings,
+        *,
+        override_provider: str = "",
+    ) -> VoicePreviewResult:
+        return self.render_voice_preview_with_cancellation(settings, override_provider=override_provider)
+
+    def save_voice_settings(
+        self,
+        session_id: str,
+        settings: VoiceRenderSettings,
+        *,
+        script_id: str = "",
+    ) -> SessionProject:
+        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
+        artifact = project.artifact
+        if artifact is None:
+            artifact = ArtifactRecord(
+                session_id=session_id,
+                transcript_path=f"sessions/{session_id}/transcript.json",
+                active_script_id=project.script.script_id if project.script is not None else "",
+            )
+            project.artifact = artifact
+        normalized = self._normalize_settings(settings)
+        artifact.voice_settings = self._settings_to_dict(normalized)
+        self.store.save_project(project)
+        return project
 
     def render_voice_preview_with_cancellation(
         self,
         settings: VoiceRenderSettings,
         *,
+        override_provider: str = "",
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> VoicePreviewResult:
         normalized = self._normalize_settings(settings)
         tts_config = self.config_store.load_tts_config()
-        tts_config.voice = self._provider_voice_for(normalized)
+        if override_provider:
+            tts_config.provider = override_provider
+        tts_config.voice = self._provider_voice_for(normalized, tts_config.provider)
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         style = resolve_style_preset(normalized.style_id)
@@ -296,7 +335,7 @@ class AudioRenderingService:
         tts_config = self.config_store.load_tts_config()
         if override_provider:
             tts_config.provider = override_provider
-        tts_config.voice = self._provider_voice_for(normalized)
+        tts_config.voice = self._provider_voice_for(normalized, tts_config.provider)
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         previous_state = project.session.state
@@ -372,6 +411,11 @@ class AudioRenderingService:
             audio_format=response.file_extension,
         )
         artifact.takes = self._append_take_with_retention(artifact.takes, artifact.final_take_id, take)
+        artifact.final_take_id = take.take_id
+        artifact.audio_path = take.audio_path
+        artifact.transcript_path = take.transcript_path
+        artifact.provider = take.provider
+        artifact.voice_settings = self._settings_to_dict(normalized)
         project.session.tts_provider = response.provider_name
         project.session.transition(_resolve_post_render_state(previous_state))
         self.store.save_project(project)
@@ -390,6 +434,12 @@ class AudioRenderingService:
         artifact = project.artifact
         if artifact is None:
             raise ValueError("Cannot set final audio without an artifact record.")
+        take_script_id = artifact.script_id_for_take(take_id)
+        if take_script_id and project.script is not None and take_script_id != project.script.script_id:
+            project = self.store.load_project_for_script(session_id, take_script_id)
+            artifact = project.artifact
+            if artifact is None:
+                raise ValueError("Cannot set final audio without an artifact record.")
         selected = next((take for take in artifact.takes if take.take_id == take_id), None)
         if selected is None:
             raise ValueError(f"Unknown take_id '{take_id}' for session {session_id}.")
@@ -397,9 +447,69 @@ class AudioRenderingService:
         artifact.audio_path = selected.audio_path
         artifact.transcript_path = selected.transcript_path
         artifact.provider = selected.provider
+        artifact.voice_settings = self._settings_to_dict(self._settings_from_take(selected))
         project.session.tts_provider = selected.provider
         self.store.save_project(project)
         return project
+
+    def delete_generated_audio(self, session_id: str, *, script_id: str = "") -> SessionProject:
+        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
+        artifact = project.artifact
+        if artifact is None:
+            raise ValueError("Cannot delete audio without an artifact record.")
+
+        self._delete_artifact_file(artifact.audio_path)
+        self._delete_artifact_file(artifact.transcript_path)
+        if artifact.final_take_id:
+            selected = next((take for take in artifact.takes if take.take_id == artifact.final_take_id), None)
+            if selected is not None:
+                self._delete_artifact_file(selected.audio_path)
+                self._delete_artifact_file(selected.transcript_path)
+            artifact.takes = [take for take in artifact.takes if take.take_id != artifact.final_take_id]
+
+        artifact.audio_path = ""
+        artifact.transcript_path = ""
+        artifact.provider = ""
+        artifact.final_take_id = ""
+        self.store.save_project(project)
+        return project
+
+    def delete_voice_take(self, session_id: str, take_id: str) -> SessionProject:
+        project = self.store.load_project(session_id)
+        artifact = project.artifact
+        if artifact is None:
+            raise ValueError("Cannot delete take without an artifact record.")
+        take_script_id = artifact.script_id_for_take(take_id)
+        if take_script_id and project.script is not None and take_script_id != project.script.script_id:
+            project = self.store.load_project_for_script(session_id, take_script_id)
+            artifact = project.artifact
+            if artifact is None:
+                raise ValueError("Cannot delete take without an artifact record.")
+        selected = next((take for take in artifact.takes if take.take_id == take_id), None)
+        if selected is None:
+            raise ValueError(f"Unknown take_id '{take_id}' for session {session_id}.")
+
+        self._delete_artifact_file(selected.audio_path)
+        self._delete_artifact_file(selected.transcript_path)
+        artifact.takes = [take for take in artifact.takes if take.take_id != take_id]
+        if artifact.final_take_id == take_id:
+            artifact.final_take_id = ""
+            artifact.audio_path = ""
+            artifact.transcript_path = ""
+            artifact.provider = ""
+        self.store.save_project(project)
+        return project
+
+    def _resolve_render_settings(
+        self,
+        artifact: ArtifactRecord,
+        settings: VoiceRenderSettings | None,
+    ) -> VoiceRenderSettings:
+        if settings is not None:
+            return self._normalize_settings(settings)
+        if artifact.voice_settings:
+            return self._normalize_settings(self._settings_from_dict(artifact.voice_settings))
+        return self._normalize_settings(VoiceRenderSettings())
 
     def _normalize_settings(self, settings: VoiceRenderSettings) -> VoiceRenderSettings:
         voice = resolve_voice_preset(settings.voice_id)
@@ -415,8 +525,49 @@ class AudioRenderingService:
             preview_text=settings.preview_text.strip(),
         )
 
-    def _provider_voice_for(self, settings: VoiceRenderSettings) -> str:
+    def _provider_voice_for(self, settings: VoiceRenderSettings, provider: str = "") -> str:
+        if provider == "local_mlx":
+            return _local_mlx_voice_for(settings.voice_id, settings.language)
         return resolve_voice_preset(settings.voice_id).provider_voice
+
+    def _settings_to_dict(self, settings: VoiceRenderSettings) -> dict[str, object]:
+        return {
+            "voice_id": settings.voice_id,
+            "voice_name": settings.voice_name,
+            "style_id": settings.style_id,
+            "style_name": settings.style_name,
+            "speed": settings.speed,
+            "language": settings.language,
+            "audio_format": settings.audio_format,
+        }
+
+    def _settings_from_dict(self, payload: dict[str, Any]) -> VoiceRenderSettings:
+        return VoiceRenderSettings(
+            voice_id=str(payload.get("voice_id") or "warm_narrator"),
+            voice_name=str(payload.get("voice_name") or ""),
+            style_id=str(payload.get("style_id") or "natural"),
+            style_name=str(payload.get("style_name") or ""),
+            speed=float(payload.get("speed") or 1.0),
+            language=str(payload.get("language") or "zh"),
+            audio_format=str(payload.get("audio_format") or "wav"),
+            preview_text=str(payload.get("preview_text") or ""),
+        )
+
+    def _settings_from_take(self, take: AudioTakeRecord) -> VoiceRenderSettings:
+        return VoiceRenderSettings(
+            voice_id=take.voice_id,
+            voice_name=take.voice_name,
+            style_id=take.style_id,
+            style_name=take.style_name,
+            speed=take.speed,
+            language=take.language,
+            audio_format=take.audio_format,
+        )
+
+    def _delete_artifact_file(self, path: str) -> None:
+        if not path.strip():
+            return
+        self.artifact_store.delete_export_file(Path(path))
 
     def _append_take_with_retention(
         self,
@@ -486,3 +637,27 @@ def _translate_provider_event(event: Any) -> AudioRenderProgress | None:
         chunk_index=index + 1,
         chunks_total=total,
     )
+
+
+_LOCAL_MLX_CHINESE_VOICES = {
+    "warm_narrator": "Vivian",
+    "news_anchor": "Serena",
+    "casual_chat": "Dylan",
+    "deep_story": "Uncle_Fu",
+    "bright_energy": "Eric",
+}
+
+_LOCAL_MLX_ENGLISH_VOICES = {
+    "warm_narrator": "Ryan",
+    "news_anchor": "Ryan",
+    "casual_chat": "Aiden",
+    "deep_story": "Ryan",
+    "bright_energy": "Aiden",
+}
+
+
+def _local_mlx_voice_for(voice_id: str, language: str) -> str:
+    language_key = language.strip().lower().replace("_", "-")
+    if language_key.startswith("en"):
+        return _LOCAL_MLX_ENGLISH_VOICES.get(voice_id, "Ryan")
+    return _LOCAL_MLX_CHINESE_VOICES.get(voice_id, "Vivian")

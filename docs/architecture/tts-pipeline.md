@@ -30,6 +30,11 @@ MLX capability report and runtime requirements in isolation.
 - `services/python-core/app/providers/tts_local_mlx/chunker.py` -
   sentence-level script splitter (CJK + ASCII aware)
 
+Voice Studio preview uses the same provider path but renders a short
+`preview_text` instead of the full script. Preview requests are isolated with
+their own `render_voice_preview:{run_token}` task id so a stale preview result
+cannot satisfy a newer click.
+
 ## Flow
 
 ```mermaid
@@ -77,6 +82,12 @@ the MLX worker, which emits `chunk_started` and `chunk_done` events for
 each sentence. The orchestration layer translates those events into the
 0-100 progress percentage shown in the UI.
 
+For Local MLX, Voice Studio presets are mapped to Qwen-compatible speaker
+names before synthesis. The worker receives the normalized speaker, style
+instruction, speed, and language (`lang_code`) for each job; Qwen model
+variants apply the subset they support (for example CustomVoice/VoiceDesign
+models use `instruct`, while some base models may ignore style instructions).
+
 The worker joins the per-chunk WAV segments into the final container
 format before emitting the `done` event, so downstream consumers see
 exactly one audio file per render.
@@ -103,6 +114,10 @@ request state envelope. The frontend captures the expected token and
 ignores polling updates whose `run_token` does not match, eliminating
 the "multiple clicks only take effect once" race where a stale
 `succeeded` state would otherwise short-circuit a fresh run.
+
+Voice preview also uses tokenized task ids (`render_voice_preview:{token}`)
+because preview text/settings can change rapidly while sharing the same
+runtime and output directory.
 
 ## Progress Reporting
 

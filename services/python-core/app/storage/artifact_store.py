@@ -51,3 +51,17 @@ class ArtifactStore:
         path = preview_dir / f"preview-{uuid4().hex}.{suffix}"
         path.write_bytes(audio_bytes)
         return path
+
+    def delete_export_file(self, path: str | Path) -> bool:
+        exports_dir = self.exports_dir.resolve()
+        target = Path(path).expanduser().resolve()
+        try:
+            target.relative_to(exports_dir)
+        except ValueError as exc:
+            raise ValueError("Artifact path must be inside the exports directory.") from exc
+        if not target.exists():
+            return False
+        if not target.is_file():
+            raise ValueError("Artifact path does not point to a file.")
+        target.unlink()
+        return True

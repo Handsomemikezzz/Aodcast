@@ -6,7 +6,7 @@ import re
 import tempfile
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -82,6 +82,51 @@ class RequestStateStore:
         with self._task_guard(task_id, mode="read"):
             return self._load_request_state(self._path(task_id))
 
+    def cleanup_terminal_states(self, *, prefix: str, max_age_seconds: float) -> int:
+        """Remove old completed task state files for a task-id namespace.
+
+        Voice preview tasks intentionally use unique task ids so stale polling
+        from an earlier preview cannot overwrite a newer preview in the UI.
+        That means terminal preview state files are append-only unless the
+        runtime periodically prunes them.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=max(0.0, max_age_seconds))
+        removed = 0
+        terminal_phases = {"succeeded", "failed", "cancelled"}
+        for path in list(self._dir.glob("*.json")):
+            payload = self._load_payload(path)
+            if payload is None:
+                continue
+            task_id = str(payload.get("task_id") or "")
+            if not task_id.startswith(prefix):
+                continue
+            request_state = payload.get("request_state")
+            if not isinstance(request_state, dict):
+                continue
+            phase = str(request_state.get("phase") or "").strip().lower()
+            if phase not in terminal_phases:
+                continue
+            updated_at = _parse_iso_datetime(str(payload.get("updated_at") or ""))
+            if updated_at is None or updated_at > cutoff:
+                continue
+            with self._task_guard(task_id):
+                current_payload = self._load_payload(self._path(task_id))
+                if current_payload is None:
+                    continue
+                current_state = current_payload.get("request_state")
+                current_phase = (
+                    str(current_state.get("phase") or "").strip().lower()
+                    if isinstance(current_state, dict)
+                    else ""
+                )
+                current_updated_at = _parse_iso_datetime(str(current_payload.get("updated_at") or ""))
+                if current_phase not in terminal_phases or current_updated_at is None or current_updated_at > cutoff:
+                    continue
+                self._path(task_id).unlink(missing_ok=True)
+                self._cancel_path(task_id).unlink(missing_ok=True)
+                removed += 1
+        return removed
+
     def _path(self, task_id: str) -> Path:
         return self._dir / f"{_safe_task_file_name(task_id)}.json"
 
@@ -148,16 +193,22 @@ class RequestStateStore:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _load_request_state(self, path: Path) -> dict[str, object] | None:
+        payload = self._load_payload(path)
+        if payload is None:
+            return None
+        request_state = payload.get("request_state")
+        if isinstance(request_state, dict):
+            return request_state
+        return None
+
+    def _load_payload(self, path: Path) -> dict[str, object] | None:
         if not path.is_file():
             return None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return None
-        request_state = payload.get("request_state")
-        if isinstance(request_state, dict):
-            return request_state
-        return None
+        return payload if isinstance(payload, dict) else None
 
     def _atomic_write_json(self, path: Path, payload: dict[str, object]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,3 +230,16 @@ class RequestStateStore:
                 maybe_path = Path(temp_path)
                 if maybe_path.exists():
                     maybe_path.unlink(missing_ok=True)
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

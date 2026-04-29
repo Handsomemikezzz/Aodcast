@@ -190,6 +190,7 @@ class RuntimeContext:
         *,
         script_id: str = "",
         override_provider: str = "",
+        settings: VoiceRenderSettings | None = None,
     ) -> dict[str, object]:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.session.is_deleted():
@@ -253,6 +254,7 @@ class RuntimeContext:
                         session_id,
                         script_id=script_id,
                         override_provider=override_provider,
+                        settings=settings,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -318,8 +320,28 @@ class RuntimeContext:
             run_token=run_token,
         )
 
-    def start_render_voice_preview(self, settings: VoiceRenderSettings) -> dict[str, object]:
-        task_id = "render_voice_preview"
+    def start_render_voice_preview(
+        self,
+        settings: VoiceRenderSettings,
+        *,
+        session_id: str = "",
+        script_id: str = "",
+        override_provider: str = "",
+    ) -> dict[str, object]:
+        self.request_state_store.cleanup_terminal_states(
+            prefix="render_voice_preview:",
+            max_age_seconds=6 * 60 * 60,
+        )
+        run_token = uuid.uuid4().hex
+        task_id = f"render_voice_preview:{run_token}"
+        if session_id.strip():
+            self.audio_rendering.save_voice_settings(session_id, settings, script_id=script_id)
+
+        def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
+            state = build_request_state(run_token=run_token, **kwargs)
+            state["task_id"] = task_id
+            return state
+
         with self.task_lock:
             existing_thread = self.active_tasks.get(task_id)
             if existing_thread is not None and existing_thread.is_alive():
@@ -331,13 +353,14 @@ class RuntimeContext:
                         message=str(existing_state.get("message") or "Rendering voice preview..."),
                         phase=str(existing_state.get("phase") or "running"),
                         progress_percent=progress_from_request_state(existing_state, default=5.0),
+                        run_token=str(existing_state.get("run_token") or run_token),
                     )
 
             progress = LongTaskStateManager(
                 request_state_store=self.request_state_store,
                 task_id=task_id,
                 operation="render_voice_preview",
-                build_request_state=build_request_state,
+                build_request_state=tagged_build_request_state,
                 should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
             )
             self.request_state_store.clear_cancel_request(task_id)
@@ -358,6 +381,7 @@ class RuntimeContext:
                 try:
                     result = self.audio_rendering.render_voice_preview_with_cancellation(
                         settings,
+                        override_provider=override_provider,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -398,7 +422,9 @@ class RuntimeContext:
                                 phase="succeeded",
                                 progress_percent=100.0,
                                 message="Voice preview render finished.",
+                                run_token=run_token,
                             ),
+                            "task_id": task_id,
                             "audio_path": result.audio_path,
                             "provider": result.provider,
                             "model": result.model,
@@ -416,13 +442,17 @@ class RuntimeContext:
             thread.start()
 
         started_state = self.request_state_store.load(task_id)
-        return success_envelope(
+        envelope = success_envelope(
             {"task_id": task_id},
             operation="render_voice_preview",
             message=str((started_state or {}).get("message") or "Rendering voice preview..."),
             phase=str((started_state or {}).get("phase") or "running"),
             progress_percent=progress_from_request_state(started_state, default=5.0),
+            run_token=run_token,
         )
+        if isinstance(started_state, dict):
+            envelope["data"]["request_state"] = started_state  # type: ignore[index]
+        return envelope
 
     def start_render_voice_take(
         self,
@@ -871,6 +901,9 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:  # noqa: N802
         self._dispatch()
 
+    def do_DELETE(self) -> None:  # noqa: N802
+        self._dispatch()
+
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
         return
 
@@ -1069,13 +1102,24 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             )
             return
         if self.command == "POST" and path == "/api/v1/voice-studio/preview":
+            session_id = str(body.get("session_id") or "").strip()
+            script_id = str(body.get("script_id") or "").strip()
+            provider = str(body.get("provider_override") or "").strip()
             self._send_bridge_envelope(
-                self.context.start_render_voice_preview(voice_settings_from_payload(body)),
+                self.context.start_render_voice_preview(
+                    voice_settings_from_payload(body),
+                    session_id=session_id,
+                    script_id=script_id,
+                    override_provider=provider,
+                ),
                 origin=origin,
             )
             return
         if self.command == "GET" and path == "/api/v1/artifacts/audio":
             self._serve_artifact_audio(query, origin=origin)
+            return
+        if self.command == "DELETE" and path == "/api/v1/artifacts/audio":
+            self._delete_artifact_audio(query, origin=origin)
             return
         if self.command == "GET" and path == "/api/v1/config/llm":
             self._send_bridge_envelope(
@@ -1353,6 +1397,22 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
+        if self.command == "DELETE" and suffix.startswith("/voice-takes/"):
+            take_id = suffix.removeprefix("/voice-takes/").removesuffix(":delete").strip("/")
+            project = self.context.audio_rendering.delete_voice_take(session_id, take_id)
+            self._send_bridge_envelope(
+                success_envelope({"project": serialize_project(project)}, operation="delete_voice_take"),
+                origin=origin,
+            )
+            return
+        if self.command == "DELETE" and suffix == "/audio":
+            script_id = (query.get("script_id") or [""])[-1].strip()
+            project = self.context.audio_rendering.delete_generated_audio(session_id, script_id=script_id)
+            self._send_bridge_envelope(
+                success_envelope({"project": serialize_project(project)}, operation="delete_generated_audio"),
+                origin=origin,
+            )
+            return
         if self.command == "PUT" and suffix.startswith("/scripts/") and suffix.endswith("/final"):
             rest = suffix.removeprefix("/scripts/").removesuffix("/final").strip("/")
             self._save_script_final(session_id, final_text=str(body.get("final_text") or ""), origin=origin, script_id=rest)
@@ -1389,8 +1449,10 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if self.command == "POST" and suffix == "/audio:render":
             provider = str(body.get("provider_override") or "")
             script_id = str(body.get("script_id") or "").strip()
+            settings_payload = body.get("voice_settings")
+            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else None
             self._send_bridge_envelope(
-                self.context.start_render_audio(session_id, script_id=script_id, override_provider=provider),
+                self.context.start_render_audio(session_id, script_id=script_id, override_provider=provider, settings=settings),
                 origin=origin,
             )
             return
@@ -1492,6 +1554,22 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             ".flac": "audio/flac",
         }.get(audio_path.suffix.lower(), "application/octet-stream")
         self._send_binary(HTTPStatus.OK, audio_path.read_bytes(), content_type=content_type, origin=origin)
+
+    def _delete_artifact_audio(self, query: dict[str, list[str]], *, origin: str | None) -> None:
+        raw_path = (query.get("path") or [""])[-1].strip()
+        if not raw_path:
+            raise ValueError("Query parameter 'path' is required.")
+        deleted = self.context.artifact_store.delete_export_file(raw_path)
+        self._send_bridge_envelope(
+            success_envelope(
+                {
+                    "path": raw_path,
+                    "deleted": deleted,
+                },
+                operation="delete_artifact_audio",
+            ),
+            origin=origin,
+        )
 
     def _read_json_body(self) -> dict[str, Any]:
         content_length = int(self.headers.get("Content-Length") or "0")

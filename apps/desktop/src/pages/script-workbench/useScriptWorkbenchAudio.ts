@@ -10,6 +10,7 @@ import {
   withRequestStateFallback,
 } from "../../lib/requestState";
 import { revealInFinder } from "../../lib/shellOps";
+import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
 import type { RequestState, RuntimeInfo, SessionProject } from "../../types";
 
 const POLL_INTERVAL_MS = 1000;
@@ -43,6 +44,7 @@ type UseScriptWorkbenchAudioResult = {
   handleRevealInFinder: () => Promise<void>;
   handleDownloadAudio: () => void;
   handleShareAudio: (scriptName: string) => Promise<void>;
+  handleDeleteAudio: () => Promise<void>;
 };
 
 export function useScriptWorkbenchAudio({
@@ -238,7 +240,11 @@ export function useScriptWorkbenchAudio({
       });
 
       const providerOverride = selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider;
-      const result = await bridge.renderAudio(sessionId, { providerOverride, scriptId });
+      const result = await bridge.renderAudio(sessionId, {
+        providerOverride,
+        scriptId,
+        voiceSettings: resolveProjectVoiceSettings(project),
+      });
       const runToken = typeof result.run_token === "string" && result.run_token.length > 0 ? result.run_token : result.request_state?.run_token ?? null;
       expectedRunTokenRef.current = runToken;
       setProject(result.project);
@@ -314,6 +320,20 @@ export function useScriptWorkbenchAudio({
     }
   };
 
+  const handleDeleteAudio = async () => {
+    if (!project?.artifact?.audio_path) return;
+    try {
+      setAudioError(null);
+      const updated = await bridge.deleteGeneratedAudio(sessionId, { scriptId: project.script?.script_id });
+      setProject(updated);
+      setAudioRequestState(null);
+      setAudioMessage("Audio artifact deleted.");
+      await onRefresh();
+    } catch (err: unknown) {
+      setAudioError(getErrorMessage(err, "Failed to delete audio."));
+    }
+  };
+
   const handleDownloadAudio = () => {
     const outputFilename = project?.artifact?.audio_path?.split("/").pop() || "";
     if (!audioSrc || !outputFilename) return;
@@ -360,5 +380,6 @@ export function useScriptWorkbenchAudio({
     handleRevealInFinder,
     handleDownloadAudio,
     handleShareAudio,
+    handleDeleteAudio,
   };
 }

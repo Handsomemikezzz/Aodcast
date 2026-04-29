@@ -173,6 +173,57 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(headers["Content-Type"], "audio/mp4")
         self.assertEqual(body, b"fake-mp4-audio")
 
+
+    def test_delete_artifact_audio_route_removes_preview_file(self) -> None:
+        audio_path = self.artifact_store.write_preview_audio(b"preview", "wav")
+        encoded_path = urllib_parse.quote(str(audio_path), safe="")
+
+        status, _, payload = self.request_json(
+            "DELETE",
+            f"/api/v1/artifacts/audio?path={encoded_path}",
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(audio_path.exists())
+
+    def test_delete_generated_audio_route_clears_project_artifact(self) -> None:
+        session_id, _ = self.seed_renderable_project()
+        project = self.store.load_project(session_id)
+        assert project.artifact is not None
+        audio_path = self.artifact_store.write_audio(session_id, b"audio", "wav")
+        transcript_path = self.artifact_store.write_transcript(session_id, "transcript")
+        project.artifact.audio_path = str(audio_path)
+        project.artifact.transcript_path = str(transcript_path)
+        project.artifact.provider = "mock_remote"
+        self.store.save_project(project)
+
+        status, _, payload = self.request_json("DELETE", f"/api/v1/sessions/{session_id}/audio")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(audio_path.exists())
+        artifact = payload["data"]["project"]["artifact"]
+        self.assertEqual(artifact["audio_path"], "")
+        self.assertEqual(artifact["provider"], "")
+
+    def test_delete_generated_audio_route_passes_script_id_scope(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        project = self.store.load_project_for_script(session_id, script_id)
+        with patch.object(
+            self.context.audio_rendering,
+            "delete_generated_audio",
+            return_value=project,
+        ) as mocked_delete:
+            status, _, payload = self.request_json(
+                "DELETE",
+                f"/api/v1/sessions/{session_id}/audio?script_id={script_id}",
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        mocked_delete.assert_called_once_with(session_id, script_id=script_id)
+
     def test_artifact_audio_route_rejects_paths_outside_exports_dir(self) -> None:
         outside_path = self.config.data_dir / "sessions" / "not-audio.wav"
         outside_path.parent.mkdir(parents=True, exist_ok=True)
@@ -375,6 +426,7 @@ class HttpRuntimeTests(unittest.TestCase):
             "session-123",
             script_id="",
             override_provider="mock_remote",
+            settings=None,
         )
 
     def test_audio_render_route_passes_script_id_to_runtime_context(self) -> None:
@@ -397,7 +449,39 @@ class HttpRuntimeTests(unittest.TestCase):
             "session-123",
             script_id="script-abc",
             override_provider="mock_remote",
+            settings=None,
         )
+
+
+    def test_audio_render_route_passes_voice_settings_to_runtime_context(self) -> None:
+        with patch.object(
+            RuntimeContext,
+            "start_render_audio",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_audio:session-123"}, operation="render_audio"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/sessions/session-123/audio:render",
+                body={
+                    "script_id": "script-abc",
+                    "voice_settings": {
+                        "voice_id": "casual_chat",
+                        "style_id": "casual",
+                        "speed": 0.9,
+                    },
+                },
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        mocked_start.assert_called_once()
+        _, args, kwargs = mocked_start.mock_calls[0]
+        self.assertEqual(args[1], "session-123")
+        self.assertEqual(kwargs["script_id"], "script-abc")
+        self.assertEqual(kwargs["settings"].voice_id, "casual_chat")
+        self.assertEqual(kwargs["settings"].style_id, "casual")
+        self.assertEqual(kwargs["settings"].speed, 0.9)
 
     def test_voice_presets_route_returns_packaged_cards(self) -> None:
         status, _, payload = self.request_json("GET", "/api/v1/voice-studio/presets")
@@ -428,6 +512,9 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["data"]["request_state"]["operation"], "render_voice_preview")
         self.assertEqual(payload["data"]["request_state"]["phase"], "running")
         task_id = str(payload["data"]["task_id"])
+        self.assertTrue(task_id.startswith("render_voice_preview:"))
+        self.assertEqual(payload["data"]["request_state"].get("task_id"), task_id)
+        self.assertTrue(str(payload["data"]["request_state"].get("run_token") or ""))
 
         task_state: dict[str, object] | None = None
         for _ in range(20):
@@ -442,6 +529,35 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(task_state["phase"], "succeeded")
         self.assertEqual(task_state["settings"]["preview_text"], "自定义试音文本。")
         self.assertTrue(Path(str(task_state["audio_path"])).exists())
+
+
+    def test_voice_preview_route_passes_provider_override_to_runtime_context(self) -> None:
+        with patch.object(
+            RuntimeContext,
+            "start_render_voice_preview",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_voice_preview:token"}, operation="render_voice_preview"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/voice-studio/preview",
+                body={
+                    "voice_id": "news_anchor",
+                    "style_id": "news",
+                    "provider_override": "mock_remote",
+                    "session_id": "session-123",
+                    "script_id": "script-abc",
+                },
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        mocked_start.assert_called_once()
+        _, args, kwargs = mocked_start.mock_calls[0]
+        self.assertEqual(kwargs["session_id"], "session-123")
+        self.assertEqual(kwargs["script_id"], "script-abc")
+        self.assertEqual(kwargs["override_provider"], "mock_remote")
+        self.assertEqual(args[1].voice_id, "news_anchor")
 
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:
         with patch.object(

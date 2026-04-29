@@ -63,6 +63,17 @@ export type ArtifactRecord = {
   created_at: string;
   takes?: AudioTakeRecord[];
   final_take_id?: string;
+  voice_settings?: VoiceRenderSettings;
+  script_artifacts?: Record<string, ScriptArtifactRecord>;
+};
+
+export type ScriptArtifactRecord = {
+  transcript_path?: string;
+  audio_path?: string;
+  provider?: string;
+  takes?: AudioTakeRecord[];
+  final_take_id?: string;
+  voice_settings?: VoiceRenderSettings;
 };
 
 export type AudioTakeRecord = {

@@ -1,9 +1,12 @@
-import { ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Mic, Pause, Play, Settings2, Share2, Wand2 } from "lucide-react";
+import { ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Mic, Pause, Play, Settings2, Share2, Trash2, Wand2 } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
 import { ProgressBar } from "../../components/ProgressBar";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenchResult }) {
+  const voiceSettings = resolveProjectVoiceSettings(workbench.project);
+
   return (
     <aside className="flex min-h-0 flex-col gap-4 self-start">
       <div className="rounded-[28px] border border-outline bg-[linear-gradient(180deg,rgba(35,31,24,0.96),rgba(24,24,27,0.96))] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.34)] overflow-hidden">
@@ -38,12 +41,12 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   <Mic className="h-5 w-5 text-accent-amber" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-primary">{workbench.ttsConfig?.voice?.trim() || "System Default"}</p>
-                  <p className="mt-1 text-xs text-secondary">
-                    {workbench.selectedEngine === "local_mlx"
-                      ? "Natural local MLX rendering"
-                      : `Configured for ${workbench.cloudProvider}`}
-                  </p>
+	                  <p className="text-sm font-medium text-primary">{voiceSettings.voice_name || voiceSettings.voice_id}</p>
+	                  <p className="mt-1 text-xs text-secondary">
+	                    {`${voiceSettings.style_name || voiceSettings.style_id} · ${voiceSettings.speed.toFixed(1)}x · ${
+	                      workbench.selectedEngine === "local_mlx" ? "Local MLX" : workbench.cloudProvider
+	                    }`}
+	                  </p>
                 </div>
               </div>
               <ChevronDown className="h-4 w-4 text-secondary" />
@@ -214,7 +217,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <button
                 type="button"
                 onClick={() => void workbench.handlePreviewAudio()}
@@ -238,6 +241,14 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               >
                 <Share2 className="h-4 w-4" />
                 Share
+              </button>
+              <button
+                type="button"
+                onClick={() => void workbench.handleDeleteAudio()}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-red-500/25 bg-red-500/8 text-sm font-medium text-red-200 transition-colors hover:bg-red-500/12"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
               </button>
             </div>
           </div>

@@ -157,6 +157,8 @@ class ProjectStore:
         script = self.load_latest_script(session_id)
         if artifact_path.exists():
             artifact = self.load_artifact(session_id)
+            if script is not None:
+                artifact = artifact.for_script(script.script_id)
 
         return SessionProject(
             session=session,
@@ -174,6 +176,7 @@ class ProjectStore:
         script = self.load_script_by_id(session_id, script_id)
         if self.artifact_file(session_id).exists():
             artifact = self.load_artifact(session_id)
+            artifact = artifact.for_script(script.script_id)
         return SessionProject(
             session=session,
             transcript=transcript,

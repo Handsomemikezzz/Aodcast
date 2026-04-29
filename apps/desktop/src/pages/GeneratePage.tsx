@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from 'framer-motion';
-import { Timer, FileText, Mic, CloudDownload, Cpu, CheckCircle2, PlayCircle, Settings, Wand2 } from 'lucide-react';
+import { Timer, FileText, Mic, CloudDownload, Cpu, CheckCircle2, PlayCircle, Settings, Trash2, Wand2 } from 'lucide-react';
 import { ProgressBar } from "../components/ProgressBar";
 import { useBridge } from "../lib/BridgeContext";
 import { RequestState, SessionProject, TTSCapability, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
 import { resolveAudioFileUrl } from "../lib/audioFile";
 import { revealInFinder } from "../lib/shellOps";
+import { resolveProjectVoiceSettings } from "../lib/voiceSettings";
 import {
   buildRequestState,
   getErrorMessage,
@@ -194,7 +195,11 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
         message: "Rendering audio...",
       });
       const targetScriptId = scriptId?.trim() || project?.script?.script_id || "";
-      const result = await bridge.renderAudio(sessionId, { providerOverride, scriptId: targetScriptId });
+      const result = await bridge.renderAudio(sessionId, {
+        providerOverride,
+        scriptId: targetScriptId,
+        voiceSettings: resolveProjectVoiceSettings(project),
+      });
       const runToken =
         typeof result.run_token === "string" && result.run_token.length > 0
           ? result.run_token
@@ -259,6 +264,19 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
     }
   };
 
+  const handleDeleteAudio = async () => {
+    if (!sessionId || !project?.artifact?.audio_path) return;
+    try {
+      setError(null);
+      const updated = await bridge.deleteGeneratedAudio(sessionId, { scriptId: project.script?.script_id });
+      setProject(updated);
+      setRequestState(null);
+      await onRefresh();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to delete generated audio."));
+    }
+  };
+
   const cloudProvider = useMemo(() => {
     const configuredProvider = ttsConfig?.provider?.trim();
     if (configuredProvider && configuredProvider !== "local_mlx") {
@@ -293,6 +311,7 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
   }
 
   const { artifact, session } = project;
+  const voiceSettings = resolveProjectVoiceSettings(project);
   let audioSrc = "";
   if (artifact?.audio_path) {
     audioSrc = resolveAudioFileUrl(artifact.audio_path);
@@ -300,9 +319,9 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
 
   const voices = [
     {
-      id: session.tts_provider || "default",
-      name: session.tts_provider || "System Default",
-      description: capability?.available ? "Local MLX Engine" : "API Fallback",
+      id: voiceSettings.voice_id,
+      name: voiceSettings.voice_name || voiceSettings.voice_id,
+      description: `${voiceSettings.style_name || voiceSettings.style_id} · ${voiceSettings.speed.toFixed(1)}x · ${session.tts_provider || "current engine"}`,
     },
   ];
 
@@ -386,10 +405,10 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
             <div className="flex items-center justify-between mb-4">
                <h3 className="font-headline font-semibold text-primary">Voice Persona</h3>
                <span
-                 title="Voice management coming soon"
+	                 title="Voice is managed in Voice Studio"
                  className="inline-flex items-center gap-1 rounded-full border border-accent-amber/20 bg-accent-amber/8 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-amber/80"
                >
-                 <Settings className="w-3 h-3" /> Coming Soon
+	                 <Settings className="w-3 h-3" /> Voice Studio
                </span>
             </div>
             
@@ -502,14 +521,24 @@ export function GeneratePage({ onRefresh }: { onRefresh: () => Promise<void> }) 
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => void handleRevealInFinder()}
-                  className="w-full py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-xs font-medium text-primary transition-colors flex items-center justify-center gap-2"
-                >
-                  <Wand2 className="w-3.5 h-3.5" />
-                  Reveal in Finder
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleRevealInFinder()}
+                    className="py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-xs font-medium text-primary transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    Reveal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteAudio()}
+                    className="py-2 border border-red-500/25 rounded-lg text-xs font-medium text-red-200 transition-colors flex items-center justify-center gap-2 hover:bg-red-500/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-accent-amber/40 bg-accent-amber/5 rounded-xl transition-colors">

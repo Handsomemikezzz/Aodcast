@@ -23,7 +23,11 @@ class LocalMLXTTSProvider:
 
         result = self.runner.synthesize(
             request.script_text,
+            voice=request.voice,
             audio_format=self.config.audio_format or request.audio_format,
+            speed=request.speed,
+            style_prompt=request.style_prompt,
+            language=request.language,
             should_cancel=request.should_cancel,
             on_progress=request.on_progress,
         )

@@ -11,30 +11,67 @@
     "provider": { "type": "string" },
     "created_at": { "type": "string", "format": "date-time" },
     "final_take_id": { "type": "string" },
+    "voice_settings": { "$ref": "#/$defs/voiceSettings" },
     "takes": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["take_id", "session_id", "script_id", "audio_path", "transcript_path", "provider", "model", "voice_id", "voice_name", "style_id", "style_name", "speed", "language", "audio_format", "created_at"],
-        "properties": {
-          "take_id": { "type": "string" },
-          "session_id": { "type": "string" },
-          "script_id": { "type": "string" },
-          "audio_path": { "type": "string" },
-          "transcript_path": { "type": "string" },
-          "provider": { "type": "string" },
-          "model": { "type": "string" },
-          "voice_id": { "type": "string" },
-          "voice_name": { "type": "string" },
-          "style_id": { "type": "string" },
-          "style_name": { "type": "string" },
-          "speed": { "type": "number" },
-          "language": { "type": "string" },
-          "audio_format": { "type": "string" },
-          "created_at": { "type": "string", "format": "date-time" }
-        },
-        "additionalProperties": false
-      }
+      "items": { "$ref": "#/$defs/audioTake" }
+    },
+    "script_artifacts": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/scriptArtifact" }
+    }
+  },
+  "$defs": {
+    "voiceSettings": {
+      "type": "object",
+      "properties": {
+        "voice_id": { "type": "string" },
+        "voice_name": { "type": "string" },
+        "style_id": { "type": "string" },
+        "style_name": { "type": "string" },
+        "speed": { "type": "number" },
+        "language": { "type": "string" },
+        "audio_format": { "type": "string" },
+        "preview_text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "audioTake": {
+      "type": "object",
+      "required": ["take_id", "session_id", "script_id", "audio_path", "transcript_path", "provider", "model", "voice_id", "voice_name", "style_id", "style_name", "speed", "language", "audio_format", "created_at"],
+      "properties": {
+        "take_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "script_id": { "type": "string" },
+        "audio_path": { "type": "string" },
+        "transcript_path": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "voice_id": { "type": "string" },
+        "voice_name": { "type": "string" },
+        "style_id": { "type": "string" },
+        "style_name": { "type": "string" },
+        "speed": { "type": "number" },
+        "language": { "type": "string" },
+        "audio_format": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "scriptArtifact": {
+      "type": "object",
+      "properties": {
+        "transcript_path": { "type": "string" },
+        "audio_path": { "type": "string" },
+        "provider": { "type": "string" },
+        "final_take_id": { "type": "string" },
+        "voice_settings": { "$ref": "#/$defs/voiceSettings" },
+        "takes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/audioTake" }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

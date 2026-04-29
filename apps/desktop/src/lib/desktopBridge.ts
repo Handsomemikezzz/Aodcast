@@ -34,10 +34,18 @@ export type CreateSessionInput = {
 export type RenderAudioOptions = {
   providerOverride?: string;
   scriptId?: string;
+  voiceSettings?: VoiceRenderSettings;
+};
+
+export type DeleteGeneratedAudioOptions = {
+  scriptId?: string;
 };
 
 export type RenderVoicePreviewOptions = {
   onState?: (state: RequestState) => void;
+  sessionId?: string;
+  scriptId?: string;
+  providerOverride?: string;
 };
 
 export type DesktopBridgeError = {
@@ -94,6 +102,10 @@ export interface DesktopBridge {
   generateScript(sessionId: string): Promise<GenerationResult>;
   /** Render audio once, optionally overriding the configured TTS provider or targeting a specific script snapshot. */
   renderAudio(sessionId: string, options?: RenderAudioOptions): Promise<AudioRenderResult>;
+  /** Delete the generated audio artifact for a session, optionally scoped to a script snapshot. */
+  deleteGeneratedAudio(sessionId: string, options?: DeleteGeneratedAudioOptions): Promise<SessionProject>;
+  /** Delete a standalone preview/export audio file by artifact path. */
+  deleteArtifactAudio(path: string): Promise<{ path?: string; deleted?: boolean; message?: string }>;
   /** List packaged voice and style presets for the Voice Studio MVP. */
   listVoicePresets(): Promise<VoicePresetCatalog>;
   /** Render a short preview for quick voice/style/text comparison. */
@@ -102,6 +114,8 @@ export interface DesktopBridge {
   renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions): Promise<VoiceTakeRenderResult>;
   /** Mark a generated take as the final script audio. */
   setFinalVoiceTake(sessionId: string, takeId: string): Promise<SessionProject>;
+  /** Delete a generated Voice Studio take and clear final audio if it was selected. */
+  deleteVoiceTake(sessionId: string, takeId: string): Promise<SessionProject>;
   /** Resolve the most recent script snapshot for a session-level navigation entry point. */
   showLatestScript(sessionId: string): Promise<SessionProject>;
   /** Load a specific script snapshot workspace. */

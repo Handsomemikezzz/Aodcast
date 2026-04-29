@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Wand2 } from "lucide-react";
+import { ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
@@ -7,6 +7,7 @@ import { useBridge } from "../lib/BridgeContext";
 import { getErrorMessage, isActiveRequestState, isTerminalRequestState } from "../lib/requestState";
 import { revealInFinder } from "../lib/shellOps";
 import { cn } from "../lib/utils";
+import { resolveProjectVoiceSettings } from "../lib/voiceSettings";
 import type {
   AudioTakeRecord,
   ModelStatus,
@@ -76,6 +77,7 @@ export function VoiceStudioPage() {
   const [providerOverride, setProviderOverride] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [previewSrc, setPreviewSrc] = useState("");
+  const [previewPath, setPreviewPath] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
   const [rendering, setRendering] = useState(false);
@@ -140,6 +142,12 @@ export function VoiceStudioPage() {
   const loadProject = async (sessionId: string, scriptId: string) => {
     if (!sessionId || !scriptId) return;
     const loaded = await bridge.showScript(sessionId, scriptId);
+    const savedSettings = resolveProjectVoiceSettings(loaded);
+    setSelectedVoiceId(savedSettings.voice_id);
+    setSelectedStyleId(savedSettings.style_id);
+    setSpeed(savedSettings.speed);
+    setLanguage(savedSettings.language ?? "zh");
+    setAudioFormat(savedSettings.audio_format ?? "wav");
     setProject(loaded);
   };
 
@@ -229,9 +237,13 @@ export function VoiceStudioPage() {
       });
       const result = await bridge.renderVoicePreview(settings, {
         onState: setPreviewRequestState,
+        sessionId: selectedSessionId,
+        scriptId: selectedScriptId,
+        providerOverride,
       });
       setPreviewRequestState(result.request_state ?? null);
       setPreviewSrc(resolveAudioFileUrl(result.audio_path));
+      setPreviewPath(result.audio_path);
       window.setTimeout(() => {
         void previewAudioRef.current?.play().catch(() => undefined);
       }, 100);
@@ -272,6 +284,7 @@ export function VoiceStudioPage() {
       };
       setRequestState(state);
       startPolling(result.task_id ?? `render_voice_take:${selectedSessionId}`);
+      setMessage("已开始使用这套 Voice Studio 配置生成；完成后会自动成为 Script 页和 Generate 页的默认音频。");
     } catch (err) {
       setRendering(false);
       setError(getErrorMessage(err, "Failed to render voice take."));
@@ -291,6 +304,31 @@ export function VoiceStudioPage() {
       setMessage("已设为最终版本，Script 页音频区会显示该 take。");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to set final take."));
+    }
+  };
+
+  const handleDeletePreview = async () => {
+    if (!previewPath) return;
+    try {
+      setError(null);
+      await bridge.deleteArtifactAudio(previewPath);
+      setPreviewSrc("");
+      setPreviewPath("");
+      setPreviewRequestState(null);
+      setMessage("试音音频已删除。");
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to delete preview audio."));
+    }
+  };
+
+  const handleDeleteTake = async (take: AudioTakeRecord) => {
+    try {
+      setError(null);
+      const updated = await bridge.deleteVoiceTake(selectedSessionId, take.take_id);
+      setProject(updated);
+      setMessage(take.take_id === finalTakeId ? "最终音频已删除。" : "候选 take 已删除。");
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to delete voice take."));
     }
   };
 
@@ -477,7 +515,9 @@ export function VoiceStudioPage() {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-primary">组合试音</h2>
-                  <p className="mt-1 text-xs text-secondary">当前试音用于比较音色与风格，长文本效果可能因脚本内容略有差异。</p>
+                  <p className="mt-1 text-xs text-secondary">
+                    试音会用当前文本重新生成；即使音色/风格相同，标准句、脚本开头和自定义文本的语调也可能不同。
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -526,12 +566,24 @@ export function VoiceStudioPage() {
               <p className="mt-2 text-[11px] text-secondary">
                 当前试音文本：{effectivePreviewText ? `${effectivePreviewText.slice(0, 60)}${effectivePreviewText.length > 60 ? "…" : ""}` : "系统标准试音句"}
               </p>
+              {renderUsesLocalEngine ? (
+                <p className="mt-1 text-[11px] text-secondary">
+                  Local MLX 会把所选音色映射到 Qwen 预置 speaker，并把风格、语速和语言传给支持这些参数的模型。
+                </p>
+              ) : null}
               {previewRequestState && previewRequestState.phase !== "succeeded" ? (
                 <div className="mt-3 rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-secondary">
                   {Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}
                 </div>
               ) : null}
-              {previewSrc ? <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="mt-4 w-full" /> : null}
+              {previewSrc ? (
+                <div className="mt-4 space-y-2">
+                  <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="w-full" />
+                  <button type="button" onClick={() => void handleDeletePreview()} className="inline-flex items-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
+                    <Trash2 className="h-3.5 w-3.5" /> 删除试音音频
+                  </button>
+                </div>
+              ) : null}
             </section>
           </div>
 
@@ -565,7 +617,7 @@ export function VoiceStudioPage() {
                   <label className="text-xs text-secondary">输出格式
                     <input value={audioFormat} onChange={(event) => setAudioFormat(event.target.value)} className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary" />
                     <p className="mt-1 text-[11px] text-secondary">
-                      只影响本次 Voice Studio take；Script 页“生成完整音频”仍使用 Settings 中保存的 TTS 格式。MP4 指 audio-only 容器，不含视频画面。
+                      这会保存为当前脚本的 Voice Studio 默认配置；Script 页和 Generate 页生成音频会使用同一配置。MP4 指 audio-only 容器，不含视频画面。
                     </p>
                   </label>
                 </div>
@@ -635,12 +687,15 @@ export function VoiceStudioPage() {
                         </button>
                       </div>
                       <audio controls src={src} onError={handleAudioLoadError} className="mt-3 w-full" />
-                      <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="mt-3 grid grid-cols-3 gap-2">
                         <button type="button" onClick={() => void handleSetFinal(take)} disabled={take.take_id === finalTakeId} className="rounded-xl border border-outline px-3 py-2 text-xs font-medium text-primary disabled:opacity-50">
                           设为最终版本
                         </button>
                         <button type="button" onClick={() => handleDownload(take)} className="inline-flex items-center justify-center gap-1 rounded-xl border border-outline px-3 py-2 text-xs font-medium text-primary">
                           <Download className="h-3.5 w-3.5" /> 下载
+                        </button>
+                        <button type="button" onClick={() => void handleDeleteTake(take)} className="inline-flex items-center justify-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
+                          <Trash2 className="h-3.5 w-3.5" /> 删除
                         </button>
                       </div>
                     </div>
