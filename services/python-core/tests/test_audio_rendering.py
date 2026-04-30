@@ -227,6 +227,109 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(first_project.artifact.voice_settings["voice_id"], "news_anchor")
         self.assertEqual(second_project.artifact.voice_settings, {})
 
+    def test_lock_voice_preview_persists_reference_for_requested_script(self) -> None:
+        store, _, artifact_store, service = self.build_environment()
+        session = SessionRecord(topic="Two scripts", creation_intent="Lock preview")
+        session.transition(SessionState.SCRIPT_EDITED)
+        first = ScriptRecord(session_id=session.session_id, script_id="script-a", draft="A draft", final="A final")
+        second = ScriptRecord(session_id=session.session_id, script_id="script-b", draft="B draft", final="B final")
+        store.save_project(SessionProject(session=session, script=second, artifact=ArtifactRecord(session_id=session.session_id)))
+        store.save_script(first)
+        preview_path = artifact_store.write_preview_audio(b"preview-audio", "wav")
+
+        project = service.lock_voice_preview(
+            session.session_id,
+            script_id=first.script_id,
+            preview_audio_path=str(preview_path),
+            settings=VoiceRenderSettings(
+                voice_id="news_anchor",
+                style_id="news",
+                speed=0.8,
+                language="zh",
+                audio_format="wav",
+                preview_text="锁定这一句试音。",
+            ),
+            provider="local_mlx",
+            model="mlx-voice",
+        )
+
+        assert project.artifact is not None
+        self.assertEqual(project.artifact.voice_reference["audio_path"], str(preview_path))
+        self.assertEqual(project.artifact.voice_reference["preview_text"], "锁定这一句试音。")
+        self.assertEqual(project.artifact.voice_reference["provider"], "local_mlx")
+        self.assertEqual(project.artifact.voice_reference["model"], "mlx-voice")
+        self.assertEqual(project.artifact.voice_reference["voice_id"], "news_anchor")
+        self.assertEqual(project.artifact.voice_settings["voice_id"], "news_anchor")
+
+        second_project = store.load_project_for_script(session.session_id, second.script_id)
+        assert second_project.artifact is not None
+        self.assertEqual(second_project.artifact.voice_reference, {})
+
+    def test_local_mlx_render_uses_locked_preview_as_reference_audio(self) -> None:
+        store, config_store, artifact_store, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+        preview_path = artifact_store.write_preview_audio(b"preview-audio", "wav")
+        service.lock_voice_preview(
+            session_id,
+            script_id="",
+            preview_audio_path=str(preview_path),
+            settings=VoiceRenderSettings(voice_id="deep_story", style_id="story", preview_text="参考试音。"),
+            provider="local_mlx",
+            model="mlx-voice",
+        )
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"local-audio",
+                    file_extension=request.audio_format,
+                    provider_name="local_mlx",
+                    model_name="mlx-voice",
+                )
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=CapturingProvider()):
+            service.render_audio(session_id)
+
+        request = captured["request"]
+        self.assertEqual(request.reference_audio_path, str(preview_path))
+        self.assertEqual(request.reference_text, "参考试音。")
+        self.assertTrue(request.voice_lock_id)
+
+    def test_local_mlx_voice_take_uses_locked_preview_as_reference_audio(self) -> None:
+        store, config_store, artifact_store, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+        preview_path = artifact_store.write_preview_audio(b"preview-audio", "wav")
+        service.lock_voice_preview(
+            session_id,
+            script_id="",
+            preview_audio_path=str(preview_path),
+            settings=VoiceRenderSettings(voice_id="warm_narrator", style_id="natural", preview_text="参考 take。"),
+            provider="local_mlx",
+            model="mlx-voice",
+        )
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"local-take-audio",
+                    file_extension=request.audio_format,
+                    provider_name="local_mlx",
+                    model_name="mlx-voice",
+                )
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=CapturingProvider()):
+            service.render_voice_take(session_id, settings=VoiceRenderSettings(voice_id="warm_narrator", style_id="natural"))
+
+        request = captured["request"]
+        self.assertEqual(request.reference_audio_path, str(preview_path))
+        self.assertEqual(request.reference_text, "参考 take。")
+
     def test_voice_take_audio_is_isolated_per_script_snapshot(self) -> None:
         store, config_store, _, service = self.build_environment()
         config_store.save_tts_config(TTSProviderConfig(provider="mock_remote"))

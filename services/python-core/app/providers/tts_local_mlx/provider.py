@@ -28,6 +28,7 @@ class LocalMLXTTSProvider:
             speed=request.speed,
             style_prompt=request.style_prompt,
             language=request.language,
+            reference_audio_path=request.reference_audio_path,
             should_cancel=request.should_cancel,
             on_progress=request.on_progress,
         )

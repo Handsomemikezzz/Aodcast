@@ -32,7 +32,7 @@ from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.models_catalog import save_custom_model_storage_base
-from app.orchestration.audio_rendering import AudioRenderingService
+from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
 from app.orchestration.interview_service import InterviewOrchestrator
 from app.orchestration.script_generation import ScriptGenerationService
 from app.runtime.request_state_store import RequestStateStore
@@ -199,6 +199,30 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
         self.assertFalse(audio_path.exists())
+
+    def test_delete_artifact_audio_route_clears_matching_voice_reference(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        audio_path = self.artifact_store.write_preview_audio(b"preview", "wav")
+        self.context.audio_rendering.lock_voice_preview(
+            session_id,
+            script_id=script_id,
+            preview_audio_path=str(audio_path),
+            settings=VoiceRenderSettings(voice_id="news_anchor", style_id="news"),
+            provider="local_mlx",
+            model="mlx-voice",
+        )
+        encoded_path = urllib_parse.quote(str(audio_path), safe="")
+
+        status, _, payload = self.request_json(
+            "DELETE",
+            f"/api/v1/artifacts/audio?path={encoded_path}",
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        reloaded = self.store.load_project_for_script(session_id, script_id)
+        assert reloaded.artifact is not None
+        self.assertEqual(reloaded.artifact.voice_reference, {})
 
     def test_delete_generated_audio_route_clears_project_artifact(self) -> None:
         session_id, _ = self.seed_renderable_project()
@@ -611,6 +635,36 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(kwargs["script_id"], "script-abc")
         self.assertEqual(kwargs["override_provider"], "mock_remote")
         self.assertEqual(args[1].voice_id, "news_anchor")
+
+    def test_voice_preview_lock_route_persists_reference(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        preview_path = self.artifact_store.write_preview_audio(b"preview-audio", "wav")
+
+        status, _, payload = self.request_json(
+            "POST",
+            f"/api/v1/sessions/{session_id}/scripts/{script_id}/voice-preview:lock",
+            body={
+                "audio_path": str(preview_path),
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+                "voice_settings": {
+                    "voice_id": "news_anchor",
+                    "style_id": "news",
+                    "speed": 0.8,
+                    "language": "zh",
+                    "audio_format": "wav",
+                    "preview_text": "锁定这一句试音。",
+                },
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        artifact = payload["data"]["project"]["artifact"]  # type: ignore[index]
+        self.assertEqual(artifact["voice_reference"]["audio_path"], str(preview_path))
+        self.assertEqual(artifact["voice_reference"]["preview_text"], "锁定这一句试音。")
+        self.assertEqual(artifact["voice_reference"]["provider"], "local_mlx")
+        self.assertEqual(artifact["voice_settings"]["voice_id"], "news_anchor")
 
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:
         with patch.object(

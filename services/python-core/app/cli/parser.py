@@ -188,6 +188,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--list-voice-presets", action="store_true", help="List Voice Studio voice/style presets.")
     parser.add_argument("--render-voice-preview", action="store_true", help="Render the Voice Studio standard preview sentence.")
+    parser.add_argument("--lock-voice-preview", default="", help="Lock a rendered Voice Studio preview as the reference voice for a session id.")
+    parser.add_argument("--preview-audio-path", default="", help="Preview audio path for --lock-voice-preview.")
     parser.add_argument("--render-voice-take", default="", help="Render a Voice Studio candidate take for a session id.")
     parser.add_argument("--set-final-voice-take", default="", help="Set a Voice Studio take as final for a session id.")
     parser.add_argument("--take-id", default="", help="Take id for --set-final-voice-take.")

@@ -12,6 +12,7 @@
     "created_at": { "type": "string", "format": "date-time" },
     "final_take_id": { "type": "string" },
     "voice_settings": { "$ref": "#/$defs/voiceSettings" },
+    "voice_reference": { "$ref": "#/$defs/voiceReference" },
     "takes": {
       "type": "array",
       "items": { "$ref": "#/$defs/audioTake" }
@@ -33,6 +34,25 @@
         "language": { "type": "string" },
         "audio_format": { "type": "string" },
         "preview_text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "voiceReference": {
+      "type": "object",
+      "properties": {
+        "lock_id": { "type": "string" },
+        "audio_path": { "type": "string" },
+        "preview_text": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "voice_id": { "type": "string" },
+        "voice_name": { "type": "string" },
+        "style_id": { "type": "string" },
+        "style_name": { "type": "string" },
+        "speed": { "type": "number" },
+        "language": { "type": "string" },
+        "audio_format": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
     },
@@ -66,6 +86,7 @@
         "provider": { "type": "string" },
         "final_take_id": { "type": "string" },
         "voice_settings": { "$ref": "#/$defs/voiceSettings" },
+        "voice_reference": { "$ref": "#/$defs/voiceReference" },
         "takes": {
           "type": "array",
           "items": { "$ref": "#/$defs/audioTake" }

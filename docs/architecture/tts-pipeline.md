@@ -35,6 +35,13 @@ Voice Studio preview uses the same provider path but renders a short
 their own `render_voice_preview:{run_token}` task id so a stale preview result
 cannot satisfy a newer click.
 
+When a user explicitly locks a preview, the HTTP bridge calls
+`voice-preview:lock` for the selected session/script. The backend stores the
+accepted preview as `artifact.voice_reference` and later passes that audio as
+the local MLX/Qwen `ref_audio` during full-script renders and Voice Studio take
+renders. Preview generation itself does not auto-lock, so users can compare
+multiple previews without replacing the approved reference.
+
 ## Flow
 
 ```mermaid
@@ -60,7 +67,7 @@ graph TD
     end
 
     scriptUi -->|renderAudio| bridge
-    voiceStudio -->|renderVoicePreview/renderVoiceTake| bridge
+    voiceStudio -->|renderVoicePreview/lockVoicePreview/renderVoiceTake| bridge
     bridge -->|POST audio:render| startRender
     startRender --> orchestration
     orchestration --> chunker
@@ -90,6 +97,11 @@ names before synthesis. The worker receives the normalized speaker, style
 instruction, speed, and language (`lang_code`) for each job; Qwen model
 variants apply the subset they support (for example CustomVoice/VoiceDesign
 models use `instruct`, while some base models may ignore style instructions).
+If the selected script has a locked preview reference, the same `ref_audio`
+path is sent for every chunk so Qwen has a concrete audio reference in addition
+to the preset speaker. This improves continuity between the preview and final
+script audio, but Qwen generation remains probabilistic and may still vary
+prosody or emotion slightly.
 
 The worker joins the per-chunk WAV segments into the final container
 format before emitting the `done` event, so downstream consumers see

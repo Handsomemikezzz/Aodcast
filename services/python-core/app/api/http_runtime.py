@@ -1384,6 +1384,23 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 ensure_session_is_active(project)
                 self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="show_script"), origin=origin)
                 return
+        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-preview:lock"):
+            script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-preview:lock").strip("/")
+            settings_payload = body.get("voice_settings")
+            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else voice_settings_from_payload(body)
+            project = self.context.audio_rendering.lock_voice_preview(
+                session_id,
+                script_id=script_id,
+                preview_audio_path=str(body.get("audio_path") or ""),
+                settings=settings,
+                provider=str(body.get("provider") or ""),
+                model=str(body.get("model") or ""),
+            )
+            self._send_bridge_envelope(
+                success_envelope({"project": serialize_project(project)}, operation="lock_voice_preview"),
+                origin=origin,
+            )
+            return
         if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-takes:render"):
             script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-takes:render").strip("/")
             provider = str(body.get("provider_override") or "")
@@ -1568,11 +1585,13 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if not raw_path:
             raise ValueError("Query parameter 'path' is required.")
         deleted = self.context.artifact_store.delete_export_file(raw_path)
+        cleared_references = self.context.audio_rendering.clear_voice_reference_for_audio(raw_path) if deleted else 0
         self._send_bridge_envelope(
             success_envelope(
                 {
                     "path": raw_path,
                     "deleted": deleted,
+                    "cleared_voice_references": cleared_references,
                 },
                 operation="delete_artifact_audio",
             ),
@@ -1662,6 +1681,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "list_voice_presets"
         if path == "/api/v1/voice-studio/preview":
             return "render_voice_preview"
+        if "/voice-preview:lock" in path:
+            return "lock_voice_preview"
         if path == "/api/v1/artifacts/audio":
             return "serve_artifact_audio"
         if "/voice-takes:render" in path:

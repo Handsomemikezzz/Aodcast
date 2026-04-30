@@ -83,6 +83,7 @@ class MLXAudioQwenRunner:
         speed: float = 1.0,
         style_prompt: str = "",
         language: str = "zh",
+        reference_audio_path: str = "",
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[ChunkProgressEvent], None] | None = None,
     ) -> LocalMLXRunResult:
@@ -130,7 +131,7 @@ class MLXAudioQwenRunner:
                     style_prompt=style_prompt,
                     language=language,
                     output_dir=output_dir,
-                    ref_audio=self.config.local_ref_audio_path or None,
+                    ref_audio=reference_audio_path or self.config.local_ref_audio_path or None,
                     should_cancel=should_cancel,
                     on_event=relay,
                 )

@@ -64,6 +64,7 @@ export type ArtifactRecord = {
   takes?: AudioTakeRecord[];
   final_take_id?: string;
   voice_settings?: VoiceRenderSettings;
+  voice_reference?: VoiceReferenceLock;
   script_artifacts?: Record<string, ScriptArtifactRecord>;
 };
 
@@ -74,6 +75,7 @@ export type ScriptArtifactRecord = {
   takes?: AudioTakeRecord[];
   final_take_id?: string;
   voice_settings?: VoiceRenderSettings;
+  voice_reference?: VoiceReferenceLock;
 };
 
 export type AudioTakeRecord = {
@@ -197,6 +199,22 @@ export type VoiceRenderSettings = {
   language?: string;
   audio_format?: string;
   preview_text?: string;
+};
+
+export type VoiceReferenceLock = {
+  lock_id: string;
+  audio_path: string;
+  preview_text: string;
+  provider: string;
+  model: string;
+  voice_id: string;
+  voice_name?: string;
+  style_id: string;
+  style_name?: string;
+  speed: number;
+  language: string;
+  audio_format: string;
+  created_at: string;
 };
 
 export type VoicePresetCatalog = BridgeResultMeta & {

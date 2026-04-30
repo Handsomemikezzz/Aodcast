@@ -49,6 +49,13 @@ export type RenderVoicePreviewOptions = {
   providerOverride?: string;
 };
 
+export type LockVoicePreviewInput = {
+  audioPath: string;
+  provider: string;
+  model: string;
+  settings: VoiceRenderSettings;
+};
+
 export type DesktopBridgeError = {
   code: string;
   message: string;
@@ -111,6 +118,8 @@ export interface DesktopBridge {
   listVoicePresets(): Promise<VoicePresetCatalog>;
   /** Render a short preview for quick voice/style/text comparison. */
   renderVoicePreview(settings: VoiceRenderSettings, options?: RenderVoicePreviewOptions): Promise<VoicePreviewResult>;
+  /** Lock an accepted preview as the reference voice for future local MLX/Qwen renders. */
+  lockVoicePreview(sessionId: string, scriptId: string, input: LockVoicePreviewInput): Promise<SessionProject>;
   /** Render a candidate take for one script snapshot. */
   renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions): Promise<VoiceTakeRenderResult>;
   /** Mark a generated take as the final script audio. */

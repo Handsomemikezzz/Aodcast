@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.domain.artifact import ArtifactRecord, AudioTakeRecord
+from app.domain.common import utc_now_iso
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, clamp_speed, resolve_style_preset, resolve_voice_preset
@@ -130,6 +131,7 @@ class AudioRenderingService:
         tts_config.voice = self._provider_voice_for(render_settings, tts_config.provider)
         tts_config.audio_format = render_settings.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
+        voice_reference = self._voice_reference_for(artifact, tts_config.provider)
         previous_state = project.session.state
 
         project.session.transition(SessionState.AUDIO_RENDERING)
@@ -160,6 +162,9 @@ class AudioRenderingService:
             style_id=render_settings.style_id,
             style_prompt=style.prompt,
             language=render_settings.language,
+            reference_audio_path=str(voice_reference.get("audio_path") or ""),
+            reference_text=str(voice_reference.get("preview_text") or ""),
+            voice_lock_id=str(voice_reference.get("lock_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
         )
@@ -235,6 +240,48 @@ class AudioRenderingService:
             project.artifact = artifact
         normalized = self._normalize_settings(settings)
         artifact.voice_settings = self._settings_to_dict(normalized)
+        self.store.save_project(project)
+        return project
+
+    def lock_voice_preview(
+        self,
+        session_id: str,
+        *,
+        script_id: str = "",
+        preview_audio_path: str,
+        settings: VoiceRenderSettings,
+        provider: str,
+        model: str,
+    ) -> SessionProject:
+        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
+        artifact = project.artifact
+        if artifact is None:
+            artifact = ArtifactRecord(
+                session_id=session_id,
+                transcript_path=f"sessions/{session_id}/transcript.json",
+                active_script_id=project.script.script_id if project.script is not None else "",
+            )
+            project.artifact = artifact
+
+        normalized = self._normalize_settings(settings)
+        reference_audio = self._validate_reference_audio_path(preview_audio_path)
+        preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
+        artifact.voice_settings = self._settings_to_dict(normalized)
+        artifact.voice_reference = {
+            "lock_id": uuid4().hex,
+            "audio_path": str(reference_audio),
+            "preview_text": preview_text,
+            "provider": provider.strip(),
+            "model": model.strip(),
+            "voice_id": normalized.voice_id,
+            "voice_name": normalized.voice_name,
+            "style_id": normalized.style_id,
+            "style_name": normalized.style_name,
+            "speed": normalized.speed,
+            "language": normalized.language,
+            "audio_format": normalized.audio_format,
+            "created_at": utc_now_iso(),
+        }
         self.store.save_project(project)
         return project
 
@@ -338,6 +385,7 @@ class AudioRenderingService:
         tts_config.voice = self._provider_voice_for(normalized, tts_config.provider)
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
+        voice_reference = self._voice_reference_for(artifact, tts_config.provider)
         previous_state = project.session.state
 
         project.session.transition(SessionState.AUDIO_RENDERING)
@@ -367,6 +415,9 @@ class AudioRenderingService:
             style_id=normalized.style_id,
             style_prompt=style.prompt,
             language=normalized.language,
+            reference_audio_path=str(voice_reference.get("audio_path") or ""),
+            reference_text=str(voice_reference.get("preview_text") or ""),
+            voice_lock_id=str(voice_reference.get("lock_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
         )
@@ -500,6 +551,30 @@ class AudioRenderingService:
         self.store.save_project(project)
         return project
 
+    def clear_voice_reference_for_audio(self, audio_path: str) -> int:
+        if not audio_path.strip():
+            return 0
+        target = Path(audio_path).expanduser().resolve()
+        cleared = 0
+        for session in self.store.list_sessions(include_deleted=True):
+            try:
+                artifact = self.store.load_artifact(session.session_id)
+            except OSError:
+                continue
+            changed = False
+            if _voice_reference_matches_path(artifact.voice_reference, target):
+                artifact.voice_reference = {}
+                cleared += 1
+                changed = True
+            for payload in artifact.script_artifacts.values():
+                if _voice_reference_matches_path(payload.get("voice_reference"), target):
+                    payload["voice_reference"] = {}
+                    cleared += 1
+                    changed = True
+            if changed:
+                self.store.save_artifact(artifact)
+        return cleared
+
     def _resolve_render_settings(
         self,
         artifact: ArtifactRecord,
@@ -563,6 +638,33 @@ class AudioRenderingService:
             language=take.language,
             audio_format=take.audio_format,
         )
+
+    def _voice_reference_for(self, artifact: ArtifactRecord, provider: str) -> dict[str, object]:
+        if provider != "local_mlx":
+            return {}
+        reference = artifact.voice_reference if isinstance(artifact.voice_reference, dict) else {}
+        if not reference:
+            return {}
+        audio_path = str(reference.get("audio_path") or "")
+        if not audio_path:
+            return {}
+        self._validate_reference_audio_path(audio_path)
+        return dict(reference)
+
+    def _validate_reference_audio_path(self, path: str) -> Path:
+        if not path.strip():
+            raise ValueError("Cannot lock voice preview without a preview audio path.")
+        exports_dir = self.artifact_store.exports_dir.resolve()
+        target = Path(path).expanduser().resolve()
+        try:
+            target.relative_to(exports_dir)
+        except ValueError as exc:
+            raise ValueError("Voice preview audio must be inside the app exports directory.") from exc
+        if not target.exists():
+            raise ValueError("Locked voice preview audio is missing. Re-render and lock a new preview.")
+        if not target.is_file():
+            raise ValueError("Locked voice preview path must point to an audio file.")
+        return target
 
     def _delete_artifact_file(self, path: str) -> None:
         if not path.strip():
@@ -661,3 +763,12 @@ def _local_mlx_voice_for(voice_id: str, language: str) -> str:
     if language_key.startswith("en"):
         return _LOCAL_MLX_ENGLISH_VOICES.get(voice_id, "Ryan")
     return _LOCAL_MLX_CHINESE_VOICES.get(voice_id, "Vivian")
+
+
+def _voice_reference_matches_path(reference: Any, target: Path) -> bool:
+    if not isinstance(reference, dict):
+        return False
+    raw = str(reference.get("audio_path") or "")
+    if not raw.strip():
+        return False
+    return Path(raw).expanduser().resolve() == target

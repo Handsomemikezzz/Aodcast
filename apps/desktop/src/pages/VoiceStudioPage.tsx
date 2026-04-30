@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Trash2, Wand2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
@@ -78,6 +78,9 @@ export function VoiceStudioPage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [previewSrc, setPreviewSrc] = useState("");
   const [previewPath, setPreviewPath] = useState("");
+  const [lastPreviewProvider, setLastPreviewProvider] = useState("");
+  const [lastPreviewModel, setLastPreviewModel] = useState("");
+  const [lastPreviewSettings, setLastPreviewSettings] = useState<VoiceRenderSettings | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
   const [rendering, setRendering] = useState(false);
@@ -95,6 +98,7 @@ export function VoiceStudioPage() {
         : previewText;
   const takes = project?.artifact?.takes ?? [];
   const finalTakeId = project?.artifact?.final_take_id ?? "";
+  const voiceReference = project?.artifact?.voice_reference;
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
   const selectedStyle = styles.find((style) => style.style_id === selectedStyleId) ?? styles[0];
   const resolvedModel = resolvedTtsModel(ttsConfig);
@@ -136,6 +140,17 @@ export function VoiceStudioPage() {
     }),
     [audioFormat, effectivePreviewText, language, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
   );
+
+  const lockMatchesCurrentSettings = Boolean(
+    voiceReference?.audio_path &&
+      voiceReference.voice_id === settings.voice_id &&
+      voiceReference.style_id === settings.style_id &&
+      Math.abs((voiceReference.speed ?? 1) - settings.speed) < 0.001 &&
+      (voiceReference.language || "zh") === (settings.language || "zh") &&
+      (voiceReference.audio_format || "wav") === (settings.audio_format || "wav") &&
+      (voiceReference.preview_text || "") === (settings.preview_text || ""),
+  );
+  const canLockPreview = Boolean(previewPath && !previewing);
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
 
@@ -244,6 +259,9 @@ export function VoiceStudioPage() {
       setPreviewRequestState(result.request_state ?? null);
       setPreviewSrc(resolveAudioFileUrl(result.audio_path));
       setPreviewPath(result.audio_path);
+      setLastPreviewProvider(result.provider);
+      setLastPreviewModel(result.model);
+      setLastPreviewSettings(result.settings ?? settings);
       window.setTimeout(() => {
         void previewAudioRef.current?.play().catch(() => undefined);
       }, 100);
@@ -252,6 +270,30 @@ export function VoiceStudioPage() {
       setPreviewRequestState(null);
     } finally {
       setPreviewing(false);
+    }
+  };
+
+  const handleLockPreview = async () => {
+    if (!selectedSessionId || !selectedScriptId) {
+      setError("请先选择 Session 和脚本，再锁定试音音色。");
+      return;
+    }
+    if (!previewPath) {
+      setError("请先生成并确认一条试音，再锁定音色。");
+      return;
+    }
+    try {
+      setError(null);
+      const updated = await bridge.lockVoicePreview(selectedSessionId, selectedScriptId, {
+        audioPath: previewPath,
+        provider: lastPreviewProvider || providerOverride || ttsConfig?.provider || "",
+        model: lastPreviewModel || resolvedModel,
+        settings: lastPreviewSettings ?? settings,
+      });
+      setProject(updated);
+      setMessage("已锁定此试音音色；正式生成会以这段试音作为参考音色。");
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to lock preview voice."));
     }
   };
 
@@ -314,7 +356,13 @@ export function VoiceStudioPage() {
       await bridge.deleteArtifactAudio(previewPath);
       setPreviewSrc("");
       setPreviewPath("");
+      setLastPreviewProvider("");
+      setLastPreviewModel("");
+      setLastPreviewSettings(null);
       setPreviewRequestState(null);
+      if (selectedSessionId && selectedScriptId) {
+        await loadProject(selectedSessionId, selectedScriptId);
+      }
       setMessage("试音音频已删除。");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to delete preview audio."));
@@ -579,9 +627,37 @@ export function VoiceStudioPage() {
               {previewSrc ? (
                 <div className="mt-4 space-y-2">
                   <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="w-full" />
-                  <button type="button" onClick={() => void handleDeletePreview()} className="inline-flex items-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
-                    <Trash2 className="h-3.5 w-3.5" /> 删除试音音频
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleLockPreview()}
+                      disabled={!canLockPreview}
+                      title={!selectedSessionId || !selectedScriptId ? "请先选择 Session 和脚本，再锁定试音音色" : undefined}
+                      className="inline-flex items-center gap-1 rounded-xl border border-accent-amber/35 bg-accent-amber/10 px-3 py-2 text-xs font-semibold text-accent-amber hover:bg-accent-amber/15 disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> 锁定此试音音色
+                    </button>
+                    <button type="button" onClick={() => void handleDeletePreview()} className="inline-flex items-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
+                      <Trash2 className="h-3.5 w-3.5" /> 删除试音音频
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {voiceReference?.audio_path ? (
+                <div className={cn("mt-4 rounded-2xl border p-3 text-xs", lockMatchesCurrentSettings ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100")}>
+                  <div className="flex items-start gap-2">
+                    {lockMatchesCurrentSettings ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <AlertTriangle className="mt-0.5 h-4 w-4" />}
+                    <div>
+                      <p className="font-semibold">
+                        {lockMatchesCurrentSettings ? "已锁定：正式生成会以这段试音作为参考音色" : "当前设置已和锁定试音不同"}
+                      </p>
+                      <p className="mt-1 leading-5">
+                        {lockMatchesCurrentSettings
+                          ? "可提升 Qwen/local MLX 的音色连续性，但模型仍可能产生轻微语气差异。"
+                          : "请重新生成并锁定试音，或继续使用已锁定音色作为正式生成参考。"}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </section>
@@ -635,6 +711,15 @@ export function VoiceStudioPage() {
               {requestState ? (
                 <div className="mt-4 rounded-2xl border border-outline bg-background p-3 text-sm text-secondary">
                   {Math.round(requestState.progress_percent)}% · {requestState.message}
+                </div>
+              ) : null}
+              {renderUsesLocalEngine ? (
+                <div className={cn("mt-4 rounded-2xl border p-3 text-xs", voiceReference?.audio_path ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100")}>
+                  {voiceReference?.audio_path ? (
+                    <span>正式生成将使用已锁定试音作为 Qwen 参考音色。</span>
+                  ) : (
+                    <span>当前只使用 Qwen 预设 speaker，正式音色可能和试音不完全一致；建议先锁定试音。</span>
+                  )}
                 </div>
               ) : null}
               <div className="mt-4 flex gap-2">

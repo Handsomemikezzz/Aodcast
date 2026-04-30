@@ -148,6 +148,8 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "list_voice_presets"
     if args.render_voice_preview:
         return "render_voice_preview"
+    if args.lock_voice_preview:
+        return "lock_voice_preview"
     if args.render_voice_take:
         return "render_voice_take"
     if args.set_final_voice_take:
@@ -191,6 +193,8 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "delete_generated_audio"
     if False:  # pragma: no cover
         return "delete_artifact_audio"
+    if False:  # pragma: no cover
+        return "lock_voice_preview"
     if False:  # pragma: no cover
         return "delete_voice_take"
     return "bridge_ping"
@@ -668,6 +672,24 @@ def run(argv: list[str] | None = None) -> int:
                     },
                 },
             )
+
+        if args.lock_voice_preview:
+            if not args.preview_audio_path.strip():
+                raise ValueError("--preview-audio-path is required when using --lock-voice-preview")
+            project = store.load_project(args.lock_voice_preview)
+            ensure_script_is_active(project)
+            if project.script is None:
+                raise ValueError("Cannot lock voice preview because no script record exists.")
+            tts_config = config_store.load_tts_config()
+            updated = audio_rendering.lock_voice_preview(
+                args.lock_voice_preview,
+                script_id=project.script.script_id,
+                preview_audio_path=args.preview_audio_path.strip(),
+                settings=VoiceRenderSettings(),
+                provider=tts_config.provider,
+                model=tts_config.model,
+            )
+            return output_payload(args, {"project": serialize_project(updated)})
 
         if args.render_voice_take:
             project = store.load_project(args.render_voice_take)

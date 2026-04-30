@@ -15,6 +15,9 @@ class TTSGenerationRequest:
     style_id: str = ""
     style_prompt: str = ""
     language: str = "zh"
+    reference_audio_path: str = ""
+    reference_text: str = ""
+    voice_lock_id: str = ""
     should_cancel: Callable[[], bool] | None = None
     # Optional callback that providers may invoke whenever they have new
     # chunk-level progress information. The ``event`` payload is provider

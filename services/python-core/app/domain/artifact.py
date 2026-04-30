@@ -75,6 +75,7 @@ class ArtifactRecord:
     takes: list[AudioTakeRecord] = field(default_factory=list)
     final_take_id: str = ""
     voice_settings: dict[str, Any] = field(default_factory=dict)
+    voice_reference: dict[str, Any] = field(default_factory=dict)
     script_artifacts: dict[str, dict[str, Any]] = field(default_factory=dict)
     active_script_id: str = field(default="", repr=False, compare=False)
 
@@ -91,6 +92,7 @@ class ArtifactRecord:
             "takes": [take.to_dict() for take in self.takes],
             "final_take_id": self.final_take_id,
             "voice_settings": dict(self.voice_settings),
+            "voice_reference": dict(self.voice_reference),
             "script_artifacts": script_artifacts,
         }
 
@@ -116,6 +118,7 @@ class ArtifactRecord:
             takes=takes,
             final_take_id=str(payload.get("final_take_id", "")),
             voice_settings=dict(payload.get("voice_settings", {}) if isinstance(payload.get("voice_settings"), dict) else {}),
+            voice_reference=dict(payload.get("voice_reference", {}) if isinstance(payload.get("voice_reference"), dict) else {}),
             script_artifacts=script_artifacts,
         )
 
@@ -151,6 +154,7 @@ class ArtifactRecord:
             "takes": [take.to_dict() for take in self.takes],
             "final_take_id": self.final_take_id,
             "voice_settings": dict(self.voice_settings),
+            "voice_reference": dict(self.voice_reference),
         }
 
     def _apply_script_payload(self, payload: dict[str, Any]) -> None:
@@ -163,6 +167,11 @@ class ArtifactRecord:
         self.voice_settings = dict(
             normalized.get("voice_settings", {})
             if isinstance(normalized.get("voice_settings"), dict)
+            else {}
+        )
+        self.voice_reference = dict(
+            normalized.get("voice_reference", {})
+            if isinstance(normalized.get("voice_reference"), dict)
             else {}
         )
 
@@ -186,4 +195,5 @@ def _normalize_script_artifact_payload(payload: dict[str, Any]) -> dict[str, Any
         ],
         "final_take_id": str(payload.get("final_take_id", "")),
         "voice_settings": dict(payload.get("voice_settings", {}) if isinstance(payload.get("voice_settings"), dict) else {}),
+        "voice_reference": dict(payload.get("voice_reference", {}) if isinstance(payload.get("voice_reference"), dict) else {}),
     }

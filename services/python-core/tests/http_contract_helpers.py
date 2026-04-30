@@ -49,6 +49,7 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("deleteArtifactAudio", "delete_artifact_audio", "DELETE", "/api/v1/artifacts/audio", "delete_artifact_audio", ("--render-voice-preview",), "P2-voice-studio"),
     BridgeContract("listVoicePresets", "list_voice_presets", "GET", "/api/v1/voice-studio/presets", "list_voice_presets", ("--list-voice-presets",), "P2-voice-studio"),
     BridgeContract("renderVoicePreview", "render_voice_preview", "POST", "/api/v1/voice-studio/preview", "render_voice_preview", ("--render-voice-preview",), "P2-voice-studio"),
+    BridgeContract("lockVoicePreview", "lock_voice_preview", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/voice-preview:lock", "lock_voice_preview", ("--lock-voice-preview", "session-123"), "P2-voice-studio"),
     BridgeContract("renderVoiceTake", "render_voice_take", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/voice-takes:render", "render_voice_take", ("--render-voice-take", "session-123"), "P2-voice-studio", long_task=True),
     BridgeContract("setFinalVoiceTake", "set_final_voice_take", "POST", "/api/v1/sessions/{session_id}/voice-takes/{take_id}:final", "set_final_voice_take", ("--set-final-voice-take", "session-123"), "P2-voice-studio"),
     BridgeContract("deleteVoiceTake", "delete_voice_take", "DELETE", "/api/v1/sessions/{session_id}/voice-takes/{take_id}", "delete_voice_take", ("--render-voice-take", "session-123"), "P2-voice-studio"),

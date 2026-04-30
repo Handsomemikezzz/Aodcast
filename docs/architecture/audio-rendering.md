@@ -14,9 +14,10 @@ The Python core supports a render-audio path for any active script snapshot with
 4. Load the active TTS configuration from local config storage, then apply the resolved Voice Studio provider voice and audio format for this render.
 5. Optionally apply a one-shot desktop-side provider override for the current render request.
 6. Build the selected TTS provider adapter.
-7. Render audio bytes from the final script text.
-8. Write transcript and audio artifacts under local export storage.
-9. Transition the session back to its previous interview/script state for historical renders, or to `completed` when rendering from an existing generated/edited script state.
+7. If the selected script has an explicitly locked Voice Studio preview and the render uses `local_mlx`, validate that preview audio still exists and pass it as the provider request's reference audio. This uses the exact preview the user accepted as Qwen's voice reference instead of relying only on the preset speaker name.
+8. Render audio bytes from the final script text.
+9. Write transcript and audio artifacts under local export storage.
+10. Transition the session back to its previous interview/script state for historical renders, or to `completed` when rendering from an existing generated/edited script state.
 
 The desktop Script Workbench and Voice Studio use this override path for their engine controls:
 
@@ -67,10 +68,12 @@ Voice Studio preview rendering uses the same localhost HTTP runtime but runs as 
 
 When preview requests include a session/script context, the selected Voice Studio settings are saved on that script's artifact as `voice_settings`. Rendering a Voice Studio take also saves the settings and promotes the take to the final script audio by updating `final_take_id`, `audio_path`, `transcript_path`, and `provider`. This keeps Script Workbench playback and subsequent script renders aligned with the most recent Voice Studio choice.
 
+Users can explicitly lock an accepted preview with **锁定此试音音色**. Locking stores a script-scoped `artifact.voice_reference` payload containing the accepted preview `audio_path`, preview text, provider/model metadata, selected voice/style/speed/language/format, and a `lock_id`. Subsequent local MLX/Qwen full renders and Voice Studio take renders pass that preview path as `ref_audio` on every chunk. The lock improves voice continuity but does not promise bit-identical generation; Qwen may still vary emotion/prosody slightly. Generating a new preview does not auto-lock it, so users cannot accidentally replace the reference while comparing options.
+
 ## Deleting generated audio
 
 Generated audio is managed through the desktop UI; users should not need to inspect `artifact.json` directly.
 
-- Voice Studio preview audio can be deleted from the preview player. This removes the standalone file under `.local-data/exports/_previews`.
+- Voice Studio preview audio can be deleted from the preview player. This removes the standalone file under `.local-data/exports/_previews`; if that file is currently used by a script's `voice_reference`, the reference lock is cleared so future renders do not point at a missing file.
 - Voice Studio takes can be deleted from the take card. If the deleted take is the current final take, the artifact's `final_take_id`, `audio_path`, `transcript_path`, and `provider` are cleared.
 - Script Workbench exposes deletion for the current generated audio artifact. This removes the audio/transcript export files and clears the selected script's artifact playback fields while preserving the saved Voice Studio `voice_settings` and other script snapshots.

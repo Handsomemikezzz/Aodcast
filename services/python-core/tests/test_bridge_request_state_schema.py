@@ -33,8 +33,12 @@ class BridgeRequestStateSchemaTests(unittest.TestCase):
         script_artifacts = schema["properties"]["script_artifacts"]
         self.assertEqual(script_artifacts["type"], "object")
         script_payload = schema["$defs"]["scriptArtifact"]
-        for property_name in ["transcript_path", "audio_path", "provider", "takes", "final_take_id", "voice_settings"]:
+        self.assertIn("voice_reference", schema["properties"])
+        for property_name in ["transcript_path", "audio_path", "provider", "takes", "final_take_id", "voice_settings", "voice_reference"]:
             self.assertIn(property_name, script_payload["properties"])
+        voice_reference = schema["$defs"]["voiceReference"]
+        for property_name in ["lock_id", "audio_path", "preview_text", "provider", "model", "voice_id", "style_id", "created_at"]:
+            self.assertIn(property_name, voice_reference["properties"])
         self.assertFalse(script_payload["additionalProperties"])
 
 

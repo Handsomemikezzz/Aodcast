@@ -7,6 +7,7 @@ import type {
   DesktopBridge,
   DesktopBridgeError,
   ListProjectsOptions,
+  LockVoicePreviewInput,
   RenderAudioOptions,
   RenderVoicePreviewOptions,
   ShowSessionOptions,
@@ -561,6 +562,21 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       }
       const taskId = response.task_id ?? initialState?.task_id ?? "render_voice_preview";
       return waitForVoicePreview(this.showTaskState, taskId, options);
+    },
+    async lockVoicePreview(sessionId: string, scriptId: string, input: LockVoicePreviewInput) {
+      const response = await callHttp<{ project?: SessionProject }>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/voice-preview:lock`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            audio_path: input.audioPath,
+            provider: input.provider,
+            model: input.model,
+            voice_settings: serializeVoiceSettings(input.settings),
+          }),
+        },
+      );
+      return response.project!;
     },
     async renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions) {
       const response = await callHttp<VoiceTakeRenderResult>(

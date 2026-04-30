@@ -245,6 +245,41 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(getattr(events[0], "phase"), "chunk_started")
         self.assertEqual(getattr(events[1], "phase"), "chunk_done")
 
+    def test_runner_prefers_request_reference_audio_over_config_reference(self) -> None:
+        config = TTSProviderConfig(
+            provider="local_mlx",
+            model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+            local_ref_audio_path="/tmp/global-reference.wav",
+        )
+
+        class FakeWorkerClient:
+            def __init__(self) -> None:
+                self.last_kwargs: dict[str, object] = {}
+
+            def synthesize(self, **kwargs: object) -> dict[str, object]:
+                self.last_kwargs = dict(kwargs)
+                output_dir = Path(kwargs["output_dir"])
+                audio_format = str(kwargs["audio_format"])
+                audio_path = output_dir / f"final.{audio_format}"
+                audio_path.write_bytes(b"worker-wav")
+                return {
+                    "audio_path": str(audio_path),
+                    "file_extension": audio_format,
+                    "chunks_total": 1,
+                    "sample_rate": 24000,
+                }
+
+        fake = FakeWorkerClient()
+        runner = MLXAudioQwenRunner(config, worker_client=fake)
+
+        runner.synthesize(
+            "Short runner test sentence.",
+            audio_format="wav",
+            reference_audio_path="/tmp/locked-preview.wav",
+        )
+
+        self.assertEqual(fake.last_kwargs["ref_audio"], "/tmp/locked-preview.wav")
+
     def test_runner_translates_worker_cancellation_into_task_cancellation(self) -> None:
         config = TTSProviderConfig(
             provider="local_mlx",
