@@ -679,6 +679,14 @@ class HttpRuntimeTests(unittest.TestCase):
         built_ins = [profile for profile in profiles if profile["source"] == "built_in"]
         self.assertEqual(len(built_ins), 3)
         self.assertTrue(all(Path(profile["audio_path"]).exists() for profile in built_ins))
+        first_audio = urllib_parse.quote(str(built_ins[0]["audio_path"]), safe="")
+        audio_status, audio_headers, audio_body = self.request_bytes(
+            "GET",
+            f"/api/v1/artifacts/audio?path={first_audio}",
+        )
+        self.assertEqual(audio_status, 200)
+        self.assertEqual(audio_headers["Content-Type"], "audio/wav")
+        self.assertTrue(audio_body.startswith(b"RIFF"))
 
     def test_create_voice_profile_and_select_for_script(self) -> None:
         session_id, script_id = self.seed_renderable_project()

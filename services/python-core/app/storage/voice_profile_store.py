@@ -7,11 +7,13 @@ from uuid import uuid4
 
 from app.domain.common import utc_now_iso
 from app.domain.voice_profile import VoiceProfileRecord
-from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, resolve_style_preset, resolve_voice_preset
+from app.domain.voice_studio import resolve_style_preset, resolve_voice_preset
 from app.orchestration.audio_rendering import VoiceRenderSettings
-from app.providers.audio_utils import synthesize_sine_wave_bytes
 from app.storage.artifact_store import ArtifactStore
 
+
+BUILTIN_PROFILE_TEXT = "Hello, welcome to use Aodcast. What shall we talk about today?"
+BUILTIN_PROFILE_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "voice-profiles"
 
 _BUILTIN_PROFILE_SPECS = (
     {
@@ -21,7 +23,7 @@ _BUILTIN_PROFILE_SPECS = (
         "voice_id": "warm_narrator",
         "style_id": "natural",
         "speed": 1.0,
-        "frequency": 440.0,
+        "asset": "builtin_warm_knowledge.wav",
     },
     {
         "voice_profile_id": "builtin_clear_broadcast",
@@ -30,7 +32,7 @@ _BUILTIN_PROFILE_SPECS = (
         "voice_id": "news_anchor",
         "style_id": "news",
         "speed": 0.95,
-        "frequency": 554.37,
+        "asset": "builtin_clear_broadcast.wav",
     },
     {
         "voice_profile_id": "builtin_deep_story",
@@ -39,7 +41,7 @@ _BUILTIN_PROFILE_SPECS = (
         "voice_id": "deep_story",
         "style_id": "story",
         "speed": 0.9,
-        "frequency": 329.63,
+        "asset": "builtin_deep_story.wav",
     },
 )
 
@@ -58,14 +60,9 @@ class VoiceProfileStore:
         if not self.user_profiles_file.exists():
             self._write_user_profiles([])
         for spec in _BUILTIN_PROFILE_SPECS:
-            path = self._builtin_audio_path(str(spec["voice_profile_id"]))
+            path = self._builtin_audio_path(str(spec["asset"]))
             if not path.exists():
-                path.write_bytes(
-                    synthesize_sine_wave_bytes(
-                        2,
-                        frequency=float(spec["frequency"]),
-                    )
-                )
+                raise FileNotFoundError(f"Missing built-in voice profile asset: {path}")
 
     def list_profiles(self) -> list[VoiceProfileRecord]:
         profiles = self._builtin_profiles()
@@ -100,7 +97,7 @@ class VoiceProfileStore:
             name=name.strip() or "我的音色",
             source="user_saved",
             audio_path=str(target),
-            preview_text=normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT,
+            preview_text=normalized.preview_text.strip() or BUILTIN_PROFILE_TEXT,
             provider=provider.strip() or "local_mlx",
             model=model.strip(),
             voice_id=normalized.voice_id,
@@ -201,8 +198,8 @@ class VoiceProfileStore:
                     voice_profile_id=str(spec["voice_profile_id"]),
                     name=str(spec["name"]),
                     source="built_in",
-                    audio_path=str(self._builtin_audio_path(str(spec["voice_profile_id"]))),
-                    preview_text=STANDARD_PREVIEW_TEXT,
+                    audio_path=str(self._builtin_audio_path(str(spec["asset"]))),
+                    preview_text=BUILTIN_PROFILE_TEXT,
                     provider="local_mlx",
                     model="built-in-reference",
                     voice_id=voice.voice_id,
@@ -234,7 +231,7 @@ class VoiceProfileStore:
         )
 
     def _builtin_audio_path(self, profile_id: str) -> Path:
-        return self.audio_dir / f"{profile_id}.wav"
+        return BUILTIN_PROFILE_ASSETS_DIR / profile_id
 
     def _validate_export_audio_path(self, path: str) -> Path:
         if not path.strip():

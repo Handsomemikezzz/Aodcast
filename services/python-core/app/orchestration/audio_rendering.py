@@ -706,14 +706,12 @@ class AudioRenderingService:
             raise ValueError("Cannot lock voice preview without a preview audio path.")
         data_dir = self.artifact_store.exports_dir.parent.resolve()
         target = Path(path).expanduser().resolve()
-        try:
-            target.relative_to(data_dir)
-        except ValueError as exc:
-            raise ValueError("Voice reference audio must be inside the app data directory.") from exc
         if not target.exists():
             raise ValueError("Locked voice preview audio is missing. Re-render and lock a new preview.")
         if not target.is_file():
             raise ValueError("Locked voice preview path must point to an audio file.")
+        if not _is_allowed_voice_reference_path(target, data_dir):
+            raise ValueError("Voice reference audio must be inside the app data directory or packaged voice profile assets.")
         return target
 
     def _delete_artifact_file(self, path: str) -> None:
@@ -822,3 +820,17 @@ def _voice_reference_matches_path(reference: Any, target: Path) -> bool:
     if not raw.strip():
         return False
     return Path(raw).expanduser().resolve() == target
+
+
+def _is_allowed_voice_reference_path(target: Path, data_dir: Path) -> bool:
+    try:
+        target.relative_to(data_dir)
+        return True
+    except ValueError:
+        pass
+    assets_dir = Path(__file__).resolve().parents[1] / "assets" / "voice-profiles"
+    try:
+        target.relative_to(assets_dir)
+        return True
+    except ValueError:
+        return False

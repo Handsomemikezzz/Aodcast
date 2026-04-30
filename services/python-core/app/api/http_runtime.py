@@ -1626,11 +1626,10 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("Query parameter 'path' is required.")
 
         exports_dir = self.context.artifact_store.exports_dir.resolve()
+        builtin_voice_dir = Path(__file__).resolve().parents[1] / "assets" / "voice-profiles"
         audio_path = Path(raw_path).resolve(strict=True)
-        try:
-            audio_path.relative_to(exports_dir)
-        except ValueError as exc:
-            raise ValueError("Artifact audio path must be inside the exports directory.") from exc
+        if not _path_is_within(audio_path, exports_dir) and not _path_is_within(audio_path, builtin_voice_dir):
+            raise ValueError("Artifact audio path must be inside the exports directory or packaged voice profile assets.")
         if not audio_path.is_file():
             raise ValueError("Artifact audio path does not point to a file.")
 
@@ -1864,6 +1863,14 @@ def _normalize_allowed_origins(raw_origins: str | None) -> frozenset[str]:
     values = [item.strip() for item in raw_origins.split(",")]
     filtered = {item for item in values if item}
     return frozenset(filtered) if filtered else _DEFAULT_ALLOWED_ORIGINS
+
+
+def _path_is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def serve_http(

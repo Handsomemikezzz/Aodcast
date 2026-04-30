@@ -38,6 +38,13 @@ class VoiceProfileStoreTests(unittest.TestCase):
         )
         self.assertTrue(all(Path(profile.audio_path).exists() for profile in built_ins))
         self.assertTrue(all(profile.preview_text for profile in built_ins))
+        self.assertTrue(
+            all("services/python-core/app/assets/voice-profiles" in profile.audio_path for profile in built_ins)
+        )
+        self.assertEqual(
+            {profile.preview_text for profile in built_ins},
+            {"Hello, welcome to use Aodcast. What shall we talk about today?"},
+        )
 
     def test_create_user_profile_copies_preview_audio_and_persists_settings(self) -> None:
         artifact_store, profile_store = self.build_environment()
