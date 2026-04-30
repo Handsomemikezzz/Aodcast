@@ -143,6 +143,19 @@ class HttpRuntimeTests(unittest.TestCase):
         self.store.save_project(SessionProject(session=session, script=script, artifact=artifact))
         return session.session_id, script.script_id
 
+    def test_cors_preflight_allows_delete_requests(self) -> None:
+        status, headers, _ = self.request_bytes(
+            "OPTIONS",
+            "/api/v1/artifacts/audio",
+            headers={
+                "Origin": "http://localhost:1420",
+                "Access-Control-Request-Method": "DELETE",
+            },
+        )
+
+        self.assertEqual(status, 204)
+        self.assertIn("DELETE", headers["Access-Control-Allow-Methods"])
+
     def test_artifact_audio_route_streams_export_audio_for_browser_playback(self) -> None:
         audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
         encoded_path = urllib_parse.quote(str(audio_path), safe="")
