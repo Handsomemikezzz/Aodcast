@@ -10,6 +10,7 @@ from app.domain.artifact import ArtifactRecord, AudioTakeRecord
 from app.domain.common import utc_now_iso
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
+from app.domain.voice_profile import VoiceProfileRecord
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, clamp_speed, resolve_style_preset, resolve_voice_preset
 from app.providers.tts_api.base import TTSGenerationRequest
 from app.providers.tts_api.factory import build_tts_provider
@@ -273,6 +274,55 @@ class AudioRenderingService:
             "preview_text": preview_text,
             "provider": provider.strip(),
             "model": model.strip(),
+            "voice_id": normalized.voice_id,
+            "voice_name": normalized.voice_name,
+            "style_id": normalized.style_id,
+            "style_name": normalized.style_name,
+            "speed": normalized.speed,
+            "language": normalized.language,
+            "audio_format": normalized.audio_format,
+            "created_at": utc_now_iso(),
+        }
+        self.store.save_project(project)
+        return project
+
+    def select_voice_profile(
+        self,
+        session_id: str,
+        *,
+        script_id: str = "",
+        profile: VoiceProfileRecord,
+    ) -> SessionProject:
+        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
+        artifact = project.artifact
+        if artifact is None:
+            artifact = ArtifactRecord(
+                session_id=session_id,
+                transcript_path=f"sessions/{session_id}/transcript.json",
+                active_script_id=project.script.script_id if project.script is not None else "",
+            )
+            project.artifact = artifact
+        reference_audio = self._validate_reference_audio_path(profile.audio_path)
+        settings = VoiceRenderSettings(
+            voice_id=profile.voice_id,
+            voice_name=profile.voice_name,
+            style_id=profile.style_id,
+            style_name=profile.style_name,
+            speed=profile.speed,
+            language=profile.language,
+            audio_format=profile.audio_format,
+            preview_text=profile.preview_text,
+        )
+        normalized = self._normalize_settings(settings)
+        artifact.voice_settings = self._settings_to_dict(normalized)
+        artifact.voice_reference = {
+            "source": "voice_profile",
+            "voice_profile_id": profile.voice_profile_id,
+            "lock_id": uuid4().hex,
+            "audio_path": str(reference_audio),
+            "preview_text": profile.preview_text,
+            "provider": profile.provider,
+            "model": profile.model,
             "voice_id": normalized.voice_id,
             "voice_name": normalized.voice_name,
             "style_id": normalized.style_id,
@@ -654,12 +704,12 @@ class AudioRenderingService:
     def _validate_reference_audio_path(self, path: str) -> Path:
         if not path.strip():
             raise ValueError("Cannot lock voice preview without a preview audio path.")
-        exports_dir = self.artifact_store.exports_dir.resolve()
+        data_dir = self.artifact_store.exports_dir.parent.resolve()
         target = Path(path).expanduser().resolve()
         try:
-            target.relative_to(exports_dir)
+            target.relative_to(data_dir)
         except ValueError as exc:
-            raise ValueError("Voice preview audio must be inside the app exports directory.") from exc
+            raise ValueError("Voice reference audio must be inside the app data directory.") from exc
         if not target.exists():
             raise ValueError("Locked voice preview audio is missing. Re-render and lock a new preview.")
         if not target.is_file():

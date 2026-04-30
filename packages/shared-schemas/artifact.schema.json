@@ -40,6 +40,8 @@
     "voiceReference": {
       "type": "object",
       "properties": {
+        "source": { "type": "string", "enum": ["preview_lock", "voice_profile"] },
+        "voice_profile_id": { "type": "string" },
         "lock_id": { "type": "string" },
         "audio_path": { "type": "string" },
         "preview_text": { "type": "string" },

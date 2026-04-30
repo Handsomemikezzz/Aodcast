@@ -70,10 +70,13 @@ When preview requests include a session/script context, the selected Voice Studi
 
 Users can explicitly lock an accepted preview with **锁定此试音音色**. Locking stores a script-scoped `artifact.voice_reference` payload containing the accepted preview `audio_path`, preview text, provider/model metadata, selected voice/style/speed/language/format, and a `lock_id`. Subsequent local MLX/Qwen full renders and Voice Studio take renders pass that preview path as `ref_audio` on every chunk. The lock improves voice continuity but does not promise bit-identical generation; Qwen may still vary emotion/prosody slightly. Generating a new preview does not auto-lock it, so users cannot accidentally replace the reference while comparing options.
 
+Voice Studio also has a reusable voice-profile library. The backend bootstraps three built-in profiles and stores user-saved profiles under `.local-data/voice-profiles/user-profiles.json`, with reference audio copied into `.local-data/exports/_voice_profiles` so it can be served through the normal artifact audio route. Selecting a profile writes the current script's `artifact.voice_reference` with `source: "voice_profile"` and `voice_profile_id`, then uses that profile's audio path as the local MLX/Qwen reference. Saving a preview as “我的音色” copies the preview file into this library, so deleting the transient preview does not remove the reusable profile.
+
 ## Deleting generated audio
 
 Generated audio is managed through the desktop UI; users should not need to inspect `artifact.json` directly.
 
 - Voice Studio preview audio can be deleted from the preview player. This removes the standalone file under `.local-data/exports/_previews`; if that file is currently used by a script's `voice_reference`, the reference lock is cleared so future renders do not point at a missing file.
+- User-saved voice profiles can be deleted from the Voice Studio library. This removes the copied profile audio and clears any script `voice_reference` pointing at it. Built-in profiles cannot be deleted.
 - Voice Studio takes can be deleted from the take card. If the deleted take is the current final take, the artifact's `final_take_id`, `audio_path`, `transcript_path`, and `provider` are cleared.
 - Script Workbench exposes deletion for the current generated audio artifact. This removes the audio/transcript export files and clears the selected script's artifact playback fields while preserving the saved Voice Studio `voice_settings` and other script snapshots.

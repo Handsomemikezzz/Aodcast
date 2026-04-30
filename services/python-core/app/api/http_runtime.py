@@ -58,6 +58,7 @@ from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+from app.storage.voice_profile_store import VoiceProfileStore
 
 _BOOTSTRAP_TTL_SECONDS = 300.0
 DOWNLOAD_PROGRESS_MARKER = "AODCAST_PROGRESS"
@@ -140,6 +141,7 @@ class RuntimeContext:
     task_lock: threading.Lock = field(default_factory=threading.Lock)
     active_tasks: dict[str, threading.Thread] = field(default_factory=dict)
     bootstrap_nonce_used: bool = False
+    voice_profile_store: VoiceProfileStore | None = None
 
     def runtime_metadata(self) -> dict[str, object]:
         return {
@@ -184,6 +186,12 @@ class RuntimeContext:
             {"token": self.runtime_token, "expires_in_seconds": int(_BOOTSTRAP_TTL_SECONDS)},
             operation="runtime_bootstrap",
         )
+
+    def get_voice_profile_store(self) -> VoiceProfileStore:
+        if self.voice_profile_store is None:
+            self.voice_profile_store = VoiceProfileStore(self.config.data_dir, self.artifact_store)
+            self.voice_profile_store.bootstrap()
+        return self.voice_profile_store
 
     def start_render_audio(
         self,
@@ -1089,6 +1097,45 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             capability = detect_local_mlx_capability(self.context.config_store.load_tts_config()).to_dict()
             self._send_bridge_envelope(success_envelope({"tts_capability": capability}, operation="show_local_tts_capability"), origin=origin)
             return
+        if self.command == "GET" and path == "/api/v1/voice-profiles":
+            profiles = [profile.to_dict() for profile in self.context.get_voice_profile_store().list_profiles()]
+            self._send_bridge_envelope(success_envelope({"profiles": profiles}, operation="list_voice_profiles"), origin=origin)
+            return
+        if self.command == "POST" and path == "/api/v1/voice-profiles":
+            settings_payload = body.get("voice_settings")
+            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else voice_settings_from_payload(body)
+            profile = self.context.get_voice_profile_store().create_user_profile(
+                name=str(body.get("name") or ""),
+                preview_audio_path=str(body.get("audio_path") or ""),
+                settings=settings,
+                provider=str(body.get("provider") or ""),
+                model=str(body.get("model") or ""),
+            )
+            self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="create_voice_profile"), origin=origin)
+            return
+        if path.startswith("/api/v1/voice-profiles/"):
+            profile_id = unquote(path.removeprefix("/api/v1/voice-profiles/")).strip("/")
+            profile_store = self.context.get_voice_profile_store()
+            if self.command == "PATCH":
+                profile = profile_store.update_profile(profile_id, name=str(body.get("name") or ""))
+                self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="update_voice_profile"), origin=origin)
+                return
+            if self.command == "DELETE":
+                profile = profile_store.get_profile(profile_id)
+                deleted = profile_store.delete_profile(profile_id)
+                cleared_references = self.context.audio_rendering.clear_voice_reference_for_audio(profile.audio_path) if deleted else 0
+                self._send_bridge_envelope(
+                    success_envelope(
+                        {
+                            "voice_profile_id": profile_id,
+                            "deleted": deleted,
+                            "cleared_voice_references": cleared_references,
+                        },
+                        operation="delete_voice_profile",
+                    ),
+                    origin=origin,
+                )
+                return
         if self.command == "GET" and path == "/api/v1/voice-studio/presets":
             self._send_bridge_envelope(
                 success_envelope(
@@ -1401,6 +1448,24 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
+        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-profile:select"):
+            script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-profile:select").strip("/")
+            profile_id = str(body.get("voice_profile_id") or "").strip()
+            if not profile_id:
+                raise ValueError("Field 'voice_profile_id' is required.")
+            profile_store = self.context.get_voice_profile_store()
+            profile = profile_store.get_profile(profile_id)
+            project = self.context.audio_rendering.select_voice_profile(
+                session_id,
+                script_id=script_id,
+                profile=profile,
+            )
+            profile_store.mark_used(profile_id)
+            self._send_bridge_envelope(
+                success_envelope({"project": serialize_project(project)}, operation="select_voice_profile"),
+                origin=origin,
+            )
+            return
         if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-takes:render"):
             script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-takes:render").strip("/")
             provider = str(body.get("provider_override") or "")
@@ -1681,8 +1746,14 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "list_voice_presets"
         if path == "/api/v1/voice-studio/preview":
             return "render_voice_preview"
+        if path == "/api/v1/voice-profiles":
+            return "list_voice_profiles"
+        if path.startswith("/api/v1/voice-profiles/"):
+            return "voice_profile"
         if "/voice-preview:lock" in path:
             return "lock_voice_preview"
+        if "/voice-profile:select" in path:
+            return "select_voice_profile"
         if path == "/api/v1/artifacts/audio":
             return "serve_artifact_audio"
         if "/voice-takes:render" in path:
@@ -1811,6 +1882,7 @@ def serve_http(
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
     artifact_store = ArtifactStore(config.data_dir)
+    voice_profile_store = VoiceProfileStore(config.data_dir, artifact_store)
     request_state_store = RequestStateStore(config.data_dir)
     orchestrator = InterviewOrchestrator(store, config_store)
     script_generation = ScriptGenerationService(store, config_store)
@@ -1819,6 +1891,7 @@ def serve_http(
     store.bootstrap()
     config_store.bootstrap()
     artifact_store.bootstrap()
+    voice_profile_store.bootstrap()
     request_state_store.bootstrap()
 
     context = RuntimeContext(
@@ -1827,6 +1900,7 @@ def serve_http(
         store=store,
         config_store=config_store,
         artifact_store=artifact_store,
+        voice_profile_store=voice_profile_store,
         request_state_store=request_state_store,
         orchestrator=orchestrator,
         script_generation=script_generation,

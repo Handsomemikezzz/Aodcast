@@ -1,0 +1,275 @@
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+from uuid import uuid4
+
+from app.domain.common import utc_now_iso
+from app.domain.voice_profile import VoiceProfileRecord
+from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, resolve_style_preset, resolve_voice_preset
+from app.orchestration.audio_rendering import VoiceRenderSettings
+from app.providers.audio_utils import synthesize_sine_wave_bytes
+from app.storage.artifact_store import ArtifactStore
+
+
+_BUILTIN_PROFILE_SPECS = (
+    {
+        "voice_profile_id": "builtin_warm_knowledge",
+        "name": "温和知识型",
+        "description": "适合知识解释、通用播客和长时间收听。",
+        "voice_id": "warm_narrator",
+        "style_id": "natural",
+        "speed": 1.0,
+        "frequency": 440.0,
+    },
+    {
+        "voice_profile_id": "builtin_clear_broadcast",
+        "name": "清晰播报型",
+        "description": "适合资讯、分析和正式播报内容。",
+        "voice_id": "news_anchor",
+        "style_id": "news",
+        "speed": 0.95,
+        "frequency": 554.37,
+    },
+    {
+        "voice_profile_id": "builtin_deep_story",
+        "name": "低沉叙事型",
+        "description": "适合故事、历史和沉浸式叙述。",
+        "voice_id": "deep_story",
+        "style_id": "story",
+        "speed": 0.9,
+        "frequency": 329.63,
+    },
+)
+
+
+class VoiceProfileStore:
+    def __init__(self, data_dir: Path, artifact_store: ArtifactStore) -> None:
+        self.data_dir = data_dir
+        self.artifact_store = artifact_store
+        self.profiles_dir = data_dir / "voice-profiles"
+        self.audio_dir = artifact_store.exports_dir / "_voice_profiles"
+        self.user_profiles_file = self.profiles_dir / "user-profiles.json"
+
+    def bootstrap(self) -> None:
+        self.profiles_dir.mkdir(parents=True, exist_ok=True)
+        self.audio_dir.mkdir(parents=True, exist_ok=True)
+        if not self.user_profiles_file.exists():
+            self._write_user_profiles([])
+        for spec in _BUILTIN_PROFILE_SPECS:
+            path = self._builtin_audio_path(str(spec["voice_profile_id"]))
+            if not path.exists():
+                path.write_bytes(
+                    synthesize_sine_wave_bytes(
+                        2,
+                        frequency=float(spec["frequency"]),
+                    )
+                )
+
+    def list_profiles(self) -> list[VoiceProfileRecord]:
+        profiles = self._builtin_profiles()
+        profiles.extend(self._read_user_profiles())
+        return profiles
+
+    def get_profile(self, profile_id: str) -> VoiceProfileRecord:
+        cleaned = profile_id.strip()
+        for profile in self.list_profiles():
+            if profile.voice_profile_id == cleaned:
+                return profile
+        raise ValueError(f"Unknown voice_profile_id '{profile_id}'.")
+
+    def create_user_profile(
+        self,
+        *,
+        name: str,
+        preview_audio_path: str,
+        settings: VoiceRenderSettings,
+        provider: str,
+        model: str,
+    ) -> VoiceProfileRecord:
+        source_audio = self._validate_export_audio_path(preview_audio_path)
+        normalized = self._normalize_settings(settings)
+        profile_id = f"user_{uuid4().hex}"
+        suffix = source_audio.suffix.lower().lstrip(".") or normalized.audio_format or "wav"
+        target = self.audio_dir / f"{profile_id}.{suffix}"
+        shutil.copyfile(source_audio, target)
+        now = utc_now_iso()
+        profile = VoiceProfileRecord(
+            voice_profile_id=profile_id,
+            name=name.strip() or "我的音色",
+            source="user_saved",
+            audio_path=str(target),
+            preview_text=normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT,
+            provider=provider.strip() or "local_mlx",
+            model=model.strip(),
+            voice_id=normalized.voice_id,
+            voice_name=normalized.voice_name,
+            style_id=normalized.style_id,
+            style_name=normalized.style_name,
+            speed=normalized.speed,
+            language=normalized.language,
+            audio_format=suffix,
+            description="用户保存的试音音色",
+            created_at=now,
+            updated_at=now,
+        )
+        profiles = self._read_user_profiles()
+        profiles.append(profile)
+        self._write_user_profiles(profiles)
+        return profile
+
+    def update_profile(self, profile_id: str, *, name: str) -> VoiceProfileRecord:
+        cleaned = profile_id.strip()
+        profiles = self._read_user_profiles()
+        updated: VoiceProfileRecord | None = None
+        next_profiles: list[VoiceProfileRecord] = []
+        for profile in profiles:
+            if profile.voice_profile_id != cleaned:
+                next_profiles.append(profile)
+                continue
+            updated = VoiceProfileRecord.from_dict(
+                {
+                    **profile.to_dict(),
+                    "name": name.strip() or profile.name,
+                    "updated_at": utc_now_iso(),
+                }
+            )
+            next_profiles.append(updated)
+        if updated is None:
+            raise ValueError("Only user-saved voice profiles can be renamed.")
+        self._write_user_profiles(next_profiles)
+        return updated
+
+    def mark_used(self, profile_id: str) -> VoiceProfileRecord:
+        profile = self.get_profile(profile_id)
+        if profile.source != "user_saved":
+            return profile
+        return self._replace_user_profile(
+            VoiceProfileRecord.from_dict(
+                {
+                    **profile.to_dict(),
+                    "last_used_at": utc_now_iso(),
+                    "updated_at": utc_now_iso(),
+                }
+            )
+        )
+
+    def delete_profile(self, profile_id: str) -> bool:
+        cleaned = profile_id.strip()
+        if any(profile.voice_profile_id == cleaned for profile in self._builtin_profiles()):
+            raise ValueError("Built-in voice profiles cannot be deleted.")
+        profiles = self._read_user_profiles()
+        next_profiles = [profile for profile in profiles if profile.voice_profile_id != cleaned]
+        if len(next_profiles) == len(profiles):
+            return False
+        removed = next(profile for profile in profiles if profile.voice_profile_id == cleaned)
+        audio_path = Path(removed.audio_path).expanduser().resolve()
+        try:
+            audio_path.relative_to(self.audio_dir.resolve())
+        except ValueError:
+            pass
+        else:
+            if audio_path.exists() and audio_path.is_file():
+                audio_path.unlink()
+        self._write_user_profiles(next_profiles)
+        return True
+
+    def _replace_user_profile(self, updated: VoiceProfileRecord) -> VoiceProfileRecord:
+        profiles = self._read_user_profiles()
+        replaced = False
+        next_profiles: list[VoiceProfileRecord] = []
+        for profile in profiles:
+            if profile.voice_profile_id == updated.voice_profile_id:
+                next_profiles.append(updated)
+                replaced = True
+            else:
+                next_profiles.append(profile)
+        if not replaced:
+            raise ValueError(f"Unknown voice_profile_id '{updated.voice_profile_id}'.")
+        self._write_user_profiles(next_profiles)
+        return updated
+
+    def _builtin_profiles(self) -> list[VoiceProfileRecord]:
+        now = utc_now_iso()
+        profiles: list[VoiceProfileRecord] = []
+        for spec in _BUILTIN_PROFILE_SPECS:
+            voice = resolve_voice_preset(str(spec["voice_id"]))
+            style = resolve_style_preset(str(spec["style_id"]))
+            profiles.append(
+                VoiceProfileRecord(
+                    voice_profile_id=str(spec["voice_profile_id"]),
+                    name=str(spec["name"]),
+                    source="built_in",
+                    audio_path=str(self._builtin_audio_path(str(spec["voice_profile_id"]))),
+                    preview_text=STANDARD_PREVIEW_TEXT,
+                    provider="local_mlx",
+                    model="built-in-reference",
+                    voice_id=voice.voice_id,
+                    voice_name=voice.name,
+                    style_id=style.style_id,
+                    style_name=style.name,
+                    speed=float(spec["speed"]),
+                    language="zh",
+                    audio_format="wav",
+                    description=str(spec["description"]),
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        return profiles
+
+    def _normalize_settings(self, settings: VoiceRenderSettings) -> VoiceRenderSettings:
+        voice = resolve_voice_preset(settings.voice_id)
+        style = resolve_style_preset(settings.style_id)
+        return VoiceRenderSettings(
+            voice_id=voice.voice_id,
+            voice_name=settings.voice_name.strip() or voice.name,
+            style_id=style.style_id,
+            style_name=settings.style_name.strip() or style.name,
+            speed=min(1.2, max(0.8, float(settings.speed or 1.0))),
+            language=settings.language.strip() or "zh",
+            audio_format=(settings.audio_format.strip() or "wav").lstrip("."),
+            preview_text=settings.preview_text.strip(),
+        )
+
+    def _builtin_audio_path(self, profile_id: str) -> Path:
+        return self.audio_dir / f"{profile_id}.wav"
+
+    def _validate_export_audio_path(self, path: str) -> Path:
+        if not path.strip():
+            raise ValueError("Preview audio path is required.")
+        exports_dir = self.artifact_store.exports_dir.resolve()
+        target = Path(path).expanduser().resolve()
+        try:
+            target.relative_to(exports_dir)
+        except ValueError as exc:
+            raise ValueError("Voice profile source audio must be inside the app exports directory.") from exc
+        if not target.exists():
+            raise ValueError("Voice profile source audio is missing.")
+        if not target.is_file():
+            raise ValueError("Voice profile source audio must point to a file.")
+        return target
+
+    def _read_user_profiles(self) -> list[VoiceProfileRecord]:
+        if not self.user_profiles_file.exists():
+            return []
+        payload = json.loads(self.user_profiles_file.read_text(encoding="utf-8"))
+        raw_profiles = payload.get("profiles", []) if isinstance(payload, dict) else []
+        return [
+            VoiceProfileRecord.from_dict(item)
+            for item in raw_profiles
+            if isinstance(item, dict)
+        ]
+
+    def _write_user_profiles(self, profiles: list[VoiceProfileRecord]) -> None:
+        self.user_profiles_file.parent.mkdir(parents=True, exist_ok=True)
+        self.user_profiles_file.write_text(
+            json.dumps(
+                {"profiles": [profile.to_dict() for profile in profiles]},
+                indent=2,
+                ensure_ascii=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )

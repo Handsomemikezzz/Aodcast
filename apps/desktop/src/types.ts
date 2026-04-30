@@ -202,6 +202,8 @@ export type VoiceRenderSettings = {
 };
 
 export type VoiceReferenceLock = {
+  source?: "preview_lock" | "voice_profile";
+  voice_profile_id?: string;
   lock_id: string;
   audio_path: string;
   preview_text: string;
@@ -215,6 +217,27 @@ export type VoiceReferenceLock = {
   language: string;
   audio_format: string;
   created_at: string;
+};
+
+export type VoiceProfileRecord = {
+  voice_profile_id: string;
+  name: string;
+  source: "built_in" | "user_saved";
+  audio_path: string;
+  preview_text: string;
+  provider: string;
+  model: string;
+  voice_id: string;
+  voice_name?: string;
+  style_id: string;
+  style_name?: string;
+  speed: number;
+  language: string;
+  audio_format: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  last_used_at?: string;
 };
 
 export type VoicePresetCatalog = BridgeResultMeta & {

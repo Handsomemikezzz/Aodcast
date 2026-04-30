@@ -41,6 +41,16 @@ class BridgeRequestStateSchemaTests(unittest.TestCase):
             self.assertIn(property_name, voice_reference["properties"])
         self.assertFalse(script_payload["additionalProperties"])
 
+    def test_voice_profile_schema_matches_reusable_profile_contract(self) -> None:
+        schema_path = Path(__file__).resolve().parents[3] / "packages/shared-schemas/voice-profile.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+        for property_name in ["voice_profile_id", "name", "source", "audio_path", "preview_text", "provider", "model"]:
+            self.assertIn(property_name, schema["properties"])
+            self.assertIn(property_name, schema["required"])
+        self.assertEqual(schema["properties"]["source"]["enum"], ["built_in", "user_saved"])
+        self.assertFalse(schema["additionalProperties"])
+
 
 if __name__ == "__main__":
     unittest.main()

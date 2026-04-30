@@ -39,6 +39,7 @@ from app.runtime.request_state_store import RequestStateStore
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+from app.storage.voice_profile_store import VoiceProfileStore
 
 
 class HttpRuntimeTests(unittest.TestCase):
@@ -49,11 +50,13 @@ class HttpRuntimeTests(unittest.TestCase):
         self.store = ProjectStore(self.config.data_dir)
         self.config_store = ConfigStore(self.config.config_dir)
         self.artifact_store = ArtifactStore(self.config.data_dir)
+        self.voice_profile_store = VoiceProfileStore(self.config.data_dir, self.artifact_store)
         self.request_state_store = RequestStateStore(self.config.data_dir)
 
         self.store.bootstrap()
         self.config_store.bootstrap()
         self.artifact_store.bootstrap()
+        self.voice_profile_store.bootstrap()
         self.request_state_store.bootstrap()
         self.config_store.save_llm_config(LLMProviderConfig(provider="mock"))
 
@@ -63,6 +66,7 @@ class HttpRuntimeTests(unittest.TestCase):
             store=self.store,
             config_store=self.config_store,
             artifact_store=self.artifact_store,
+            voice_profile_store=self.voice_profile_store,
             request_state_store=self.request_state_store,
             orchestrator=InterviewOrchestrator(self.store, self.config_store),
             script_generation=ScriptGenerationService(self.store, self.config_store),
@@ -664,6 +668,55 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(artifact["voice_reference"]["audio_path"], str(preview_path))
         self.assertEqual(artifact["voice_reference"]["preview_text"], "锁定这一句试音。")
         self.assertEqual(artifact["voice_reference"]["provider"], "local_mlx")
+        self.assertEqual(artifact["voice_settings"]["voice_id"], "news_anchor")
+
+    def test_voice_profiles_route_lists_builtins(self) -> None:
+        status, _, payload = self.request_json("GET", "/api/v1/voice-profiles")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        profiles = payload["data"]["profiles"]  # type: ignore[index]
+        built_ins = [profile for profile in profiles if profile["source"] == "built_in"]
+        self.assertEqual(len(built_ins), 3)
+        self.assertTrue(all(Path(profile["audio_path"]).exists() for profile in built_ins))
+
+    def test_create_voice_profile_and_select_for_script(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        preview_path = self.artifact_store.write_preview_audio(b"preview-audio", "wav")
+
+        create_status, _, create_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "我的知识主播",
+                "audio_path": str(preview_path),
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+                "voice_settings": {
+                    "voice_id": "news_anchor",
+                    "style_id": "news",
+                    "preview_text": "保存这条试音。",
+                },
+            },
+        )
+
+        self.assertEqual(create_status, 200)
+        profile = create_payload["data"]["profile"]  # type: ignore[index]
+        self.assertEqual(profile["name"], "我的知识主播")
+        self.assertEqual(profile["source"], "user_saved")
+        self.assertTrue(Path(profile["audio_path"]).exists())
+
+        select_status, _, select_payload = self.request_json(
+            "POST",
+            f"/api/v1/sessions/{session_id}/scripts/{script_id}/voice-profile:select",
+            body={"voice_profile_id": profile["voice_profile_id"]},
+        )
+
+        self.assertEqual(select_status, 200)
+        artifact = select_payload["data"]["project"]["artifact"]  # type: ignore[index]
+        self.assertEqual(artifact["voice_reference"]["source"], "voice_profile")
+        self.assertEqual(artifact["voice_reference"]["voice_profile_id"], profile["voice_profile_id"])
+        self.assertEqual(artifact["voice_reference"]["audio_path"], profile["audio_path"])
         self.assertEqual(artifact["voice_settings"]["voice_id"], "news_anchor")
 
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:

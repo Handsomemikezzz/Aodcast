@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/voice-profile.schema.json",
+  "title": "VoiceProfile",
+  "type": "object",
+  "required": [
+    "voice_profile_id",
+    "name",
+    "source",
+    "audio_path",
+    "preview_text",
+    "provider",
+    "model",
+    "voice_id",
+    "style_id",
+    "speed",
+    "language",
+    "audio_format",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "voice_profile_id": { "type": "string" },
+    "name": { "type": "string" },
+    "source": { "type": "string", "enum": ["built_in", "user_saved"] },
+    "audio_path": { "type": "string" },
+    "preview_text": { "type": "string" },
+    "provider": { "type": "string" },
+    "model": { "type": "string" },
+    "voice_id": { "type": "string" },
+    "voice_name": { "type": "string" },
+    "style_id": { "type": "string" },
+    "style_name": { "type": "string" },
+    "speed": { "type": "number" },
+    "language": { "type": "string" },
+    "audio_format": { "type": "string" },
+    "description": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "last_used_at": { "type": "string" }
+  },
+  "additionalProperties": false
+}

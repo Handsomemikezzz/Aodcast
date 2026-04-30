@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ConfigureLLMInput,
   ConfigureTTSInput,
+  CreateVoiceProfileInput,
   CreateSessionInput,
   DesktopBridge,
   DesktopBridgeError,
@@ -30,6 +31,7 @@ import type {
   TTSProviderConfig,
   VoicePreset,
   VoicePresetCatalog,
+  VoiceProfileRecord,
   VoicePreviewResult,
   VoiceRenderSettings,
   VoiceStylePreset,
@@ -69,6 +71,8 @@ type BridgeShape<T> = {
   tts_capability?: TTSCapability;
   tts_config?: TTSProviderConfig;
   models?: ModelStatus[];
+  profiles?: VoiceProfileRecord[];
+  profile?: VoiceProfileRecord;
   model_storage?: ModelStorageStatus;
   request_state?: RequestState;
   task_state?: RequestState | null;
@@ -562,6 +566,49 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       }
       const taskId = response.task_id ?? initialState?.task_id ?? "render_voice_preview";
       return waitForVoicePreview(this.showTaskState, taskId, options);
+    },
+    async listVoiceProfiles() {
+      const response = await callHttp<{ profiles?: VoiceProfileRecord[] }>("/api/v1/voice-profiles");
+      return response.profiles ?? [];
+    },
+    async createVoiceProfile(input: CreateVoiceProfileInput) {
+      const response = await callHttp<{ profile?: VoiceProfileRecord }>("/api/v1/voice-profiles", {
+        method: "POST",
+        body: JSON.stringify({
+          name: input.name,
+          audio_path: input.audioPath,
+          provider: input.provider,
+          model: input.model,
+          voice_settings: serializeVoiceSettings(input.settings),
+        }),
+      });
+      return response.profile!;
+    },
+    async updateVoiceProfile(profileId: string, name: string) {
+      const response = await callHttp<{ profile?: VoiceProfileRecord }>(
+        `/api/v1/voice-profiles/${encodeURIComponent(profileId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        },
+      );
+      return response.profile!;
+    },
+    async deleteVoiceProfile(profileId: string) {
+      return callHttp<{ voice_profile_id?: string; deleted?: boolean; cleared_voice_references?: number }>(
+        `/api/v1/voice-profiles/${encodeURIComponent(profileId)}`,
+        { method: "DELETE" },
+      );
+    },
+    async selectVoiceProfile(sessionId: string, scriptId: string, profileId: string) {
+      const response = await callHttp<{ project?: SessionProject }>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/voice-profile:select`,
+        {
+          method: "POST",
+          body: JSON.stringify({ voice_profile_id: profileId }),
+        },
+      );
+      return response.project!;
     },
     async lockVoicePreview(sessionId: string, scriptId: string, input: LockVoicePreviewInput) {
       const response = await callHttp<{ project?: SessionProject }>(

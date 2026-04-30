@@ -42,6 +42,13 @@ the local MLX/Qwen `ref_audio` during full-script renders and Voice Studio take
 renders. Preview generation itself does not auto-lock, so users can compare
 multiple previews without replacing the approved reference.
 
+Reusable voice profiles use the same reference-audio mechanism. The
+`voice-profiles` endpoints list built-in profiles, create user profiles by
+copying accepted preview audio into the managed exports area, update/delete
+user profiles, and select a profile for the current script. Selecting a profile
+does not render audio immediately; it updates script-scoped voice settings and
+`artifact.voice_reference` so the next full render uses the chosen reference.
+
 ## Flow
 
 ```mermaid
@@ -67,7 +74,7 @@ graph TD
     end
 
     scriptUi -->|renderAudio| bridge
-    voiceStudio -->|renderVoicePreview/lockVoicePreview/renderVoiceTake| bridge
+    voiceStudio -->|renderVoicePreview/lockVoicePreview/listVoiceProfiles/selectVoiceProfile/renderVoiceTake| bridge
     bridge -->|POST audio:render| startRender
     startRender --> orchestration
     orchestration --> chunker

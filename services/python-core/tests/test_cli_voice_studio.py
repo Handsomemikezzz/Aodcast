@@ -45,6 +45,17 @@ class VoiceStudioCliTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["styles"]), 4)
         self.assertIsInstance(payload["standard_preview_text"], str)
 
+    def test_list_voice_profiles_outputs_builtin_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            code, payloads = self.run_cli("--cwd", tmp_dir, "--list-voice-profiles")
+
+        self.assertEqual(code, 0)
+        self.assertTrue(payloads)
+        payload = payloads[-1]
+        self.assertEqual(payload["request_state"]["operation"], "list_voice_profiles")
+        built_ins = [profile for profile in payload["profiles"] if profile["source"] == "built_in"]
+        self.assertEqual(len(built_ins), 3)
+
     def test_render_voice_take_outputs_take_payload_for_latest_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = AppConfig.from_cwd(Path(tmp_dir))

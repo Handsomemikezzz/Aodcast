@@ -17,6 +17,7 @@ import type {
   TTSCapability,
   TTSProviderConfig,
   VoicePreset,
+  VoiceProfileRecord,
   VoiceRenderSettings,
   VoiceStylePreset,
 } from "../types";
@@ -60,6 +61,7 @@ export function VoiceStudioPage() {
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
   const [project, setProject] = useState<SessionProject | null>(null);
   const [voices, setVoices] = useState<VoicePreset[]>([]);
+  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfileRecord[]>([]);
   const [styles, setStyles] = useState<VoiceStylePreset[]>([]);
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
@@ -99,6 +101,9 @@ export function VoiceStudioPage() {
   const takes = project?.artifact?.takes ?? [];
   const finalTakeId = project?.artifact?.final_take_id ?? "";
   const voiceReference = project?.artifact?.voice_reference;
+  const selectedProfile = voiceReference?.voice_profile_id
+    ? voiceProfiles.find((profile) => profile.voice_profile_id === voiceReference.voice_profile_id)
+    : undefined;
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
   const selectedStyle = styles.find((style) => style.style_id === selectedStyleId) ?? styles[0];
   const resolvedModel = resolvedTtsModel(ttsConfig);
@@ -175,17 +180,23 @@ export function VoiceStudioPage() {
     setScripts(loadedScripts);
   };
 
+  const refreshVoiceProfiles = async () => {
+    setVoiceProfiles(await bridge.listVoiceProfiles());
+  };
+
   useEffect(() => {
     void (async () => {
       try {
-        const [catalog, loadedProjects, tts, modelStatus, capability] = await Promise.all([
+        const [catalog, loadedProjects, tts, modelStatus, capability, profiles] = await Promise.all([
           bridge.listVoicePresets(),
           bridge.listProjects(),
           bridge.showTTSConfig(),
           bridge.listModelsStatus(),
           bridge.getLocalTTSCapability(),
+          bridge.listVoiceProfiles(),
         ]);
         setVoices(catalog.voices);
+        setVoiceProfiles(profiles);
         setStyles(catalog.styles);
         setStandardPreviewText(catalog.standard_preview_text);
         setPreviewText(catalog.standard_preview_text);
@@ -294,6 +305,70 @@ export function VoiceStudioPage() {
       setMessage("已锁定此试音音色；正式生成会以这段试音作为参考音色。");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to lock preview voice."));
+    }
+  };
+
+  const handleSaveVoiceProfile = async () => {
+    if (!previewPath) {
+      setError("请先生成并确认一条试音，再保存为我的音色。");
+      return;
+    }
+    const name = window.prompt("给这个音色起个名字", selectedVoice?.name ? `我的${selectedVoice.name}` : "我的音色");
+    if (name === null) return;
+    try {
+      setError(null);
+      const profile = await bridge.createVoiceProfile({
+        name,
+        audioPath: previewPath,
+        provider: lastPreviewProvider || providerOverride || ttsConfig?.provider || "",
+        model: lastPreviewModel || resolvedModel,
+        settings: lastPreviewSettings ?? settings,
+      });
+      await refreshVoiceProfiles();
+      if (selectedSessionId && selectedScriptId) {
+        const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
+        setProject(updated);
+      }
+      setMessage("已保存到我的音色库，并设为当前脚本参考音色。");
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to save voice profile."));
+    }
+  };
+
+  const handleSelectVoiceProfile = async (profile: VoiceProfileRecord) => {
+    if (!selectedSessionId || !selectedScriptId) {
+      setError("请先选择 Session 和脚本，再选用音色。");
+      return;
+    }
+    try {
+      setError(null);
+      const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
+      setProject(updated);
+      setSelectedVoiceId(profile.voice_id);
+      setSelectedStyleId(profile.style_id);
+      setSpeed(profile.speed);
+      setLanguage(profile.language);
+      setAudioFormat(profile.audio_format);
+      await refreshVoiceProfiles();
+      setMessage(`已选用「${profile.name}」，正式生成会以该音频作为参考声音。`);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to select voice profile."));
+    }
+  };
+
+  const handleDeleteVoiceProfile = async (profile: VoiceProfileRecord) => {
+    if (profile.source === "built_in") return;
+    if (!window.confirm(`删除「${profile.name}」？已使用该音色的脚本会清除对应参考。`)) return;
+    try {
+      setError(null);
+      await bridge.deleteVoiceProfile(profile.voice_profile_id);
+      await refreshVoiceProfiles();
+      if (selectedSessionId && selectedScriptId) {
+        await loadProject(selectedSessionId, selectedScriptId);
+      }
+      setMessage("音色已删除。");
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to delete voice profile."));
     }
   };
 
@@ -481,6 +556,58 @@ export function VoiceStudioPage() {
             </section>
 
             <section className="rounded-[28px] border border-outline bg-surface p-5">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-primary">音色库</h2>
+                  <p className="mt-1 text-xs text-secondary">
+                    选择默认音色或保存过的试音音频，正式生成会把它作为 Qwen/local MLX 的参考声音。
+                  </p>
+                  {selectedProfile ? (
+                    <p className="mt-2 text-xs font-medium text-accent-amber">当前选用：{selectedProfile.name}</p>
+                  ) : voiceReference?.audio_path ? (
+                    <p className="mt-2 text-xs font-medium text-accent-amber">当前选用：临时锁定试音</p>
+                  ) : null}
+                </div>
+                <button type="button" onClick={() => void refreshVoiceProfiles()} className="inline-flex items-center gap-2 rounded-2xl border border-outline px-3 py-2 text-xs font-medium text-secondary hover:text-primary">
+                  <RefreshCw className="h-3.5 w-3.5" /> 刷新音色库
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {voiceProfiles.map((profile) => {
+                  const isSelected = voiceReference?.voice_profile_id === profile.voice_profile_id;
+                  return (
+                    <div key={profile.voice_profile_id} className={cn("rounded-[22px] border p-4", isSelected ? "border-accent-amber bg-accent-amber/10" : "border-outline bg-background")}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-primary">{profile.name}</p>
+                          <p className="mt-1 text-[11px] text-secondary">{profile.source === "built_in" ? "默认音色" : "我的音色"} · {profile.voice_name || profile.voice_id} / {profile.style_name || profile.style_id}</p>
+                        </div>
+                        {isSelected ? <CheckCircle2 className="h-4 w-4 text-accent-amber" /> : null}
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-secondary">{profile.description || profile.preview_text}</p>
+                      <audio controls src={resolveAudioFileUrl(profile.audio_path)} onError={handleAudioLoadError} className="mt-3 w-full" />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleSelectVoiceProfile(profile)}
+                          disabled={isSelected}
+                          className="rounded-xl border border-outline px-3 py-2 text-xs font-medium text-primary disabled:opacity-50"
+                        >
+                          {isSelected ? "已选用" : "选用音色"}
+                        </button>
+                        {profile.source === "user_saved" ? (
+                          <button type="button" onClick={() => void handleDeleteVoiceProfile(profile)} className="rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
+                            删除
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-[28px] border border-outline bg-surface p-5">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-primary">当前声音方案</h2>
@@ -636,6 +763,14 @@ export function VoiceStudioPage() {
                       className="inline-flex items-center gap-1 rounded-xl border border-accent-amber/35 bg-accent-amber/10 px-3 py-2 text-xs font-semibold text-accent-amber hover:bg-accent-amber/15 disabled:opacity-50"
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" /> 锁定此试音音色
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveVoiceProfile()}
+                      disabled={!canLockPreview}
+                      className="inline-flex items-center gap-1 rounded-xl border border-outline px-3 py-2 text-xs font-semibold text-primary hover:bg-surface-container disabled:opacity-50"
+                    >
+                      保存为我的音色
                     </button>
                     <button type="button" onClick={() => void handleDeletePreview()} className="inline-flex items-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
                       <Trash2 className="h-3.5 w-3.5" /> 删除试音音频

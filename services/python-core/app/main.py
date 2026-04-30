@@ -46,6 +46,7 @@ from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+from app.storage.voice_profile_store import VoiceProfileStore
 
 DOWNLOAD_PROGRESS_MARKER = "AODCAST_PROGRESS"
 
@@ -148,6 +149,16 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "list_voice_presets"
     if args.render_voice_preview:
         return "render_voice_preview"
+    if args.list_voice_profiles:
+        return "list_voice_profiles"
+    if args.create_voice_profile:
+        return "create_voice_profile"
+    if args.update_voice_profile:
+        return "update_voice_profile"
+    if args.delete_voice_profile:
+        return "delete_voice_profile"
+    if args.select_voice_profile:
+        return "select_voice_profile"
     if args.lock_voice_preview:
         return "lock_voice_preview"
     if args.render_voice_take:
@@ -247,6 +258,7 @@ def run(argv: list[str] | None = None) -> int:
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
     artifact_store = ArtifactStore(config.data_dir)
+    voice_profile_store = VoiceProfileStore(config.data_dir, artifact_store)
     request_state_store = RequestStateStore(config.data_dir)
     orchestrator = InterviewOrchestrator(store, config_store)
     script_generation = ScriptGenerationService(store, config_store)
@@ -254,6 +266,7 @@ def run(argv: list[str] | None = None) -> int:
     store.bootstrap()
     config_store.bootstrap()
     artifact_store.bootstrap()
+    voice_profile_store.bootstrap()
     request_state_store.bootstrap()
 
     if args.serve_http:
@@ -650,6 +663,12 @@ def run(argv: list[str] | None = None) -> int:
                     "styles": [style.to_dict() for style in STYLE_PRESETS],
                     "standard_preview_text": STANDARD_PREVIEW_TEXT,
                 },
+            )
+
+        if args.list_voice_profiles:
+            return output_payload(
+                args,
+                {"profiles": [profile.to_dict() for profile in voice_profile_store.list_profiles()]},
             )
 
         if args.render_voice_preview:

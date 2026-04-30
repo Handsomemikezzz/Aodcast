@@ -13,6 +13,7 @@ import {
   TTSProviderConfig,
   TTSCapability,
   VoicePresetCatalog,
+  VoiceProfileRecord,
   VoicePreviewResult,
   VoiceRenderSettings,
   VoiceTakeRenderResult,
@@ -54,6 +55,10 @@ export type LockVoicePreviewInput = {
   provider: string;
   model: string;
   settings: VoiceRenderSettings;
+};
+
+export type CreateVoiceProfileInput = LockVoicePreviewInput & {
+  name: string;
 };
 
 export type DesktopBridgeError = {
@@ -118,6 +123,16 @@ export interface DesktopBridge {
   listVoicePresets(): Promise<VoicePresetCatalog>;
   /** Render a short preview for quick voice/style/text comparison. */
   renderVoicePreview(settings: VoiceRenderSettings, options?: RenderVoicePreviewOptions): Promise<VoicePreviewResult>;
+  /** List built-in and user-saved reusable voice profiles. */
+  listVoiceProfiles(): Promise<VoiceProfileRecord[]>;
+  /** Save an accepted preview into the reusable voice profile library. */
+  createVoiceProfile(input: CreateVoiceProfileInput): Promise<VoiceProfileRecord>;
+  /** Rename a user-saved voice profile. */
+  updateVoiceProfile(profileId: string, name: string): Promise<VoiceProfileRecord>;
+  /** Delete a user-saved voice profile. */
+  deleteVoiceProfile(profileId: string): Promise<{ voice_profile_id?: string; deleted?: boolean; cleared_voice_references?: number }>;
+  /** Select a reusable profile as the current script's reference voice. */
+  selectVoiceProfile(sessionId: string, scriptId: string, profileId: string): Promise<SessionProject>;
   /** Lock an accepted preview as the reference voice for future local MLX/Qwen renders. */
   lockVoicePreview(sessionId: string, scriptId: string, input: LockVoicePreviewInput): Promise<SessionProject>;
   /** Render a candidate take for one script snapshot. */
