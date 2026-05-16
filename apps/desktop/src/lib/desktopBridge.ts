@@ -62,7 +62,9 @@ export type LockVoicePreviewInput = {
 export type CreateVoiceProfileInput = {
   name: string;
   referenceAudioPath?: string;
-  referenceText: string;
+  referenceAudioFile?: Blob;
+  referenceAudioFileName?: string;
+  referenceText?: string;
   audioPath?: string;
   provider: string;
   model: string;
@@ -70,6 +72,14 @@ export type CreateVoiceProfileInput = {
   audioFormat?: string;
   /** Legacy preview-derived settings kept for compatibility with existing Voice Studio save flow. */
   settings?: VoiceRenderSettings;
+};
+
+export type UpdateVoiceProfileInput = {
+  name?: string;
+  referenceText?: string;
+  referenceAudioFile?: Blob;
+  referenceAudioFileName?: string;
+  audioFormat?: string;
 };
 
 export type DesktopBridgeError = {
@@ -138,8 +148,8 @@ export interface DesktopBridge {
   listVoiceProfiles(): Promise<VoiceProfileRecord[]>;
   /** Save an accepted preview into the reusable voice profile library. */
   createVoiceProfile(input: CreateVoiceProfileInput): Promise<VoiceProfileRecord>;
-  /** Rename a user-saved voice profile. */
-  updateVoiceProfile(profileId: string, name: string): Promise<VoiceProfileRecord>;
+  /** Update a user-saved voice profile name, reference text, and/or sample audio. */
+  updateVoiceProfile(profileId: string, input: UpdateVoiceProfileInput): Promise<VoiceProfileRecord>;
   /** Delete a user-saved voice profile. */
   deleteVoiceProfile(profileId: string): Promise<{ voice_profile_id?: string; deleted?: boolean; cleared_voice_references?: number }>;
   /** Select a reusable profile as the current script's reference voice. */

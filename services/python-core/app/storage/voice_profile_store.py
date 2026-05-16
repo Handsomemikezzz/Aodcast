@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import wave
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from app.storage.artifact_store import ArtifactStore
 BUILTIN_PROFILE_TEXT = "Hello, welcome to use Aodcast. What shall we talk about today?"
 BUILTIN_PROFILE_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "voice-profiles"
 MAX_REFERENCE_AUDIO_BYTES = 50 * 1024 * 1024
+MAX_REFERENCE_AUDIO_SECONDS = 30.0
 
 _BUILTIN_PROFILE_SPECS = (
     {
@@ -118,8 +120,94 @@ class VoiceProfileStore:
         self._write_user_profiles(profiles)
         return profile
 
-    def update_profile(self, profile_id: str, *, name: str) -> VoiceProfileRecord:
+    def create_user_profile_metadata(
+        self,
+        *,
+        name: str,
+        settings: VoiceRenderSettings | None = None,
+        provider: str = "",
+        model: str = "",
+        language: str = "zh",
+        audio_format: str = "wav",
+    ) -> VoiceProfileRecord:
+        normalized = self._normalize_settings(
+            settings or VoiceRenderSettings(language=language, audio_format=audio_format)
+        )
+        profile_id = f"user_{uuid4().hex}"
+        now = utc_now_iso()
+        profile = VoiceProfileRecord(
+            voice_profile_id=profile_id,
+            name=name.strip() or "我的音色",
+            source="user_saved",
+            audio_path="",
+            preview_text="",
+            provider=provider.strip() or "local_mlx",
+            model=model.strip(),
+            voice_id=normalized.voice_id,
+            voice_name=normalized.voice_name,
+            style_id=normalized.style_id,
+            style_name=normalized.style_name,
+            speed=normalized.speed,
+            language=normalized.language,
+            audio_format=(normalized.audio_format or audio_format or "wav").lstrip("."),
+            description="用户添加的参考音色",
+            created_at=now,
+            updated_at=now,
+        )
+        profiles = self._read_user_profiles()
+        profiles.append(profile)
+        self._write_user_profiles(profiles)
+        return profile
+
+    def attach_user_profile_sample(
+        self,
+        profile_id: str,
+        *,
+        source_audio_path: Path,
+        reference_text: str,
+        audio_format: str = "",
+    ) -> VoiceProfileRecord:
+        text = reference_text.strip()
+        if not text:
+            raise ValueError("Field 'reference_text' is required.")
+        source_audio = self._validate_reference_audio_path(str(source_audio_path))
+        profile = self.get_profile(profile_id)
+        if profile.source != "user_saved":
+            raise ValueError("Only user-saved voice profiles can receive uploaded samples.")
+        previous_audio_path = Path(profile.audio_path).expanduser().resolve() if profile.audio_path else None
+        suffix = (audio_format.strip().lstrip(".") or source_audio.suffix.lower().lstrip(".") or profile.audio_format or "wav")
+        target = self.audio_dir / f"{profile.voice_profile_id}.{suffix}"
+        shutil.copyfile(source_audio, target)
+        if previous_audio_path and previous_audio_path != target.resolve():
+            try:
+                previous_audio_path.relative_to(self.audio_dir.resolve())
+            except ValueError:
+                pass
+            else:
+                if previous_audio_path.exists() and previous_audio_path.is_file():
+                    previous_audio_path.unlink()
+        updated = VoiceProfileRecord.from_dict(
+            {
+                **profile.to_dict(),
+                "audio_path": str(target),
+                "preview_text": text,
+                "reference_text": text,
+                "audio_format": suffix,
+                "updated_at": utc_now_iso(),
+            }
+        )
+        return self._replace_user_profile(updated)
+
+    def update_profile(
+        self,
+        profile_id: str,
+        *,
+        name: str | None = None,
+        reference_text: str | None = None,
+    ) -> VoiceProfileRecord:
         cleaned = profile_id.strip()
+        if name is None and reference_text is None:
+            raise ValueError("At least one of 'name' or 'reference_text' is required.")
         profiles = self._read_user_profiles()
         updated: VoiceProfileRecord | None = None
         next_profiles: list[VoiceProfileRecord] = []
@@ -127,16 +215,22 @@ class VoiceProfileStore:
             if profile.voice_profile_id != cleaned:
                 next_profiles.append(profile)
                 continue
+            next_name = profile.name if name is None else (name.strip() or profile.name)
+            next_text = profile.preview_text if reference_text is None else reference_text.strip()
+            if not next_text:
+                raise ValueError("Field 'reference_text' is required.")
             updated = VoiceProfileRecord.from_dict(
                 {
                     **profile.to_dict(),
-                    "name": name.strip() or profile.name,
+                    "name": next_name,
+                    "preview_text": next_text,
+                    "reference_text": next_text,
                     "updated_at": utc_now_iso(),
                 }
             )
             next_profiles.append(updated)
         if updated is None:
-            raise ValueError("Only user-saved voice profiles can be renamed.")
+            raise ValueError("Only user-saved voice profiles can be updated.")
         self._write_user_profiles(next_profiles)
         return updated
 
@@ -245,9 +339,25 @@ class VoiceProfileStore:
             raise ValueError("Voice profile reference audio must point to a file.")
         if target.stat().st_size > MAX_REFERENCE_AUDIO_BYTES:
             raise ValueError("Voice profile reference audio is too large.")
-        if target.suffix.lower() not in {".wav", ".mp3", ".m4a", ".mp4", ".aac", ".flac"}:
+        if target.suffix.lower() not in {".wav", ".mp3", ".m4a", ".mp4", ".aac", ".flac", ".webm", ".ogg"}:
             raise ValueError("Voice profile reference audio must be a supported audio file.")
+        self._validate_reference_audio_duration(target)
         return target
+
+    def _validate_reference_audio_duration(self, path: Path) -> None:
+        if path.suffix.lower() != ".wav":
+            return
+        try:
+            with wave.open(str(path), "rb") as wav_file:
+                frame_rate = wav_file.getframerate()
+                frame_count = wav_file.getnframes()
+        except (wave.Error, EOFError):
+            return
+        if frame_rate <= 0:
+            return
+        duration = frame_count / float(frame_rate)
+        if duration > MAX_REFERENCE_AUDIO_SECONDS:
+            raise ValueError("Voice profile reference audio must be 30 seconds or shorter.")
 
     def _read_user_profiles(self) -> list[VoiceProfileRecord]:
         if not self.user_profiles_file.exists():

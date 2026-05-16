@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { CheckCircle2, Loader2, Mic, RefreshCw, Trash2, Wand2 } from "lucide-react";
+import { CheckCircle2, FileAudio, Loader2, Mic, Pencil, RefreshCw, Square, Trash2, Upload, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
@@ -21,6 +21,8 @@ import type {
 
 const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
 type PreviewTextMode = "standard" | "script_opening" | "custom";
+type ProfileAudioSource = "upload" | "microphone" | "system";
+type ProfileDialogMode = "create" | "edit";
 
 function resolvedTtsModel(config: TTSProviderConfig | null): string {
   const raw = config?.model?.trim() ?? "";
@@ -36,11 +38,25 @@ function scriptOpeningText(script: string): string {
   return script.trim().replace(/\s+/g, " ").slice(0, 180);
 }
 
+function profileSampleAudioFormat(fileName: string, file: File | Blob | null): string {
+  const extension = fileName.split(".").pop()?.trim().toLowerCase();
+  if (extension) return extension;
+  if (file?.type.includes("webm")) return "webm";
+  if (file?.type.includes("mp4")) return "mp4";
+  if (file?.type.includes("mpeg")) return "mp3";
+  if (file?.type.includes("ogg")) return "ogg";
+  return "wav";
+}
+
 export function VoiceStudioPage() {
   const { sessionId: routeSessionId, scriptId: routeScriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const bridge = useBridge();
   const navigate = useNavigate();
   const previewAudioRef = useRef<HTMLAudioElement>(null);
+  const profileFileInputRef = useRef<HTMLInputElement>(null);
+  const profileRecorderRef = useRef<MediaRecorder | null>(null);
+  const profileRecordingChunksRef = useRef<Blob[]>([]);
+  const profileRecordingStreamRef = useRef<MediaStream | null>(null);
   const previewRequestTokenRef = useRef(0);
   const previewContextRef = useRef({ previewKey: "", profileId: "", scriptId: "", sessionId: "" });
   const projectLoadTokenRef = useRef(0);
@@ -74,10 +90,17 @@ export function VoiceStudioPage() {
   const [previewKey, setPreviewKey] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
+  const [profileDialogMode, setProfileDialogMode] = useState<ProfileDialogMode | null>(null);
+  const [editingProfileId, setEditingProfileId] = useState("");
+  const [existingProfileAudioUrl, setExistingProfileAudioUrl] = useState("");
+  const [profileAudioSource, setProfileAudioSource] = useState<ProfileAudioSource>("upload");
   const [newProfileName, setNewProfileName] = useState("");
-  const [newProfileAudioPath, setNewProfileAudioPath] = useState("");
+  const [newProfileAudioFile, setNewProfileAudioFile] = useState<File | Blob | null>(null);
+  const [newProfileAudioFileName, setNewProfileAudioFileName] = useState("");
+  const [newProfileAudioPreviewUrl, setNewProfileAudioPreviewUrl] = useState("");
   const [newProfileReferenceText, setNewProfileReferenceText] = useState("");
-  const [creatingProfile, setCreatingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [recordingProfileSample, setRecordingProfileSample] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [profileAudioErrors, setProfileAudioErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -180,6 +203,53 @@ export function VoiceStudioPage() {
     setPreviewRequestState(null);
   }, []);
 
+  const stopProfileRecordingStream = useCallback(() => {
+    profileRecordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    profileRecordingStreamRef.current = null;
+  }, []);
+
+  const setProfileAudioSample = useCallback((file: File | Blob, fileName: string) => {
+    setNewProfileAudioFile(file);
+    setNewProfileAudioFileName(fileName);
+    setNewProfileAudioPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
+    });
+  }, []);
+
+  const resetProfileDialog = useCallback(() => {
+    setProfileDialogMode(null);
+    setEditingProfileId("");
+    setProfileAudioSource("upload");
+    setNewProfileName("");
+    setNewProfileAudioFile(null);
+    setNewProfileAudioFileName("");
+    setNewProfileAudioPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return "";
+    });
+    setExistingProfileAudioUrl("");
+    setNewProfileReferenceText("");
+    setRecordingProfileSample(false);
+    profileRecordingChunksRef.current = [];
+    profileRecorderRef.current = null;
+    stopProfileRecordingStream();
+  }, [stopProfileRecordingStream]);
+
+  const openCreateProfileDialog = useCallback(() => {
+    resetProfileDialog();
+    setProfileDialogMode("create");
+  }, [resetProfileDialog]);
+
+  const openEditProfileDialog = useCallback((profile: VoiceProfileRecord) => {
+    resetProfileDialog();
+    setProfileDialogMode("edit");
+    setEditingProfileId(profile.voice_profile_id);
+    setNewProfileName(profile.name);
+    setNewProfileReferenceText(profile.preview_text || profile.reference_text || "");
+    setExistingProfileAudioUrl(resolveAudioFileUrl(profile.audio_path));
+  }, [resetProfileDialog]);
+
   const loadProject = async (sessionId: string, scriptId: string) => {
     if (!sessionId || !scriptId) return;
     const requestToken = projectLoadTokenRef.current + 1;
@@ -234,6 +304,14 @@ export function VoiceStudioPage() {
       }
     })();
   }, [bridge]);
+
+  useEffect(
+    () => () => {
+      if (newProfileAudioPreviewUrl) URL.revokeObjectURL(newProfileAudioPreviewUrl);
+      stopProfileRecordingStream();
+    },
+    [newProfileAudioPreviewUrl, stopProfileRecordingStream],
+  );
 
   useEffect(() => {
     clearPreviewState();
@@ -324,55 +402,145 @@ export function VoiceStudioPage() {
     }
   };
 
-  const handleCreateVoiceProfile = async () => {
-    const name = newProfileName.trim();
-    const referenceAudioPath = newProfileAudioPath.trim();
+  const handleProfileFileSelected = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("audio/") && !/\.(wav|mp3|m4a|mp4|aac|flac|webm|ogg)$/i.test(file.name)) {
+      setError("请选择 wav、mp3、m4a、mp4、aac、flac、webm 或 ogg 音频文件。");
+      return;
+    }
+    setError(null);
+    setProfileAudioSample(file, file.name);
+  };
+
+  const handleStartProfileRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("当前环境不支持麦克风录音，请改用上传音频。");
+      return;
+    }
+    try {
+      setError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      profileRecordingStreamRef.current = stream;
+      profileRecordingChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      profileRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) profileRecordingChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(profileRecordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        profileRecordingChunksRef.current = [];
+        stopProfileRecordingStream();
+        setRecordingProfileSample(false);
+        if (blob.size > 0) {
+          const extension = recorder.mimeType.includes("mp4") ? "mp4" : recorder.mimeType.includes("wav") ? "wav" : "webm";
+          setProfileAudioSample(blob, `microphone-reference.${extension}`);
+        }
+      };
+      recorder.start();
+      setRecordingProfileSample(true);
+    } catch (err) {
+      stopProfileRecordingStream();
+      setRecordingProfileSample(false);
+      setError(getErrorMessage(err, "无法开始麦克风录音。"));
+    }
+  };
+
+  const handleStopProfileRecording = () => {
+    const recorder = profileRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+      return;
+    }
+    stopProfileRecordingStream();
+    setRecordingProfileSample(false);
+  };
+
+  const handleSaveVoiceProfile = async () => {
+    const name = newProfileName.trim() || "我的音色";
     const referenceText = newProfileReferenceText.trim();
-    if (!name) {
-      setError("请先填写音色名称。");
-      return;
-    }
-    if (!referenceAudioPath) {
-      setError("请先填写参考音频文件路径。");
-      return;
-    }
     if (!referenceText) {
       setError("请填写参考音频中实际朗读的文本。");
       return;
     }
-    try {
-      setCreatingProfile(true);
-      setError(null);
-      const profile = await bridge.createVoiceProfile({
-        name,
-        referenceAudioPath,
-        referenceText,
-        provider: ttsConfig?.provider || "local_mlx",
-        model: resolvedModel,
-        language,
-        audioFormat,
-        settings: { ...settings, preview_text: referenceText },
-      });
-      await refreshVoiceProfiles();
-      setNewProfileName("");
-      setNewProfileAudioPath("");
-      setNewProfileReferenceText("");
-      if (canApplyProfileToScript) {
-        const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
-        setProject(updated);
-        setSelectedVoiceId(profile.voice_id);
-        setSelectedStyleId(profile.style_id);
-        setSpeed(profile.speed);
-        setLanguage(profile.language);
-        setAudioFormat(profile.audio_format);
-        setMessage(`已创建「${profile.name}」并用于当前脚本。返回 Script 页后可以生成完整音频。`);
-      } else {
-        setMessage(`已创建「${profile.name}」。打开脚本后可以选用这个音色。`);
+
+    if (profileDialogMode === "create") {
+      if (!newProfileAudioFile) {
+        setError("请先上传或录制一段参考音频。");
+        return;
       }
+      try {
+        setSavingProfile(true);
+        setError(null);
+        const profile = await bridge.createVoiceProfile({
+          name,
+          referenceAudioFile: newProfileAudioFile,
+          referenceAudioFileName: newProfileAudioFileName,
+          referenceText,
+          provider: ttsConfig?.provider || "local_mlx",
+          model: resolvedModel,
+          language,
+          audioFormat: profileSampleAudioFormat(newProfileAudioFileName, newProfileAudioFile),
+          settings: { ...settings, preview_text: referenceText },
+        });
+        await refreshVoiceProfiles();
+        resetProfileDialog();
+        if (canApplyProfileToScript) {
+          const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
+          setProject(updated);
+          setSelectedVoiceId(profile.voice_id);
+          setSelectedStyleId(profile.style_id);
+          setSpeed(profile.speed);
+          setLanguage(profile.language);
+          setAudioFormat(profile.audio_format);
+          setMessage(`已创建「${profile.name}」并用于当前脚本。返回 Script 页后可以生成完整音频。`);
+        } else {
+          setMessage(`已创建「${profile.name}」。打开脚本后可以选用这个音色。`);
+        }
+      } catch (err) {
+        setError(getErrorMessage(err, "Failed to create voice profile."));
+      } finally {
+        setSavingProfile(false);
+      }
+      return;
+    }
+
+    const editingProfile = voiceProfiles.find((profile) => profile.voice_profile_id === editingProfileId);
+    if (!editingProfile || editingProfile.source !== "user_saved") {
+      setError("找不到要编辑的音色。");
+      return;
+    }
+
+    const nameChanged = name !== editingProfile.name;
+    const textChanged = referenceText !== (editingProfile.preview_text || editingProfile.reference_text || "");
+    const hasNewAudio = Boolean(newProfileAudioFile);
+    if (!nameChanged && !textChanged && !hasNewAudio) {
+      resetProfileDialog();
+      return;
+    }
+
+    try {
+      setSavingProfile(true);
+      setError(null);
+      const patch: { name?: string; referenceText?: string; referenceAudioFile?: Blob; referenceAudioFileName?: string; audioFormat?: string } = {};
+      if (nameChanged) patch.name = name;
+      if (textChanged || hasNewAudio) patch.referenceText = referenceText;
+      if (hasNewAudio && newProfileAudioFile) {
+        patch.referenceAudioFile = newProfileAudioFile;
+        patch.referenceAudioFileName = newProfileAudioFileName;
+        patch.audioFormat = profileSampleAudioFormat(newProfileAudioFileName, newProfileAudioFile);
+      }
+      const profile = await bridge.updateVoiceProfile(editingProfileId, patch);
+      await refreshVoiceProfiles();
+      if (selectedSessionId && selectedScriptId && voiceReference?.voice_profile_id === profile.voice_profile_id) {
+        await loadProject(selectedSessionId, selectedScriptId);
+      }
+      resetProfileDialog();
+      setMessage(`已更新「${profile.name}」。`);
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to create voice profile."));
+      setError(getErrorMessage(err, "Failed to update voice profile."));
     } finally {
-      setCreatingProfile(false);
+      setSavingProfile(false);
     }
   };
 
@@ -408,6 +576,7 @@ export function VoiceStudioPage() {
       if (selectedSessionId && selectedScriptId) {
         await loadProject(selectedSessionId, selectedScriptId);
       }
+      resetProfileDialog();
       setMessage("音色已删除。");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to delete voice profile."));
@@ -484,9 +653,14 @@ export function VoiceStudioPage() {
                     <p className="mt-2 text-xs font-medium text-accent-amber">当前选用：{selectedProfile.name}</p>
                   ) : null}
                 </div>
-                <button type="button" onClick={() => void refreshVoiceProfiles()} className="inline-flex items-center gap-2 rounded-2xl border border-outline px-3 py-2 text-xs font-medium text-secondary hover:text-primary">
-                  <RefreshCw className="h-3.5 w-3.5" /> 刷新音色库
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={openCreateProfileDialog} className="inline-flex items-center gap-2 rounded-2xl bg-accent-amber px-3 py-2 text-xs font-semibold text-black">
+                    <Mic className="h-3.5 w-3.5" /> 创建音色
+                  </button>
+                  <button type="button" onClick={() => void refreshVoiceProfiles()} className="inline-flex items-center gap-2 rounded-2xl border border-outline px-3 py-2 text-xs font-medium text-secondary hover:text-primary">
+                    <RefreshCw className="h-3.5 w-3.5" /> 刷新音色库
+                  </button>
+                </div>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {activeVoiceProfiles.map((profile) => {
@@ -495,11 +669,34 @@ export function VoiceStudioPage() {
                   return (
                     <div key={profile.voice_profile_id} className={cn("rounded-[22px] border p-4", isSelected ? "border-accent-amber bg-accent-amber/10" : "border-outline bg-background")}>
                       <div className="flex items-start justify-between gap-3">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-primary">{profile.name}</p>
                           <p className="mt-1 text-[11px] text-secondary">{profile.source === "built_in" ? "默认音色" : "我的音色"} · {profile.voice_name || profile.voice_id} / {profile.style_name || profile.style_id}</p>
                         </div>
-                        {isSelected ? <CheckCircle2 className="h-4 w-4 text-accent-amber" /> : null}
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          {profile.source === "user_saved" ? (
+                            <div className="flex items-center rounded-lg border border-outline/80 bg-surface-container-low/50 p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditProfileDialog(profile)}
+                                className="inline-flex items-center rounded-md p-1.5 text-secondary hover:bg-surface-container hover:text-primary"
+                                aria-label={`编辑「${profile.name}」`}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="h-4 w-px bg-outline/60" aria-hidden />
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteVoiceProfile(profile)}
+                                className="inline-flex items-center rounded-md p-1.5 text-secondary hover:bg-red-500/10 hover:text-red-200"
+                                aria-label={`删除「${profile.name}」`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : null}
+                          {isSelected ? <CheckCircle2 className="ml-0.5 h-4 w-4 shrink-0 text-accent-amber" /> : null}
+                        </div>
                       </div>
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-secondary">{profile.description || profile.preview_text}</p>
                       <audio
@@ -524,11 +721,6 @@ export function VoiceStudioPage() {
                             打开脚本后可选用
                           </span>
                         )}
-                        {profile.source === "user_saved" ? (
-                          <button type="button" onClick={() => void handleDeleteVoiceProfile(profile)} className="rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
-                            删除
-                          </button>
-                        ) : null}
                       </div>
                     </div>
                   );
@@ -661,57 +853,180 @@ export function VoiceStudioPage() {
                 </button>
               </div>
             </section>
-
-            <section className="rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-5">
-              <div>
-                <h2 className="text-sm font-semibold text-primary">创建我的音色</h2>
-                <p className="mt-1 text-xs leading-5 text-secondary">
-                  使用一段参考音频和它实际朗读的文本创建可复用 voice profile。
-                </p>
-              </div>
-              <div className="mt-4 grid gap-3">
-                <label className="text-xs text-secondary">
-                  音色名称
-                  <input
-                    value={newProfileName}
-                    onChange={(event) => setNewProfileName(event.target.value)}
-                    className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
-                    placeholder="例如：我的知识讲述音色"
-                  />
-                </label>
-                <label className="text-xs text-secondary">
-                  参考音频路径
-                  <input
-                    value={newProfileAudioPath}
-                    onChange={(event) => setNewProfileAudioPath(event.target.value)}
-                    className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
-                    placeholder="/Users/.../reference.wav"
-                  />
-                </label>
-                <label className="text-xs text-secondary">
-                  参考音频文本
-                  <textarea
-                    value={newProfileReferenceText}
-                    onChange={(event) => setNewProfileReferenceText(event.target.value)}
-                    rows={4}
-                    className="mt-1 w-full resize-none rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
-                    placeholder="逐字填写参考音频里实际说出的内容"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void handleCreateVoiceProfile()}
-                  disabled={creatingProfile}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
-                >
-                  {creatingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-                  {scriptBoundMode ? "创建并用于当前脚本" : "创建音色"}
-                </button>
-              </div>
-            </section>
           </aside>
         </div>
       </div>
+      {profileDialogMode ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6">
+          <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-[24px] border border-outline bg-surface p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold text-primary">{profileDialogMode === "create" ? "创建我的音色" : "编辑我的音色"}</h2>
+                <p className="mt-1 text-xs leading-5 text-secondary">
+                  {profileDialogMode === "create"
+                    ? "添加 10-30 秒参考音频，并逐字填写音频里实际朗读的文本。"
+                    : "可修改名称与参考文本；如需更换参考音频，请重新上传或录制。"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={resetProfileDialog}
+                className="rounded-xl border border-outline p-2 text-secondary hover:text-primary"
+                aria-label="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <label className="text-xs text-secondary">
+                音色名称
+                <input
+                  value={newProfileName}
+                  onChange={(event) => setNewProfileName(event.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
+                  placeholder="例如：我的知识讲述音色"
+                />
+              </label>
+
+              <div>
+                <p className="text-xs text-secondary">参考音频来源</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  {[
+                    { id: "upload", label: "上传", icon: Upload },
+                    { id: "microphone", label: "麦克风录音", icon: Mic },
+                    { id: "system", label: "系统内录", icon: FileAudio },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    const isSystem = item.id === "system";
+                    const selected = profileAudioSource === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => !isSystem && setProfileAudioSource(item.id as ProfileAudioSource)}
+                        disabled={isSystem}
+                        className={cn(
+                          "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium disabled:opacity-45",
+                          selected ? "border-accent-amber bg-accent-amber/10 text-accent-amber" : "border-outline text-secondary hover:text-primary",
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {profileAudioSource === "upload" ? (
+                  <div className="mt-3 rounded-2xl border border-dashed border-outline bg-background p-4">
+                    <input
+                      ref={profileFileInputRef}
+                      type="file"
+                      accept="audio/*,.wav,.mp3,.m4a,.mp4,.aac,.flac,.webm,.ogg"
+                      className="hidden"
+                      onChange={(event) => handleProfileFileSelected(event.target.files?.[0] ?? null)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => profileFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-outline px-4 py-2 text-sm font-medium text-primary hover:bg-surface-container"
+                    >
+                      <Upload className="h-4 w-4" />
+                      选择音频文件
+                    </button>
+                    <p className="mt-2 text-xs text-secondary">支持 wav、mp3、m4a、mp4、aac、flac、webm、ogg；WAV 会校验 30 秒上限。</p>
+                  </div>
+                ) : null}
+                {profileAudioSource === "microphone" ? (
+                  <div className="mt-3 rounded-2xl border border-outline bg-background p-4">
+                    <button
+                      type="button"
+                      onClick={() => (recordingProfileSample ? handleStopProfileRecording() : void handleStartProfileRecording())}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold",
+                        recordingProfileSample ? "bg-red-500/20 text-red-100" : "bg-accent-amber text-black",
+                      )}
+                    >
+                      {recordingProfileSample ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      {recordingProfileSample ? "停止录音" : "开始录音"}
+                    </button>
+                    <p className="mt-2 text-xs text-secondary">录音完成后会自动作为参考音频。请控制在 30 秒以内。</p>
+                  </div>
+                ) : null}
+                {profileAudioSource === "system" ? (
+                  <div className="mt-3 rounded-2xl border border-outline bg-background p-4 text-xs text-secondary">
+                    系统内录需要新增 macOS 桌面采集能力；当前版本请使用上传或麦克风录音。
+                  </div>
+                ) : null}
+                {profileDialogMode === "edit" && existingProfileAudioUrl && !newProfileAudioPreviewUrl ? (
+                  <div className="mt-3 rounded-2xl border border-outline bg-background p-3">
+                    <p className="mb-2 text-xs font-medium text-primary">当前参考音频</p>
+                    <audio controls src={existingProfileAudioUrl} className="w-full" />
+                  </div>
+                ) : null}
+                {newProfileAudioPreviewUrl ? (
+                  <div className="mt-3 rounded-2xl border border-outline bg-background p-3">
+                    <p className="mb-2 text-xs font-medium text-primary">{newProfileAudioFileName || "新参考音频"}</p>
+                    <audio controls src={newProfileAudioPreviewUrl} className="w-full" />
+                  </div>
+                ) : null}
+              </div>
+
+              <label className="text-xs text-secondary">
+                参考音频文本
+                <textarea
+                  value={newProfileReferenceText}
+                  onChange={(event) => setNewProfileReferenceText(event.target.value)}
+                  rows={5}
+                  className="mt-1 w-full resize-none rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
+                  placeholder="逐字填写参考音频里实际说出的内容"
+                />
+              </label>
+
+              {profileDialogMode === "edit" ? (
+                <div className="rounded-2xl border border-red-500/15 bg-red-500/5 px-4 py-3">
+                  <p className="text-xs text-secondary">删除后无法恢复；已使用该音色的脚本会清除对应参考。</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const profile = voiceProfiles.find((item) => item.voice_profile_id === editingProfileId);
+                      if (profile) void handleDeleteVoiceProfile(profile);
+                    }}
+                    disabled={savingProfile}
+                    className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-red-200 hover:text-red-100 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    删除此音色
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={resetProfileDialog}
+                  className="rounded-2xl border border-outline px-4 py-2 text-sm font-medium text-secondary hover:text-primary"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveVoiceProfile()}
+                  disabled={savingProfile || recordingProfileSample}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
+                >
+                  {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : profileDialogMode === "create" ? <Mic className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                  {profileDialogMode === "create"
+                    ? scriptBoundMode
+                      ? "创建并用于当前脚本"
+                      : "创建音色"
+                    : "保存修改"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </motion.div>
   );
 }

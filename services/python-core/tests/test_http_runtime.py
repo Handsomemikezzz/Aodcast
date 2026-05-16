@@ -7,6 +7,8 @@ import threading
 import time
 import types
 import unittest
+import uuid
+import wave
 from pathlib import Path
 from unittest.mock import patch
 from urllib import error as urllib_error
@@ -134,6 +136,60 @@ class HttpRuntimeTests(unittest.TestCase):
                 return response.status, dict(response.headers.items()), response.read()
         except urllib_error.HTTPError as exc:
             return exc.code, dict(exc.headers.items()), exc.read()
+
+    def request_multipart(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict[str, str],
+        files: dict[str, tuple[str, bytes, str]],
+    ) -> tuple[int, dict[str, str], dict[str, object]]:
+        boundary = f"aodcast-{uuid.uuid4().hex}"
+        chunks: list[bytes] = []
+        for name, value in fields.items():
+            chunks.extend(
+                [
+                    f"--{boundary}\r\n".encode("utf-8"),
+                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                    value.encode("utf-8"),
+                    b"\r\n",
+                ]
+            )
+        for name, (filename, content, content_type) in files.items():
+            chunks.extend(
+                [
+                    f"--{boundary}\r\n".encode("utf-8"),
+                    f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8"),
+                    f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+                    content,
+                    b"\r\n",
+                ]
+            )
+        chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+        request = urllib_request.Request(
+            f"{self.base_url}{path}",
+            data=b"".join(chunks),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method=method,
+        )
+        try:
+            with urllib_request.urlopen(request, timeout=5) as response:
+                raw = response.read().decode("utf-8")
+                return response.status, dict(response.headers.items()), json.loads(raw)
+        except urllib_error.HTTPError as exc:
+            raw = exc.read().decode("utf-8")
+            return exc.code, dict(exc.headers.items()), json.loads(raw)
+
+    def silent_wav_bytes(self, *, seconds: float, sample_rate: int = 24_000) -> bytes:
+        path = self.cwd / f"silent-{uuid.uuid4().hex}.wav"
+        frame_count = int(seconds * sample_rate)
+        with wave.open(str(path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(b"\x00\x00" * frame_count)
+        return path.read_bytes()
 
     def seed_renderable_project(self, *, state: SessionState = SessionState.SCRIPT_EDITED) -> tuple[str, str]:
         session = SessionRecord(topic="Render test", creation_intent="Exercise render task state")
@@ -954,6 +1010,84 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(external_profile["reference_text"], "这是外部路径的参考文本。")
         self.assertNotEqual(external_profile["audio_path"], str(external_audio))
         self.assertTrue(Path(external_profile["audio_path"]).exists())
+
+    def test_two_step_voice_profile_sample_upload_accepts_multipart_audio(self) -> None:
+        create_status, _, create_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "我的向导音色",
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+                "language": "zh",
+                "audio_format": "wav",
+            },
+        )
+
+        self.assertEqual(create_status, 200)
+        profile = create_payload["data"]["profile"]  # type: ignore[index]
+        self.assertEqual(profile["audio_path"], "")
+        self.assertEqual(profile["reference_text"], "")
+
+        upload_status, _, upload_payload = self.request_multipart(
+            "POST",
+            f"/api/v1/voice-profiles/{profile['voice_profile_id']}/sample",
+            fields={"reference_text": "这是一段从向导上传的参考文本。", "audio_format": "wav"},
+            files={"audio": ("reference.wav", self.silent_wav_bytes(seconds=2), "audio/wav")},
+        )
+
+        self.assertEqual(upload_status, 200)
+        updated = upload_payload["data"]["profile"]  # type: ignore[index]
+        self.assertEqual(updated["voice_profile_id"], profile["voice_profile_id"])
+        self.assertEqual(updated["reference_text"], "这是一段从向导上传的参考文本。")
+        self.assertNotEqual(updated["audio_path"], "")
+        self.assertTrue(Path(updated["audio_path"]).exists())
+
+    def test_two_step_voice_profile_sample_upload_rejects_long_wav(self) -> None:
+        create_status, _, create_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={"name": "过长样本"},
+        )
+        self.assertEqual(create_status, 200)
+        profile = create_payload["data"]["profile"]  # type: ignore[index]
+
+        upload_status, _, upload_payload = self.request_multipart(
+            "POST",
+            f"/api/v1/voice-profiles/{profile['voice_profile_id']}/sample",
+            fields={"reference_text": "这段音频太长。"},
+            files={"audio": ("reference.wav", self.silent_wav_bytes(seconds=31), "audio/wav")},
+        )
+
+        self.assertEqual(upload_status, 400)
+        self.assertIn("30 seconds", upload_payload["error"]["message"])
+
+    def test_patch_voice_profile_updates_name_and_reference_text(self) -> None:
+        create_status, _, create_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={"name": "待编辑音色", "provider": "local_mlx", "model": "mlx-voice"},
+        )
+        self.assertEqual(create_status, 200)
+        profile_id = create_payload["data"]["profile"]["voice_profile_id"]  # type: ignore[index]
+
+        upload_status, _, _ = self.request_multipart(
+            "POST",
+            f"/api/v1/voice-profiles/{profile_id}/sample",
+            fields={"reference_text": "原始参考文本。"},
+            files={"audio": ("reference.wav", self.silent_wav_bytes(seconds=2), "audio/wav")},
+        )
+        self.assertEqual(upload_status, 200)
+
+        patch_status, _, patch_payload = self.request_json(
+            "PATCH",
+            f"/api/v1/voice-profiles/{profile_id}",
+            body={"name": "已编辑音色", "reference_text": "更新后的参考文本。"},
+        )
+        self.assertEqual(patch_status, 200)
+        updated = patch_payload["data"]["profile"]  # type: ignore[index]
+        self.assertEqual(updated["name"], "已编辑音色")
+        self.assertEqual(updated["reference_text"], "更新后的参考文本。")
 
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:
         with patch.object(

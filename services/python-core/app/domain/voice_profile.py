@@ -27,6 +27,10 @@ class VoiceProfileRecord:
     updated_at: str = ""
     last_used_at: str = ""
 
+    @property
+    def reference_text(self) -> str:
+        return self.preview_text
+
     def to_dict(self) -> dict[str, Any]:
         created_at = self.created_at or utc_now_iso()
         updated_at = self.updated_at or created_at
