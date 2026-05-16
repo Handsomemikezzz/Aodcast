@@ -6,7 +6,7 @@ import { resolveAudioFileUrl } from "../lib/audioFile";
 import { useBridge } from "../lib/BridgeContext";
 import { getErrorMessage } from "../lib/requestState";
 import { cn } from "../lib/utils";
-import { resolveProjectVoiceSettings } from "../lib/voiceSettings";
+import { filterActiveVoiceProfiles, resolveProjectVoiceSettings } from "../lib/voiceSettings";
 import type {
   ModelStatus,
   RequestState,
@@ -79,6 +79,7 @@ export function VoiceStudioPage() {
   const [newProfileReferenceText, setNewProfileReferenceText] = useState("");
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [profileAudioErrors, setProfileAudioErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
@@ -94,8 +95,9 @@ export function VoiceStudioPage() {
         ? standardPreviewText
         : previewText;
   const voiceReference = scriptBoundMode ? project?.artifact?.voice_reference : undefined;
+  const activeVoiceProfiles = useMemo(() => filterActiveVoiceProfiles(voiceProfiles), [voiceProfiles]);
   const selectedProfile = voiceReference?.voice_profile_id
-    ? voiceProfiles.find((profile) => profile.voice_profile_id === voiceReference.voice_profile_id)
+    ? activeVoiceProfiles.find((profile) => profile.voice_profile_id === voiceReference.voice_profile_id)
     : undefined;
   const selectedProfileId = selectedProfile?.voice_profile_id ?? "";
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
@@ -202,6 +204,7 @@ export function VoiceStudioPage() {
   };
 
   const refreshVoiceProfiles = async () => {
+    setProfileAudioErrors({});
     setVoiceProfiles(await bridge.listVoiceProfiles());
   };
 
@@ -426,8 +429,15 @@ export function VoiceStudioPage() {
     }
   };
 
-  const handleAudioLoadError = () => {
-    setError("无法加载音频文件。文件可能已移动或删除，请重新生成音频。");
+  const handleProfileAudioLoadError = (profileId: string) => {
+    setProfileAudioErrors((current) => ({
+      ...current,
+      [profileId]: "无法加载参考音频。文件可能已移动或删除。",
+    }));
+  };
+
+  const handlePreviewAudioLoadError = () => {
+    setError("无法加载试音音频。文件可能已移动或删除，请重新生成试听。");
   };
 
   return (
@@ -479,8 +489,9 @@ export function VoiceStudioPage() {
                 </button>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {voiceProfiles.map((profile) => {
+                {activeVoiceProfiles.map((profile) => {
                   const isSelected = voiceReference?.voice_profile_id === profile.voice_profile_id;
+                  const profileAudioError = profileAudioErrors[profile.voice_profile_id];
                   return (
                     <div key={profile.voice_profile_id} className={cn("rounded-[22px] border p-4", isSelected ? "border-accent-amber bg-accent-amber/10" : "border-outline bg-background")}>
                       <div className="flex items-start justify-between gap-3">
@@ -491,7 +502,13 @@ export function VoiceStudioPage() {
                         {isSelected ? <CheckCircle2 className="h-4 w-4 text-accent-amber" /> : null}
                       </div>
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-secondary">{profile.description || profile.preview_text}</p>
-                      <audio controls src={resolveAudioFileUrl(profile.audio_path)} onError={handleAudioLoadError} className="mt-3 w-full" />
+                      <audio
+                        controls
+                        src={resolveAudioFileUrl(profile.audio_path)}
+                        onError={() => handleProfileAudioLoadError(profile.voice_profile_id)}
+                        className="mt-3 w-full"
+                      />
+                      {profileAudioError ? <p className="mt-2 text-xs text-red-200">{profileAudioError}</p> : null}
                       <div className="mt-3 flex flex-wrap gap-2">
                         {scriptBoundMode ? (
                           <button
@@ -606,7 +623,7 @@ export function VoiceStudioPage() {
                   ) : null}
                   {previewSrc && previewMatchesCurrentSelection ? (
                     <div className="mt-4 space-y-2">
-                      <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="w-full" />
+                      <audio ref={previewAudioRef} controls src={previewSrc} onError={handlePreviewAudioLoadError} className="w-full" />
                       <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => void handleDeletePreview()} className="inline-flex items-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
                           <Trash2 className="h-3.5 w-3.5" /> 删除试音音频

@@ -808,7 +808,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         profiles = payload["data"]["profiles"]  # type: ignore[index]
         built_ins = [profile for profile in profiles if profile["source"] == "built_in"]
-        self.assertEqual(len(built_ins), 3)
+        self.assertEqual(len(built_ins), 2)
         self.assertTrue(all(Path(profile["audio_path"]).exists() for profile in built_ins))
         first_audio = urllib_parse.quote(str(built_ins[0]["audio_path"]), safe="")
         audio_status, audio_headers, audio_body = self.request_bytes(

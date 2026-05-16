@@ -2,9 +2,15 @@ import type { SessionProject, VoiceProfileRecord, VoiceRenderSettings } from "..
 
 const BUILT_IN_VOICE_PROFILE_LABELS: Record<string, string> = {
   builtin_clear_broadcast: "清晰播报型",
-  builtin_deep_story: "低沉叙事型",
   builtin_warm_knowledge: "温和知识型",
 };
+
+/** Built-in profiles removed from the app but still returned by stale runtimes. */
+const REMOVED_BUILTIN_VOICE_PROFILE_IDS = new Set(["builtin_deep_story"]);
+
+export function filterActiveVoiceProfiles(profiles: VoiceProfileRecord[]): VoiceProfileRecord[] {
+  return profiles.filter((profile) => !REMOVED_BUILTIN_VOICE_PROFILE_IDS.has(profile.voice_profile_id));
+}
 
 export function defaultVoiceRenderSettings(): VoiceRenderSettings {
   return {

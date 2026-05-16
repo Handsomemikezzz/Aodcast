@@ -54,7 +54,7 @@ class VoiceStudioCliTests(unittest.TestCase):
         payload = payloads[-1]
         self.assertEqual(payload["request_state"]["operation"], "list_voice_profiles")
         built_ins = [profile for profile in payload["profiles"] if profile["source"] == "built_in"]
-        self.assertEqual(len(built_ins), 3)
+        self.assertEqual(len(built_ins), 2)
 
     def test_render_voice_take_outputs_take_payload_for_latest_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

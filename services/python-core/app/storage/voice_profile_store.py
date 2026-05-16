@@ -35,15 +35,6 @@ _BUILTIN_PROFILE_SPECS = (
         "speed": 0.95,
         "asset": "builtin_clear_broadcast.wav",
     },
-    {
-        "voice_profile_id": "builtin_deep_story",
-        "name": "低沉叙事型",
-        "description": "适合故事、历史和沉浸式叙述。",
-        "voice_id": "deep_story",
-        "style_id": "story",
-        "speed": 0.9,
-        "asset": "builtin_deep_story.wav",
-    },
 )
 
 

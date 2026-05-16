@@ -26,16 +26,16 @@ class VoiceProfileStoreTests(unittest.TestCase):
         if temp_dir is not None:
             temp_dir.cleanup()
 
-    def test_bootstrap_creates_three_builtin_profiles_with_reference_audio(self) -> None:
+    def test_bootstrap_creates_builtin_profiles_with_reference_audio(self) -> None:
         _, profile_store = self.build_environment()
 
         profiles = profile_store.list_profiles()
         built_ins = [profile for profile in profiles if profile.source == "built_in"]
 
-        self.assertEqual(len(built_ins), 3)
+        self.assertEqual(len(built_ins), 2)
         self.assertEqual(
             [profile.voice_profile_id for profile in built_ins],
-            ["builtin_warm_knowledge", "builtin_clear_broadcast", "builtin_deep_story"],
+            ["builtin_warm_knowledge", "builtin_clear_broadcast"],
         )
         self.assertTrue(all(Path(profile.audio_path).exists() for profile in built_ins))
         self.assertTrue(all(profile.preview_text for profile in built_ins))
