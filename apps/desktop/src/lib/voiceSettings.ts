@@ -39,20 +39,6 @@ export function resolveProjectVoiceSettings(project: SessionProject | null | und
   };
 }
 
-export function selectedVoiceProfileId(project: SessionProject | null | undefined): string {
-  const reference = project?.artifact?.voice_reference;
-  return reference?.source === "voice_profile" ? reference.voice_profile_id ?? "" : "";
-}
-
-export function resolveSelectedVoiceProfile(
-  project: SessionProject | null | undefined,
-  profiles: VoiceProfileRecord[],
-): VoiceProfileRecord | null {
-  const profileId = selectedVoiceProfileId(project);
-  if (!profileId) return null;
-  return profiles.find((profile) => profile.voice_profile_id === profileId) ?? null;
-}
-
 export function selectedVoiceProfileLabel(project: SessionProject | null | undefined): string {
   const reference = project?.artifact?.voice_reference;
   if (reference?.source === "voice_profile" && reference.voice_profile_id) {

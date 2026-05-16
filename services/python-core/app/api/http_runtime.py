@@ -956,7 +956,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:  # noqa: N802
         self._dispatch()
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+    def log_message(self, _format: str, *args: Any) -> None:
         return
 
     @property

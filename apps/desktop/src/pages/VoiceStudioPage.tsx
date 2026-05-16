@@ -84,9 +84,6 @@ export function VoiceStudioPage() {
   const providerOverride = "";
   const [previewSrc, setPreviewSrc] = useState("");
   const [previewPath, setPreviewPath] = useState("");
-  const [lastPreviewProvider, setLastPreviewProvider] = useState("");
-  const [lastPreviewModel, setLastPreviewModel] = useState("");
-  const [lastPreviewSettings, setLastPreviewSettings] = useState<VoiceRenderSettings | null>(null);
   const [previewKey, setPreviewKey] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
@@ -197,9 +194,6 @@ export function VoiceStudioPage() {
     setPreviewSrc("");
     setPreviewPath("");
     setPreviewKey("");
-    setLastPreviewProvider("");
-    setLastPreviewModel("");
-    setLastPreviewSettings(null);
     setPreviewRequestState(null);
   }, []);
 
@@ -386,9 +380,6 @@ export function VoiceStudioPage() {
       setPreviewSrc(resolveAudioFileUrl(result.audio_path));
       setPreviewPath(result.audio_path);
       setPreviewKey(requestPreviewKey);
-      setLastPreviewProvider(result.provider);
-      setLastPreviewModel(result.model);
-      setLastPreviewSettings(result.settings ?? requestSettings);
       window.setTimeout(() => {
         if (!isCurrentPreviewRequest()) return;
         void previewAudioRef.current?.play().catch(() => undefined);

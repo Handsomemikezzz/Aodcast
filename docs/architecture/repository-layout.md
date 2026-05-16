@@ -8,7 +8,7 @@ This repository follows a local-first desktop app structure with explicit bounda
   - `src/pages`: route-level page composition.
   - `src/pages/script-workbench`: Script Workbench-specific components and hooks.
   - `src/components`: shared presentational React components.
-  - `src/lib`: bridge, request-state, audio URL, shell-helper, and reusable frontend utilities.
+  - `src/lib`: active bridge/runtime helpers, request-state helpers, audio URL handling, Tauri-only shell helpers, voice-setting helpers, and shared UI utilities.
   - `src-tauri`: Rust desktop lifecycle and Tauri-only shell commands.
 - `services/python-core`: local orchestration runtime.
   - `app/api`: localhost HTTP runtime, bridge envelopes, and serializers.
@@ -45,3 +45,14 @@ These paths are intentionally ignored and must not be used for source files:
 - Keep request/task-state semantics reusable through shared runtime/frontend helpers instead of page-local copies.
 - Keep executable contracts in `packages/shared-schemas` and parity tests before changing payload shape.
 - Prefer deleting obsolete scaffolding over preserving placeholder files once a directory contains real tracked assets.
+
+## Frontend Library Summary
+
+`apps/desktop/src/lib` should stay small and runtime-facing:
+
+- `desktopBridge.ts`, `httpBridge.ts`, `bridgeFactory.ts`, and `BridgeContext.tsx` define and provide the desktop bridge.
+- `requestState.ts` normalizes task/request progress and error state for pages.
+- `audioFile.ts`, `shellOps.ts`, and `voiceSettings.ts` handle audio URLs, native shell-only helpers, and voice profile/render setting resolution.
+- `utils.ts` contains shared UI class-name composition.
+
+Do not keep speculative helpers in this directory. If a helper has no route, component, bridge, or test caller, delete it instead of preserving it as future scaffolding.

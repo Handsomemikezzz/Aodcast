@@ -12,7 +12,6 @@ import {
   Loader2,
   RotateCcw,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useBridge } from "../lib/BridgeContext";

@@ -13,7 +13,6 @@ import {
   PanelLeftClose,
   PencilLine,
   Plus,
-  RotateCcw,
   Search,
   Send,
   Sparkles,
