@@ -1,15 +1,13 @@
 import { motion } from "framer-motion";
-import { CheckCircle2, ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Trash2, Wand2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, ChevronDown, Loader2, Mic, RefreshCw, SlidersHorizontal, Trash2, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
 import { useBridge } from "../lib/BridgeContext";
-import { getErrorMessage, isActiveRequestState, isTerminalRequestState } from "../lib/requestState";
-import { revealInFinder } from "../lib/shellOps";
+import { getErrorMessage } from "../lib/requestState";
 import { cn } from "../lib/utils";
 import { resolveProjectVoiceSettings } from "../lib/voiceSettings";
 import type {
-  AudioTakeRecord,
   ModelStatus,
   RequestState,
   ScriptRecord,
@@ -22,7 +20,6 @@ import type {
   VoiceStylePreset,
 } from "../types";
 
-const POLL_INTERVAL_MS = 1000;
 const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
 type PreviewTextMode = "standard" | "script_opening" | "custom";
 
@@ -30,10 +27,6 @@ function estimateMinutes(script: string): string {
   const words = script.trim().split(/\s+/).filter(Boolean).length;
   const minutes = Math.max(1, Math.round(words / 260));
   return `约 ${minutes} 分钟`;
-}
-
-function takeStatus(take: AudioTakeRecord, finalTakeId: string): string {
-  return take.take_id === finalTakeId ? "最终版本" : "候选版本";
 }
 
 function resolvedTtsModel(config: TTSProviderConfig | null): string {
@@ -55,7 +48,9 @@ export function VoiceStudioPage() {
   const bridge = useBridge();
   const navigate = useNavigate();
   const previewAudioRef = useRef<HTMLAudioElement>(null);
-  const pollingRef = useRef<number | null>(null);
+  const previewRequestTokenRef = useRef(0);
+  const previewContextRef = useRef({ previewKey: "", profileId: "", scriptId: "", sessionId: "" });
+  const lastCurrentPreviewKeyRef = useRef("");
 
   const [projects, setProjects] = useState<SessionProject[]>([]);
   const [scripts, setScripts] = useState<ScriptRecord[]>([]);
@@ -86,8 +81,6 @@ export function VoiceStudioPage() {
   const [previewKey, setPreviewKey] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
-  const [rendering, setRendering] = useState(false);
-  const [requestState, setRequestState] = useState<RequestState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -99,8 +92,6 @@ export function VoiceStudioPage() {
       : previewTextMode === "standard"
         ? standardPreviewText
         : previewText;
-  const takes = project?.artifact?.takes ?? [];
-  const finalTakeId = project?.artifact?.final_take_id ?? "";
   const voiceReference = project?.artifact?.voice_reference;
   const selectedProfile = voiceReference?.voice_profile_id
     ? voiceProfiles.find((profile) => profile.voice_profile_id === voiceReference.voice_profile_id)
@@ -115,8 +106,8 @@ export function VoiceStudioPage() {
   const localCatalogModelInstalled = Boolean(currentModel?.downloaded);
   const localPathReady = Boolean(localPathConfigured && ttsCapability?.model_path_exists && ttsCapability?.available);
   const localEngineReady = Boolean(ttsConfig) && (!isLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
-  const renderUsesLocalEngine = providerOverride ? providerOverride === "local_mlx" : isLocalEngine;
-  const renderEngineReady = Boolean(ttsConfig) && (!renderUsesLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
+  const previewUsesLocalEngine = providerOverride ? providerOverride === "local_mlx" : isLocalEngine;
+  const previewEngineReady = Boolean(ttsConfig) && (!previewUsesLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
   const engineLabel = isLocalEngine
     ? `Local MLX · ${localPathConfigured ? "Custom local path" : currentModel?.display_name ?? shortRepoName(resolvedModel)}`
     : ttsConfig?.provider
@@ -151,6 +142,8 @@ export function VoiceStudioPage() {
   const currentPreviewKey = useMemo(
     () => JSON.stringify({
       profile: selectedProfileId,
+      voiceId: selectedVoiceId,
+      voiceName: selectedVoice?.name ?? "",
       text: effectivePreviewText,
       style: selectedStyleId,
       speed,
@@ -158,12 +151,31 @@ export function VoiceStudioPage() {
       audioFormat,
       providerOverride,
     }),
-    [audioFormat, effectivePreviewText, language, providerOverride, selectedProfileId, selectedStyleId, speed],
+    [audioFormat, effectivePreviewText, language, providerOverride, selectedProfileId, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
   );
+  previewContextRef.current = {
+    previewKey: currentPreviewKey,
+    profileId: selectedProfileId,
+    scriptId: selectedScriptId,
+    sessionId: selectedSessionId,
+  };
   const previewMatchesCurrentSelection = Boolean(previewPath && previewKey === currentPreviewKey);
   const canSavePreviewAsProfile = Boolean(previewMatchesCurrentSelection && !previewing);
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
+  const canSelectVoiceProfile = Boolean(selectedSessionId && selectedScriptId);
+
+  const clearPreviewState = useCallback(() => {
+    previewRequestTokenRef.current += 1;
+    setPreviewing(false);
+    setPreviewSrc("");
+    setPreviewPath("");
+    setPreviewKey("");
+    setLastPreviewProvider("");
+    setLastPreviewModel("");
+    setLastPreviewSettings(null);
+    setPreviewRequestState(null);
+  }, []);
 
   const loadProject = async (sessionId: string, scriptId: string) => {
     if (!sessionId || !scriptId) return;
@@ -222,46 +234,43 @@ export function VoiceStudioPage() {
   }, [selectedSessionId]);
 
   useEffect(() => {
+    clearPreviewState();
     void loadProject(selectedSessionId, selectedScriptId).catch((err) => setError(getErrorMessage(err, "Failed to load script.")));
-  }, [selectedScriptId, selectedSessionId]);
+  }, [clearPreviewState, selectedScriptId, selectedSessionId]);
 
   useEffect(() => {
-    return () => {
-      if (pollingRef.current !== null) window.clearInterval(pollingRef.current);
-    };
-  }, []);
-
-  const stopPolling = () => {
-    if (pollingRef.current !== null) {
-      window.clearInterval(pollingRef.current);
-      pollingRef.current = null;
+    if (!lastCurrentPreviewKeyRef.current) {
+      lastCurrentPreviewKeyRef.current = currentPreviewKey;
+      return;
     }
-  };
-
-  const startPolling = (taskId: string) => {
-    stopPolling();
-    pollingRef.current = window.setInterval(() => {
-      void bridge.showTaskState(taskId)
-        .then(async (state) => {
-          if (!state) return;
-          setRequestState(state);
-          if (isTerminalRequestState(state)) {
-            stopPolling();
-            setRendering(false);
-            await loadProject(selectedSessionId, selectedScriptId);
-          } else if (isActiveRequestState(state)) {
-            setRendering(true);
-          }
-        })
-        .catch((err) => setError(getErrorMessage(err, "Lost connection to rendering runtime.")));
-    }, POLL_INTERVAL_MS);
-  };
+    if (lastCurrentPreviewKeyRef.current === currentPreviewKey) return;
+    lastCurrentPreviewKeyRef.current = currentPreviewKey;
+    if (previewKey && previewKey === currentPreviewKey) return;
+    if (previewSrc || previewPath || previewRequestState) clearPreviewState();
+  }, [clearPreviewState, currentPreviewKey, previewKey, previewPath, previewRequestState, previewSrc]);
 
   const handlePreview = async () => {
     if (!selectedProfileId) {
       setError("请先从音色库选择一个音色，再生成试听。");
       return;
     }
+    const requestToken = previewRequestTokenRef.current + 1;
+    previewRequestTokenRef.current = requestToken;
+    const requestSessionId = selectedSessionId;
+    const requestScriptId = selectedScriptId;
+    const requestProfileId = selectedProfileId;
+    const requestPreviewKey = currentPreviewKey;
+    const requestSettings = settings;
+    const isCurrentPreviewRequest = () => {
+      const context = previewContextRef.current;
+      return (
+        previewRequestTokenRef.current === requestToken &&
+        context.sessionId === requestSessionId &&
+        context.scriptId === requestScriptId &&
+        context.profileId === requestProfileId &&
+        context.previewKey === requestPreviewKey
+      );
+    };
     try {
       setPreviewing(true);
       setError(null);
@@ -271,28 +280,33 @@ export function VoiceStudioPage() {
         progress_percent: 0,
         message: "Rendering voice preview...",
       });
-      const result = await bridge.renderVoicePreview(settings, {
-        onState: setPreviewRequestState,
-        sessionId: selectedSessionId,
-        scriptId: selectedScriptId,
+      const result = await bridge.renderVoicePreview(requestSettings, {
+        onState: (state) => {
+          if (isCurrentPreviewRequest()) setPreviewRequestState(state);
+        },
+        sessionId: requestSessionId,
+        scriptId: requestScriptId,
         providerOverride,
-        voiceProfileId: selectedProfileId,
+        voiceProfileId: requestProfileId,
       });
+      if (!isCurrentPreviewRequest()) return;
       setPreviewRequestState(result.request_state ?? null);
       setPreviewSrc(resolveAudioFileUrl(result.audio_path));
       setPreviewPath(result.audio_path);
-      setPreviewKey(currentPreviewKey);
+      setPreviewKey(requestPreviewKey);
       setLastPreviewProvider(result.provider);
       setLastPreviewModel(result.model);
-      setLastPreviewSettings(result.settings ?? settings);
+      setLastPreviewSettings(result.settings ?? requestSettings);
       window.setTimeout(() => {
+        if (!isCurrentPreviewRequest()) return;
         void previewAudioRef.current?.play().catch(() => undefined);
       }, 100);
     } catch (err) {
+      if (!isCurrentPreviewRequest()) return;
       setError(getErrorMessage(err, "Failed to render preview."));
       setPreviewRequestState(null);
     } finally {
-      setPreviewing(false);
+      if (previewRequestTokenRef.current === requestToken) setPreviewing(false);
     }
   };
 
@@ -337,6 +351,7 @@ export function VoiceStudioPage() {
     }
     try {
       setError(null);
+      clearPreviewState();
       const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
       setProject(updated);
       setSelectedVoiceId(profile.voice_id);
@@ -344,15 +359,8 @@ export function VoiceStudioPage() {
       setSpeed(profile.speed);
       setLanguage(profile.language);
       setAudioFormat(profile.audio_format);
-      setPreviewSrc("");
-      setPreviewPath("");
-      setPreviewKey("");
-      setLastPreviewProvider("");
-      setLastPreviewModel("");
-      setLastPreviewSettings(null);
-      setPreviewRequestState(null);
       await refreshVoiceProfiles();
-      setMessage(`已选用「${profile.name}」，正式生成会以该音频作为参考声音。`);
+      setMessage(`已选用「${profile.name}」，Script Workbench 生成音频时会以该音频作为参考声音。`);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to select voice profile."));
     }
@@ -374,76 +382,12 @@ export function VoiceStudioPage() {
     }
   };
 
-  const handleRenderTake = async () => {
-    setError(null);
-    setMessage(null);
-    if (!selectedSessionId || !selectedScriptId) {
-      setError("请先选择 Session 和脚本，再生成完整音频。");
-      return;
-    }
-    if (!renderEngineReady) {
-      setError("当前本地语音模型尚未准备好。请先在 Models Center 下载或选择可用模型，或在高级设置中临时切换到云端 TTS。");
-      return;
-    }
-    if (!scriptText) {
-      setError("当前脚本没有可生成的内容，请先选择包含正文的脚本。");
-      return;
-    }
-    if (!selectedProfileId) {
-      setError("请先从音色库选择一个音色，再生成完整音频。");
-      return;
-    }
-    try {
-      setRendering(true);
-      const result = await bridge.renderAudio(selectedSessionId, {
-        providerOverride,
-        scriptId: selectedScriptId,
-        voiceSettings: settings,
-        requireVoiceProfile: renderUsesLocalEngine,
-      });
-      const state = result.request_state ?? {
-        operation: "render_audio",
-        phase: "running",
-        progress_percent: 5,
-        message: "Rendering audio...",
-      };
-      setRequestState(state);
-      setProject(result.project);
-      startPolling(result.task_id ?? `render_audio:${selectedSessionId}`);
-      setMessage("已开始使用所选音色生成完整音频；完成后会自动成为 Script 页的默认音频。");
-    } catch (err) {
-      setRendering(false);
-      setError(getErrorMessage(err, "Failed to render voice take."));
-    }
-  };
-
-  const handleCancel = async () => {
-    const state = await bridge.cancelTask(requestState?.task_id ?? `render_audio:${selectedSessionId}`);
-    if (state) setRequestState(state);
-  };
-
-  const handleSetFinal = async (take: AudioTakeRecord) => {
-    try {
-      setError(null);
-      const updated = await bridge.setFinalVoiceTake(selectedSessionId, take.take_id);
-      setProject(updated);
-      setMessage("已设为最终版本，Script 页音频区会显示该 take。");
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to set final take."));
-    }
-  };
-
   const handleDeletePreview = async () => {
     if (!previewPath) return;
     try {
       setError(null);
       await bridge.deleteArtifactAudio(previewPath);
-      setPreviewSrc("");
-      setPreviewPath("");
-      setLastPreviewProvider("");
-      setLastPreviewModel("");
-      setLastPreviewSettings(null);
-      setPreviewRequestState(null);
+      clearPreviewState();
       if (selectedSessionId && selectedScriptId) {
         await loadProject(selectedSessionId, selectedScriptId);
       }
@@ -453,30 +397,8 @@ export function VoiceStudioPage() {
     }
   };
 
-  const handleDeleteTake = async (take: AudioTakeRecord) => {
-    try {
-      setError(null);
-      const updated = await bridge.deleteVoiceTake(selectedSessionId, take.take_id);
-      setProject(updated);
-      setMessage(take.take_id === finalTakeId ? "最终音频已删除。" : "候选 take 已删除。");
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to delete voice take."));
-    }
-  };
-
   const handleAudioLoadError = () => {
     setError("无法加载音频文件。文件可能已移动或删除，请重新生成音频。");
-  };
-
-  const handleDownload = (take: AudioTakeRecord) => {
-    const src = resolveAudioFileUrl(take.audio_path);
-    const filename = take.audio_path.split("/").pop() || "voice-take.wav";
-    const link = document.createElement("a");
-    link.href = src;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
   };
 
   return (
@@ -487,7 +409,7 @@ export function VoiceStudioPage() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-amber">Voice Studio</p>
               <h1 className="mt-2 font-headline text-2xl font-semibold text-primary">语音工坊</h1>
-              <p className="mt-2 text-sm text-secondary">从音色库选择固定音色，试听确认后用于完整播客生成。</p>
+              <p className="mt-2 text-sm text-secondary">从音色库选择固定音色，试听确认后供 Script 页面生成音频使用。</p>
             </div>
             <button
               type="button"
@@ -516,6 +438,9 @@ export function VoiceStudioPage() {
           </div>
         </section>
 
+        {error ? <p className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
+        {message ? <p className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
+
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-5">
             <section className="rounded-[28px] border border-outline bg-surface p-5">
@@ -527,6 +452,7 @@ export function VoiceStudioPage() {
                     setSelectedSessionId(event.target.value);
                     setSelectedScriptId("");
                     setProject(null);
+                    clearPreviewState();
                   }}
                   className="rounded-2xl border border-outline bg-background px-3 py-3 text-sm text-primary"
                 >
@@ -537,7 +463,10 @@ export function VoiceStudioPage() {
                 </select>
                 <select
                   value={selectedScriptId}
-                  onChange={(event) => setSelectedScriptId(event.target.value)}
+                  onChange={(event) => {
+                    setSelectedScriptId(event.target.value);
+                    clearPreviewState();
+                  }}
                   className="rounded-2xl border border-outline bg-background px-3 py-3 text-sm text-primary"
                 >
                   <option value="">选择脚本</option>
@@ -569,7 +498,7 @@ export function VoiceStudioPage() {
                 <div>
                   <h2 className="text-sm font-semibold text-primary">音色库</h2>
                   <p className="mt-1 text-xs text-secondary">
-                    当前脚本的试听和完整生成都会使用所选音色的参考音频与参考文本。
+                    当前脚本的试听会使用所选音色的参考音频与参考文本；Script 页面生成音频时也会使用该 profile。
                   </p>
                   {selectedProfile ? (
                     <p className="mt-2 text-xs font-medium text-accent-amber">当前选用：{selectedProfile.name}</p>
@@ -597,10 +526,10 @@ export function VoiceStudioPage() {
                         <button
                           type="button"
                           onClick={() => void handleSelectVoiceProfile(profile)}
-                          disabled={isSelected}
+                          disabled={isSelected || !canSelectVoiceProfile}
                           className="rounded-xl border border-outline px-3 py-2 text-xs font-medium text-primary disabled:opacity-50"
                         >
-                          {isSelected ? "已选用" : "选用音色"}
+                          {isSelected ? "已选用" : canSelectVoiceProfile ? "选用音色" : "打开脚本后可选用"}
                         </button>
                         {profile.source === "user_saved" ? (
                           <button type="button" onClick={() => void handleDeleteVoiceProfile(profile)} className="rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
@@ -702,16 +631,22 @@ export function VoiceStudioPage() {
                 <div>
                   <h2 className="text-sm font-semibold text-primary">音色试听</h2>
                   <p className="mt-1 text-xs text-secondary">
-                    用当前选中的音色生成一段短试听，确认后再生成完整播客音频。
+                    用当前选中的音色生成一段短试听；确认后的 profile 会交给 Script 页面生成正式音频。
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => void handlePreview()}
-                  disabled={previewing || !selectedVoice || !selectedStyle || !renderEngineReady || !selectedProfileId}
+                  disabled={
+                    previewing ||
+                    !selectedVoice ||
+                    !selectedStyle ||
+                    !selectedProfileId ||
+                    !previewEngineReady
+                  }
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
                 >
-                  {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                   生成试听
                 </button>
               </div>
@@ -784,7 +719,7 @@ export function VoiceStudioPage() {
                 <div className="mt-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-emerald-100">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4" />
-                    <p>已选择「{selectedProfile.name}」。试听和完整生成都会使用这个音色 profile。</p>
+                    <p>已选择「{selectedProfile.name}」。试听会使用这个音色 profile，Script 页面生成音频时也会引用它。</p>
                   </div>
                 </div>
               ) : null}
@@ -827,98 +762,6 @@ export function VoiceStudioPage() {
                 </div>
               ) : null}
             </section>
-
-            <section className="rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-primary">完整音频生成</h2>
-                  <p className="mt-1 text-xs text-secondary">预计生成耗时：约 2-4 分钟。首次生成可能需要更久。</p>
-                </div>
-                <Clock3 className="h-5 w-5 text-accent-amber" />
-              </div>
-              {requestState ? (
-                <div className="mt-4 rounded-2xl border border-outline bg-background p-3 text-sm text-secondary">
-                  {Math.round(requestState.progress_percent)}% · {requestState.message}
-                </div>
-              ) : null}
-              {renderUsesLocalEngine ? (
-                <div className={cn("mt-4 rounded-2xl border p-3 text-xs", selectedProfile ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100")}>
-                  {selectedProfile ? (
-                    <span>完整生成将使用「{selectedProfile.name}」的参考音频和参考文本。</span>
-                  ) : (
-                    <span>请先从音色库选择一个音色，完整生成才会开始。</span>
-                  )}
-                </div>
-              ) : null}
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleRenderTake()}
-                  disabled={rendering || !renderEngineReady || !selectedProfileId}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
-                >
-                  {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                  生成完整音频
-                </button>
-                {rendering ? (
-                  <button type="button" onClick={() => void handleCancel()} className="rounded-2xl border border-outline px-4 py-3 text-sm text-primary">取消</button>
-                ) : null}
-              </div>
-              {!renderEngineReady ? (
-                <button type="button" onClick={() => navigate("/models")} className="mt-3 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-100 hover:bg-amber-500/15">
-                  Open Models Center to prepare a voice model
-                </button>
-              ) : null}
-              {error ? <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
-              {message ? <p className="mt-4 rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
-            </section>
-
-            {advancedOpen ? <section className="rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-primary">历史 take</h2>
-                  <p className="mt-1 text-xs text-secondary">兼容旧 Voice Studio take；新的主流程直接生成完整音频。</p>
-                </div>
-                <FileAudio className="h-5 w-5 text-accent-amber" />
-              </div>
-              <div className="space-y-3">
-                {takes.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-outline p-5 text-center text-sm text-secondary">还没有旧 take。</div>
-                ) : takes.map((take) => {
-                  const src = resolveAudioFileUrl(take.audio_path);
-                  return (
-                    <div key={take.take_id} className="rounded-[22px] border border-outline bg-background p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-primary">{takeStatus(take, finalTakeId)}</p>
-                          <p className="mt-1 text-xs text-secondary">{take.voice_name} / {take.style_name} / {take.speed.toFixed(1)}x</p>
-                          <p className="mt-1 text-[11px] text-secondary">{take.provider} · {take.model || "default model"} · {take.audio_format}</p>
-                          <p className="mt-1 text-[11px] text-secondary">{new Date(take.created_at).toLocaleString()}</p>
-                        </div>
-                        <button type="button" onClick={() => void revealInFinder(take.audio_path)} className="rounded-xl border border-outline p-2 text-secondary hover:text-primary">
-                          <FolderOpen className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <audio controls src={src} onError={handleAudioLoadError} className="mt-3 w-full" />
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        <button type="button" onClick={() => void handleSetFinal(take)} disabled={take.take_id === finalTakeId} className="rounded-xl border border-outline px-3 py-2 text-xs font-medium text-primary disabled:opacity-50">
-                          设为最终版本
-                        </button>
-                        <button type="button" onClick={() => handleDownload(take)} className="inline-flex items-center justify-center gap-1 rounded-xl border border-outline px-3 py-2 text-xs font-medium text-primary">
-                          <Download className="h-3.5 w-3.5" /> 下载
-                        </button>
-                        <button type="button" onClick={() => void handleDeleteTake(take)} className="inline-flex items-center justify-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
-                          <Trash2 className="h-3.5 w-3.5" /> 删除
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <button type="button" onClick={() => selectedSessionId && selectedScriptId && void loadProject(selectedSessionId, selectedScriptId)} className="mt-3 inline-flex items-center gap-2 text-xs text-secondary hover:text-primary">
-                <RefreshCw className="h-3.5 w-3.5" /> 刷新历史 take
-              </button>
-            </section> : null}
           </aside>
         </div>
       </div>
