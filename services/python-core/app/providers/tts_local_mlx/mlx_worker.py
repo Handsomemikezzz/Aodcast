@@ -285,7 +285,12 @@ class MlxTtsWorker:
 
         with open(path, "rb") as handle:
             raw = handle.read()
-        decoded = miniaudio.decode(raw, output_format=miniaudio.SampleFormat.SIGNED16)
+        decoded = miniaudio.decode(
+            raw,
+            output_format=miniaudio.SampleFormat.SIGNED16,
+            nchannels=1,
+            sample_rate=self._sample_rate,
+        )
         arr = np.frombuffer(decoded.samples, dtype=np.int16)
         if decoded.nchannels > 1:
             arr = arr.reshape(-1, decoded.nchannels)

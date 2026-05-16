@@ -78,7 +78,13 @@ def _probe_mlx_runtime_bootstrap(python_executable: str) -> tuple[bool, str]:
     command = [
         python_executable,
         "-c",
-        "import mlx.core as mx; print('mlx_runtime_ok')",
+        (
+            "import mlx.core as mx; "
+            "from mlx_audio.tts.utils import load_model; "
+            "x = mx.array([1]); "
+            "mx.eval(x); "
+            "print('mlx_runtime_ok')"
+        ),
     ]
     try:
         result = subprocess.run(
@@ -86,7 +92,7 @@ def _probe_mlx_runtime_bootstrap(python_executable: str) -> tuple[bool, str]:
             check=False,
             capture_output=True,
             text=True,
-            timeout=8,
+            timeout=12,
         )
     except Exception as exc:
         return False, str(exc)
@@ -116,7 +122,7 @@ def detect_local_mlx_capability(config: TTSProviderConfig) -> LocalMLXCapability
         if not probe_ok:
             detail = f" Details: {probe_error}" if probe_error else ""
             reasons.append(
-                "Python module 'mlx' is installed but runtime bootstrap failed before generation."
+                "Python module 'mlx' is installed but runtime compute bootstrap failed before generation."
                 + detail
             )
     if model_path_configured and not model_path_exists:
