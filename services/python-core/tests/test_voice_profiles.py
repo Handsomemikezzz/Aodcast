@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.config import AppConfig
 from app.orchestration.audio_rendering import VoiceRenderSettings
@@ -75,13 +76,31 @@ class VoiceProfileStoreTests(unittest.TestCase):
         reloaded = profile_store.get_profile(profile.voice_profile_id)
         self.assertEqual(reloaded.to_dict(), profile.to_dict())
 
+    def test_create_user_profile_rejects_oversized_reference_audio(self) -> None:
+        artifact_store, profile_store = self.build_environment()
+        preview_path = artifact_store.write_preview_audio(b"oversized-audio", "wav")
+
+        with patch("app.storage.voice_profile_store.MAX_REFERENCE_AUDIO_BYTES", 4):
+            with self.assertRaisesRegex(ValueError, "too large"):
+                profile_store.create_user_profile(
+                    name="过大的参考音频",
+                    reference_audio_path=str(preview_path),
+                    reference_text="这段文本不会被保存。",
+                    provider="local_mlx",
+                    model="mlx-voice",
+                )
+
     def test_delete_user_profile_removes_copied_audio_but_rejects_builtin_delete(self) -> None:
         artifact_store, profile_store = self.build_environment()
         preview_path = artifact_store.write_preview_audio(b"preview-audio", "wav")
         profile = profile_store.create_user_profile(
             name="可删除音色",
             preview_audio_path=str(preview_path),
-            settings=VoiceRenderSettings(voice_id="warm_narrator", style_id="natural"),
+            settings=VoiceRenderSettings(
+                voice_id="warm_narrator",
+                style_id="natural",
+                preview_text="删除前保存这条试音。",
+            ),
             provider="local_mlx",
             model="mlx-voice",
         )

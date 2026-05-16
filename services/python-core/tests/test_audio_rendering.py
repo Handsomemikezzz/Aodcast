@@ -11,6 +11,7 @@ from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.tts_config import TTSProviderConfig
+from app.domain.voice_profile import VoiceProfileRecord
 from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
 from app.providers.tts_api.base import TTSGenerationResponse
 from app.runtime.task_cancellation import TaskCancellationRequested
@@ -136,6 +137,45 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(captured["script_text"], "这是我自己输入的一句试音文本。")
         self.assertEqual(result.settings.preview_text, "这是我自己输入的一句试音文本。")
         self.assertTrue(Path(result.audio_path).exists())
+
+    def test_voice_preview_uses_selected_profile_reference_audio_and_text(self) -> None:
+        _, config_store, artifact_store, service = self.build_environment()
+        config_store.save_tts_config(
+            TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model")
+        )
+        profile_audio = artifact_store.write_preview_audio(b"profile-audio", "wav")
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"preview-audio",
+                    file_extension=request.audio_format,
+                    provider_name="local_mlx",
+                    model_name="mlx-voice",
+                )
+
+        voice_reference = {
+            "source": "voice_profile",
+            "voice_profile_id": "profile-1",
+            "audio_path": str(profile_audio),
+            "preview_text": "这是一段参考文本。",
+            "provider": "local_mlx",
+            "model": "mlx-voice",
+        }
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=CapturingProvider()):
+            result = service.render_voice_preview_with_cancellation(
+                VoiceRenderSettings(preview_text="试听当前音色。"),
+                voice_reference=voice_reference,
+            )
+
+        request = captured["request"]
+        self.assertEqual(result.audio_path.endswith(".wav"), True)
+        self.assertEqual(request.script_text, "试听当前音色。")
+        self.assertEqual(request.reference_audio_path, str(profile_audio))
+        self.assertEqual(request.reference_text, "这是一段参考文本。")
 
 
     def test_render_voice_preview_applies_provider_override(self) -> None:
@@ -298,6 +338,52 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(request.reference_text, "参考试音。")
         self.assertTrue(request.voice_lock_id)
 
+    def test_local_mlx_render_requires_selected_voice_profile_in_profile_first_mode(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+
+        with self.assertRaisesRegex(ValueError, "Select a voice profile"):
+            service.render_audio(session_id, require_voice_profile=True)
+
+    def test_local_mlx_render_uses_selected_voice_profile_reference_audio_and_text(self) -> None:
+        store, config_store, artifact_store, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+        profile_audio = artifact_store.write_preview_audio(b"profile-audio", "wav")
+        project = service.select_voice_profile(
+            session_id,
+            profile=VoiceProfileRecord(
+                voice_profile_id="profile-1",
+                name="稳定主播",
+                source="user_saved",
+                audio_path=str(profile_audio),
+                preview_text="这是一段参考文本。",
+                provider="local_mlx",
+                model="mlx-voice",
+                voice_id="warm_narrator",
+            ),
+        )
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"local-audio",
+                    file_extension=request.audio_format,
+                    provider_name="local_mlx",
+                    model_name="mlx-voice",
+                )
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=CapturingProvider()):
+            service.render_audio(session_id, require_voice_profile=True)
+
+        request = captured["request"]
+        self.assertEqual(request.reference_audio_path, str(profile_audio))
+        self.assertEqual(request.reference_text, "这是一段参考文本。")
+        self.assertEqual(project.artifact.voice_reference["source"], "voice_profile")
+
     def test_local_mlx_voice_take_uses_locked_preview_as_reference_audio(self) -> None:
         store, config_store, artifact_store, service = self.build_environment()
         config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
@@ -329,6 +415,59 @@ class AudioRenderingTests(unittest.TestCase):
         request = captured["request"]
         self.assertEqual(request.reference_audio_path, str(preview_path))
         self.assertEqual(request.reference_text, "参考 take。")
+
+    def test_local_mlx_voice_take_requires_selected_profile_in_profile_first_mode(self) -> None:
+        store, config_store, _, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+
+        with self.assertRaisesRegex(ValueError, "Select a voice profile"):
+            service.render_voice_take(
+                session_id,
+                settings=VoiceRenderSettings(voice_id="warm_narrator", style_id="natural"),
+                require_voice_profile=True,
+            )
+
+    def test_local_mlx_voice_take_uses_selected_profile_reference_audio_and_text(self) -> None:
+        store, config_store, artifact_store, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+        profile_audio = artifact_store.write_preview_audio(b"profile-audio", "wav")
+        service.select_voice_profile(
+            session_id,
+            profile=VoiceProfileRecord(
+                voice_profile_id="profile-1",
+                name="稳定主播",
+                source="user_saved",
+                audio_path=str(profile_audio),
+                preview_text="这是 profile 参考文本。",
+                provider="local_mlx",
+                model="mlx-voice",
+                voice_id="warm_narrator",
+            ),
+        )
+        captured: dict[str, object] = {}
+
+        class CapturingProvider:
+            def synthesize(self, request):  # type: ignore[no-untyped-def]
+                captured["request"] = request
+                return TTSGenerationResponse(
+                    audio_bytes=b"take-audio",
+                    file_extension=request.audio_format,
+                    provider_name="local_mlx",
+                    model_name="mlx-voice",
+                )
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=CapturingProvider()):
+            service.render_voice_take(
+                session_id,
+                settings=VoiceRenderSettings(voice_id="warm_narrator", style_id="natural"),
+                require_voice_profile=True,
+            )
+
+        request = captured["request"]
+        self.assertEqual(request.reference_audio_path, str(profile_audio))
+        self.assertEqual(request.reference_text, "这是 profile 参考文本。")
 
     def test_voice_take_audio_is_isolated_per_script_snapshot(self) -> None:
         store, config_store, _, service = self.build_environment()

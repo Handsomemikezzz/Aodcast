@@ -225,6 +225,7 @@ export type VoiceProfileRecord = {
   source: "built_in" | "user_saved";
   audio_path: string;
   preview_text: string;
+  reference_text: string;
   provider: string;
   model: string;
   voice_id: string;

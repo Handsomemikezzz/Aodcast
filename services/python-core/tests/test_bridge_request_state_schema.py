@@ -45,7 +45,7 @@ class BridgeRequestStateSchemaTests(unittest.TestCase):
         schema_path = Path(__file__).resolve().parents[3] / "packages/shared-schemas/voice-profile.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
-        for property_name in ["voice_profile_id", "name", "source", "audio_path", "preview_text", "provider", "model"]:
+        for property_name in ["voice_profile_id", "name", "source", "audio_path", "preview_text", "reference_text", "provider", "model"]:
             self.assertIn(property_name, schema["properties"])
             self.assertIn(property_name, schema["required"])
         self.assertEqual(schema["properties"]["source"]["enum"], ["built_in", "user_saved"])

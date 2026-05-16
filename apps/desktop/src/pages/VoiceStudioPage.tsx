@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Trash2, Wand2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock3, Download, FileAudio, FolderOpen, Loader2, Mic, Play, RefreshCw, SlidersHorizontal, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
@@ -83,6 +83,7 @@ export function VoiceStudioPage() {
   const [lastPreviewProvider, setLastPreviewProvider] = useState("");
   const [lastPreviewModel, setLastPreviewModel] = useState("");
   const [lastPreviewSettings, setLastPreviewSettings] = useState<VoiceRenderSettings | null>(null);
+  const [previewKey, setPreviewKey] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
   const [rendering, setRendering] = useState(false);
@@ -104,6 +105,7 @@ export function VoiceStudioPage() {
   const selectedProfile = voiceReference?.voice_profile_id
     ? voiceProfiles.find((profile) => profile.voice_profile_id === voiceReference.voice_profile_id)
     : undefined;
+  const selectedProfileId = selectedProfile?.voice_profile_id ?? "";
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
   const selectedStyle = styles.find((style) => style.style_id === selectedStyleId) ?? styles[0];
   const resolvedModel = resolvedTtsModel(ttsConfig);
@@ -146,16 +148,20 @@ export function VoiceStudioPage() {
     [audioFormat, effectivePreviewText, language, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
   );
 
-  const lockMatchesCurrentSettings = Boolean(
-    voiceReference?.audio_path &&
-      voiceReference.voice_id === settings.voice_id &&
-      voiceReference.style_id === settings.style_id &&
-      Math.abs((voiceReference.speed ?? 1) - settings.speed) < 0.001 &&
-      (voiceReference.language || "zh") === (settings.language || "zh") &&
-      (voiceReference.audio_format || "wav") === (settings.audio_format || "wav") &&
-      (voiceReference.preview_text || "") === (settings.preview_text || ""),
+  const currentPreviewKey = useMemo(
+    () => JSON.stringify({
+      profile: selectedProfileId,
+      text: effectivePreviewText,
+      style: selectedStyleId,
+      speed,
+      language,
+      audioFormat,
+      providerOverride,
+    }),
+    [audioFormat, effectivePreviewText, language, providerOverride, selectedProfileId, selectedStyleId, speed],
   );
-  const canLockPreview = Boolean(previewPath && !previewing);
+  const previewMatchesCurrentSelection = Boolean(previewPath && previewKey === currentPreviewKey);
+  const canSavePreviewAsProfile = Boolean(previewMatchesCurrentSelection && !previewing);
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
 
@@ -252,6 +258,10 @@ export function VoiceStudioPage() {
   };
 
   const handlePreview = async () => {
+    if (!selectedProfileId) {
+      setError("请先从音色库选择一个音色，再生成试听。");
+      return;
+    }
     try {
       setPreviewing(true);
       setError(null);
@@ -266,10 +276,12 @@ export function VoiceStudioPage() {
         sessionId: selectedSessionId,
         scriptId: selectedScriptId,
         providerOverride,
+        voiceProfileId: selectedProfileId,
       });
       setPreviewRequestState(result.request_state ?? null);
       setPreviewSrc(resolveAudioFileUrl(result.audio_path));
       setPreviewPath(result.audio_path);
+      setPreviewKey(currentPreviewKey);
       setLastPreviewProvider(result.provider);
       setLastPreviewModel(result.model);
       setLastPreviewSettings(result.settings ?? settings);
@@ -284,33 +296,13 @@ export function VoiceStudioPage() {
     }
   };
 
-  const handleLockPreview = async () => {
-    if (!selectedSessionId || !selectedScriptId) {
-      setError("请先选择 Session 和脚本，再锁定试音音色。");
-      return;
-    }
-    if (!previewPath) {
-      setError("请先生成并确认一条试音，再锁定音色。");
-      return;
-    }
-    try {
-      setError(null);
-      const updated = await bridge.lockVoicePreview(selectedSessionId, selectedScriptId, {
-        audioPath: previewPath,
-        provider: lastPreviewProvider || providerOverride || ttsConfig?.provider || "",
-        model: lastPreviewModel || resolvedModel,
-        settings: lastPreviewSettings ?? settings,
-      });
-      setProject(updated);
-      setMessage("已锁定此试音音色；正式生成会以这段试音作为参考音色。");
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to lock preview voice."));
-    }
-  };
-
   const handleSaveVoiceProfile = async () => {
     if (!previewPath) {
       setError("请先生成并确认一条试音，再保存为我的音色。");
+      return;
+    }
+    if (!previewMatchesCurrentSelection) {
+      setError("当前试听已过期，请先用所选音色重新生成试听。");
       return;
     }
     const name = window.prompt("给这个音色起个名字", selectedVoice?.name ? `我的${selectedVoice.name}` : "我的音色");
@@ -320,8 +312,11 @@ export function VoiceStudioPage() {
       const profile = await bridge.createVoiceProfile({
         name,
         audioPath: previewPath,
+        referenceText: (lastPreviewSettings ?? settings).preview_text ?? "",
         provider: lastPreviewProvider || providerOverride || ttsConfig?.provider || "",
         model: lastPreviewModel || resolvedModel,
+        language: (lastPreviewSettings ?? settings).language ?? "zh",
+        audioFormat: (lastPreviewSettings ?? settings).audio_format ?? "wav",
         settings: lastPreviewSettings ?? settings,
       });
       await refreshVoiceProfiles();
@@ -329,7 +324,7 @@ export function VoiceStudioPage() {
         const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
         setProject(updated);
       }
-      setMessage("已保存到我的音色库，并设为当前脚本参考音色。");
+      setMessage("已保存到我的音色库，并设为当前脚本音色。");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to save voice profile."));
     }
@@ -349,6 +344,13 @@ export function VoiceStudioPage() {
       setSpeed(profile.speed);
       setLanguage(profile.language);
       setAudioFormat(profile.audio_format);
+      setPreviewSrc("");
+      setPreviewPath("");
+      setPreviewKey("");
+      setLastPreviewProvider("");
+      setLastPreviewModel("");
+      setLastPreviewSettings(null);
+      setPreviewRequestState(null);
       await refreshVoiceProfiles();
       setMessage(`已选用「${profile.name}」，正式生成会以该音频作为参考声音。`);
     } catch (err) {
@@ -387,21 +389,28 @@ export function VoiceStudioPage() {
       setError("当前脚本没有可生成的内容，请先选择包含正文的脚本。");
       return;
     }
+    if (!selectedProfileId) {
+      setError("请先从音色库选择一个音色，再生成完整音频。");
+      return;
+    }
     try {
       setRendering(true);
-      const result = await bridge.renderVoiceTake(selectedSessionId, selectedScriptId, settings, {
+      const result = await bridge.renderAudio(selectedSessionId, {
         providerOverride,
         scriptId: selectedScriptId,
+        voiceSettings: settings,
+        requireVoiceProfile: renderUsesLocalEngine,
       });
       const state = result.request_state ?? {
-        operation: "render_voice_take",
+        operation: "render_audio",
         phase: "running",
         progress_percent: 5,
-        message: "Rendering voice take...",
+        message: "Rendering audio...",
       };
       setRequestState(state);
-      startPolling(result.task_id ?? `render_voice_take:${selectedSessionId}`);
-      setMessage("已开始使用这套 Voice Studio 配置生成；完成后会自动成为 Script 页的默认音频。");
+      setProject(result.project);
+      startPolling(result.task_id ?? `render_audio:${selectedSessionId}`);
+      setMessage("已开始使用所选音色生成完整音频；完成后会自动成为 Script 页的默认音频。");
     } catch (err) {
       setRendering(false);
       setError(getErrorMessage(err, "Failed to render voice take."));
@@ -409,7 +418,7 @@ export function VoiceStudioPage() {
   };
 
   const handleCancel = async () => {
-    const state = await bridge.cancelTask(`render_voice_take:${selectedSessionId}`);
+    const state = await bridge.cancelTask(requestState?.task_id ?? `render_audio:${selectedSessionId}`);
     if (state) setRequestState(state);
   };
 
@@ -478,7 +487,7 @@ export function VoiceStudioPage() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-amber">Voice Studio</p>
               <h1 className="mt-2 font-headline text-2xl font-semibold text-primary">语音工坊</h1>
-              <p className="mt-2 text-sm text-secondary">从脚本到成品音频：选择音色、调节表达、试听并对比最多 2 个 take。</p>
+              <p className="mt-2 text-sm text-secondary">从音色库选择固定音色，试听确认后用于完整播客生成。</p>
             </div>
             <button
               type="button"
@@ -560,12 +569,10 @@ export function VoiceStudioPage() {
                 <div>
                   <h2 className="text-sm font-semibold text-primary">音色库</h2>
                   <p className="mt-1 text-xs text-secondary">
-                    选择默认音色或保存过的试音音频，正式生成会把它作为 Qwen/local MLX 的参考声音。
+                    当前脚本的试听和完整生成都会使用所选音色的参考音频与参考文本。
                   </p>
                   {selectedProfile ? (
                     <p className="mt-2 text-xs font-medium text-accent-amber">当前选用：{selectedProfile.name}</p>
-                  ) : voiceReference?.audio_path ? (
-                    <p className="mt-2 text-xs font-medium text-accent-amber">当前选用：临时锁定试音</p>
                   ) : null}
                 </div>
                 <button type="button" onClick={() => void refreshVoiceProfiles()} className="inline-flex items-center gap-2 rounded-2xl border border-outline px-3 py-2 text-xs font-medium text-secondary hover:text-primary">
@@ -610,9 +617,13 @@ export function VoiceStudioPage() {
             <section className="rounded-[28px] border border-outline bg-surface p-5">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold text-primary">当前声音方案</h2>
-                  <p className="mt-2 text-lg font-semibold text-primary">{selectedVoice?.name ?? "未选择音色"} · {selectedStyle?.name ?? "默认风格"} · {speed.toFixed(1)}x</p>
-                  <p className="mt-1 text-xs text-secondary">{selectedVoice?.description ?? "展开高级设置选择音色、风格和语速。"}</p>
+                  <h2 className="text-sm font-semibold text-primary">试听设置</h2>
+                  <p className="mt-2 text-lg font-semibold text-primary">
+                    {selectedProfile?.name ?? "未选择音色"} · {selectedStyle?.name ?? "默认风格"} · {speed.toFixed(1)}x
+                  </p>
+                  <p className="mt-1 text-xs text-secondary">
+                    {selectedProfile ? "将使用该音色的参考音频生成试听。" : "请先在音色库中选择一个音色。"}
+                  </p>
                 </div>
                 <button type="button" onClick={() => setAdvancedOpen(true)} className="rounded-2xl border border-outline bg-background px-4 py-2 text-sm font-medium text-primary hover:bg-surface-container">
                   Customize
@@ -689,19 +700,19 @@ export function VoiceStudioPage() {
             <section className="rounded-[28px] border border-outline bg-surface p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold text-primary">组合试音</h2>
+                  <h2 className="text-sm font-semibold text-primary">音色试听</h2>
                   <p className="mt-1 text-xs text-secondary">
-                    试音会用当前文本重新生成；即使音色/风格相同，标准句、脚本开头和自定义文本的语调也可能不同。
+                    用当前选中的音色生成一段短试听，确认后再生成完整播客音频。
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => void handlePreview()}
-                  disabled={previewing || !selectedVoice || !selectedStyle || !renderEngineReady}
+                  disabled={previewing || !selectedVoice || !selectedStyle || !renderEngineReady || !selectedProfileId}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  生成组合试音
+                  生成试听
                 </button>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -741,57 +752,39 @@ export function VoiceStudioPage() {
               <p className="mt-2 text-[11px] text-secondary">
                 当前试音文本：{effectivePreviewText ? `${effectivePreviewText.slice(0, 60)}${effectivePreviewText.length > 60 ? "…" : ""}` : "系统标准试音句"}
               </p>
-              {renderUsesLocalEngine ? (
-                <p className="mt-1 text-[11px] text-secondary">
-                  Local MLX 会把所选音色映射到 Qwen 预置 speaker，并把风格、语速和语言传给支持这些参数的模型。
-                </p>
+              {!selectedProfileId ? (
+                <p className="mt-1 text-[11px] text-amber-200">请先从音色库选择一个音色。</p>
               ) : null}
               {previewRequestState && previewRequestState.phase !== "succeeded" ? (
                 <div className="mt-3 rounded-2xl border border-outline bg-background px-4 py-3 text-sm text-secondary">
                   {Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}
                 </div>
               ) : null}
-              {previewSrc ? (
+              {previewSrc && previewMatchesCurrentSelection ? (
                 <div className="mt-4 space-y-2">
                   <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="w-full" />
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void handleLockPreview()}
-                      disabled={!canLockPreview}
-                      title={!selectedSessionId || !selectedScriptId ? "请先选择 Session 和脚本，再锁定试音音色" : undefined}
-                      className="inline-flex items-center gap-1 rounded-xl border border-accent-amber/35 bg-accent-amber/10 px-3 py-2 text-xs font-semibold text-accent-amber hover:bg-accent-amber/15 disabled:opacity-50"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" /> 锁定此试音音色
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleSaveVoiceProfile()}
-                      disabled={!canLockPreview}
-                      className="inline-flex items-center gap-1 rounded-xl border border-outline px-3 py-2 text-xs font-semibold text-primary hover:bg-surface-container disabled:opacity-50"
-                    >
-                      保存为我的音色
-                    </button>
+                    {advancedOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveVoiceProfile()}
+                        disabled={!canSavePreviewAsProfile}
+                        className="inline-flex items-center gap-1 rounded-xl border border-outline px-3 py-2 text-xs font-semibold text-primary hover:bg-surface-container disabled:opacity-50"
+                      >
+                        保存为我的音色
+                      </button>
+                    ) : null}
                     <button type="button" onClick={() => void handleDeletePreview()} className="inline-flex items-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
                       <Trash2 className="h-3.5 w-3.5" /> 删除试音音频
                     </button>
                   </div>
                 </div>
               ) : null}
-              {voiceReference?.audio_path ? (
-                <div className={cn("mt-4 rounded-2xl border p-3 text-xs", lockMatchesCurrentSettings ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100")}>
+              {selectedProfile ? (
+                <div className="mt-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-xs text-emerald-100">
                   <div className="flex items-start gap-2">
-                    {lockMatchesCurrentSettings ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <AlertTriangle className="mt-0.5 h-4 w-4" />}
-                    <div>
-                      <p className="font-semibold">
-                        {lockMatchesCurrentSettings ? "已锁定：正式生成会以这段试音作为参考音色" : "当前设置已和锁定试音不同"}
-                      </p>
-                      <p className="mt-1 leading-5">
-                        {lockMatchesCurrentSettings
-                          ? "可提升 Qwen/local MLX 的音色连续性，但模型仍可能产生轻微语气差异。"
-                          : "请重新生成并锁定试音，或继续使用已锁定音色作为正式生成参考。"}
-                      </p>
-                    </div>
+                    <CheckCircle2 className="mt-0.5 h-4 w-4" />
+                    <p>已选择「{selectedProfile.name}」。试听和完整生成都会使用这个音色 profile。</p>
                   </div>
                 </div>
               ) : null}
@@ -849,11 +842,11 @@ export function VoiceStudioPage() {
                 </div>
               ) : null}
               {renderUsesLocalEngine ? (
-                <div className={cn("mt-4 rounded-2xl border p-3 text-xs", voiceReference?.audio_path ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100")}>
-                  {voiceReference?.audio_path ? (
-                    <span>正式生成将使用已锁定试音作为 Qwen 参考音色。</span>
+                <div className={cn("mt-4 rounded-2xl border p-3 text-xs", selectedProfile ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100" : "border-amber-500/25 bg-amber-500/10 text-amber-100")}>
+                  {selectedProfile ? (
+                    <span>完整生成将使用「{selectedProfile.name}」的参考音频和参考文本。</span>
                   ) : (
-                    <span>当前只使用 Qwen 预设 speaker，正式音色可能和试音不完全一致；建议先锁定试音。</span>
+                    <span>请先从音色库选择一个音色，完整生成才会开始。</span>
                   )}
                 </div>
               ) : null}
@@ -861,11 +854,11 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handleRenderTake()}
-                  disabled={rendering || !renderEngineReady}
+                  disabled={rendering || !renderEngineReady || !selectedProfileId}
                   className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
                 >
                   {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                  {takes.length > 0 ? "重新生成一个 take" : "生成完整音频"}
+                  生成完整音频
                 </button>
                 {rendering ? (
                   <button type="button" onClick={() => void handleCancel()} className="rounded-2xl border border-outline px-4 py-3 text-sm text-primary">取消</button>
@@ -880,17 +873,17 @@ export function VoiceStudioPage() {
               {message ? <p className="mt-4 rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
             </section>
 
-            <section className="rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-5">
+            {advancedOpen ? <section className="rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-5">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold text-primary">Take 对比</h2>
-                  <p className="mt-1 text-xs text-secondary">最多保留最终 take + 最新候选 take。</p>
+                  <h2 className="text-sm font-semibold text-primary">历史 take</h2>
+                  <p className="mt-1 text-xs text-secondary">兼容旧 Voice Studio take；新的主流程直接生成完整音频。</p>
                 </div>
                 <FileAudio className="h-5 w-5 text-accent-amber" />
               </div>
               <div className="space-y-3">
                 {takes.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-outline p-5 text-center text-sm text-secondary">还没有 take。生成完整音频后可在这里对比。</div>
+                  <div className="rounded-2xl border border-dashed border-outline p-5 text-center text-sm text-secondary">还没有旧 take。</div>
                 ) : takes.map((take) => {
                   const src = resolveAudioFileUrl(take.audio_path);
                   return (
@@ -923,9 +916,9 @@ export function VoiceStudioPage() {
                 })}
               </div>
               <button type="button" onClick={() => selectedSessionId && selectedScriptId && void loadProject(selectedSessionId, selectedScriptId)} className="mt-3 inline-flex items-center gap-2 text-xs text-secondary hover:text-primary">
-                <RefreshCw className="h-3.5 w-3.5" /> 刷新 take
+                <RefreshCw className="h-3.5 w-3.5" /> 刷新历史 take
               </button>
-            </section>
+            </section> : null}
           </aside>
         </div>
       </div>

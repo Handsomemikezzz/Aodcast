@@ -12,7 +12,8 @@ Protocol (one JSON object per line, newline terminated):
 - stdin requests:
     ``{"type": "synthesize", "job_id": str, "chunks": [str, ...], "voice": str,
        "audio_format": str, "speed": float, "style_prompt": str,
-       "language": str, "ref_audio": str | None, "model": str, "output_dir": str}``
+       "language": str, "ref_audio": str | None, "ref_text": str | None,
+       "model": str, "output_dir": str}``
     ``{"type": "cancel", "job_id": str}``
     ``{"type": "shutdown"}``
 
@@ -120,6 +121,7 @@ class MlxTtsWorker:
         style_prompt = str(job.get("style_prompt") or "")
         language = _normalize_language_code(str(job.get("language") or "zh"))
         ref_audio = job.get("ref_audio") or None
+        ref_text = str(job.get("ref_text") or "").strip() or None
         output_dir = Path(str(job.get("output_dir") or "."))
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -151,6 +153,7 @@ class MlxTtsWorker:
                     style_prompt=style_prompt,
                     language=language,
                     ref_audio=ref_audio,
+                    ref_text=ref_text,
                     output_dir=output_dir,
                     audio_write=audio_write,
                     np=np,
@@ -217,6 +220,7 @@ class MlxTtsWorker:
         style_prompt: str,
         language: str,
         ref_audio: str | None,
+        ref_text: str | None,
         output_dir: Path,
         audio_write: Any,
         np: Any,
@@ -234,6 +238,8 @@ class MlxTtsWorker:
             gen_kwargs["instruct"] = style_prompt
         if ref_audio:
             gen_kwargs["ref_audio"] = ref_audio
+        if ref_text:
+            gen_kwargs["ref_text"] = ref_text
 
         assert self._model is not None
         results = self._model.generate(**gen_kwargs)

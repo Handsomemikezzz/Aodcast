@@ -200,6 +200,7 @@ class RuntimeContext:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings | None = None,
+        require_voice_profile: bool = False,
     ) -> dict[str, object]:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.session.is_deleted():
@@ -264,6 +265,7 @@ class RuntimeContext:
                         script_id=script_id,
                         override_provider=override_provider,
                         settings=settings,
+                        require_voice_profile=require_voice_profile,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -336,6 +338,7 @@ class RuntimeContext:
         session_id: str = "",
         script_id: str = "",
         override_provider: str = "",
+        voice_profile_id: str = "",
     ) -> dict[str, object]:
         self.request_state_store.cleanup_terminal_states(
             prefix="render_voice_preview:",
@@ -388,9 +391,22 @@ class RuntimeContext:
                     progress.set_progress(snapshot.percent, snapshot.message, max_percent=98.0)
 
                 try:
+                    voice_reference: dict[str, object] | None = None
+                    if voice_profile_id.strip():
+                        profile = self.get_voice_profile_store().get_profile(voice_profile_id)
+                        voice_reference = {
+                            "source": "voice_profile",
+                            "voice_profile_id": profile.voice_profile_id,
+                            "audio_path": profile.audio_path,
+                            "preview_text": profile.preview_text,
+                            "reference_text": profile.preview_text,
+                            "provider": profile.provider,
+                            "model": profile.model,
+                        }
                     result = self.audio_rendering.render_voice_preview_with_cancellation(
                         settings,
                         override_provider=override_provider,
+                        voice_reference=voice_reference,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -470,6 +486,7 @@ class RuntimeContext:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings,
+        require_voice_profile: bool = False,
     ) -> dict[str, object]:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.session.is_deleted():
@@ -527,6 +544,7 @@ class RuntimeContext:
                         script_id=script_id,
                         override_provider=override_provider,
                         settings=settings,
+                        require_voice_profile=require_voice_profile,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -887,6 +905,21 @@ def _query_flag(query: dict[str, list[str]], key: str) -> bool:
     return values[-1].strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _body_flag(body: dict[str, Any], key: str) -> bool:
+    value = body.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    if value is None:
+        return False
+    return bool(value)
+
+
 class RuntimeRequestHandler(BaseHTTPRequestHandler):
     server: "RuntimeHttpServer"
 
@@ -1103,13 +1136,17 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         if self.command == "POST" and path == "/api/v1/voice-profiles":
             settings_payload = body.get("voice_settings")
-            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else voice_settings_from_payload(body)
+            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else None
             profile = self.context.get_voice_profile_store().create_user_profile(
                 name=str(body.get("name") or ""),
+                reference_audio_path=str(body.get("reference_audio_path") or body.get("audio_path") or ""),
+                reference_text=str(body.get("reference_text") or ""),
                 preview_audio_path=str(body.get("audio_path") or ""),
                 settings=settings,
                 provider=str(body.get("provider") or ""),
                 model=str(body.get("model") or ""),
+                language=str(body.get("language") or "zh"),
+                audio_format=str(body.get("audio_format") or "wav"),
             )
             self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="create_voice_profile"), origin=origin)
             return
@@ -1153,12 +1190,14 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             session_id = str(body.get("session_id") or "").strip()
             script_id = str(body.get("script_id") or "").strip()
             provider = str(body.get("provider_override") or "").strip()
+            voice_profile_id = str(body.get("voice_profile_id") or "").strip()
             self._send_bridge_envelope(
                 self.context.start_render_voice_preview(
                     voice_settings_from_payload(body),
                     session_id=session_id,
                     script_id=script_id,
                     override_provider=provider,
+                    voice_profile_id=voice_profile_id,
                 ),
                 origin=origin,
             )
@@ -1469,12 +1508,14 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-takes:render"):
             script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-takes:render").strip("/")
             provider = str(body.get("provider_override") or "")
+            require_voice_profile = _body_flag(body, "require_voice_profile")
             self._send_bridge_envelope(
                 self.context.start_render_voice_take(
                     session_id,
                     script_id=script_id,
                     override_provider=provider,
                     settings=voice_settings_from_payload(body),
+                    require_voice_profile=require_voice_profile,
                 ),
                 origin=origin,
             )
@@ -1541,8 +1582,15 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             script_id = str(body.get("script_id") or "").strip()
             settings_payload = body.get("voice_settings")
             settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else None
+            require_voice_profile = _body_flag(body, "require_voice_profile")
             self._send_bridge_envelope(
-                self.context.start_render_audio(session_id, script_id=script_id, override_provider=provider, settings=settings),
+                self.context.start_render_audio(
+                    session_id,
+                    script_id=script_id,
+                    override_provider=provider,
+                    settings=settings,
+                    require_voice_profile=require_voice_profile,
+                ),
                 origin=origin,
             )
             return

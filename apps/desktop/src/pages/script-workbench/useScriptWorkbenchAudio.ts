@@ -226,6 +226,14 @@ export function useScriptWorkbenchAudio({
         return;
       }
 
+      const voiceReference = project?.artifact?.voice_reference;
+      if (selectedEngine === "local_mlx" && (voiceReference?.source !== "voice_profile" || !voiceReference.voice_profile_id)) {
+        setAudioError("请先在 Voice Studio 选择一个音色，再使用 Local MLX 生成音频。");
+        setAudioMessage(null);
+        setAudioRequestState(null);
+        return;
+      }
+
       setGenerating(true);
       setAudioError(null);
       setAudioMessage(null);
@@ -241,6 +249,7 @@ export function useScriptWorkbenchAudio({
         providerOverride,
         scriptId,
         voiceSettings: resolveProjectVoiceSettings(project),
+        requireVoiceProfile: selectedEngine === "local_mlx",
       });
       const runToken = typeof result.run_token === "string" && result.run_token.length > 0 ? result.run_token : requestStateRunToken(result.request_state);
       expectedRunTokenRef.current = runToken;

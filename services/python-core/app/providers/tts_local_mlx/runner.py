@@ -84,6 +84,7 @@ class MLXAudioQwenRunner:
         style_prompt: str = "",
         language: str = "zh",
         reference_audio_path: str = "",
+        reference_text: str = "",
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[ChunkProgressEvent], None] | None = None,
     ) -> LocalMLXRunResult:
@@ -119,6 +120,9 @@ class MLXAudioQwenRunner:
                     )
                 )
 
+        resolved_ref_audio = reference_audio_path or self.config.local_ref_audio_path or None
+        resolved_ref_text = reference_text.strip() if resolved_ref_audio else ""
+
         with tempfile.TemporaryDirectory(prefix="aodcast-mlx-tts-") as temp_dir:
             output_dir = Path(temp_dir)
             try:
@@ -131,7 +135,8 @@ class MLXAudioQwenRunner:
                     style_prompt=style_prompt,
                     language=language,
                     output_dir=output_dir,
-                    ref_audio=reference_audio_path or self.config.local_ref_audio_path or None,
+                    ref_audio=resolved_ref_audio,
+                    ref_text=resolved_ref_text or None,
                     should_cancel=should_cancel,
                     on_event=relay,
                 )

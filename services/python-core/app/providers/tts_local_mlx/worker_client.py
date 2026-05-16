@@ -142,6 +142,7 @@ class WorkerClient:
         language: str = "zh",
         output_dir: Path,
         ref_audio: str | None = None,
+        ref_text: str | None = None,
         should_cancel: Callable[[], bool] | None = None,
         on_event: Callable[[WorkerEvent], None] | None = None,
     ) -> dict[str, object]:
@@ -167,6 +168,7 @@ class WorkerClient:
                 "style_prompt": style_prompt,
                 "language": language,
                 "ref_audio": ref_audio,
+                "ref_text": ref_text,
                 "model": model,
                 "output_dir": str(output_dir),
             }

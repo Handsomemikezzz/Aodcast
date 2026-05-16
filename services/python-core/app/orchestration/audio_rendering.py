@@ -87,12 +87,14 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings | None = None,
+        require_voice_profile: bool = False,
     ) -> AudioRenderResult:
         return self.render_audio_with_cancellation(
             session_id,
             script_id=script_id,
             override_provider=override_provider,
             settings=settings,
+            require_voice_profile=require_voice_profile,
         )
 
     def render_audio_with_cancellation(
@@ -102,6 +104,7 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings | None = None,
+        require_voice_profile: bool = False,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
@@ -133,6 +136,9 @@ class AudioRenderingService:
         tts_config.audio_format = render_settings.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         voice_reference = self._voice_reference_for(artifact, tts_config.provider)
+        if require_voice_profile and tts_config.provider == "local_mlx":
+            if voice_reference.get("source") != "voice_profile" or not voice_reference.get("voice_profile_id"):
+                raise ValueError("Select a voice profile before generating podcast audio.")
         previous_state = project.session.state
 
         project.session.transition(SessionState.AUDIO_RENDERING)
@@ -164,7 +170,7 @@ class AudioRenderingService:
             style_prompt=style.prompt,
             language=render_settings.language,
             reference_audio_path=str(voice_reference.get("audio_path") or ""),
-            reference_text=str(voice_reference.get("preview_text") or ""),
+            reference_text=str(voice_reference.get("reference_text") or voice_reference.get("preview_text") or ""),
             voice_lock_id=str(voice_reference.get("lock_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
@@ -321,6 +327,7 @@ class AudioRenderingService:
             "lock_id": uuid4().hex,
             "audio_path": str(reference_audio),
             "preview_text": profile.preview_text,
+            "reference_text": profile.preview_text,
             "provider": profile.provider,
             "model": profile.model,
             "voice_id": normalized.voice_id,
@@ -340,6 +347,7 @@ class AudioRenderingService:
         settings: VoiceRenderSettings,
         *,
         override_provider: str = "",
+        voice_reference: dict[str, object] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> VoicePreviewResult:
@@ -352,6 +360,12 @@ class AudioRenderingService:
         provider = build_tts_provider(tts_config)
         style = resolve_style_preset(normalized.style_id)
         preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
+        resolved_reference: dict[str, object] = {}
+        if tts_config.provider == "local_mlx" and voice_reference:
+            audio_path = str(voice_reference.get("audio_path") or "")
+            if audio_path:
+                self._validate_reference_audio_path(audio_path)
+                resolved_reference = dict(voice_reference)
 
         def raise_if_cancelled() -> None:
             if should_cancel is not None and should_cancel():
@@ -373,6 +387,11 @@ class AudioRenderingService:
             style_id=normalized.style_id,
             style_prompt=style.prompt,
             language=normalized.language,
+            reference_audio_path=str(resolved_reference.get("audio_path") or ""),
+            reference_text=str(
+                resolved_reference.get("reference_text") or resolved_reference.get("preview_text") or ""
+            ),
+            voice_lock_id=str(resolved_reference.get("lock_id") or resolved_reference.get("voice_profile_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
         )
@@ -398,12 +417,14 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings,
+        require_voice_profile: bool = False,
     ) -> VoiceTakeRenderResult:
         return self.render_voice_take_with_cancellation(
             session_id,
             script_id=script_id,
             override_provider=override_provider,
             settings=settings,
+            require_voice_profile=require_voice_profile,
         )
 
     def render_voice_take_with_cancellation(
@@ -413,6 +434,7 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings,
+        require_voice_profile: bool = False,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> VoiceTakeRenderResult:
@@ -436,6 +458,9 @@ class AudioRenderingService:
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         voice_reference = self._voice_reference_for(artifact, tts_config.provider)
+        if require_voice_profile and tts_config.provider == "local_mlx":
+            if voice_reference.get("source") != "voice_profile" or not voice_reference.get("voice_profile_id"):
+                raise ValueError("Select a voice profile before generating podcast audio.")
         previous_state = project.session.state
 
         project.session.transition(SessionState.AUDIO_RENDERING)
@@ -466,7 +491,7 @@ class AudioRenderingService:
             style_prompt=style.prompt,
             language=normalized.language,
             reference_audio_path=str(voice_reference.get("audio_path") or ""),
-            reference_text=str(voice_reference.get("preview_text") or ""),
+            reference_text=str(voice_reference.get("reference_text") or voice_reference.get("preview_text") or ""),
             voice_lock_id=str(voice_reference.get("lock_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,

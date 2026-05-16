@@ -14,6 +14,7 @@ from app.storage.artifact_store import ArtifactStore
 
 BUILTIN_PROFILE_TEXT = "Hello, welcome to use Aodcast. What shall we talk about today?"
 BUILTIN_PROFILE_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "voice-profiles"
+MAX_REFERENCE_AUDIO_BYTES = 50 * 1024 * 1024
 
 _BUILTIN_PROFILE_SPECS = (
     {
@@ -80,13 +81,23 @@ class VoiceProfileStore:
         self,
         *,
         name: str,
-        preview_audio_path: str,
-        settings: VoiceRenderSettings,
-        provider: str,
-        model: str,
+        preview_audio_path: str = "",
+        reference_audio_path: str = "",
+        reference_text: str = "",
+        settings: VoiceRenderSettings | None = None,
+        provider: str = "",
+        model: str = "",
+        language: str = "zh",
+        audio_format: str = "wav",
     ) -> VoiceProfileRecord:
-        source_audio = self._validate_export_audio_path(preview_audio_path)
-        normalized = self._normalize_settings(settings)
+        raw_audio_path = reference_audio_path.strip() or preview_audio_path.strip()
+        source_audio = self._validate_reference_audio_path(raw_audio_path)
+        text = reference_text.strip()
+        if not text and settings is not None:
+            text = settings.preview_text.strip()
+        if not text:
+            raise ValueError("Field 'reference_text' is required.")
+        normalized = self._normalize_settings(settings or VoiceRenderSettings(language=language, audio_format=audio_format, preview_text=text))
         profile_id = f"user_{uuid4().hex}"
         suffix = source_audio.suffix.lower().lstrip(".") or normalized.audio_format or "wav"
         target = self.audio_dir / f"{profile_id}.{suffix}"
@@ -97,7 +108,7 @@ class VoiceProfileStore:
             name=name.strip() or "我的音色",
             source="user_saved",
             audio_path=str(target),
-            preview_text=normalized.preview_text.strip() or BUILTIN_PROFILE_TEXT,
+            preview_text=text,
             provider=provider.strip() or "local_mlx",
             model=model.strip(),
             voice_id=normalized.voice_id,
@@ -107,7 +118,7 @@ class VoiceProfileStore:
             speed=normalized.speed,
             language=normalized.language,
             audio_format=suffix,
-            description="用户保存的试音音色",
+            description="用户添加的参考音色",
             created_at=now,
             updated_at=now,
         )
@@ -233,19 +244,23 @@ class VoiceProfileStore:
     def _builtin_audio_path(self, profile_id: str) -> Path:
         return BUILTIN_PROFILE_ASSETS_DIR / profile_id
 
-    def _validate_export_audio_path(self, path: str) -> Path:
+    def _validate_reference_audio_path(self, path: str) -> Path:
         if not path.strip():
-            raise ValueError("Preview audio path is required.")
-        exports_dir = self.artifact_store.exports_dir.resolve()
+            raise ValueError("Voice profile reference audio path is required.")
         target = Path(path).expanduser().resolve()
+        exports_dir = self.artifact_store.exports_dir.resolve()
         try:
             target.relative_to(exports_dir)
         except ValueError as exc:
-            raise ValueError("Voice profile source audio must be inside the app exports directory.") from exc
+            raise ValueError("Voice profile reference audio must be inside the app exports directory.") from exc
         if not target.exists():
-            raise ValueError("Voice profile source audio is missing.")
+            raise ValueError("Voice profile reference audio is missing.")
         if not target.is_file():
-            raise ValueError("Voice profile source audio must point to a file.")
+            raise ValueError("Voice profile reference audio must point to a file.")
+        if target.stat().st_size > MAX_REFERENCE_AUDIO_BYTES:
+            raise ValueError("Voice profile reference audio is too large.")
+        if target.suffix.lower() not in {".wav", ".mp3", ".m4a", ".mp4", ".aac", ".flac"}:
+            raise ValueError("Voice profile reference audio must be a supported audio file.")
         return target
 
     def _read_user_profiles(self) -> list[VoiceProfileRecord]:

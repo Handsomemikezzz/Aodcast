@@ -30,12 +30,14 @@ class VoiceProfileRecord:
     def to_dict(self) -> dict[str, Any]:
         created_at = self.created_at or utc_now_iso()
         updated_at = self.updated_at or created_at
+        reference_text = self.preview_text
         return {
             "voice_profile_id": self.voice_profile_id,
             "name": self.name,
             "source": self.source,
             "audio_path": self.audio_path,
-            "preview_text": self.preview_text,
+            "preview_text": reference_text,
+            "reference_text": reference_text,
             "provider": self.provider,
             "model": self.model,
             "voice_id": self.voice_id,
@@ -58,7 +60,7 @@ class VoiceProfileRecord:
             name=str(payload.get("name") or "Untitled voice"),
             source=str(payload.get("source") or "user_saved"),
             audio_path=str(payload.get("audio_path") or ""),
-            preview_text=str(payload.get("preview_text") or ""),
+            preview_text=str(payload.get("reference_text") or payload.get("preview_text") or ""),
             provider=str(payload.get("provider") or "local_mlx"),
             model=str(payload.get("model") or ""),
             voice_id=str(payload.get("voice_id") or "warm_narrator"),

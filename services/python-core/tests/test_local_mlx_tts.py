@@ -121,8 +121,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(response.file_extension, "wav")
         self.assertEqual(response.audio_bytes, b"runner-bytes")
 
-
-    def test_local_provider_forwards_voice_style_speed_and_language_to_runner(self) -> None:
+    def test_local_provider_forwards_voice_style_speed_language_and_reference_text_to_runner(self) -> None:
         provider = LocalMLXTTSProvider(
             TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model")
         )
@@ -156,6 +155,8 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                     style_id="story",
                     style_prompt="Use a slower, immersive storytelling tone.",
                     language="zh",
+                    reference_audio_path="/tmp/locked-preview.wav",
+                    reference_text="锁定这一句试音。",
                 )
             )
 
@@ -164,6 +165,8 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(captured["speed"], 0.8)
         self.assertEqual(captured["style_prompt"], "Use a slower, immersive storytelling tone.")
         self.assertEqual(captured["language"], "zh")
+        self.assertEqual(captured["reference_audio_path"], "/tmp/locked-preview.wav")
+        self.assertEqual(captured["reference_text"], "锁定这一句试音。")
 
     def test_runner_submits_chunks_to_worker_and_returns_audio(self) -> None:
         config = TTSProviderConfig(
@@ -188,6 +191,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                 language: str,
                 output_dir: Path,
                 ref_audio,
+                ref_text,
                 should_cancel,
                 on_event: Callable[[WorkerEvent], None] | None,
             ) -> dict[str, object]:
@@ -200,6 +204,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                     "style_prompt": style_prompt,
                     "language": language,
                     "ref_audio": ref_audio,
+                    "ref_text": ref_text,
                 }
                 if on_event is not None:
                     on_event(
@@ -241,6 +246,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(fake.last_kwargs["style_prompt"], "")
         self.assertEqual(fake.last_kwargs["language"], "zh")
         self.assertEqual(fake.last_kwargs["ref_audio"], config.local_ref_audio_path)
+        self.assertIsNone(fake.last_kwargs["ref_text"])
         self.assertEqual(len(events), 2)
         self.assertEqual(getattr(events[0], "phase"), "chunk_started")
         self.assertEqual(getattr(events[1], "phase"), "chunk_done")
@@ -276,9 +282,11 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             "Short runner test sentence.",
             audio_format="wav",
             reference_audio_path="/tmp/locked-preview.wav",
+            reference_text="Locked preview text.",
         )
 
         self.assertEqual(fake.last_kwargs["ref_audio"], "/tmp/locked-preview.wav")
+        self.assertEqual(fake.last_kwargs["ref_text"], "Locked preview text.")
 
     def test_runner_translates_worker_cancellation_into_task_cancellation(self) -> None:
         config = TTSProviderConfig(

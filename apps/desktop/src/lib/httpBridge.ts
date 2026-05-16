@@ -515,6 +515,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
             provider_override: options?.providerOverride ?? "",
             script_id: options?.scriptId ?? "",
             voice_settings: options?.voiceSettings ? serializeVoiceSettings(options.voiceSettings) : undefined,
+            require_voice_profile: options?.requireVoiceProfile === true,
           }),
         },
       );
@@ -557,6 +558,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           session_id: options?.sessionId ?? "",
           script_id: options?.scriptId ?? "",
           provider_override: options?.providerOverride ?? "",
+          voice_profile_id: options?.voiceProfileId ?? "",
         }),
       });
       const initialState = asRequestState(response.request_state);
@@ -576,10 +578,14 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         method: "POST",
         body: JSON.stringify({
           name: input.name,
-          audio_path: input.audioPath,
+          reference_audio_path: input.referenceAudioPath ?? input.audioPath ?? "",
+          reference_text: input.referenceText,
+          audio_path: input.audioPath ?? input.referenceAudioPath ?? "",
           provider: input.provider,
           model: input.model,
-          voice_settings: serializeVoiceSettings(input.settings),
+          language: input.language ?? input.settings?.language ?? "zh",
+          audio_format: input.audioFormat ?? input.settings?.audio_format ?? "wav",
+          voice_settings: input.settings ? serializeVoiceSettings(input.settings) : undefined,
         }),
       });
       return response.profile!;
@@ -633,6 +639,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           body: JSON.stringify({
             ...serializeVoiceSettings(settings),
             provider_override: options?.providerOverride ?? "",
+            require_voice_profile: options?.requireVoiceProfile === true,
           }),
         },
       );
