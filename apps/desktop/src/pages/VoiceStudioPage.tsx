@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { CheckCircle2, Loader2, RefreshCw, Trash2, Wand2 } from "lucide-react";
+import { CheckCircle2, Loader2, Mic, RefreshCw, Trash2, Wand2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
@@ -74,6 +74,10 @@ export function VoiceStudioPage() {
   const [previewKey, setPreviewKey] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
+  const [newProfileName, setNewProfileName] = useState("");
+  const [newProfileAudioPath, setNewProfileAudioPath] = useState("");
+  const [newProfileReferenceText, setNewProfileReferenceText] = useState("");
+  const [creatingProfile, setCreatingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -162,8 +166,6 @@ export function VoiceStudioPage() {
     sessionId: selectedSessionId,
   };
   const previewMatchesCurrentSelection = Boolean(previewPath && previewKey === currentPreviewKey);
-  const canSavePreviewAsProfile = Boolean(previewMatchesCurrentSelection && !previewing);
-
   const clearPreviewState = useCallback(() => {
     previewRequestTokenRef.current += 1;
     setPreviewing(false);
@@ -319,37 +321,55 @@ export function VoiceStudioPage() {
     }
   };
 
-  const handleSaveVoiceProfile = async () => {
-    if (!previewPath) {
-      setError("请先生成并确认一条试音，再保存为我的音色。");
+  const handleCreateVoiceProfile = async () => {
+    const name = newProfileName.trim();
+    const referenceAudioPath = newProfileAudioPath.trim();
+    const referenceText = newProfileReferenceText.trim();
+    if (!name) {
+      setError("请先填写音色名称。");
       return;
     }
-    if (!previewMatchesCurrentSelection) {
-      setError("当前试听已过期，请先用所选音色重新生成试听。");
+    if (!referenceAudioPath) {
+      setError("请先填写参考音频文件路径。");
       return;
     }
-    const name = window.prompt("给这个音色起个名字", selectedVoice?.name ? `我的${selectedVoice.name}` : "我的音色");
-    if (name === null) return;
+    if (!referenceText) {
+      setError("请填写参考音频中实际朗读的文本。");
+      return;
+    }
     try {
+      setCreatingProfile(true);
       setError(null);
       const profile = await bridge.createVoiceProfile({
         name,
-        audioPath: previewPath,
-        referenceText: (lastPreviewSettings ?? settings).preview_text ?? "",
-        provider: lastPreviewProvider || providerOverride || ttsConfig?.provider || "",
-        model: lastPreviewModel || resolvedModel,
-        language: (lastPreviewSettings ?? settings).language ?? "zh",
-        audioFormat: (lastPreviewSettings ?? settings).audio_format ?? "wav",
-        settings: lastPreviewSettings ?? settings,
+        referenceAudioPath,
+        referenceText,
+        provider: ttsConfig?.provider || "local_mlx",
+        model: resolvedModel,
+        language,
+        audioFormat,
+        settings: { ...settings, preview_text: referenceText },
       });
       await refreshVoiceProfiles();
-      if (selectedSessionId && selectedScriptId) {
+      setNewProfileName("");
+      setNewProfileAudioPath("");
+      setNewProfileReferenceText("");
+      if (canApplyProfileToScript) {
         const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
         setProject(updated);
+        setSelectedVoiceId(profile.voice_id);
+        setSelectedStyleId(profile.style_id);
+        setSpeed(profile.speed);
+        setLanguage(profile.language);
+        setAudioFormat(profile.audio_format);
+        setMessage(`已创建「${profile.name}」并用于当前脚本。返回 Script 页后可以生成完整音频。`);
+      } else {
+        setMessage(`已创建「${profile.name}」。打开脚本后可以选用这个音色。`);
       }
-      setMessage("已保存到我的音色库，并设为当前脚本音色。");
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to save voice profile."));
+      setError(getErrorMessage(err, "Failed to create voice profile."));
+    } finally {
+      setCreatingProfile(false);
     }
   };
 
@@ -588,14 +608,6 @@ export function VoiceStudioPage() {
                     <div className="mt-4 space-y-2">
                       <audio ref={previewAudioRef} controls src={previewSrc} onError={handleAudioLoadError} className="w-full" />
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void handleSaveVoiceProfile()}
-                          disabled={!canSavePreviewAsProfile}
-                          className="inline-flex items-center gap-1 rounded-xl border border-outline px-3 py-2 text-xs font-semibold text-primary hover:bg-surface-container disabled:opacity-50"
-                        >
-                          保存为我的音色
-                        </button>
                         <button type="button" onClick={() => void handleDeletePreview()} className="inline-flex items-center gap-1 rounded-xl border border-red-500/25 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/10">
                           <Trash2 className="h-3.5 w-3.5" /> 删除试音音频
                         </button>
@@ -629,6 +641,54 @@ export function VoiceStudioPage() {
                   className="rounded-2xl border border-outline px-3 py-2 text-xs font-medium text-primary hover:bg-surface-container"
                 >
                   Change model
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-5">
+              <div>
+                <h2 className="text-sm font-semibold text-primary">创建我的音色</h2>
+                <p className="mt-1 text-xs leading-5 text-secondary">
+                  使用一段参考音频和它实际朗读的文本创建可复用 voice profile。
+                </p>
+              </div>
+              <div className="mt-4 grid gap-3">
+                <label className="text-xs text-secondary">
+                  音色名称
+                  <input
+                    value={newProfileName}
+                    onChange={(event) => setNewProfileName(event.target.value)}
+                    className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
+                    placeholder="例如：我的知识讲述音色"
+                  />
+                </label>
+                <label className="text-xs text-secondary">
+                  参考音频路径
+                  <input
+                    value={newProfileAudioPath}
+                    onChange={(event) => setNewProfileAudioPath(event.target.value)}
+                    className="mt-1 w-full rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
+                    placeholder="/Users/.../reference.wav"
+                  />
+                </label>
+                <label className="text-xs text-secondary">
+                  参考音频文本
+                  <textarea
+                    value={newProfileReferenceText}
+                    onChange={(event) => setNewProfileReferenceText(event.target.value)}
+                    rows={4}
+                    className="mt-1 w-full resize-none rounded-2xl border border-outline bg-background px-3 py-2 text-sm text-primary outline-none focus:border-accent-amber/40"
+                    placeholder="逐字填写参考音频里实际说出的内容"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleCreateVoiceProfile()}
+                  disabled={creatingProfile}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent-amber px-4 py-3 text-sm font-semibold text-black disabled:opacity-50"
+                >
+                  {creatingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+                  {scriptBoundMode ? "创建并用于当前脚本" : "创建音色"}
                 </button>
               </div>
             </section>

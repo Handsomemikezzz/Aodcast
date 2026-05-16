@@ -324,6 +324,8 @@ class AudioRenderingService:
         artifact.voice_reference = {
             "source": "voice_profile",
             "voice_profile_id": profile.voice_profile_id,
+            "name": profile.name,
+            "profile_source": profile.source,
             "lock_id": uuid4().hex,
             "audio_path": str(reference_audio),
             "preview_text": profile.preview_text,

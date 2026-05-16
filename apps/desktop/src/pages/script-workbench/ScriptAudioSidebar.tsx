@@ -1,11 +1,17 @@
 import { ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Mic, Pause, Play, Settings2, Share2, Trash2, Wand2 } from "lucide-react";
 import { cn } from "../../lib/utils";
-import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
+import { resolveProjectVoiceSettings, selectedVoiceProfileLabel } from "../../lib/voiceSettings";
 import { ProgressBar } from "../../components/ProgressBar";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenchResult }) {
   const voiceSettings = resolveProjectVoiceSettings(workbench.project);
+  const selectedProfileLabel = selectedVoiceProfileLabel(workbench.project);
+  const profileSource = workbench.project?.artifact?.voice_reference?.profile_source;
+  const profileSourceLabel = profileSource === "built_in" ? "默认音色" : profileSource === "user_saved" ? "我的音色" : "";
+  const scriptVoiceStudioPath = workbench.project?.script
+    ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}`
+    : "/voice-studio";
 
   return (
     <aside className="flex min-h-0 flex-col gap-4 self-start">
@@ -21,10 +27,10 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         <div className="space-y-4">
           <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Voice Persona</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Selected Voice</p>
               <button
                 type="button"
-                onClick={() => workbench.navigate("/settings")}
+                onClick={() => workbench.navigate(scriptVoiceStudioPath)}
                 className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-amber transition-colors hover:text-primary"
               >
                 <Settings2 className="h-3.5 w-3.5" />
@@ -33,7 +39,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </div>
             <button
               type="button"
-              onClick={() => workbench.navigate("/settings")}
+              onClick={() => workbench.navigate(scriptVoiceStudioPath)}
               className="flex w-full items-center justify-between gap-3 rounded-[18px] border border-outline bg-surface-container-low px-3 py-3 text-left transition-colors hover:border-accent-amber/30"
             >
               <div className="flex items-center gap-3">
@@ -41,12 +47,14 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   <Mic className="h-5 w-5 text-accent-amber" />
                 </div>
                 <div>
-	                  <p className="text-sm font-medium text-primary">{voiceSettings.voice_name || voiceSettings.voice_id}</p>
-	                  <p className="mt-1 text-xs text-secondary">
-	                    {`${voiceSettings.style_name || voiceSettings.style_id} · ${voiceSettings.speed.toFixed(1)}x · ${
-	                      workbench.selectedEngine === "local_mlx" ? "Local MLX" : workbench.cloudProvider
-	                    }`}
-	                  </p>
+                  <p className="text-sm font-medium text-primary">
+                    {selectedProfileLabel || "未选择音色"}
+                  </p>
+                  <p className="mt-1 text-xs text-secondary">
+                    {selectedProfileLabel
+                      ? `${profileSourceLabel ? `${profileSourceLabel} · ` : ""}${voiceSettings.language || "zh"} · ${workbench.selectedEngine === "local_mlx" ? "Local MLX" : workbench.cloudProvider}`
+                      : "选择音色后，Script 页会用它生成完整音频。"}
+                  </p>
                 </div>
               </div>
               <ChevronDown className="h-4 w-4 text-secondary" />
@@ -54,11 +62,11 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             {workbench.project?.script ? (
               <button
                 type="button"
-                onClick={() => workbench.navigate(`/voice-studio/${workbench.project?.session.session_id}/${workbench.project?.script?.script_id}`)}
+                onClick={() => workbench.navigate(scriptVoiceStudioPath)}
                 className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-sm font-medium text-accent-amber transition-colors hover:bg-accent-amber/15 hover:text-primary"
               >
                 <Mic className="h-4 w-4" />
-                Open Voice Studio
+                Change voice
               </button>
             ) : null}
           </div>
@@ -177,7 +185,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-primary">Generated Audio</p>
-            <p className="mt-1 text-xs text-secondary">Preview, export, or share the latest render.</p>
+            <p className="mt-1 text-xs text-secondary">Play, delete, download, or reveal the final render for this script.</p>
           </div>
           <FileAudio className="h-5 w-5 text-accent-amber" />
         </div>
@@ -257,7 +265,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             <Wand2 className="mb-3 h-8 w-8 text-accent-amber" />
             <p className="text-sm font-medium text-primary">No audio file yet</p>
             <p className="mt-2 max-w-[280px] text-xs leading-6 text-secondary">
-              Select a rendering engine, save your latest edits, and generate audio to unlock preview, download, and sharing actions here.
+              Choose a voice profile, save your latest edits, then generate the final audio from this Script page.
             </p>
           </div>
         )}

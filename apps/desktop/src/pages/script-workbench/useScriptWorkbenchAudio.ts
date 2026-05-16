@@ -228,7 +228,7 @@ export function useScriptWorkbenchAudio({
 
       const voiceReference = project?.artifact?.voice_reference;
       if (selectedEngine === "local_mlx" && (voiceReference?.source !== "voice_profile" || !voiceReference.voice_profile_id)) {
-        setAudioError("请先在 Voice Studio 选择一个音色，再使用 Local MLX 生成音频。");
+        setAudioError("请先在 Voice Studio 为当前脚本选择一个音色，然后回到 Script 页生成完整音频。");
         setAudioMessage(null);
         setAudioRequestState(null);
         return;

@@ -204,9 +204,12 @@ export type VoiceRenderSettings = {
 export type VoiceReferenceLock = {
   source?: "preview_lock" | "voice_profile";
   voice_profile_id?: string;
+  name?: string;
+  profile_source?: "built_in" | "user_saved";
   lock_id: string;
   audio_path: string;
   preview_text: string;
+  reference_text?: string;
   provider: string;
   model: string;
   voice_id: string;

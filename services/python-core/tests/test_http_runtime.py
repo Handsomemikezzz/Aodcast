@@ -949,8 +949,11 @@ class HttpRuntimeTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(external_status, 400)
-        self.assertIn("exports directory", external_payload["error"]["message"])
+        self.assertEqual(external_status, 200)
+        external_profile = external_payload["data"]["profile"]
+        self.assertEqual(external_profile["reference_text"], "这是外部路径的参考文本。")
+        self.assertNotEqual(external_profile["audio_path"], str(external_audio))
+        self.assertTrue(Path(external_profile["audio_path"]).exists())
 
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:
         with patch.object(

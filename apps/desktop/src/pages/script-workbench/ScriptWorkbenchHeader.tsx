@@ -59,7 +59,7 @@ export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkb
             ) : (
               <Wand2 className="h-4 w-4" />
             )}
-            {workbench.generating ? "Generating..." : "Generate Audio"}
+            {workbench.generating ? "Generating..." : "Generate final audio"}
           </button>
         </div>
       </div>

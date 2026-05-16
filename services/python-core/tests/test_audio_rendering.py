@@ -383,6 +383,8 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(request.reference_audio_path, str(profile_audio))
         self.assertEqual(request.reference_text, "这是一段参考文本。")
         self.assertEqual(project.artifact.voice_reference["source"], "voice_profile")
+        self.assertEqual(project.artifact.voice_reference["name"], "稳定主播")
+        self.assertEqual(project.artifact.voice_reference["profile_source"], "user_saved")
 
     def test_local_mlx_voice_take_uses_locked_preview_as_reference_audio(self) -> None:
         store, config_store, artifact_store, service = self.build_environment()

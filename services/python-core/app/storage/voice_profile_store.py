@@ -248,11 +248,6 @@ class VoiceProfileStore:
         if not path.strip():
             raise ValueError("Voice profile reference audio path is required.")
         target = Path(path).expanduser().resolve()
-        exports_dir = self.artifact_store.exports_dir.resolve()
-        try:
-            target.relative_to(exports_dir)
-        except ValueError as exc:
-            raise ValueError("Voice profile reference audio must be inside the app exports directory.") from exc
         if not target.exists():
             raise ValueError("Voice profile reference audio is missing.")
         if not target.is_file():
