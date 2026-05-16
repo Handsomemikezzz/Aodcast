@@ -2,17 +2,19 @@
 
 **Status:** Approved for implementation planning  
 **Date:** 2026-05-16  
-**Scope:** Profile-first v1 simplification for stable local MLX/Qwen voice conditioning.
+**Scope:** Voice Studio as a reusable voice-profile editor, with final podcast generation owned by Script Workbench.
 
 ---
 
 ## 1. Purpose
 
-Aodcast's current Voice Studio flow has too many ways to express "the selected voice": preset sliders, temporary preview locks, reusable profiles, Voice Studio takes, and Script Workbench render settings. That makes the product hard to reason about and allows formal podcast generation to drift away from the voice the user thought they selected.
+Aodcast's current Voice Studio flow has too many responsibilities: preset sliders, temporary preview locks, reusable profiles, Voice Studio takes, Script Workbench render settings, and full podcast generation. That makes the product hard to reason about and can make users expect final-audio playback/deletion inside Voice Studio even though final audio is script-owned.
 
-This v1 simplifies the product around one rule:
+This v1 simplifies the product around two rules:
 
-> A generated podcast uses exactly one selected voice profile as its voice source.
+> Voice Studio creates, previews, and selects reusable voice profiles.
+
+> Script Workbench generates, plays, deletes, downloads, and reveals final podcast audio.
 
 The voice profile contains the reference audio and the matching reference text. Preview and full render both read that same profile and both pass the same `ref_audio` / `ref_text` conditioning package to the local MLX/Qwen provider.
 
@@ -22,8 +24,10 @@ The voice profile contains the reference audio and the matching reference text. 
 
 - **Profile-first generation:** A script's current voice is a selected `VoiceProfileRecord`, not a temporary preview lock or a loose preset combination.
 - **Explicit user voice library:** Users can add their own voice profile with a name, reference audio, and the exact text spoken in that reference audio.
-- **5-second preview:** Users can select a profile and generate a short preview before rendering the full podcast.
-- **Preview/full parity:** Preview and full render use the same profile reference audio and reference text.
+- **Voice Studio owns voice assets:** Voice Studio is a voice-profile editor/library, not a final-audio production workspace.
+- **Script owns final audio:** Full podcast render, final audio playback, deletion, download, and Finder reveal happen in Script Workbench.
+- **5-second preview:** Users can preview a profile with a short utterance to confirm the selected voice profile is usable.
+- **Preview/full parity:** Voice Studio preview and Script full render use the same profile reference audio and reference text.
 - **Stable first release:** Remove or hide workflows that create competing voice state, especially temporary preview locking and Voice Studio take comparison.
 - **Backwards compatibility:** Existing `artifact.voice_reference` payloads continue to load, but new selection writes `source: "voice_profile"` and `voice_profile_id`.
 
@@ -36,7 +40,8 @@ The voice profile contains the reference audio and the matching reference text. 
 - Multi-sample voice profile merging.
 - Voicebox-style effect chains, version trees, or streaming APIs.
 - Full removal of backend legacy endpoints in one pass. Legacy endpoints may remain callable for compatibility, but the UI and primary render path should stop depending on them.
-- Pixel-perfect redesign of the desktop shell.
+- Voice Studio playback/deletion for final podcast artifacts. Those belong in Script Workbench.
+- Pixel-perfect redesign of unrelated desktop shell areas.
 
 ---
 
@@ -80,9 +85,9 @@ Selection persists into the script-scoped artifact as:
 
 The selected profile's audio/text are the canonical voice anchor. Preset voice/style settings may remain as compatibility metadata, but they are not the primary identity source.
 
-### 4.3 Preview
+### 4.3 Voice Studio Preview
 
-The preview action renders a short utterance using the selected profile. It does not create a temporary lock. It does not alter the profile. It does not create a Voice Studio take.
+The preview action renders or plays a short utterance using the selected profile. It does not create a temporary lock. It does not alter the profile. It does not create a Voice Studio take or a final podcast artifact.
 
 Preview text policy:
 
@@ -90,14 +95,14 @@ Preview text policy:
 - If previewing from a script page, optionally use the beginning of the current script only if the UI already has it available.
 - Always condition the preview with the selected profile's `ref_audio` and reference text.
 
-### 4.4 Full Podcast Render
+### 4.4 Script Full Podcast Render
 
-Full render resolves the selected profile from the script artifact, compiles the local MLX request with:
+Script Workbench full render resolves the selected profile from the script artifact, compiles the local MLX request with:
 
 - `reference_audio_path = profile.audio_path`
 - `reference_text = profile.preview_text`
 
-If no profile is selected, the UI should block profile-first rendering and ask the user to choose a voice.
+If no profile is selected, Script Workbench should ask the user to choose a voice and link to Voice Studio in script-bound mode.
 
 ### 4.5 Remote Provider Degradation
 
@@ -107,29 +112,70 @@ If the user forces a provider that cannot honor reference conditioning, the app 
 
 ## 5. UX Shape
 
-Voice Studio v1 should be three practical panels:
+Voice Studio v1 has one identity: a voice-profile editor/library. It supports two entry modes.
 
-1. **Current voice profile**
-   - Shows selected profile name and source.
-   - Offers "Preview voice" and "Generate podcast".
-   - Shows a warning when no profile is selected.
+### 5.1 Script-bound mode
 
-2. **Voice library**
+Route: `/voice-studio/:sessionId/:scriptId`
+
+Purpose: choose or create a profile, then apply it to the current script.
+
+Primary UI:
+
+- Header shows the current script title/summary and a "Return to Script" action.
+- Voice library cards show built-in and user-saved profiles.
+- Each card can play its reference audio and can be selected for the current script.
+- Main completion action is "Use this voice for this script".
+- After selection, the user returns to Script Workbench to generate final audio.
+
+### 5.2 Global library mode
+
+Route: `/voice-studio`
+
+Purpose: manage reusable voice assets without binding to a script.
+
+Primary UI:
+
+- Header labels the page as the global voice library.
+- Users can browse built-in profiles, play reference audio, create user profiles, and delete user profiles.
+- There is no script selector and no final podcast generation action.
+- Profile cards may show disabled guidance such as "Open a script to use this voice".
+
+### 5.3 Panels
+
+Voice Studio should use three practical panels:
+
+1. **Voice library**
    - Lists built-in and user-saved profiles.
-   - Lets the user select one profile for the current script.
+   - Lets the user select one profile for the current script only in script-bound mode.
    - Lets the user delete user-saved profiles.
 
-3. **Add voice**
+2. **Profile preview**
+   - Plays the stored reference audio for each profile.
+   - Optionally renders a short preview using the profile's reference audio/text.
+   - Makes clear that preview audio is for checking the voice profile, not a podcast take.
+
+3. **Create voice profile**
    - Accepts a reference audio path, profile name, and exact reference text.
    - Saves the profile into the voice library.
    - Optionally selects it for the current script after save.
 
 Hide or remove from the primary UI:
 
+- full podcast generation
+- final podcast playback/deletion/download/reveal
+- session/script dropdown selection
 - temporary "lock preview" controls
 - "save preview as my voice"
 - Voice Studio take comparison
-- advanced preset/style/speed controls unless needed for compatibility
+- provider override and output-format controls unless they are moved behind a clearly diagnostic-only affordance
+
+Script Workbench should show:
+
+- current selected voice profile name and source
+- "Change voice" link to script-bound Voice Studio
+- "Generate audio" as the final-audio production action
+- final audio playback, deletion, download, and Finder reveal
 
 ---
 
@@ -142,14 +188,14 @@ Hide or remove from the primary UI:
 - `updateVoiceProfile`
 - `deleteVoiceProfile`
 - `selectVoiceProfile`
-- `renderVoicePreview`
 - `renderAudio`
+- `renderVoicePreview`
 
 ### 6.2 Add Or Adjust
 
 - `createVoiceProfile` must accept direct profile creation from reference audio plus reference text, not only from a generated preview artifact.
 - `renderVoicePreview` should accept `voice_profile_id` or resolve the selected script profile when session/script are provided.
-- `renderAudio` should use the selected profile anchor by default and should not require the caller to send voice settings for the common path.
+- `renderAudio` should be called from Script Workbench for final podcast generation. It should use the selected profile anchor by default and should not require the caller to send voice settings for the common path.
 - Bridge types should expose reference-text semantics clearly even if the backend persistence field remains `preview_text`.
 
 ### 6.3 De-emphasize
@@ -167,8 +213,10 @@ The following may remain in backend compatibility code, but should not be used b
 
 - Creating a user voice profile requires a non-empty name, audio path, and reference text.
 - Selecting a profile writes script-scoped `artifact.voice_reference.source === "voice_profile"` and `voice_profile_id`.
-- Preview for a selected profile passes the profile audio and reference text into the local MLX/Qwen request.
-- Full podcast render for the same script passes the same profile audio and reference text into the local MLX/Qwen request.
+- Voice Studio preview for a selected profile passes the profile audio and reference text into the local MLX/Qwen request.
+- Script Workbench full podcast render for the same script passes the same profile audio and reference text into the local MLX/Qwen request.
+- Voice Studio no longer exposes full podcast generation, final podcast playback, final audio deletion, download, or reveal as primary actions.
+- Script Workbench exposes final podcast generation, playback, deletion, download, and reveal.
 - Voice Studio UI no longer presents temporary preview locking or take comparison as primary workflows.
 - A script without a selected profile cannot accidentally render through the simplified profile-first UI.
 - Existing built-in profiles still list and serve their packaged audio.
@@ -202,4 +250,5 @@ The following may remain in backend compatibility code, but should not be used b
 
 | Date | Change |
 |------|--------|
+| 2026-05-16 | Re-scoped Voice Studio as a voice-profile editor/library. Moved final podcast generation and final-audio management to Script Workbench. |
 | 2026-05-16 | Re-scoped from hybrid Voicebox-style pipeline to profile-first v1 simplification. |

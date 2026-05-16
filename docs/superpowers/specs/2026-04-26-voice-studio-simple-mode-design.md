@@ -1,5 +1,9 @@
 # Voice Studio Simple Mode Design
 
+**Status:** Superseded by `docs/superpowers/specs/2026-05-16-aodcast-voice-profile-pipeline-design.md`.
+
+This document records the older "Voice Studio as audio-production workspace" direction. The current approved direction makes Voice Studio a voice-profile editor/library and moves final podcast generation plus final-audio management to Script Workbench.
+
 ## Goal
 
 Make Voice Studio feel like a guided audio-production workspace: simple by default, professional controls available on demand, and always clear about the global model/engine currently used for generation.
