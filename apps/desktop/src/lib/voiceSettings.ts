@@ -1,4 +1,4 @@
-import type { SessionProject, VoiceRenderSettings } from "../types";
+import type { SessionProject, VoiceProfileRecord, VoiceRenderSettings } from "../types";
 
 export function defaultVoiceRenderSettings(): VoiceRenderSettings {
   return {
@@ -25,4 +25,27 @@ export function resolveProjectVoiceSettings(project: SessionProject | null | und
     language: saved.language?.trim() || defaults.language,
     audio_format: saved.audio_format?.trim() || defaults.audio_format,
   };
+}
+
+export function selectedVoiceProfileId(project: SessionProject | null | undefined): string {
+  const reference = project?.artifact?.voice_reference;
+  return reference?.source === "voice_profile" ? reference.voice_profile_id ?? "" : "";
+}
+
+export function resolveSelectedVoiceProfile(
+  project: SessionProject | null | undefined,
+  profiles: VoiceProfileRecord[],
+): VoiceProfileRecord | null {
+  const profileId = selectedVoiceProfileId(project);
+  if (!profileId) return null;
+  return profiles.find((profile) => profile.voice_profile_id === profileId) ?? null;
+}
+
+export function selectedVoiceProfileLabel(project: SessionProject | null | undefined): string {
+  const reference = project?.artifact?.voice_reference;
+  if (reference?.source === "voice_profile" && reference.voice_profile_id) {
+    const referenceName = (reference as { name?: unknown }).name;
+    return String(referenceName || reference.voice_profile_id);
+  }
+  return "";
 }
