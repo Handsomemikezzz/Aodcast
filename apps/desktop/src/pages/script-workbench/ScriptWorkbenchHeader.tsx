@@ -1,15 +1,7 @@
-import { ArrowLeft, Save, Wand2 } from "lucide-react";
+import { ArrowLeft, Save } from "lucide-react";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkbenchResult }) {
-  const voiceReference = workbench.project?.artifact?.voice_reference;
-  const needsVoiceProfile = workbench.selectedEngine === "local_mlx" && (voiceReference?.source !== "voice_profile" || !voiceReference.voice_profile_id);
-  const generationDisabled =
-    workbench.generating ||
-    workbench.script.trim().length === 0 ||
-    needsVoiceProfile ||
-    (workbench.selectedEngine === "local_mlx" ? workbench.localEngineDisabled : workbench.cloudEngineDisabled);
-
   return (
     <section className="rounded-[28px] border border-outline bg-[linear-gradient(180deg,rgba(33,33,37,0.96),rgba(25,25,28,0.94))] px-5 py-5 shadow-[0_24px_80px_rgba(0,0,0,0.38)] backdrop-blur-xl lg:px-6">
       <button
@@ -51,20 +43,6 @@ export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkb
           >
             <Save className="h-4 w-4" />
             {workbench.saving ? "Saving..." : workbench.isDirty ? "Save" : "Saved"}
-          </button>
-          <button
-            type="button"
-            onClick={workbench.handleGenerateAudio}
-            disabled={generationDisabled}
-            title={needsVoiceProfile ? "Choose a voice before generating local MLX audio." : undefined}
-            className="inline-flex h-12 items-center gap-2 rounded-2xl border border-accent-amber/60 bg-[linear-gradient(180deg,#f2bf57,#d79b2f)] px-5 text-sm font-semibold text-[#231402] shadow-[0_16px_36px_rgba(215,155,47,0.32)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(215,155,47,0.38)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {workbench.generating ? (
-              <span className="inline-flex h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
-            ) : (
-              <Wand2 className="h-4 w-4" />
-            )}
-            {workbench.generating ? "Generating..." : "Generate final audio"}
           </button>
         </div>
       </div>

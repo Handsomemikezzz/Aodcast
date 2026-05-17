@@ -15,6 +15,12 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
   const profileSourceLabel = profileSource === "built_in" ? "默认音色" : profileSource === "user_saved" ? "我的音色" : "";
   const activeVoiceProfiles = filterActiveVoiceProfiles(workbench.voiceProfiles);
   const activeAudioRequestState = isActiveRequestState(workbench.audioRequestState) ? workbench.audioRequestState : null;
+  const needsVoiceProfile = workbench.selectedEngine === "local_mlx" && (!selectedProfileId || workbench.project?.artifact?.voice_reference?.source !== "voice_profile");
+  const generationDisabled =
+    workbench.generating ||
+    workbench.script.trim().length === 0 ||
+    needsVoiceProfile ||
+    (workbench.selectedEngine === "local_mlx" ? workbench.localEngineDisabled : workbench.cloudEngineDisabled);
   const scriptVoiceStudioPath = workbench.project?.script
     ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}`
     : "/voice-studio";
@@ -156,6 +162,26 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 </div>
               </button>
             </div>
+          </div>
+
+          <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-3">
+            <button
+              type="button"
+              onClick={workbench.handleGenerateAudio}
+              disabled={generationDisabled}
+              title={needsVoiceProfile ? "Choose a voice before generating local MLX audio." : undefined}
+              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-accent-amber/60 bg-[linear-gradient(180deg,#f2bf57,#d79b2f)] px-5 text-sm font-semibold text-[#231402] shadow-[0_16px_36px_rgba(215,155,47,0.28)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(215,155,47,0.34)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {workbench.generating ? (
+                <span className="inline-flex h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              {workbench.generating ? "Generating..." : "Generate final audio"}
+            </button>
+            {needsVoiceProfile ? (
+              <p className="mt-2 text-xs leading-5 text-secondary">Choose a voice profile before generating local MLX audio.</p>
+            ) : null}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">

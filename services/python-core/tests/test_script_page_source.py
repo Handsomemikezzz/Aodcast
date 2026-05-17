@@ -26,7 +26,8 @@ class ScriptPageSourceTests(unittest.TestCase):
 
         self.assertNotIn("Change voice:", source)
         self.assertNotIn("Choose voice", source)
-        self.assertIn("Generate final audio", source)
+        self.assertNotIn("Generate final audio", source)
+        self.assertIn("Saved", source)
 
     def test_script_audio_sidebar_selects_voice_profiles_inline(self) -> None:
         source = SCRIPT_AUDIO_SIDEBAR_PATH.read_text(encoding="utf-8")
@@ -35,6 +36,8 @@ class ScriptPageSourceTests(unittest.TestCase):
         self.assertIn("voiceMenuOpen", source)
         self.assertIn("filterActiveVoiceProfiles", source)
         self.assertIn("handleSelectVoiceProfile", source)
+        self.assertIn("Generate final audio", source)
+        self.assertIn("needsVoiceProfile", source)
         self.assertNotIn("Change voice", source)
         self.assertIn("listVoiceProfiles", data_source)
         self.assertIn("selectVoiceProfile", data_source)
