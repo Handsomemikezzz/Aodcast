@@ -361,6 +361,7 @@ def _main() -> int:
             _emit(
                 {
                     "type": "error",
+                    "job_id": str(message.get("job_id") or ""),
                     "stage": f"dispatch:{kind}",
                     "message": f"{type(exc).__name__}: {exc}",
                     "traceback": traceback.format_exc(limit=8),

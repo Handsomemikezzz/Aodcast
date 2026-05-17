@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Any
 from uuid import uuid4
 
@@ -308,7 +310,7 @@ class AudioRenderingService:
                 active_script_id=project.script.script_id if project.script is not None else "",
             )
             project.artifact = artifact
-        reference_audio = self._validate_reference_audio_path(profile.audio_path)
+        reference_audio = self._prepare_voice_profile_reference_audio(profile)
         settings = VoiceRenderSettings(
             voice_id=profile.voice_id,
             voice_name=profile.voice_name,
@@ -316,7 +318,7 @@ class AudioRenderingService:
             style_name=profile.style_name,
             speed=profile.speed,
             language=profile.language,
-            audio_format=profile.audio_format,
+            audio_format="wav" if profile.provider == "local_mlx" else profile.audio_format,
             preview_text=profile.preview_text,
         )
         normalized = self._normalize_settings(settings)
@@ -740,6 +742,51 @@ class AudioRenderingService:
         if not _is_allowed_voice_reference_path(target, data_dir):
             raise ValueError("Voice reference audio must be inside the app data directory or packaged voice profile assets.")
         return target
+
+    def _prepare_voice_profile_reference_audio(self, profile: VoiceProfileRecord) -> Path:
+        reference_audio = self._validate_reference_audio_path(profile.audio_path)
+        if reference_audio.suffix.lower() == ".wav":
+            return reference_audio
+
+        target_dir = self.artifact_store.exports_dir / "_voice_profiles"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{profile.voice_profile_id}.wav"
+        if target.exists() and target.stat().st_mtime >= reference_audio.stat().st_mtime:
+            return target
+
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            command = [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(reference_audio),
+                "-ac",
+                "1",
+                "-ar",
+                "24000",
+                str(target),
+            ]
+        else:
+            afconvert = shutil.which("afconvert")
+            if not afconvert:
+                raise ValueError("Voice profile reference audio must be WAV for local MLX rendering.")
+            command = [
+                afconvert,
+                "-f",
+                "WAVE",
+                "-d",
+                "LEI16@24000",
+                str(reference_audio),
+                str(target),
+            ]
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip()
+            message = "Failed to prepare voice profile reference audio for local MLX rendering."
+            raise ValueError(f"{message} {detail}".strip()) from exc
+        return self._validate_reference_audio_path(str(target))
 
     def _delete_artifact_file(self, path: str) -> None:
         if not path.strip():

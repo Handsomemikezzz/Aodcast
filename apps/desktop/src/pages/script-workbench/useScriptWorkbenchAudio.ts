@@ -122,6 +122,10 @@ export function useScriptWorkbenchAudio({
     return null;
   };
 
+  const refreshRenderedAudio = async () => {
+    await Promise.allSettled([onRefresh(), reload()]);
+  };
+
   const acceptPolledState = (state: RequestState | null): boolean => {
     if (!state) return false;
     const expectedToken = expectedRunTokenRef.current;
@@ -134,6 +138,9 @@ export function useScriptWorkbenchAudio({
     if (isTerminalRequestState(state)) {
       stopTaskPolling();
       setGenerating(false);
+      if (state.phase === "succeeded") {
+        void refreshRenderedAudio();
+      }
     } else {
       setGenerating(true);
     }
@@ -226,12 +233,17 @@ export function useScriptWorkbenchAudio({
         return;
       }
 
-      const voiceReference = project?.artifact?.voice_reference;
+      let renderProject = project;
+      const voiceReference = renderProject?.artifact?.voice_reference;
       if (selectedEngine === "local_mlx" && (voiceReference?.source !== "voice_profile" || !voiceReference.voice_profile_id)) {
         setAudioError("请先在 Voice Studio 为当前脚本选择一个音色，然后回到 Script 页生成完整音频。");
         setAudioMessage(null);
         setAudioRequestState(null);
         return;
+      }
+      if (selectedEngine === "local_mlx" && voiceReference?.source === "voice_profile" && voiceReference.voice_profile_id) {
+        renderProject = await bridge.selectVoiceProfile(sessionId, scriptId, voiceReference.voice_profile_id);
+        setProject(renderProject);
       }
 
       setGenerating(true);
@@ -248,7 +260,7 @@ export function useScriptWorkbenchAudio({
       const result = await bridge.renderAudio(sessionId, {
         providerOverride,
         scriptId,
-        voiceSettings: resolveProjectVoiceSettings(project),
+        voiceSettings: resolveProjectVoiceSettings(renderProject),
         requireVoiceProfile: selectedEngine === "local_mlx",
       });
       const runToken = typeof result.run_token === "string" && result.run_token.length > 0 ? result.run_token : requestStateRunToken(result.request_state);

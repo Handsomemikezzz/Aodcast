@@ -41,6 +41,7 @@ __all__ = [
 _READY_TIMEOUT_SECONDS = 300.0
 _SHUTDOWN_TIMEOUT_SECONDS = 5.0
 _CANCEL_GRACE_SECONDS = 3.0
+_TERMINAL_EVENT_TIMEOUT_SECONDS = 60.0
 
 
 class MLXWorkerError(RuntimeError):
@@ -77,6 +78,8 @@ class _JobContext:
     done_event: threading.Event = field(default_factory=threading.Event)
     outcome: dict[str, object] | None = None
     error: BaseException | None = None
+    completed_chunks: int = 0
+    last_event_at: float = field(default_factory=time.monotonic)
 
 
 def build_worker_command(python_executable: str | None = None) -> list[str]:
@@ -107,6 +110,7 @@ class WorkerClient:
         command_factory: Callable[[], list[str]] | None = None,
         popen_factory: Callable[..., subprocess.Popen[str]] | None = None,
         niceness: int = 10,
+        terminal_event_timeout_seconds: float = _TERMINAL_EVENT_TIMEOUT_SECONDS,
     ) -> None:
         self._python_executable = python_executable or sys.executable
         self._command_factory = command_factory or (
@@ -114,6 +118,7 @@ class WorkerClient:
         )
         self._popen_factory = popen_factory or subprocess.Popen
         self._niceness = niceness
+        self._terminal_event_timeout_seconds = terminal_event_timeout_seconds
         self._current_model: str | None = None
         self._process: subprocess.Popen[str] | None = None
         self._reader_thread: threading.Thread | None = None
@@ -328,7 +333,24 @@ class WorkerClient:
                 ctx.done_event.set()
                 return
 
+            if (
+                ctx.completed_chunks >= ctx.total_chunks
+                and time.monotonic() - ctx.last_event_at > self._terminal_event_timeout_seconds
+            ):
+                self._hard_reset_after_stalled_terminal_event()
+                ctx.error = MLXWorkerError(
+                    "MLX worker generated all chunks but did not return a final audio result."
+                )
+                ctx.done_event.set()
+                return
+
     def _hard_reset_for_cancellation(self) -> None:
+        self._hard_reset_worker(grace_seconds=1.0)
+
+    def _hard_reset_after_stalled_terminal_event(self) -> None:
+        self._hard_reset_worker(grace_seconds=1.0)
+
+    def _hard_reset_worker(self, *, grace_seconds: float) -> None:
         with self._state_lock:
             process = self._process
             reader_thread = self._reader_thread
@@ -337,7 +359,7 @@ class WorkerClient:
             self._ready_event.clear()
             self._current_model = None
         if process is not None:
-            self._terminate_process(process, grace_seconds=1.0)
+            self._terminate_process(process, grace_seconds=grace_seconds)
         if reader_thread is not None:
             reader_thread.join(timeout=1.5)
 
@@ -387,7 +409,12 @@ class WorkerClient:
 
         job_id = event.get_str("job_id")
         with self._state_lock:
-            ctx = self._current_job if self._current_job and self._current_job.job_id == job_id else None
+            if self._current_job and self._current_job.job_id == job_id:
+                ctx = self._current_job
+            elif self._current_job and event.type == "error" and not job_id:
+                ctx = self._current_job
+            else:
+                ctx = None
 
         if ctx and ctx.on_event is not None and event.type in {
             "chunk_started",
@@ -398,6 +425,11 @@ class WorkerClient:
                 ctx.on_event(event)
             except Exception:
                 pass
+
+        if ctx is not None:
+            ctx.last_event_at = time.monotonic()
+            if event.type == "chunk_done":
+                ctx.completed_chunks = max(ctx.completed_chunks, event.get_int("index") + 1)
 
         if event.type == "done" and ctx is not None:
             ctx.outcome = dict(event.payload)

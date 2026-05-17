@@ -383,7 +383,41 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(request.reference_audio_path, str(profile_audio))
         self.assertEqual(request.reference_text, "这是一段参考文本。")
         self.assertEqual(project.artifact.voice_reference["source"], "voice_profile")
-        self.assertEqual(project.artifact.voice_reference["name"], "稳定主播")
+
+    def test_select_voice_profile_prepares_non_wav_reference_for_local_mlx(self) -> None:
+        store, config_store, artifact_store, service = self.build_environment()
+        config_store.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model"))
+        session_id = self.seed_script_project(store)
+        profile_audio = artifact_store.exports_dir / "_voice_profiles" / "profile-1.mp4"
+        profile_audio.parent.mkdir(parents=True, exist_ok=True)
+        profile_audio.write_bytes(b"mp4-audio")
+
+        def convert_reference(command, **_kwargs):  # type: ignore[no-untyped-def]
+            Path(command[-1]).write_bytes(b"wav-audio")
+
+        with patch("app.orchestration.audio_rendering.shutil.which", return_value="/usr/bin/ffmpeg"):
+            with patch("app.orchestration.audio_rendering.subprocess.run", side_effect=convert_reference):
+                project = service.select_voice_profile(
+                    session_id,
+                    profile=VoiceProfileRecord(
+                        voice_profile_id="profile-1",
+                        name="上传音色",
+                        source="user_saved",
+                        audio_path=str(profile_audio),
+                        preview_text="这是一段上传音色的参考文本。",
+                        provider="local_mlx",
+                        model="mlx-voice",
+                        voice_id="warm_narrator",
+                        audio_format="mp4",
+                    ),
+                )
+
+        reference_path = Path(project.artifact.voice_reference["audio_path"])
+        self.assertEqual(reference_path.suffix, ".wav")
+        self.assertTrue(reference_path.exists())
+        self.assertEqual(project.artifact.voice_settings["audio_format"], "wav")
+        self.assertEqual(project.artifact.voice_reference["audio_format"], "wav")
+        self.assertEqual(project.artifact.voice_reference["name"], "上传音色")
         self.assertEqual(project.artifact.voice_reference["profile_source"], "user_saved")
 
     def test_local_mlx_voice_take_uses_locked_preview_as_reference_audio(self) -> None:

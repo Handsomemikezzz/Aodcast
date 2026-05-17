@@ -1,14 +1,20 @@
-import { ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Mic, Pause, Play, Settings2, Share2, Trash2, Wand2 } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Mic, Pause, Play, Settings2, Share2, Trash2, Wand2 } from "lucide-react";
 import { cn } from "../../lib/utils";
-import { resolveProjectVoiceSettings, selectedVoiceProfileLabel } from "../../lib/voiceSettings";
+import { filterActiveVoiceProfiles, resolveProjectVoiceSettings, selectedVoiceProfileLabel } from "../../lib/voiceSettings";
 import { ProgressBar } from "../../components/ProgressBar";
+import { isActiveRequestState } from "../../lib/requestState";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenchResult }) {
+  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const voiceSettings = resolveProjectVoiceSettings(workbench.project);
   const selectedProfileLabel = selectedVoiceProfileLabel(workbench.project);
+  const selectedProfileId = workbench.project?.artifact?.voice_reference?.voice_profile_id || "";
   const profileSource = workbench.project?.artifact?.voice_reference?.profile_source;
   const profileSourceLabel = profileSource === "built_in" ? "默认音色" : profileSource === "user_saved" ? "我的音色" : "";
+  const activeVoiceProfiles = filterActiveVoiceProfiles(workbench.voiceProfiles);
+  const activeAudioRequestState = isActiveRequestState(workbench.audioRequestState) ? workbench.audioRequestState : null;
   const scriptVoiceStudioPath = workbench.project?.script
     ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}`
     : "/voice-studio";
@@ -39,8 +45,10 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </div>
             <button
               type="button"
-              onClick={() => workbench.navigate(scriptVoiceStudioPath)}
-              className="flex w-full items-center justify-between gap-3 rounded-[18px] border border-outline bg-surface-container-low px-3 py-3 text-left transition-colors hover:border-accent-amber/30"
+              onClick={() => setVoiceMenuOpen((open) => !open)}
+              disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
+              aria-expanded={voiceMenuOpen}
+              className="flex w-full items-center justify-between gap-3 rounded-[18px] border border-outline bg-surface-container-low px-3 py-3 text-left transition-colors hover:border-accent-amber/30 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-accent-amber/30 bg-accent-amber/10">
@@ -57,17 +65,43 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   </p>
                 </div>
               </div>
-              <ChevronDown className="h-4 w-4 text-secondary" />
+              <ChevronDown className={cn("h-4 w-4 text-secondary transition-transform", voiceMenuOpen && "rotate-180")} />
             </button>
-            {workbench.project?.script ? (
-              <button
-                type="button"
-                onClick={() => workbench.navigate(scriptVoiceStudioPath)}
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-sm font-medium text-accent-amber transition-colors hover:bg-accent-amber/15 hover:text-primary"
-              >
-                <Mic className="h-4 w-4" />
-                Change voice
-              </button>
+            {voiceMenuOpen ? (
+              <div className="mt-3 max-h-[260px] overflow-y-auto rounded-[18px] border border-outline bg-background/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.28)]">
+                {activeVoiceProfiles.length ? (
+                  <div className="space-y-1">
+                    {activeVoiceProfiles.map((profile) => {
+                      const selected = profile.voice_profile_id === selectedProfileId;
+                      const sourceLabel = profile.source === "built_in" ? "默认音色" : "我的音色";
+                      return (
+                        <button
+                          key={profile.voice_profile_id}
+                          type="button"
+                          onClick={() => {
+                            setVoiceMenuOpen(false);
+                            void workbench.handleSelectVoiceProfile(profile.voice_profile_id);
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-left transition-colors",
+                            selected ? "bg-accent-amber/12 text-primary" : "text-secondary hover:bg-surface-container-low hover:text-primary",
+                          )}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium">{profile.name}</span>
+                            <span className="mt-1 block truncate text-xs">
+                              {sourceLabel} · {profile.language || "zh"} · {profile.provider === "local_mlx" ? "Local MLX" : profile.provider}
+                            </span>
+                          </span>
+                          {selected ? <Check className="h-4 w-4 shrink-0 text-accent-amber" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-3 py-4 text-sm text-secondary">暂无可用音色，请先在 Voice Studio 创建或保存音色。</div>
+                )}
+              </div>
             ) : null}
           </div>
 
@@ -151,6 +185,11 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               {workbench.editorError}
             </div>
           ) : null}
+          {workbench.voiceSelectionError ? (
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
+              {workbench.voiceSelectionError}
+            </div>
+          ) : null}
           {workbench.pollWarning ? (
             <div className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 px-3 py-3 text-sm text-accent-amber">
               {workbench.pollWarning}
@@ -161,11 +200,11 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               {workbench.audioMessage}
             </div>
           ) : null}
-          {!workbench.audioError && workbench.audioRequestState && workbench.audioRequestState.phase !== "succeeded" && workbench.audioRequestState.phase !== "failed" ? (
+          {!workbench.audioError && activeAudioRequestState ? (
             <div className="rounded-2xl border border-outline bg-background/80 px-3 py-3 text-sm text-secondary">
               <div className="flex items-center justify-between gap-3">
-                <span>{`${Math.round(workbench.audioRequestState.progress_percent)}% · ${workbench.audioRequestState.message}`}</span>
-                {workbench.generating && workbench.audioRequestState.phase === "running" ? (
+                <span>{`${Math.round(activeAudioRequestState.progress_percent)}% · ${activeAudioRequestState.message}`}</span>
+                {workbench.generating && activeAudioRequestState.phase === "running" ? (
                   <button
                     type="button"
                     onClick={() => void workbench.handleCancelAudio()}
@@ -175,7 +214,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   </button>
                 ) : null}
               </div>
-              <ProgressBar value={workbench.audioRequestState.progress_percent} className="mt-3" />
+              <ProgressBar value={activeAudioRequestState.progress_percent} className="mt-3" />
             </div>
           ) : null}
         </div>

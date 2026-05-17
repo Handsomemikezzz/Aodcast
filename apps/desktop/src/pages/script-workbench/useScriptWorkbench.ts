@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { useBridge } from "../../lib/BridgeContext";
-import type { RequestState, SessionProject, TTSCapability, TTSProviderConfig } from "../../types";
+import type { RequestState, SessionProject, TTSCapability, TTSProviderConfig, VoiceProfileRecord } from "../../types";
 import type { EditorTransform } from "./workbenchUtils";
 import { useScriptWorkbenchAudio } from "./useScriptWorkbenchAudio";
 import { useScriptWorkbenchData } from "./useScriptWorkbenchData";
@@ -18,6 +18,8 @@ export type UseScriptWorkbenchResult = {
   setScript: (value: string) => void;
   capability: TTSCapability | null;
   ttsConfig: TTSProviderConfig | null;
+  voiceProfiles: VoiceProfileRecord[];
+  voiceSelectionError: string | null;
   selectedEngine: "local_mlx" | "cloud";
   setSelectedEngine: (value: "local_mlx" | "cloud") => void;
   loadingError: string | null;
@@ -67,6 +69,7 @@ export type UseScriptWorkbenchResult = {
   handleDownloadAudio: () => void;
   handleShareAudio: () => Promise<void>;
   handleDeleteAudio: () => Promise<void>;
+  handleSelectVoiceProfile: (profileId: string) => Promise<void>;
   reload: () => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   closeDialog: () => void;
@@ -124,6 +127,8 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     setScript: data.setScript,
     capability: data.capability,
     ttsConfig: data.ttsConfig,
+    voiceProfiles: data.voiceProfiles,
+    voiceSelectionError: data.voiceSelectionError,
     selectedEngine: data.selectedEngine,
     setSelectedEngine: data.setSelectedEngine,
     loadingError: data.loadingError,
@@ -170,6 +175,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     handleRevealInFinder: audio.handleRevealInFinder,
     handleDownloadAudio: audio.handleDownloadAudio,
     handleDeleteAudio: audio.handleDeleteAudio,
+    handleSelectVoiceProfile: data.handleSelectVoiceProfile,
     handleShareAudio,
     reload: data.reload,
     refreshWorkspace: data.refreshWorkspace,
