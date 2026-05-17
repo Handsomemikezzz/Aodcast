@@ -35,7 +35,25 @@ Aodcast is usable as a development build. Expect rough edges, local setup requir
 
 ## Screenshots
 
-Screenshots and short demo clips should be added before a tagged public alpha announcement. For now, this repository is optimized for source-code review and local developer testing.
+### App Overview
+The main project view where you start and manage podcast creation.
+
+![App overview](images/Snipaste_2026-05-07_23-05-40.png)
+
+### Interview Flow
+The interview step that expands a text topic into richer source material.
+
+![Interview flow](images/Snipaste_2026-05-07_23-06-07.png)
+
+### Script Workbench
+The script editing workspace for iterating and reviewing script snapshots.
+
+![Script workbench](images/Snipaste_2026-05-07_23-06-15.png)
+
+### Voice Studio
+Voice preview and take generation workflow before selecting final audio.
+
+![Voice Studio](images/Snipaste_2026-05-07_23-06-26.png)
 
 ## Repository Layout
 

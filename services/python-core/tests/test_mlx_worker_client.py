@@ -26,6 +26,8 @@ def _write_stub_worker(script_dir: Path, *, behavior: str) -> Path:
     - ``success``: emit chunk_started/chunk_done events and then ``done``
     - ``slow``: sleep inside each chunk so the client can request cancel
     - ``crash``: emit ``ready`` then exit non-zero before completing the job
+    - ``unscoped_error``: emit an error without job_id while a job is active
+    - ``hang_after_chunks``: emit all chunk events and then never emit done
     """
 
     source = textwrap.dedent(
@@ -60,6 +62,9 @@ def _write_stub_worker(script_dir: Path, *, behavior: str) -> Path:
                 total = len(chunks)
                 if behavior == "crash":
                     sys.exit(3)
+                if behavior == "unscoped_error":
+                    emit({{"type": "error", "message": "dispatch failed without job id"}})
+                    continue
                 for i, _ in enumerate(chunks):
                     if cancelled:
                         emit({{"type": "cancelled", "job_id": job_id}})
@@ -82,6 +87,9 @@ def _write_stub_worker(script_dir: Path, *, behavior: str) -> Path:
                         "elapsed_ms": 1,
                         "duration_seconds": 0.1,
                     }})
+                if behavior == "hang_after_chunks":
+                    while True:
+                        time.sleep(0.1)
                 else:
                     final = output_dir / f"final.{{audio_format}}"
                     final.write_bytes(b"stub-final")
@@ -128,6 +136,16 @@ class WorkerClientTests(unittest.TestCase):
             return [sys.executable, "-u", str(script_path)]
 
         return WorkerClient(command_factory=command_factory, niceness=0)
+
+    def _client_for_terminal_timeout(self, script_path: Path) -> WorkerClient:
+        def command_factory() -> list[str]:
+            return [sys.executable, "-u", str(script_path)]
+
+        return WorkerClient(
+            command_factory=command_factory,
+            niceness=0,
+            terminal_event_timeout_seconds=0.2,
+        )
 
     def test_success_stream_emits_chunk_events_and_outcome(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -213,6 +231,41 @@ class WorkerClientTests(unittest.TestCase):
             finally:
                 success_client.shutdown()
             self.assertEqual(outcome.get("chunks_total"), 1)
+
+    def test_unscoped_worker_error_is_attached_to_current_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = _write_stub_worker(Path(tmp), behavior="unscoped_error")
+            client = self._client_for(script)
+            try:
+                with self.assertRaisesRegex(MLXWorkerError, "dispatch failed without job id"):
+                    client.synthesize(
+                        model="stub-model",
+                        chunks=["Broken chunk."],
+                        voice="",
+                        audio_format="wav",
+                        output_dir=Path(tmp),
+                    )
+            finally:
+                client.shutdown()
+
+    def test_worker_hang_after_all_chunks_surfaces_terminal_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = _write_stub_worker(Path(tmp), behavior="hang_after_chunks")
+            client = self._client_for_terminal_timeout(script)
+            started_at = time.monotonic()
+            try:
+                with self.assertRaisesRegex(MLXWorkerError, "generated all chunks"):
+                    client.synthesize(
+                        model="stub-model",
+                        chunks=["First chunk.", "Second chunk."],
+                        voice="",
+                        audio_format="wav",
+                        output_dir=Path(tmp),
+                    )
+            finally:
+                client.shutdown()
+
+        self.assertLess(time.monotonic() - started_at, 5.0)
 
     def test_build_worker_command_targets_expected_module(self) -> None:
         command = build_worker_command()

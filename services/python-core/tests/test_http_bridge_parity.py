@@ -6,6 +6,7 @@ from tests.http_contract_helpers import (
     HTTP_BRIDGE_CONTRACTS,
     HTTP_BRIDGE_PATH,
     HTTP_RUNTIME_PATH,
+    HTTP_ONLY_BRIDGE_OPERATIONS,
     CLI_PARSER_PATH,
     MAIN_PATH,
     extract_interface_methods,
@@ -38,6 +39,7 @@ class HttpBridgeParityTests(unittest.TestCase):
             for line in main_text.splitlines()
             if 'return "' in line
         }
+        infer_operation_returns.update(HTTP_ONLY_BRIDGE_OPERATIONS)
         for contract in HTTP_BRIDGE_CONTRACTS:
             with self.subTest(method=contract.desktop_method):
                 self.assertIn(contract.cli_args[0], cli_text)

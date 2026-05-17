@@ -36,7 +36,10 @@ The shell is implemented through:
 ### `Script`
 
 - session selection when no session is open
+- unfinished chats are labeled in the Script list and route back to Chat instead of opening an empty script route
+- list rows expose a confirmation-backed trash action: generated rows soft-delete the latest script snapshot, while unfinished rows soft-delete the session draft
 - single workbench layout that combines editing, voice settings, and generated-audio preview
+- the right-side Voice Workspace opens an inline voice-profile dropdown for choosing built-in or user-saved voices, with a small management link into Voice Studio
 - prominent top-bar primary action for audio rendering, with secondary preview/save actions
 - audio rendering targets the currently open `script_id` snapshot and does not forcibly replace an active interview state when rendering an older snapshot
 - explicit save for script edits; the editor does not save on textarea blur

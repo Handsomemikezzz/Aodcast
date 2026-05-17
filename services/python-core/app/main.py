@@ -193,21 +193,6 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "show_task_state"
     if args.cancel_task.strip():
         return "cancel_task"
-    # Referenced by HTTP-only routes; kept for bridge contract parity with desktop httpBridge.
-    if False:  # pragma: no cover
-        return "show_latest_script"
-    if False:  # pragma: no cover
-        return "show_script"
-    if False:  # pragma: no cover
-        return "list_scripts"
-    if False:  # pragma: no cover
-        return "delete_generated_audio"
-    if False:  # pragma: no cover
-        return "delete_artifact_audio"
-    if False:  # pragma: no cover
-        return "lock_voice_preview"
-    if False:  # pragma: no cover
-        return "delete_voice_take"
     return "bridge_ping"
 
 

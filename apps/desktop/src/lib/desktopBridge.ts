@@ -37,6 +37,7 @@ export type RenderAudioOptions = {
   providerOverride?: string;
   scriptId?: string;
   voiceSettings?: VoiceRenderSettings;
+  requireVoiceProfile?: boolean;
 };
 
 export type DeleteGeneratedAudioOptions = {
@@ -48,6 +49,7 @@ export type RenderVoicePreviewOptions = {
   sessionId?: string;
   scriptId?: string;
   providerOverride?: string;
+  voiceProfileId?: string;
 };
 
 export type LockVoicePreviewInput = {
@@ -57,8 +59,27 @@ export type LockVoicePreviewInput = {
   settings: VoiceRenderSettings;
 };
 
-export type CreateVoiceProfileInput = LockVoicePreviewInput & {
+export type CreateVoiceProfileInput = {
   name: string;
+  referenceAudioPath?: string;
+  referenceAudioFile?: Blob;
+  referenceAudioFileName?: string;
+  referenceText?: string;
+  audioPath?: string;
+  provider: string;
+  model: string;
+  language?: string;
+  audioFormat?: string;
+  /** Legacy preview-derived settings kept for compatibility with existing Voice Studio save flow. */
+  settings?: VoiceRenderSettings;
+};
+
+export type UpdateVoiceProfileInput = {
+  name?: string;
+  referenceText?: string;
+  referenceAudioFile?: Blob;
+  referenceAudioFileName?: string;
+  audioFormat?: string;
 };
 
 export type DesktopBridgeError = {
@@ -127,19 +148,19 @@ export interface DesktopBridge {
   listVoiceProfiles(): Promise<VoiceProfileRecord[]>;
   /** Save an accepted preview into the reusable voice profile library. */
   createVoiceProfile(input: CreateVoiceProfileInput): Promise<VoiceProfileRecord>;
-  /** Rename a user-saved voice profile. */
-  updateVoiceProfile(profileId: string, name: string): Promise<VoiceProfileRecord>;
+  /** Update a user-saved voice profile name, reference text, and/or sample audio. */
+  updateVoiceProfile(profileId: string, input: UpdateVoiceProfileInput): Promise<VoiceProfileRecord>;
   /** Delete a user-saved voice profile. */
   deleteVoiceProfile(profileId: string): Promise<{ voice_profile_id?: string; deleted?: boolean; cleared_voice_references?: number }>;
   /** Select a reusable profile as the current script's reference voice. */
   selectVoiceProfile(sessionId: string, scriptId: string, profileId: string): Promise<SessionProject>;
-  /** Lock an accepted preview as the reference voice for future local MLX/Qwen renders. */
+  /** Legacy: lock an accepted preview as the reference voice for older local MLX/Qwen flows. */
   lockVoicePreview(sessionId: string, scriptId: string, input: LockVoicePreviewInput): Promise<SessionProject>;
-  /** Render a candidate take for one script snapshot. */
+  /** Legacy: render a candidate take for one script snapshot. Profile-first UI should prefer renderAudio. */
   renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions): Promise<VoiceTakeRenderResult>;
-  /** Mark a generated take as the final script audio. */
+  /** Legacy: mark a generated take as the final script audio. */
   setFinalVoiceTake(sessionId: string, takeId: string): Promise<SessionProject>;
-  /** Delete a generated Voice Studio take and clear final audio if it was selected. */
+  /** Legacy: delete a generated Voice Studio take and clear final audio if it was selected. */
   deleteVoiceTake(sessionId: string, takeId: string): Promise<SessionProject>;
   /** Resolve the most recent script snapshot for a session-level navigation entry point. */
   showLatestScript(sessionId: string): Promise<SessionProject>;

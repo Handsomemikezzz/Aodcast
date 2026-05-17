@@ -58,7 +58,7 @@ class ModelsCatalogTests(unittest.TestCase):
                 def poll(self) -> int:
                     return 0
 
-                def wait(self, timeout: float | None = None) -> int:
+                def wait(self, _timeout: float | None = None) -> int:
                     return 0
 
             def fake_popen(*args: object, **kwargs: object) -> FakeProcess:

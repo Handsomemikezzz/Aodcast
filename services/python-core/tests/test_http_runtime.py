@@ -7,6 +7,8 @@ import threading
 import time
 import types
 import unittest
+import uuid
+import wave
 from pathlib import Path
 from unittest.mock import patch
 from urllib import error as urllib_error
@@ -32,7 +34,7 @@ from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.models_catalog import save_custom_model_storage_base
-from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
+from app.orchestration.audio_rendering import AudioRenderingService, VoicePreviewResult, VoiceRenderSettings
 from app.orchestration.interview_service import InterviewOrchestrator
 from app.orchestration.script_generation import ScriptGenerationService
 from app.runtime.request_state_store import RequestStateStore
@@ -134,6 +136,60 @@ class HttpRuntimeTests(unittest.TestCase):
                 return response.status, dict(response.headers.items()), response.read()
         except urllib_error.HTTPError as exc:
             return exc.code, dict(exc.headers.items()), exc.read()
+
+    def request_multipart(
+        self,
+        method: str,
+        path: str,
+        *,
+        fields: dict[str, str],
+        files: dict[str, tuple[str, bytes, str]],
+    ) -> tuple[int, dict[str, str], dict[str, object]]:
+        boundary = f"aodcast-{uuid.uuid4().hex}"
+        chunks: list[bytes] = []
+        for name, value in fields.items():
+            chunks.extend(
+                [
+                    f"--{boundary}\r\n".encode("utf-8"),
+                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                    value.encode("utf-8"),
+                    b"\r\n",
+                ]
+            )
+        for name, (filename, content, content_type) in files.items():
+            chunks.extend(
+                [
+                    f"--{boundary}\r\n".encode("utf-8"),
+                    f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8"),
+                    f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+                    content,
+                    b"\r\n",
+                ]
+            )
+        chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+        request = urllib_request.Request(
+            f"{self.base_url}{path}",
+            data=b"".join(chunks),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method=method,
+        )
+        try:
+            with urllib_request.urlopen(request, timeout=5) as response:
+                raw = response.read().decode("utf-8")
+                return response.status, dict(response.headers.items()), json.loads(raw)
+        except urllib_error.HTTPError as exc:
+            raw = exc.read().decode("utf-8")
+            return exc.code, dict(exc.headers.items()), json.loads(raw)
+
+    def silent_wav_bytes(self, *, seconds: float, sample_rate: int = 24_000) -> bytes:
+        path = self.cwd / f"silent-{uuid.uuid4().hex}.wav"
+        frame_count = int(seconds * sample_rate)
+        with wave.open(str(path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(b"\x00\x00" * frame_count)
+        return path.read_bytes()
 
     def seed_renderable_project(self, *, state: SessionState = SessionState.SCRIPT_EDITED) -> tuple[str, str]:
         session = SessionRecord(topic="Render test", creation_intent="Exercise render task state")
@@ -508,6 +564,7 @@ class HttpRuntimeTests(unittest.TestCase):
             script_id="",
             override_provider="mock_remote",
             settings=None,
+            require_voice_profile=False,
         )
 
     def test_audio_render_route_passes_script_id_to_runtime_context(self) -> None:
@@ -531,6 +588,7 @@ class HttpRuntimeTests(unittest.TestCase):
             script_id="script-abc",
             override_provider="mock_remote",
             settings=None,
+            require_voice_profile=False,
         )
 
 
@@ -563,6 +621,48 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(kwargs["settings"].voice_id, "casual_chat")
         self.assertEqual(kwargs["settings"].style_id, "casual")
         self.assertEqual(kwargs["settings"].speed, 0.9)
+        self.assertEqual(kwargs["require_voice_profile"], False)
+
+    def test_audio_render_route_passes_require_voice_profile_to_runtime_context(self) -> None:
+        with patch.object(
+            RuntimeContext,
+            "start_render_audio",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_audio:session-123"}, operation="render_audio"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/sessions/session-123/audio:render",
+                body={"require_voice_profile": True},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        mocked_start.assert_called_once_with(
+            self.context,
+            "session-123",
+            script_id="",
+            override_provider="",
+            settings=None,
+            require_voice_profile=True,
+        )
+
+    def test_audio_render_route_parses_string_false_require_voice_profile(self) -> None:
+        with patch.object(
+            RuntimeContext,
+            "start_render_audio",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_audio:session-123"}, operation="render_audio"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/sessions/session-123/audio:render",
+                body={"require_voice_profile": "false"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(mocked_start.call_args.kwargs["require_voice_profile"], False)
 
     def test_voice_presets_route_returns_packaged_cards(self) -> None:
         status, _, payload = self.request_json("GET", "/api/v1/voice-studio/presets")
@@ -640,6 +740,93 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(kwargs["override_provider"], "mock_remote")
         self.assertEqual(args[1].voice_id, "news_anchor")
 
+    def test_voice_preview_route_uses_profile_reference_when_profile_id_is_sent(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        profile_audio = self.artifact_store.write_preview_audio(b"profile-audio", "wav")
+        profile = self.voice_profile_store.create_user_profile(
+            name="稳定主播",
+            reference_audio_path=str(profile_audio),
+            reference_text="这是一段参考文本。",
+            provider="local_mlx",
+            model="mlx-voice",
+        )
+        self.context.audio_rendering.select_voice_profile(
+            session_id,
+            script_id=script_id,
+            profile=profile,
+        )
+
+        with patch.object(
+            RuntimeContext,
+            "start_render_voice_preview",
+            autospec=True,
+            return_value=success_envelope({"task_id": "render_voice_preview:test"}, operation="render_voice_preview"),
+        ) as mocked_start:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/voice-studio/preview",
+                body={
+                    "session_id": session_id,
+                    "script_id": script_id,
+                    "voice_profile_id": profile.voice_profile_id,
+                    "preview_text": "试听当前音色。",
+                },
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        _, settings = mocked_start.call_args.args[:2]
+        self.assertEqual(settings.preview_text, "试听当前音色。")
+        self.assertEqual(mocked_start.call_args.kwargs["voice_profile_id"], profile.voice_profile_id)
+
+    def test_start_render_voice_preview_resolves_profile_reference(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        profile_audio = self.artifact_store.write_preview_audio(b"profile-audio", "wav")
+        profile = self.voice_profile_store.create_user_profile(
+            name="稳定主播",
+            reference_audio_path=str(profile_audio),
+            reference_text="这是一段参考文本。",
+            provider="local_mlx",
+            model="mlx-voice",
+        )
+        preview_audio = self.artifact_store.write_preview_audio(b"preview-audio", "wav")
+        settings = VoiceRenderSettings(preview_text="试听当前音色。")
+
+        with patch.object(
+            self.context.audio_rendering,
+            "render_voice_preview_with_cancellation",
+            return_value=VoicePreviewResult(
+                provider="local_mlx",
+                model="mlx-voice",
+                audio_path=str(preview_audio),
+                settings=settings,
+            ),
+        ) as mocked_render:
+            result = self.context.start_render_voice_preview(
+                settings,
+                session_id=session_id,
+                script_id=script_id,
+                voice_profile_id=profile.voice_profile_id,
+            )
+
+            task_id = str(result["data"]["task_id"])
+            deadline = time.time() + 2.0
+            state: dict[str, object] | None = None
+            while time.time() < deadline:
+                loaded_state = self.request_state_store.load(task_id)
+                if isinstance(loaded_state, dict) and str(loaded_state.get("phase")) == "succeeded":
+                    state = loaded_state
+                    break
+                time.sleep(0.02)
+
+        self.assertIsNotNone(state)
+        self.assertTrue(mocked_render.called)
+        voice_reference = mocked_render.call_args.kwargs["voice_reference"]
+        self.assertEqual(voice_reference["voice_profile_id"], profile.voice_profile_id)
+        self.assertEqual(voice_reference["audio_path"], profile.audio_path)
+        self.assertEqual(voice_reference["preview_text"], "这是一段参考文本。")
+        self.assertEqual(voice_reference["reference_text"], "这是一段参考文本。")
+
     def test_voice_preview_lock_route_persists_reference(self) -> None:
         session_id, script_id = self.seed_renderable_project()
         preview_path = self.artifact_store.write_preview_audio(b"preview-audio", "wav")
@@ -677,7 +864,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         profiles = payload["data"]["profiles"]  # type: ignore[index]
         built_ins = [profile for profile in profiles if profile["source"] == "built_in"]
-        self.assertEqual(len(built_ins), 3)
+        self.assertEqual(len(built_ins), 2)
         self.assertTrue(all(Path(profile["audio_path"]).exists() for profile in built_ins))
         first_audio = urllib_parse.quote(str(built_ins[0]["audio_path"]), safe="")
         audio_status, audio_headers, audio_body = self.request_bytes(
@@ -727,6 +914,181 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(artifact["voice_reference"]["audio_path"], profile["audio_path"])
         self.assertEqual(artifact["voice_settings"]["voice_id"], "news_anchor")
 
+    def test_create_voice_profile_requires_reference_text_and_copies_reference_audio(self) -> None:
+        source_audio = self.artifact_store.write_preview_audio(b"reference-audio", "wav")
+
+        missing_status, _, missing_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "缺少文本",
+                "audio_path": str(source_audio),
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+            },
+        )
+
+        self.assertEqual(missing_status, 400)
+        self.assertIn("reference_text", missing_payload["error"]["message"])
+
+        empty_settings_status, _, empty_settings_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "空试音文本",
+                "audio_path": str(source_audio),
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+                "voice_settings": {
+                    "voice_id": "news_anchor",
+                    "style_id": "news",
+                },
+            },
+        )
+
+        self.assertEqual(empty_settings_status, 400)
+        self.assertIn("reference_text", empty_settings_payload["error"]["message"])
+
+        status, _, payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "我的稳定主播",
+                "audio_path": str(source_audio),
+                "reference_text": "这是一段用于克隆音色的参考文本。",
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+                "language": "zh",
+                "audio_format": "wav",
+            },
+        )
+
+        self.assertEqual(status, 200)
+        profile = payload["data"]["profile"]
+        self.assertEqual(profile["name"], "我的稳定主播")
+        self.assertEqual(profile["preview_text"], "这是一段用于克隆音色的参考文本。")
+        self.assertEqual(profile["reference_text"], "这是一段用于克隆音色的参考文本。")
+        self.assertEqual(profile["source"], "user_saved")
+        self.assertNotEqual(profile["audio_path"], str(source_audio))
+        self.assertTrue(Path(profile["audio_path"]).exists())
+
+        direct_source_audio = self.artifact_store.write_preview_audio(b"direct-reference-audio", "wav")
+        direct_status, _, direct_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "直接参考音频",
+                "reference_audio_path": str(direct_source_audio),
+                "reference_text": "这是直接上传参考音频的文本。",
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+            },
+        )
+
+        self.assertEqual(direct_status, 200)
+        direct_profile = direct_payload["data"]["profile"]
+        self.assertEqual(direct_profile["reference_text"], "这是直接上传参考音频的文本。")
+        self.assertNotEqual(direct_profile["audio_path"], str(direct_source_audio))
+        self.assertTrue(Path(direct_profile["audio_path"]).exists())
+
+        external_audio = self.cwd / "external-reference.wav"
+        external_audio.write_bytes(b"external-reference-audio")
+        external_status, _, external_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "外部参考音频",
+                "reference_audio_path": str(external_audio),
+                "reference_text": "这是外部路径的参考文本。",
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+            },
+        )
+
+        self.assertEqual(external_status, 200)
+        external_profile = external_payload["data"]["profile"]
+        self.assertEqual(external_profile["reference_text"], "这是外部路径的参考文本。")
+        self.assertNotEqual(external_profile["audio_path"], str(external_audio))
+        self.assertTrue(Path(external_profile["audio_path"]).exists())
+
+    def test_two_step_voice_profile_sample_upload_accepts_multipart_audio(self) -> None:
+        create_status, _, create_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={
+                "name": "我的向导音色",
+                "provider": "local_mlx",
+                "model": "mlx-voice",
+                "language": "zh",
+                "audio_format": "wav",
+            },
+        )
+
+        self.assertEqual(create_status, 200)
+        profile = create_payload["data"]["profile"]  # type: ignore[index]
+        self.assertEqual(profile["audio_path"], "")
+        self.assertEqual(profile["reference_text"], "")
+
+        upload_status, _, upload_payload = self.request_multipart(
+            "POST",
+            f"/api/v1/voice-profiles/{profile['voice_profile_id']}/sample",
+            fields={"reference_text": "这是一段从向导上传的参考文本。", "audio_format": "wav"},
+            files={"audio": ("reference.wav", self.silent_wav_bytes(seconds=2), "audio/wav")},
+        )
+
+        self.assertEqual(upload_status, 200)
+        updated = upload_payload["data"]["profile"]  # type: ignore[index]
+        self.assertEqual(updated["voice_profile_id"], profile["voice_profile_id"])
+        self.assertEqual(updated["reference_text"], "这是一段从向导上传的参考文本。")
+        self.assertNotEqual(updated["audio_path"], "")
+        self.assertTrue(Path(updated["audio_path"]).exists())
+
+    def test_two_step_voice_profile_sample_upload_rejects_long_wav(self) -> None:
+        create_status, _, create_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={"name": "过长样本"},
+        )
+        self.assertEqual(create_status, 200)
+        profile = create_payload["data"]["profile"]  # type: ignore[index]
+
+        upload_status, _, upload_payload = self.request_multipart(
+            "POST",
+            f"/api/v1/voice-profiles/{profile['voice_profile_id']}/sample",
+            fields={"reference_text": "这段音频太长。"},
+            files={"audio": ("reference.wav", self.silent_wav_bytes(seconds=31), "audio/wav")},
+        )
+
+        self.assertEqual(upload_status, 400)
+        self.assertIn("30 seconds", upload_payload["error"]["message"])
+
+    def test_patch_voice_profile_updates_name_and_reference_text(self) -> None:
+        create_status, _, create_payload = self.request_json(
+            "POST",
+            "/api/v1/voice-profiles",
+            body={"name": "待编辑音色", "provider": "local_mlx", "model": "mlx-voice"},
+        )
+        self.assertEqual(create_status, 200)
+        profile_id = create_payload["data"]["profile"]["voice_profile_id"]  # type: ignore[index]
+
+        upload_status, _, _ = self.request_multipart(
+            "POST",
+            f"/api/v1/voice-profiles/{profile_id}/sample",
+            fields={"reference_text": "原始参考文本。"},
+            files={"audio": ("reference.wav", self.silent_wav_bytes(seconds=2), "audio/wav")},
+        )
+        self.assertEqual(upload_status, 200)
+
+        patch_status, _, patch_payload = self.request_json(
+            "PATCH",
+            f"/api/v1/voice-profiles/{profile_id}",
+            body={"name": "已编辑音色", "reference_text": "更新后的参考文本。"},
+        )
+        self.assertEqual(patch_status, 200)
+        updated = patch_payload["data"]["profile"]  # type: ignore[index]
+        self.assertEqual(updated["name"], "已编辑音色")
+        self.assertEqual(updated["reference_text"], "更新后的参考文本。")
+
     def test_voice_take_route_passes_settings_to_runtime_context(self) -> None:
         with patch.object(
             RuntimeContext,
@@ -737,7 +1099,7 @@ class HttpRuntimeTests(unittest.TestCase):
             status, _, payload = self.request_json(
                 "POST",
                 "/api/v1/sessions/session-123/scripts/script-abc/voice-takes:render",
-                body={"voice_id": "news_anchor", "style_id": "news", "speed": 0.8},
+                body={"voice_id": "news_anchor", "style_id": "news", "speed": 0.8, "require_voice_profile": True},
             )
 
         self.assertEqual(status, 200)
@@ -749,6 +1111,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(kwargs["settings"].voice_id, "news_anchor")
         self.assertEqual(kwargs["settings"].style_id, "news")
         self.assertEqual(kwargs["settings"].speed, 0.8)
+        self.assertEqual(kwargs["require_voice_profile"], True)
 
     def test_cancel_task_preserves_run_token_in_cancelling_state(self) -> None:
         task_id = "render_audio:session-123"

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from email import policy
+from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -85,6 +88,13 @@ class BridgeTaskCancelledError(RuntimeError):
         super().__init__(message)
         self.operation = operation
         self.progress_percent = progress_percent
+
+
+@dataclass(frozen=True, slots=True)
+class MultipartFile:
+    filename: str
+    content_type: str
+    content: bytes
 
 
 
@@ -200,6 +210,7 @@ class RuntimeContext:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings | None = None,
+        require_voice_profile: bool = False,
     ) -> dict[str, object]:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.session.is_deleted():
@@ -264,6 +275,7 @@ class RuntimeContext:
                         script_id=script_id,
                         override_provider=override_provider,
                         settings=settings,
+                        require_voice_profile=require_voice_profile,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -336,6 +348,7 @@ class RuntimeContext:
         session_id: str = "",
         script_id: str = "",
         override_provider: str = "",
+        voice_profile_id: str = "",
     ) -> dict[str, object]:
         self.request_state_store.cleanup_terminal_states(
             prefix="render_voice_preview:",
@@ -388,9 +401,22 @@ class RuntimeContext:
                     progress.set_progress(snapshot.percent, snapshot.message, max_percent=98.0)
 
                 try:
+                    voice_reference: dict[str, object] | None = None
+                    if voice_profile_id.strip():
+                        profile = self.get_voice_profile_store().get_profile(voice_profile_id)
+                        voice_reference = {
+                            "source": "voice_profile",
+                            "voice_profile_id": profile.voice_profile_id,
+                            "audio_path": profile.audio_path,
+                            "preview_text": profile.preview_text,
+                            "reference_text": profile.preview_text,
+                            "provider": profile.provider,
+                            "model": profile.model,
+                        }
                     result = self.audio_rendering.render_voice_preview_with_cancellation(
                         settings,
                         override_provider=override_provider,
+                        voice_reference=voice_reference,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -470,6 +496,7 @@ class RuntimeContext:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings,
+        require_voice_profile: bool = False,
     ) -> dict[str, object]:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.session.is_deleted():
@@ -527,6 +554,7 @@ class RuntimeContext:
                         script_id=script_id,
                         override_provider=override_provider,
                         settings=settings,
+                        require_voice_profile=require_voice_profile,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -887,6 +915,21 @@ def _query_flag(query: dict[str, list[str]], key: str) -> bool:
     return values[-1].strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _body_flag(body: dict[str, Any], key: str) -> bool:
+    value = body.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    if value is None:
+        return False
+    return bool(value)
+
+
 class RuntimeRequestHandler(BaseHTTPRequestHandler):
     server: "RuntimeHttpServer"
 
@@ -913,7 +956,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:  # noqa: N802
         self._dispatch()
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+    def log_message(self, _format: str, *args: Any) -> None:
         return
 
     @property
@@ -942,7 +985,11 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            body = self._read_json_body() if self.command in {"POST", "PATCH", "PUT"} else {}
+            body = (
+                {}
+                if self._is_multipart_request()
+                else self._read_json_body() if self.command in {"POST", "PATCH", "PUT"} else {}
+            )
             query = parse_qs(parsed.query, keep_blank_values=True)
             self._route(path, query, body, origin)
         except ValueError as exc:
@@ -1103,21 +1150,65 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         if self.command == "POST" and path == "/api/v1/voice-profiles":
             settings_payload = body.get("voice_settings")
-            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else voice_settings_from_payload(body)
-            profile = self.context.get_voice_profile_store().create_user_profile(
-                name=str(body.get("name") or ""),
-                preview_audio_path=str(body.get("audio_path") or ""),
-                settings=settings,
-                provider=str(body.get("provider") or ""),
-                model=str(body.get("model") or ""),
-            )
+            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else None
+            raw_audio_path = str(body.get("reference_audio_path") or body.get("audio_path") or "")
+            if raw_audio_path.strip():
+                profile = self.context.get_voice_profile_store().create_user_profile(
+                    name=str(body.get("name") or ""),
+                    reference_audio_path=str(body.get("reference_audio_path") or body.get("audio_path") or ""),
+                    reference_text=str(body.get("reference_text") or ""),
+                    preview_audio_path=str(body.get("audio_path") or ""),
+                    settings=settings,
+                    provider=str(body.get("provider") or ""),
+                    model=str(body.get("model") or ""),
+                    language=str(body.get("language") or "zh"),
+                    audio_format=str(body.get("audio_format") or "wav"),
+                )
+            else:
+                profile = self.context.get_voice_profile_store().create_user_profile_metadata(
+                    name=str(body.get("name") or ""),
+                    settings=settings,
+                    provider=str(body.get("provider") or ""),
+                    model=str(body.get("model") or ""),
+                    language=str(body.get("language") or "zh"),
+                    audio_format=str(body.get("audio_format") or "wav"),
+                )
             self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="create_voice_profile"), origin=origin)
+            return
+        if self.command == "POST" and path.startswith("/api/v1/voice-profiles/") and path.endswith("/sample"):
+            profile_id = unquote(path.removeprefix("/api/v1/voice-profiles/").removesuffix("/sample")).strip("/")
+            fields, files = self._read_multipart_form()
+            sample = files.get("audio") or files.get("sample")
+            if sample is None:
+                raise ValueError("Multipart field 'audio' is required.")
+            suffix = Path(sample.filename).suffix.lower() or f".{fields.get('audio_format', 'wav').lstrip('.')}"
+            with tempfile.NamedTemporaryFile(prefix="aodcast-profile-sample-", suffix=suffix, delete=False) as temp_file:
+                temp_file.write(sample.content)
+                temp_path = Path(temp_file.name)
+            try:
+                profile = self.context.get_voice_profile_store().attach_user_profile_sample(
+                    profile_id,
+                    source_audio_path=temp_path,
+                    reference_text=fields.get("reference_text", ""),
+                    audio_format=fields.get("audio_format", ""),
+                )
+            finally:
+                temp_path.unlink(missing_ok=True)
+            self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="upload_voice_profile_sample"), origin=origin)
             return
         if path.startswith("/api/v1/voice-profiles/"):
             profile_id = unquote(path.removeprefix("/api/v1/voice-profiles/")).strip("/")
             profile_store = self.context.get_voice_profile_store()
             if self.command == "PATCH":
-                profile = profile_store.update_profile(profile_id, name=str(body.get("name") or ""))
+                name = body.get("name")
+                reference_text = body.get("reference_text")
+                if name is None and reference_text is None:
+                    raise ValueError("At least one of 'name' or 'reference_text' is required.")
+                profile = profile_store.update_profile(
+                    profile_id,
+                    name=str(name) if name is not None else None,
+                    reference_text=str(reference_text) if reference_text is not None else None,
+                )
                 self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="update_voice_profile"), origin=origin)
                 return
             if self.command == "DELETE":
@@ -1153,12 +1244,14 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             session_id = str(body.get("session_id") or "").strip()
             script_id = str(body.get("script_id") or "").strip()
             provider = str(body.get("provider_override") or "").strip()
+            voice_profile_id = str(body.get("voice_profile_id") or "").strip()
             self._send_bridge_envelope(
                 self.context.start_render_voice_preview(
                     voice_settings_from_payload(body),
                     session_id=session_id,
                     script_id=script_id,
                     override_provider=provider,
+                    voice_profile_id=voice_profile_id,
                 ),
                 origin=origin,
             )
@@ -1469,12 +1562,14 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-takes:render"):
             script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-takes:render").strip("/")
             provider = str(body.get("provider_override") or "")
+            require_voice_profile = _body_flag(body, "require_voice_profile")
             self._send_bridge_envelope(
                 self.context.start_render_voice_take(
                     session_id,
                     script_id=script_id,
                     override_provider=provider,
                     settings=voice_settings_from_payload(body),
+                    require_voice_profile=require_voice_profile,
                 ),
                 origin=origin,
             )
@@ -1541,8 +1636,15 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             script_id = str(body.get("script_id") or "").strip()
             settings_payload = body.get("voice_settings")
             settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else None
+            require_voice_profile = _body_flag(body, "require_voice_profile")
             self._send_bridge_envelope(
-                self.context.start_render_audio(session_id, script_id=script_id, override_provider=provider, settings=settings),
+                self.context.start_render_audio(
+                    session_id,
+                    script_id=script_id,
+                    override_provider=provider,
+                    settings=settings,
+                    require_voice_profile=require_voice_profile,
+                ),
                 origin=origin,
             )
             return
@@ -1640,6 +1742,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             ".mp4": "audio/mp4",
             ".aac": "audio/aac",
             ".ogg": "audio/ogg",
+            ".webm": "audio/webm",
             ".flac": "audio/flac",
         }.get(audio_path.suffix.lower(), "application/octet-stream")
         self._send_binary(HTTPStatus.OK, audio_path.read_bytes(), content_type=content_type, origin=origin)
@@ -1676,6 +1779,40 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("JSON request body must be an object.")
         return payload
+
+    def _is_multipart_request(self) -> bool:
+        return self.headers.get("Content-Type", "").lower().startswith("multipart/form-data")
+
+    def _read_multipart_form(self) -> tuple[dict[str, str], dict[str, MultipartFile]]:
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.lower().startswith("multipart/form-data"):
+            raise ValueError("Multipart form data is required.")
+        content_length = int(self.headers.get("Content-Length") or "0")
+        if content_length <= 0:
+            raise ValueError("Multipart request body is required.")
+        raw = self.rfile.read(content_length)
+        message = BytesParser(policy=policy.default).parsebytes(
+            f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + raw
+        )
+        fields: dict[str, str] = {}
+        files: dict[str, MultipartFile] = {}
+        if not message.is_multipart():
+            raise ValueError("Multipart request body is invalid.")
+        for part in message.iter_parts():
+            name = part.get_param("name", header="content-disposition")
+            if not name:
+                continue
+            filename = part.get_filename()
+            content = part.get_payload(decode=True) or b""
+            if filename:
+                files[str(name)] = MultipartFile(
+                    filename=str(filename),
+                    content_type=str(part.get_content_type() or "application/octet-stream"),
+                    content=content,
+                )
+            else:
+                fields[str(name)] = content.decode(part.get_content_charset() or "utf-8").strip()
+        return fields, files
 
     def _check_origin(self, *, preflight: bool) -> str | None | bool:
         if self.path == "/healthz":
@@ -1747,6 +1884,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "render_voice_preview"
         if path == "/api/v1/voice-profiles":
             return "list_voice_profiles"
+        if path.startswith("/api/v1/voice-profiles/") and path.endswith("/sample"):
+            return "upload_voice_profile_sample"
         if path.startswith("/api/v1/voice-profiles/"):
             return "voice_profile"
         if "/voice-preview:lock" in path:

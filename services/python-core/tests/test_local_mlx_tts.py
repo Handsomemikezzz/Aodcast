@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from typing import Callable
 from unittest.mock import patch
+
+import numpy as np
 
 from app.domain.tts_config import TTSProviderConfig
 from app.providers.tts_api.base import TTSGenerationRequest
 from app.providers.tts_local_mlx.provider import LocalMLXTTSProvider
 from app.providers.tts_local_mlx.runner import LocalMLXRunResult, MLXAudioQwenRunner
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.providers.tts_local_mlx.mlx_worker import MlxTtsWorker
 from app.providers.tts_local_mlx.worker_client import (
     MLXWorkerCancelled,
     WorkerEvent,
@@ -71,7 +75,25 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                         capability = detect_local_mlx_capability(config)
 
         self.assertFalse(capability.available)
-        self.assertIn("runtime bootstrap failed", " ".join(capability.reasons).lower())
+        self.assertIn("runtime compute bootstrap failed", " ".join(capability.reasons).lower())
+
+    def test_worker_reads_segment_pcm_at_model_sample_rate_without_stereo_resampling(self) -> None:
+        worker = MlxTtsWorker("stub-model")
+        worker._sample_rate = 24_000
+        samples = np.zeros(2_400, dtype=np.int16)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "segment.wav"
+            with wave.open(str(path), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(24_000)
+                handle.writeframes(samples.tobytes())
+
+            decoded = worker._read_pcm(path, np=np)
+
+        self.assertEqual(decoded.shape, (2_400,))
+        self.assertEqual(decoded.dtype, np.int16)
 
     def test_local_provider_requires_available_runtime(self) -> None:
         provider = LocalMLXTTSProvider(
@@ -121,8 +143,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(response.file_extension, "wav")
         self.assertEqual(response.audio_bytes, b"runner-bytes")
 
-
-    def test_local_provider_forwards_voice_style_speed_and_language_to_runner(self) -> None:
+    def test_local_provider_forwards_voice_style_speed_language_and_reference_text_to_runner(self) -> None:
         provider = LocalMLXTTSProvider(
             TTSProviderConfig(provider="local_mlx", model="mlx-voice", local_model_path="/tmp/model")
         )
@@ -156,6 +177,8 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                     style_id="story",
                     style_prompt="Use a slower, immersive storytelling tone.",
                     language="zh",
+                    reference_audio_path="/tmp/locked-preview.wav",
+                    reference_text="锁定这一句试音。",
                 )
             )
 
@@ -164,6 +187,8 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(captured["speed"], 0.8)
         self.assertEqual(captured["style_prompt"], "Use a slower, immersive storytelling tone.")
         self.assertEqual(captured["language"], "zh")
+        self.assertEqual(captured["reference_audio_path"], "/tmp/locked-preview.wav")
+        self.assertEqual(captured["reference_text"], "锁定这一句试音。")
 
     def test_runner_submits_chunks_to_worker_and_returns_audio(self) -> None:
         config = TTSProviderConfig(
@@ -188,6 +213,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                 language: str,
                 output_dir: Path,
                 ref_audio,
+                ref_text,
                 should_cancel,
                 on_event: Callable[[WorkerEvent], None] | None,
             ) -> dict[str, object]:
@@ -200,6 +226,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                     "style_prompt": style_prompt,
                     "language": language,
                     "ref_audio": ref_audio,
+                    "ref_text": ref_text,
                 }
                 if on_event is not None:
                     on_event(
@@ -241,6 +268,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(fake.last_kwargs["style_prompt"], "")
         self.assertEqual(fake.last_kwargs["language"], "zh")
         self.assertEqual(fake.last_kwargs["ref_audio"], config.local_ref_audio_path)
+        self.assertIsNone(fake.last_kwargs["ref_text"])
         self.assertEqual(len(events), 2)
         self.assertEqual(getattr(events[0], "phase"), "chunk_started")
         self.assertEqual(getattr(events[1], "phase"), "chunk_done")
@@ -276,9 +304,11 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             "Short runner test sentence.",
             audio_format="wav",
             reference_audio_path="/tmp/locked-preview.wav",
+            reference_text="Locked preview text.",
         )
 
         self.assertEqual(fake.last_kwargs["ref_audio"], "/tmp/locked-preview.wav")
+        self.assertEqual(fake.last_kwargs["ref_text"], "Locked preview text.")
 
     def test_runner_translates_worker_cancellation_into_task_cancellation(self) -> None:
         config = TTSProviderConfig(

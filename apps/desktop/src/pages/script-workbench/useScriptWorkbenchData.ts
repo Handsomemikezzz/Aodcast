@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DesktopBridge } from "../../lib/desktopBridge";
 import { getErrorMessage } from "../../lib/requestState";
-import type { SessionProject, TTSCapability, TTSProviderConfig } from "../../types";
+import type { SessionProject, TTSCapability, TTSProviderConfig, VoiceProfileRecord } from "../../types";
 import { estimateWordCount, formatEstimateMinutes, formatSessionState } from "./workbenchUtils";
 
 type UseScriptWorkbenchDataArgs = {
@@ -16,20 +16,24 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const [script, setScript] = useState("");
   const [capability, setCapability] = useState<TTSCapability | null>(null);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
+  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfileRecord[]>([]);
+  const [voiceSelectionError, setVoiceSelectionError] = useState<string | null>(null);
   const [selectedEngine, setSelectedEngine] = useState<"local_mlx" | "cloud">("cloud");
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
   const reload = async () => {
-    const [loadedProject, loadedCapability, loadedConfig] = await Promise.all([
+    const [loadedProject, loadedCapability, loadedConfig, loadedProfiles] = await Promise.all([
       bridge.showScript(sessionId, scriptId),
       bridge.getLocalTTSCapability(),
       bridge.showTTSConfig(),
+      bridge.listVoiceProfiles(),
     ]);
     setProject(loadedProject);
     setScript(loadedProject.script?.final || loadedProject.script?.draft || "");
     setCapability(loadedCapability);
     setTtsConfig(loadedConfig);
+    setVoiceProfiles(loadedProfiles);
   };
 
   const refreshWorkspace = async () => {
@@ -77,6 +81,19 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const outputFilename = project?.artifact?.audio_path?.split("/").pop() || "";
   const sessionStateLabel = formatSessionState(project?.session.state);
 
+  const handleSelectVoiceProfile = async (profileId: string) => {
+    const selectedScriptId = project?.script?.script_id || scriptId;
+    if (!selectedScriptId) return;
+    try {
+      setVoiceSelectionError(null);
+      const updatedProject = await bridge.selectVoiceProfile(sessionId, selectedScriptId, profileId);
+      setProject(updatedProject);
+      await onRefresh();
+    } catch (err: unknown) {
+      setVoiceSelectionError(getErrorMessage(err, "Failed to select voice profile."));
+    }
+  };
+
   return {
     project,
     setProject,
@@ -84,6 +101,8 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     setScript,
     capability,
     ttsConfig,
+    voiceProfiles,
+    voiceSelectionError,
     selectedEngine,
     setSelectedEngine,
     loading,
@@ -101,5 +120,6 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     estMinutes,
     outputFilename,
     sessionStateLabel,
+    handleSelectVoiceProfile,
   };
 }

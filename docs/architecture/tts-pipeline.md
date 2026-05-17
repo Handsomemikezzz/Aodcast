@@ -35,19 +35,15 @@ Voice Studio preview uses the same provider path but renders a short
 their own `render_voice_preview:{run_token}` task id so a stale preview result
 cannot satisfy a newer click.
 
-When a user explicitly locks a preview, the HTTP bridge calls
-`voice-preview:lock` for the selected session/script. The backend stores the
-accepted preview as `artifact.voice_reference` and later passes that audio as
-the local MLX/Qwen `ref_audio` during full-script renders and Voice Studio take
-renders. Preview generation itself does not auto-lock, so users can compare
-multiple previews without replacing the approved reference.
-
-Reusable voice profiles use the same reference-audio mechanism. The
-`voice-profiles` endpoints list built-in profiles, create user profiles by
-copying accepted preview audio into the managed exports area, update/delete
-user profiles, and select a profile for the current script. Selecting a profile
-does not render audio immediately; it updates script-scoped voice settings and
-`artifact.voice_reference` so the next full render uses the chosen reference.
+Reusable voice profiles are the canonical reference-audio mechanism for
+profile-first rendering. The `voice-profiles` endpoints list built-in profiles,
+create user profiles by copying managed reference audio into the exports area,
+update/delete user profiles, and select a profile for the current script.
+Selecting a profile does not render audio immediately; it updates script-scoped
+voice settings and `artifact.voice_reference` so the next preview and full render
+use the chosen profile reference audio and reference text. The older
+`voice-preview:lock` endpoint remains for compatibility with existing artifacts,
+but new profile-first UI should not rely on temporary preview locks.
 
 ## Flow
 
@@ -74,7 +70,7 @@ graph TD
     end
 
     scriptUi -->|renderAudio| bridge
-    voiceStudio -->|renderVoicePreview/lockVoicePreview/listVoiceProfiles/selectVoiceProfile/renderVoiceTake| bridge
+    voiceStudio -->|listVoiceProfiles/selectVoiceProfile/renderVoicePreview/renderAudio| bridge
     bridge -->|POST audio:render| startRender
     startRender --> orchestration
     orchestration --> chunker
@@ -104,11 +100,13 @@ names before synthesis. The worker receives the normalized speaker, style
 instruction, speed, and language (`lang_code`) for each job; Qwen model
 variants apply the subset they support (for example CustomVoice/VoiceDesign
 models use `instruct`, while some base models may ignore style instructions).
-If the selected script has a locked preview reference, the same `ref_audio`
-path is sent for every chunk so Qwen has a concrete audio reference in addition
-to the preset speaker. This improves continuity between the preview and final
-script audio, but Qwen generation remains probabilistic and may still vary
-prosody or emotion slightly.
+If the selected script has a voice-profile reference, the same `ref_audio`
+path and profile `ref_text` are sent for every chunk so Qwen has a concrete
+audio reference in addition to the preset speaker. Profile-first full renders
+can require that selected profile and fail early before state transitions when
+it is missing. This improves continuity between the preview and final script
+audio, but Qwen generation remains probabilistic and may still vary prosody or
+emotion slightly.
 
 The worker joins the per-chunk WAV segments into the final container
 format before emitting the `done` event, so downstream consumers see

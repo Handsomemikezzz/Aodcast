@@ -1,4 +1,4 @@
-import { ArrowLeft, Save, Wand2 } from "lucide-react";
+import { ArrowLeft, Save } from "lucide-react";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 
 export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkbenchResult }) {
@@ -43,23 +43,6 @@ export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkb
           >
             <Save className="h-4 w-4" />
             {workbench.saving ? "Saving..." : workbench.isDirty ? "Save" : "Saved"}
-          </button>
-          <button
-            type="button"
-            onClick={workbench.handleGenerateAudio}
-            disabled={
-              workbench.generating ||
-              workbench.script.trim().length === 0 ||
-              (workbench.selectedEngine === "local_mlx" ? workbench.localEngineDisabled : workbench.cloudEngineDisabled)
-            }
-            className="inline-flex h-12 items-center gap-2 rounded-2xl border border-accent-amber/60 bg-[linear-gradient(180deg,#f2bf57,#d79b2f)] px-5 text-sm font-semibold text-[#231402] shadow-[0_16px_36px_rgba(215,155,47,0.32)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(215,155,47,0.38)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {workbench.generating ? (
-              <span className="inline-flex h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
-            ) : (
-              <Wand2 className="h-4 w-4" />
-            )}
-            {workbench.generating ? "Generating..." : "Generate Audio"}
           </button>
         </div>
       </div>

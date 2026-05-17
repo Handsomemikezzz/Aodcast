@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Any
 from uuid import uuid4
 
@@ -87,12 +89,14 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings | None = None,
+        require_voice_profile: bool = False,
     ) -> AudioRenderResult:
         return self.render_audio_with_cancellation(
             session_id,
             script_id=script_id,
             override_provider=override_provider,
             settings=settings,
+            require_voice_profile=require_voice_profile,
         )
 
     def render_audio_with_cancellation(
@@ -102,6 +106,7 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings | None = None,
+        require_voice_profile: bool = False,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
@@ -133,6 +138,9 @@ class AudioRenderingService:
         tts_config.audio_format = render_settings.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         voice_reference = self._voice_reference_for(artifact, tts_config.provider)
+        if require_voice_profile and tts_config.provider == "local_mlx":
+            if voice_reference.get("source") != "voice_profile" or not voice_reference.get("voice_profile_id"):
+                raise ValueError("Select a voice profile before generating podcast audio.")
         previous_state = project.session.state
 
         project.session.transition(SessionState.AUDIO_RENDERING)
@@ -164,7 +172,7 @@ class AudioRenderingService:
             style_prompt=style.prompt,
             language=render_settings.language,
             reference_audio_path=str(voice_reference.get("audio_path") or ""),
-            reference_text=str(voice_reference.get("preview_text") or ""),
+            reference_text=str(voice_reference.get("reference_text") or voice_reference.get("preview_text") or ""),
             voice_lock_id=str(voice_reference.get("lock_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
@@ -302,7 +310,7 @@ class AudioRenderingService:
                 active_script_id=project.script.script_id if project.script is not None else "",
             )
             project.artifact = artifact
-        reference_audio = self._validate_reference_audio_path(profile.audio_path)
+        reference_audio = self._prepare_voice_profile_reference_audio(profile)
         settings = VoiceRenderSettings(
             voice_id=profile.voice_id,
             voice_name=profile.voice_name,
@@ -310,7 +318,7 @@ class AudioRenderingService:
             style_name=profile.style_name,
             speed=profile.speed,
             language=profile.language,
-            audio_format=profile.audio_format,
+            audio_format="wav" if profile.provider == "local_mlx" else profile.audio_format,
             preview_text=profile.preview_text,
         )
         normalized = self._normalize_settings(settings)
@@ -318,9 +326,12 @@ class AudioRenderingService:
         artifact.voice_reference = {
             "source": "voice_profile",
             "voice_profile_id": profile.voice_profile_id,
+            "name": profile.name,
+            "profile_source": profile.source,
             "lock_id": uuid4().hex,
             "audio_path": str(reference_audio),
             "preview_text": profile.preview_text,
+            "reference_text": profile.preview_text,
             "provider": profile.provider,
             "model": profile.model,
             "voice_id": normalized.voice_id,
@@ -340,6 +351,7 @@ class AudioRenderingService:
         settings: VoiceRenderSettings,
         *,
         override_provider: str = "",
+        voice_reference: dict[str, object] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> VoicePreviewResult:
@@ -352,6 +364,12 @@ class AudioRenderingService:
         provider = build_tts_provider(tts_config)
         style = resolve_style_preset(normalized.style_id)
         preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
+        resolved_reference: dict[str, object] = {}
+        if tts_config.provider == "local_mlx" and voice_reference:
+            audio_path = str(voice_reference.get("audio_path") or "")
+            if audio_path:
+                self._validate_reference_audio_path(audio_path)
+                resolved_reference = dict(voice_reference)
 
         def raise_if_cancelled() -> None:
             if should_cancel is not None and should_cancel():
@@ -373,6 +391,11 @@ class AudioRenderingService:
             style_id=normalized.style_id,
             style_prompt=style.prompt,
             language=normalized.language,
+            reference_audio_path=str(resolved_reference.get("audio_path") or ""),
+            reference_text=str(
+                resolved_reference.get("reference_text") or resolved_reference.get("preview_text") or ""
+            ),
+            voice_lock_id=str(resolved_reference.get("lock_id") or resolved_reference.get("voice_profile_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
         )
@@ -398,12 +421,14 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings,
+        require_voice_profile: bool = False,
     ) -> VoiceTakeRenderResult:
         return self.render_voice_take_with_cancellation(
             session_id,
             script_id=script_id,
             override_provider=override_provider,
             settings=settings,
+            require_voice_profile=require_voice_profile,
         )
 
     def render_voice_take_with_cancellation(
@@ -413,6 +438,7 @@ class AudioRenderingService:
         script_id: str = "",
         override_provider: str = "",
         settings: VoiceRenderSettings,
+        require_voice_profile: bool = False,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> VoiceTakeRenderResult:
@@ -436,6 +462,9 @@ class AudioRenderingService:
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         voice_reference = self._voice_reference_for(artifact, tts_config.provider)
+        if require_voice_profile and tts_config.provider == "local_mlx":
+            if voice_reference.get("source") != "voice_profile" or not voice_reference.get("voice_profile_id"):
+                raise ValueError("Select a voice profile before generating podcast audio.")
         previous_state = project.session.state
 
         project.session.transition(SessionState.AUDIO_RENDERING)
@@ -466,7 +495,7 @@ class AudioRenderingService:
             style_prompt=style.prompt,
             language=normalized.language,
             reference_audio_path=str(voice_reference.get("audio_path") or ""),
-            reference_text=str(voice_reference.get("preview_text") or ""),
+            reference_text=str(voice_reference.get("reference_text") or voice_reference.get("preview_text") or ""),
             voice_lock_id=str(voice_reference.get("lock_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
@@ -713,6 +742,51 @@ class AudioRenderingService:
         if not _is_allowed_voice_reference_path(target, data_dir):
             raise ValueError("Voice reference audio must be inside the app data directory or packaged voice profile assets.")
         return target
+
+    def _prepare_voice_profile_reference_audio(self, profile: VoiceProfileRecord) -> Path:
+        reference_audio = self._validate_reference_audio_path(profile.audio_path)
+        if reference_audio.suffix.lower() == ".wav":
+            return reference_audio
+
+        target_dir = self.artifact_store.exports_dir / "_voice_profiles"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{profile.voice_profile_id}.wav"
+        if target.exists() and target.stat().st_mtime >= reference_audio.stat().st_mtime:
+            return target
+
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            command = [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(reference_audio),
+                "-ac",
+                "1",
+                "-ar",
+                "24000",
+                str(target),
+            ]
+        else:
+            afconvert = shutil.which("afconvert")
+            if not afconvert:
+                raise ValueError("Voice profile reference audio must be WAV for local MLX rendering.")
+            command = [
+                afconvert,
+                "-f",
+                "WAVE",
+                "-d",
+                "LEI16@24000",
+                str(reference_audio),
+                str(target),
+            ]
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip()
+            message = "Failed to prepare voice profile reference audio for local MLX rendering."
+            raise ValueError(f"{message} {detail}".strip()) from exc
+        return self._validate_reference_audio_path(str(target))
 
     def _delete_artifact_file(self, path: str) -> None:
         if not path.strip():

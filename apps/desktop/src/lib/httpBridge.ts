@@ -4,6 +4,7 @@ import type {
   ConfigureLLMInput,
   ConfigureTTSInput,
   CreateVoiceProfileInput,
+  UpdateVoiceProfileInput,
   CreateSessionInput,
   DesktopBridge,
   DesktopBridgeError,
@@ -292,7 +293,9 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     try {
       const runtime = await getRuntime();
       const headers = new Headers(init?.headers);
-      headers.set("Content-Type", "application/json");
+      if (!(init?.body instanceof FormData)) {
+        headers.set("Content-Type", "application/json");
+      }
       if (init?.needsToken) {
         const token = await getRuntimeToken(runtime.base_url);
         if (token) headers.set("X-AOD-Runtime-Token", token);
@@ -515,6 +518,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
             provider_override: options?.providerOverride ?? "",
             script_id: options?.scriptId ?? "",
             voice_settings: options?.voiceSettings ? serializeVoiceSettings(options.voiceSettings) : undefined,
+            require_voice_profile: options?.requireVoiceProfile === true,
           }),
         },
       );
@@ -557,6 +561,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           session_id: options?.sessionId ?? "",
           script_id: options?.scriptId ?? "",
           provider_override: options?.providerOverride ?? "",
+          voice_profile_id: options?.voiceProfileId ?? "",
         }),
       });
       const initialState = asRequestState(response.request_state);
@@ -576,23 +581,78 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         method: "POST",
         body: JSON.stringify({
           name: input.name,
-          audio_path: input.audioPath,
+          reference_audio_path: input.referenceAudioPath ?? input.audioPath ?? "",
+          reference_text: input.referenceText,
+          audio_path: input.audioPath ?? input.referenceAudioPath ?? "",
           provider: input.provider,
           model: input.model,
-          voice_settings: serializeVoiceSettings(input.settings),
+          language: input.language ?? input.settings?.language ?? "zh",
+          audio_format: input.audioFormat ?? input.settings?.audio_format ?? "wav",
+          voice_settings: input.settings ? serializeVoiceSettings(input.settings) : undefined,
         }),
       });
-      return response.profile!;
+      const profile = response.profile!;
+      if (!input.referenceAudioFile) return profile;
+
+      const formData = new FormData();
+      formData.set("reference_text", input.referenceText ?? "");
+      formData.set("audio_format", input.audioFormat ?? input.settings?.audio_format ?? "wav");
+      formData.set("audio", input.referenceAudioFile, input.referenceAudioFileName ?? "reference.wav");
+      try {
+        const uploadResponse = await callHttp<{ profile?: VoiceProfileRecord }>(
+          `/api/v1/voice-profiles/${encodeURIComponent(profile.voice_profile_id)}/sample`,
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+        return uploadResponse.profile!;
+      } catch (error) {
+        await callHttp<{ voice_profile_id?: string; deleted?: boolean }>(
+          `/api/v1/voice-profiles/${encodeURIComponent(profile.voice_profile_id)}`,
+          { method: "DELETE" },
+        ).catch(() => undefined);
+        throw error;
+      }
     },
-    async updateVoiceProfile(profileId: string, name: string) {
-      const response = await callHttp<{ profile?: VoiceProfileRecord }>(
-        `/api/v1/voice-profiles/${encodeURIComponent(profileId)}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ name }),
-        },
-      );
-      return response.profile!;
+    async updateVoiceProfile(profileId: string, input: UpdateVoiceProfileInput) {
+      const patchBody: Record<string, string> = {};
+      if (input.name !== undefined) patchBody.name = input.name;
+      if (input.referenceText !== undefined) patchBody.reference_text = input.referenceText;
+
+      let profile: VoiceProfileRecord | undefined;
+      if (Object.keys(patchBody).length > 0) {
+        const response = await callHttp<{ profile?: VoiceProfileRecord }>(
+          `/api/v1/voice-profiles/${encodeURIComponent(profileId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(patchBody),
+          },
+        );
+        profile = response.profile!;
+      }
+
+      if (input.referenceAudioFile) {
+        const formData = new FormData();
+        formData.set("reference_text", input.referenceText ?? "");
+        formData.set("audio_format", input.audioFormat ?? "wav");
+        formData.set("audio", input.referenceAudioFile, input.referenceAudioFileName ?? "reference.wav");
+        const uploadResponse = await callHttp<{ profile?: VoiceProfileRecord }>(
+          `/api/v1/voice-profiles/${encodeURIComponent(profileId)}/sample`,
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+        profile = uploadResponse.profile!;
+      }
+
+      if (!profile) {
+        const profiles = await this.listVoiceProfiles();
+        profile = profiles.find((item) => item.voice_profile_id === profileId);
+        if (!profile) throw new Error(`Voice profile '${profileId}' was not found.`);
+      }
+      return profile;
     },
     async deleteVoiceProfile(profileId: string) {
       return callHttp<{ voice_profile_id?: string; deleted?: boolean; cleared_voice_references?: number }>(
@@ -633,6 +693,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           body: JSON.stringify({
             ...serializeVoiceSettings(settings),
             provider_override: options?.providerOverride ?? "",
+            require_voice_profile: options?.requireVoiceProfile === true,
           }),
         },
       );

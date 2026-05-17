@@ -42,9 +42,12 @@
       "properties": {
         "source": { "type": "string", "enum": ["preview_lock", "voice_profile"] },
         "voice_profile_id": { "type": "string" },
+        "name": { "type": "string" },
+        "profile_source": { "type": "string", "enum": ["built_in", "user_saved"] },
         "lock_id": { "type": "string" },
         "audio_path": { "type": "string" },
         "preview_text": { "type": "string" },
+        "reference_text": { "type": "string" },
         "provider": { "type": "string" },
         "model": { "type": "string" },
         "voice_id": { "type": "string" },

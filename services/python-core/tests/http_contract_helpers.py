@@ -16,6 +16,15 @@ HTTP_RUNTIME_PATH = REPO_ROOT / "services/python-core/app/api/http_runtime.py"
 RUNTIME_TOKEN_HEADER = "X-AOD-Runtime-Token"
 LOOPBACK_ONLY_HOSTS = ("127.0.0.1", "::1")
 
+HTTP_ONLY_BRIDGE_OPERATIONS = (
+    "show_latest_script",
+    "show_script",
+    "list_scripts",
+    "delete_generated_audio",
+    "delete_artifact_audio",
+    "delete_voice_take",
+)
+
 
 @dataclass(frozen=True)
 class BridgeContract:
