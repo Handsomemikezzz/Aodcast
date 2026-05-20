@@ -665,12 +665,16 @@ export function ChatPage({
         {historyAside}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {chatToolbar}
-          <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
-            <div className="w-full max-w-2xl flex flex-col items-center gap-8">
-              <h2 className="text-2xl sm:text-3xl font-medium text-primary text-center tracking-tight">
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 bg-[radial-gradient(circle_at_top,rgba(242,191,87,0.06),transparent_45%)]">
+            <div className="w-full max-w-2xl flex flex-col items-center gap-6">
+              <h2 className="text-3xl sm:text-4xl font-headline font-bold text-white text-center tracking-wide leading-tight select-none bg-gradient-to-b from-white via-white to-white/40 bg-clip-text text-transparent">
                 我们先从哪里开始呢？
               </h2>
-              <div className="w-full flex flex-col gap-2">
+              <p className="text-secondary text-sm text-center -mt-2 select-none font-medium opacity-80 max-w-md">
+                通过与 AI 的对话，深度挖掘你的选题灵感，一键整理并生成专业级别的播客脚本。
+              </p>
+              
+              <div className="w-full flex flex-col gap-2 mt-4">
                 {landingError ? (
                   <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
                     <p>{landingError}</p>
@@ -687,14 +691,14 @@ export function ChatPage({
                 ) : null}
                 <div
                   className={cn(
-                    "flex items-end gap-2 rounded-full border border-outline bg-surface-container px-3 py-2 pl-4 shadow-sm",
-                    "focus-within:border-accent-amber/30 transition-colors",
+                    "flex items-end gap-2.5 rounded-2xl border border-white/5 bg-[rgba(26,26,30,0.55)] backdrop-blur-xl px-4 py-3 shadow-[0_20px_50px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.02)]",
+                    "focus-within:border-accent-amber/35 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.3),0_0_20px_rgba(242,191,87,0.06)] transition-all duration-300",
                   )}
                 >
                   <button
                     type="button"
                     onClick={() => landingInputRef.current?.focus()}
-                    className="p-2 text-on-surface hover:bg-surface-container-high rounded-full transition-colors shrink-0 mb-0.5"
+                    className="p-2 text-secondary hover:text-white hover:bg-white/5 rounded-xl transition-all duration-200 shrink-0 mb-0.5"
                     aria-label="Focus input"
                   >
                     <Plus className="w-5 h-5" />
@@ -712,27 +716,27 @@ export function ChatPage({
                     disabled={landingSubmitting}
                     placeholder="今天你想聊什么?"
                     rows={1}
-                    className="flex-1 min-h-[44px] max-h-[200px] resize-none bg-transparent border-none focus:ring-0 text-[15px] text-on-surface placeholder:text-outline py-2.5 outline-none leading-relaxed"
+                    className="flex-1 min-h-[44px] max-h-[200px] resize-none bg-transparent border-none focus:ring-0 text-[15px] text-white placeholder:text-outline/75 py-2 px-1 outline-none leading-relaxed"
                   />
                   <span
                     title="Voice input coming soon"
-                    className="inline-flex items-center gap-1 rounded-full border border-outline/70 bg-surface-container-low px-2.5 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-secondary shrink-0 mb-0.5"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-[10px] font-headline font-semibold uppercase tracking-[0.16em] text-secondary shrink-0 mb-0.5 select-none shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
                     aria-label="Voice input coming soon"
                   >
-                    <Mic className="w-5 h-5" />
+                    <span className="h-2 w-2 rounded-full bg-accent-amber/60 pulse-amber shrink-0" />
                     Soon
                   </span>
                   <button
                     type="button"
                     onClick={() => void handleLandingCreate()}
                     disabled={!landingInput.trim() || landingSubmitting}
-                    className="p-2.5 bg-primary text-background rounded-full hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed shrink-0 mb-0.5"
+                    className="p-2.5 bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] text-black rounded-xl hover:scale-105 active:scale-95 shadow-md shadow-accent-amber/15 transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed shrink-0 mb-0.5"
                     aria-label="Start chat"
                   >
                     {landingSubmitting ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <Send className="w-5 h-5" />
+                      <Send className="w-5 h-5 text-black" />
                     )}
                   </button>
                 </div>
@@ -822,13 +826,13 @@ export function ChatPage({
       <div className="flex-1 flex flex-col min-w-0 relative min-h-0">
         {chatToolbar}
         <div ref={scrollRef} className="flex-1 overflow-y-auto w-full px-6 lg:px-12 scroll-smooth chat-container">
-          <div className="max-w-4xl flex flex-col py-8 gap-6 pb-40 mx-auto">
+          <div className="max-w-4xl flex flex-col py-8 gap-6 pb-64 mx-auto">
             
             {/* Header Area (Left-aligned, document style) */}
-            <div className="pb-6 border-b border-outline">
-              <h1 className="text-2xl font-headline font-bold text-primary mb-2">Chat</h1>
+            <div className="pb-6 border-b border-white/5">
+              <h1 className="text-2xl font-headline font-bold text-white mb-2">Chat</h1>
               <p className="text-secondary text-sm">
-                Shape your episode through conversation; the script is summarized from this chat.
+                通过自然的对话打磨你的选题大纲与内容细节；脚本会依据此处的讨论自动提炼。
               </p>
             </div>
 
@@ -837,17 +841,17 @@ export function ChatPage({
                 <button
                   onClick={handleStart}
                   disabled={submitting}
-                  className="px-5 py-2.5 bg-accent-amber hover:bg-accent-amber/90 text-black rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-50"
+                  className="px-5 py-2.5 bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] text-black rounded-xl text-sm font-semibold transition-all hover:scale-[1.02] shadow-sm disabled:opacity-50"
                 >
-                  Start Interview Process
+                  开始访谈流程
                 </button>
               </div>
             )}
 
             {/* Chat History: user bubbles right, assistant plain left */}
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-6">
               {error && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
                   {error}
                   {showLlmSetupAction ? (
                     <button
@@ -879,11 +883,11 @@ export function ChatPage({
                     >
                       <div
                         className={cn(
-                          "max-w-[min(85%,28rem)] rounded-3xl rounded-br-md",
-                          "border border-outline/60 bg-surface-container-high px-4 py-2.5 shadow-sm",
+                          "max-w-[min(85%,28rem)] rounded-2xl rounded-tr-sm",
+                          "border border-accent-amber/20 bg-accent-amber/8 px-4.5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.15)]",
                         )}
                       >
-                        <div className="text-[14px] leading-relaxed text-on-surface prose prose-sm prose-invert max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                        <div className="text-[14px] leading-relaxed text-[#f5c669] prose prose-sm prose-invert max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
                           <ReactMarkdown>{cleanContent}</ReactMarkdown>
                         </div>
                       </div>
@@ -896,10 +900,10 @@ export function ChatPage({
                     key={i}
                     className="flex w-full justify-start animate-in fade-in duration-300"
                   >
-                    <div className="max-w-[min(92%,40rem)] space-y-2">
+                    <div className="max-w-[min(92%,40rem)] space-y-2.5 bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.01),0_4px_20px_rgba(0,0,0,0.15)]">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
-                        <span className="font-medium text-[13px] text-primary">The Archivist</span>
+                        <span className="font-headline font-semibold text-[13px] text-white">The Archivist</span>
                       </div>
                       <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
                         <div className="prose prose-sm prose-invert max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
@@ -907,8 +911,8 @@ export function ChatPage({
                         </div>
                       </div>
                       {insight ? (
-                        <div className="mt-2 bg-accent-amber-container text-primary text-[13px] px-4 py-3 rounded-lg border border-accent-amber/20 flex items-start gap-3">
-                          <Lightbulb className="w-4 h-4 mt-0.5 text-accent-amber shrink-0" />
+                        <div className="mt-3 bg-accent-amber-container text-[#f5c669] text-[13px] px-4 py-3.5 rounded-xl border border-accent-amber/20 flex items-start gap-3">
+                          <Lightbulb className="w-4 h-4 mt-0.5 text-accent-amber shrink-0 animate-pulse" />
                           <p className="italic opacity-90">{insight}</p>
                         </div>
                       ) : null}
@@ -920,10 +924,10 @@ export function ChatPage({
               {/* Streaming Content */}
               {streamingMessage !== null && (
                 <div className="flex w-full justify-start animate-in fade-in duration-300">
-                  <div className="max-w-[min(92%,40rem)] space-y-2">
+                  <div className="max-w-[min(92%,40rem)] space-y-2.5 bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.01),0_4px_20px_rgba(0,0,0,0.15)]">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
-                      <span className="font-medium text-[13px] text-primary">The Archivist</span>
+                      <span className="font-headline font-semibold text-[13px] text-white">The Archivist</span>
                     </div>
                     <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
                       <div className="prose prose-sm prose-invert max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
@@ -937,12 +941,12 @@ export function ChatPage({
               {/* Loading Indicator — left-aligned like assistant */}
               {submitting && state === "interview_in_progress" && streamingMessage === null && (
                 <div className="flex w-full justify-start gap-3 pt-1">
-                  <div className="flex items-center gap-2 text-secondary">
-                    <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
+                  <div className="flex items-center gap-2 text-secondary bg-white/[0.02] border border-white/5 rounded-2xl px-4.5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.1)]">
+                    <Sparkles className="w-4 h-4 text-accent-amber shrink-0 animate-pulse" />
                     <div className="flex items-center gap-1.5 h-6">
-                      <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce" />
-                      <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-1.5 h-1.5 rounded-full bg-outline-variant animate-bounce [animation-delay:0.4s]" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent-amber/50 animate-bounce" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent-amber/50 animate-bounce [animation-delay:0.2s]" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent-amber/50 animate-bounce [animation-delay:0.4s]" />
                     </div>
                   </div>
                 </div>
@@ -951,8 +955,8 @@ export function ChatPage({
 
             {/* Script hints (non-blocking; composer stays available below) */}
             {isFinished && !isDeletedSession && (
-              <div className="py-4 border-t border-outline mt-4 flex flex-wrap items-center gap-3">
-                <p className="text-sm text-secondary flex-1 min-w-[200px]">
+              <div className="py-4 border-t border-white/5 mt-6 flex flex-wrap items-center gap-3">
+                <p className="text-xs text-secondary flex-1 min-w-[200px]">
                   {state === "ready_to_generate"
                     ? "可以从此对话生成脚本；也可继续聊天后再生成新的脚本。"
                     : "可随时继续对话；每次生成都会新增一份脚本，不会覆盖已有脚本。"}
@@ -961,7 +965,7 @@ export function ChatPage({
                   type="button"
                   onClick={() => void handleGenerateScript()}
                   disabled={submitting}
-                  className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline rounded-lg text-sm font-medium transition-colors shrink-0"
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-semibold text-white transition-colors shrink-0"
                 >
                   {submitting ? "生成中…" : "生成脚本"}
                 </button>
@@ -969,7 +973,7 @@ export function ChatPage({
                   <button
                     type="button"
                     onClick={() => void openLatestScript()}
-                    className="px-4 py-2 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg text-sm font-medium transition-colors shrink-0"
+                    className="px-4 py-2 bg-accent-amber/10 hover:bg-accent-amber/15 border border-accent-amber/20 rounded-xl text-xs font-semibold text-[#f5c669] transition-colors shrink-0"
                   >
                     查看脚本
                   </button>
@@ -981,9 +985,9 @@ export function ChatPage({
 
         {/* Persistent Bottom Input Dock */}
         {showChatComposer && (
-          <div className="absolute bottom-0 left-0 w-full bg-background/60 backdrop-blur-2xl border-t border-outline p-4 lg:px-12">
-            <div className="max-w-4xl mx-auto flex flex-col gap-2">
-              <div className="bg-surface-container border border-outline rounded-lg p-2 flex items-end gap-2 focus-within:border-accent-amber/30 transition-colors shadow-sm">
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-20 select-none">
+            <div className="flex flex-col gap-2.5 rounded-2xl border border-white/5 bg-[rgba(22,22,26,0.72)] backdrop-blur-xl p-3 shadow-[0_24px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.02)] focus-within:border-accent-amber/25 focus-within:shadow-[0_24px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(242,191,87,0.05)] transition-all duration-300">
+              <div className="flex items-end gap-3.5">
                 <textarea 
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
@@ -994,45 +998,45 @@ export function ChatPage({
                       handleSubmit();
                     }
                   }}
-                  className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-[14px] text-on-surface placeholder:text-outline py-1.5 px-2 max-h-[200px] min-h-[44px] outline-none leading-relaxed" 
-                  placeholder="Type your response... (Shift+Enter for newline)" 
+                  className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-[14px] text-white placeholder:text-outline/75 py-1.5 px-2 max-h-[160px] min-h-[38px] outline-none leading-relaxed" 
+                  placeholder="输入你的想法... (Shift+Enter 换行，Enter 发送)" 
                   rows={1}
                 />
-                <div className="flex items-center gap-1 shrink-0 p-1">
+                
+                <div className="flex items-center gap-1.5 shrink-0 mb-0.5">
                   <button 
                     onClick={() => void handleGenerateScript()}
                     disabled={submitting || !hasUserTurns}
-                    className="px-3 py-1.5 text-secondary hover:bg-surface-container-high hover:text-primary transition-colors rounded text-[12px] font-medium"
+                    className="px-3.5 py-2 text-secondary hover:text-[#f5c669] hover:bg-accent-amber/8 border border-transparent hover:border-accent-amber/20 rounded-xl text-[12px] font-semibold transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent"
                   >
                     生成脚本
                   </button>
-                  <button
-                    type="button"
-                    disabled
-                    title="Coming soon"
-                    className="p-2 text-secondary/50 transition-colors rounded cursor-not-allowed disabled:opacity-60"
+                  <span
+                    title="Voice input coming soon"
+                    className="p-2 text-secondary/50 rounded-xl cursor-not-allowed hover:bg-white/5 shrink-0"
                   >
                     <Mic className="w-4 h-4" />
-                  </button>
+                  </span>
                   <button 
                     onClick={handleSubmit}
                     disabled={!inputValue.trim() || submitting}
-                    className="p-2 bg-primary text-background hover:opacity-90 rounded transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="p-2 bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] text-black hover:scale-105 active:scale-95 rounded-xl transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"
                   >
-                    <Send className="w-4 h-4" />
+                    <Send className="w-4 h-4 text-black" />
                   </button>
                 </div>
               </div>
-              <div className="flex justify-between items-center px-1">
-                <p className="text-[11px] text-outline">
+              
+              <div className="flex justify-between items-center px-2">
+                <p className="text-[10px] text-secondary/70 tracking-wide">
                   {requestState?.phase === "running"
                     ? requestState.message
-                    : "The Archivist is listening. You can dictate or type your thoughts."}
+                    : "The Archivist is listening. You can type or record thoughts."}
                 </p>
               </div>
               {requestState?.phase === "running" ? (
-                <div className="rounded-lg border border-outline bg-background/80 px-3 py-2">
-                  <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px] text-secondary">
+                <div className="rounded-xl border border-white/5 bg-background/60 p-2.5 mt-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="mb-1 flex items-center justify-between gap-3 text-[10px] text-secondary px-0.5">
                     <span className="truncate">{requestState.message}</span>
                     <span className="shrink-0">{Math.round(requestState.progress_percent)}%</span>
                   </div>

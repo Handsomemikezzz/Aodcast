@@ -5,6 +5,7 @@ import { filterActiveVoiceProfiles, resolveProjectVoiceSettings, selectedVoicePr
 import { ProgressBar } from "../../components/ProgressBar";
 import { isActiveRequestState } from "../../lib/requestState";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
+import { AudioPlayer } from "../../components/AudioPlayer";
 
 export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenchResult }) {
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
@@ -27,23 +28,23 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
 
   return (
     <aside className="flex min-h-0 flex-col gap-4 self-start">
-      <div className="rounded-[28px] border border-outline bg-[linear-gradient(180deg,rgba(35,31,24,0.96),rgba(24,24,27,0.96))] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.34)] overflow-hidden">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.04] pb-4">
           <div>
-            <p className="text-sm font-semibold text-primary">Voice Workspace</p>
-            <p className="mt-1 text-xs text-secondary">Persona, engine, live stats, and output actions.</p>
+            <p className="text-sm font-bold text-primary font-display tracking-tight">Voice Workspace</p>
+            <p className="mt-1 text-[11px] text-secondary/80">Persona, engine, live stats, and output actions.</p>
           </div>
-          <Mic className="h-5 w-5 text-accent-amber" />
+          <Mic className="h-4.5 w-4.5 text-accent-amber" />
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Selected Voice</p>
+          <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+            <div className="mb-2.5 flex items-center justify-between gap-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-secondary/80">Selected Voice</p>
               <button
                 type="button"
                 onClick={() => workbench.navigate(scriptVoiceStudioPath)}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-amber transition-colors hover:text-primary"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-accent-amber transition-colors hover:text-primary cursor-pointer"
               >
                 <Settings2 className="h-3.5 w-3.5" />
                 Manage
@@ -54,27 +55,27 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               onClick={() => setVoiceMenuOpen((open) => !open)}
               disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
               aria-expanded={voiceMenuOpen}
-              className="flex w-full items-center justify-between gap-3 rounded-[18px] border border-outline bg-surface-container-low px-3 py-3 text-left transition-colors hover:border-accent-amber/30 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/5 px-4 py-3 text-left transition-all hover:border-accent-amber/30 hover:bg-white/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-accent-amber/30 bg-accent-amber/10">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-accent-amber/30 bg-accent-amber/10 shrink-0">
                   <Mic className="h-5 w-5 text-accent-amber" />
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-primary">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-primary truncate">
                     {selectedProfileLabel || "未选择音色"}
                   </p>
-                  <p className="mt-1 text-xs text-secondary">
+                  <p className="mt-1 text-xs text-secondary/70 truncate">
                     {selectedProfileLabel
                       ? `${profileSourceLabel ? `${profileSourceLabel} · ` : ""}${voiceSettings.language || "zh"} · ${workbench.selectedEngine === "local_mlx" ? "Local MLX" : workbench.cloudProvider}`
-                      : "选择音色后，Script 页会用它生成完整音频。"}
+                      : "选择音色以生成完整音频"}
                   </p>
                 </div>
               </div>
-              <ChevronDown className={cn("h-4 w-4 text-secondary transition-transform", voiceMenuOpen && "rotate-180")} />
+              <ChevronDown className={cn("h-4 w-4 text-secondary/60 transition-transform shrink-0", voiceMenuOpen && "rotate-180")} />
             </button>
             {voiceMenuOpen ? (
-              <div className="mt-3 max-h-[260px] overflow-y-auto rounded-[18px] border border-outline bg-background/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.28)]">
+              <div className="mt-3 max-h-[260px] overflow-y-auto rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.95)] backdrop-blur-xl p-2 shadow-[0_12px_36px_rgba(0,0,0,0.4)]">
                 {activeVoiceProfiles.length ? (
                   <div className="space-y-1">
                     {activeVoiceProfiles.map((profile) => {
@@ -89,13 +90,13 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                             void workbench.handleSelectVoiceProfile(profile.voice_profile_id);
                           }}
                           className={cn(
-                            "flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2 text-left transition-colors",
-                            selected ? "bg-accent-amber/12 text-primary" : "text-secondary hover:bg-surface-container-low hover:text-primary",
+                            "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors cursor-pointer",
+                            selected ? "bg-accent-amber/10 text-primary font-semibold" : "text-secondary hover:bg-white/5 hover:text-primary",
                           )}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{profile.name}</span>
-                            <span className="mt-1 block truncate text-xs">
+                            <span className="block truncate text-sm">{profile.name}</span>
+                            <span className="mt-1 block truncate text-[11px] text-secondary/60">
                               {sourceLabel} · {profile.language || "zh"} · {profile.provider === "local_mlx" ? "Local MLX" : profile.provider}
                             </span>
                           </span>
@@ -105,35 +106,37 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                     })}
                   </div>
                 ) : (
-                  <div className="px-3 py-4 text-sm text-secondary">暂无可用音色，请先在 Voice Studio 创建或保存音色。</div>
+                  <div className="px-3 py-4 text-xs text-secondary/60 text-center">暂无可用音色，请先在 Voice Studio 创建音色。</div>
                 )}
               </div>
             ) : null}
           </div>
 
-          <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-3">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Rendering Engine</p>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+          <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+            <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-secondary/80">Rendering Engine</p>
+            <div className="grid gap-2.5">
               <button
                 type="button"
                 onClick={() => workbench.setSelectedEngine("local_mlx")}
                 disabled={workbench.localEngineDisabled}
                 className={cn(
-                  "rounded-[20px] border px-4 py-4 text-left transition-colors",
+                  "rounded-2xl border p-4 text-left transition-all cursor-pointer relative overflow-hidden",
                   workbench.selectedEngine === "local_mlx"
-                    ? "border-accent-amber bg-accent-amber/12 shadow-[0_12px_28px_rgba(215,155,47,0.18)]"
-                    : "border-outline bg-surface-container-low hover:border-accent-amber/25",
-                  workbench.localEngineDisabled && "cursor-not-allowed opacity-55",
+                    ? "border-accent-amber/30 bg-accent-amber/10 shadow-[0_0_16px_rgba(242,191,87,0.06)]"
+                    : "border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10",
+                  workbench.localEngineDisabled && "cursor-not-allowed opacity-40",
                 )}
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent-amber/25 bg-accent-amber/10">
-                    <Cpu className="h-4 w-4 text-accent-amber" />
+                  <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl border shrink-0", 
+                    workbench.selectedEngine === "local_mlx" ? "border-accent-amber/30 bg-accent-amber/10" : "border-white/10 bg-white/5"
+                  )}>
+                    <Cpu className={cn("h-4 w-4", workbench.selectedEngine === "local_mlx" ? "text-accent-amber" : "text-secondary")} />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-primary">Local MLX</p>
-                    <p className="mt-1 text-xs text-secondary">
-                      {workbench.capability?.available ? "Apple Silicon optimized" : "Unavailable on this machine"}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-primary">Local MLX</p>
+                    <p className="mt-1 text-xs text-secondary/70 truncate">
+                      {workbench.capability?.available ? "Apple Silicon 专属优化" : "当前设备不可用"}
                     </p>
                   </div>
                 </div>
@@ -144,33 +147,35 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 onClick={() => workbench.setSelectedEngine("cloud")}
                 disabled={workbench.cloudEngineDisabled}
                 className={cn(
-                  "rounded-[20px] border px-4 py-4 text-left transition-colors",
+                  "rounded-2xl border p-4 text-left transition-all cursor-pointer relative overflow-hidden",
                   workbench.selectedEngine === "cloud"
-                    ? "border-accent-amber/40 bg-accent-amber/8 shadow-[0_12px_28px_rgba(215,155,47,0.14)]"
-                    : "border-outline bg-surface-container-low hover:border-accent-amber/25",
-                  workbench.cloudEngineDisabled && "cursor-not-allowed opacity-55",
+                    ? "border-accent-amber/30 bg-accent-amber/10 shadow-[0_0_16px_rgba(242,191,87,0.06)]"
+                    : "border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10",
+                  workbench.cloudEngineDisabled && "cursor-not-allowed opacity-40",
                 )}
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-outline bg-background">
-                    <Cloud className="h-4 w-4 text-primary" />
+                  <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl border shrink-0", 
+                    workbench.selectedEngine === "cloud" ? "border-accent-amber/30 bg-accent-amber/10" : "border-white/10 bg-white/5"
+                  )}>
+                    <Cloud className={cn("h-4 w-4", workbench.selectedEngine === "cloud" ? "text-accent-amber" : "text-secondary")} />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-primary">Cloud Synthesis</p>
-                    <p className="mt-1 text-xs text-secondary">Provider: {workbench.cloudProvider}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-primary">Cloud Synthesis</p>
+                    <p className="mt-1 text-xs text-secondary/70 truncate">厂商: {workbench.cloudProvider}</p>
                   </div>
                 </div>
               </button>
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-3">
+          <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
             <button
               type="button"
               onClick={workbench.handleGenerateAudio}
               disabled={generationDisabled}
               title={needsVoiceProfile ? "Choose a voice before generating local MLX audio." : undefined}
-              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-accent-amber/60 bg-[linear-gradient(180deg,#f2bf57,#d79b2f)] px-5 text-sm font-semibold text-[#231402] shadow-[0_16px_36px_rgba(215,155,47,0.28)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(215,155,47,0.34)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent-amber hover:bg-accent-amber/95 active:scale-[0.98] transition-all px-5 text-sm font-bold text-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_16px_rgba(242,191,87,0.2)]"
             >
               {workbench.generating ? (
                 <span className="inline-flex h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
@@ -180,88 +185,88 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               {workbench.generating ? "Generating..." : "Generate final audio"}
             </button>
             {needsVoiceProfile ? (
-              <p className="mt-2 text-xs leading-5 text-secondary">Choose a voice profile before generating local MLX audio.</p>
+              <p className="mt-2 text-xs leading-5 text-amber-200/80 font-medium pl-1">请先在上方为 Local MLX 选择一个音色。</p>
             ) : null}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-4">
-              <div className="flex items-center gap-2 text-secondary">
-                <Clock3 className="h-4 w-4 text-accent-amber" />
-                <span className="text-xs uppercase tracking-[0.18em]">Estimated Length</span>
+            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+              <div className="flex items-center gap-2 text-secondary/80">
+                <Clock3 className="h-3.5 w-3.5 text-accent-amber" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Est. Length</span>
               </div>
-              <p className="mt-3 text-[30px] font-headline font-semibold text-primary">{workbench.estMinutes}</p>
+              <p className="mt-2 text-[26px] font-display font-bold text-primary">{workbench.estMinutes}</p>
             </div>
-            <div className="rounded-[22px] border border-outline bg-[rgba(22,22,24,0.88)] p-4">
-              <div className="flex items-center gap-2 text-secondary">
-                <History className="h-4 w-4 text-accent-amber" />
-                <span className="text-xs uppercase tracking-[0.18em]">Word Count</span>
+            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+              <div className="flex items-center gap-2 text-secondary/80">
+                <History className="h-3.5 w-3.5 text-accent-amber" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Word Count</span>
               </div>
-              <p className="mt-3 text-[30px] font-headline font-semibold text-primary">{workbench.wordCount}</p>
+              <p className="mt-2 text-[26px] font-display font-bold text-primary">{workbench.wordCount}</p>
             </div>
           </div>
 
           {workbench.audioError ? (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
+            <div className="rounded-2xl border border-red-500/10 bg-red-500/5 px-3.5 py-3 text-xs text-red-300">
               {workbench.audioError}
             </div>
           ) : null}
           {workbench.editorError ? (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
+            <div className="rounded-2xl border border-red-500/10 bg-red-500/5 px-3.5 py-3 text-xs text-red-300">
               {workbench.editorError}
             </div>
           ) : null}
           {workbench.voiceSelectionError ? (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-red-200">
+            <div className="rounded-2xl border border-red-500/10 bg-red-500/5 px-3.5 py-3 text-xs text-red-300">
               {workbench.voiceSelectionError}
             </div>
           ) : null}
           {workbench.pollWarning ? (
-            <div className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 px-3 py-3 text-sm text-accent-amber">
+            <div className="rounded-2xl border border-accent-amber/20 bg-accent-amber/5 px-3.5 py-3 text-xs text-accent-amber">
               {workbench.pollWarning}
             </div>
           ) : null}
           {workbench.audioMessage ? (
-            <div className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 px-3 py-3 text-sm text-accent-amber">
+            <div className="rounded-2xl border border-accent-amber/20 bg-accent-amber/5 px-3.5 py-3 text-xs text-accent-amber">
               {workbench.audioMessage}
             </div>
           ) : null}
           {!workbench.audioError && activeAudioRequestState ? (
-            <div className="rounded-2xl border border-outline bg-background/80 px-3 py-3 text-sm text-secondary">
-              <div className="flex items-center justify-between gap-3">
-                <span>{`${Math.round(activeAudioRequestState.progress_percent)}% · ${activeAudioRequestState.message}`}</span>
+            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4 text-xs text-secondary">
+              <div className="flex items-center justify-between gap-3 mb-2.5">
+                <span className="font-semibold text-primary">{`${Math.round(activeAudioRequestState.progress_percent)}% · ${activeAudioRequestState.message}`}</span>
                 {workbench.generating && activeAudioRequestState.phase === "running" ? (
                   <button
                     type="button"
                     onClick={() => void workbench.handleCancelAudio()}
-                    className="rounded-full border border-outline px-3 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-surface-container"
+                    className="rounded-lg border border-white/5 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-primary hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer"
                   >
                     Cancel
                   </button>
                 ) : null}
               </div>
-              <ProgressBar value={activeAudioRequestState.progress_percent} className="mt-3" />
+              <ProgressBar value={activeAudioRequestState.progress_percent} />
             </div>
           ) : null}
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-[28px] border border-outline bg-[rgba(27,27,30,0.92)] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.3)] overflow-hidden">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="flex min-h-0 flex-1 flex-col rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.04] pb-4">
           <div>
-            <p className="text-sm font-semibold text-primary">Generated Audio</p>
-            <p className="mt-1 text-xs text-secondary">Play, delete, download, or reveal the final render for this script.</p>
+            <p className="text-sm font-bold text-primary font-display tracking-tight">Generated Audio</p>
+            <p className="mt-1 text-[11px] text-secondary/80">Play, delete, download, or reveal the final render.</p>
           </div>
-          <FileAudio className="h-5 w-5 text-accent-amber" />
+          <FileAudio className="h-4.5 w-4.5 text-accent-amber" />
         </div>
 
         {workbench.audioSrc ? (
           <div className="flex min-h-0 flex-1 flex-col gap-4">
-            <div className="rounded-[22px] border border-outline bg-[radial-gradient(circle_at_center,rgba(227,171,73,0.18),transparent_60%),rgba(17,17,20,0.95)] p-4">
+            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.6)] p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-primary">{workbench.outputFilename}</p>
-                  <p className="mt-1 text-xs text-secondary">
+                  <p className="mt-1 text-xs text-secondary/70">
                     {workbench.project?.artifact?.final_take_id && workbench.project.artifact.takes?.length
                       ? (() => {
                           const take = workbench.project?.artifact?.takes?.find((item) => item.take_id === workbench.project?.artifact?.final_take_id);
@@ -273,28 +278,27 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 <button
                   type="button"
                   onClick={() => void workbench.handleRevealInFinder()}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-outline bg-surface-container-low text-secondary transition-colors hover:border-accent-amber/30 hover:text-primary"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-secondary hover:text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.95] transition-all cursor-pointer"
+                  title="Reveal in Finder"
                 >
                   <FolderOpen className="h-4 w-4" />
                 </button>
               </div>
 
-              <div className="mt-4 h-16 rounded-[18px] border border-accent-amber/20 bg-[linear-gradient(90deg,rgba(242,191,87,0.08)_0%,rgba(242,191,87,0.85)_10%,rgba(242,191,87,0.12)_20%,rgba(242,191,87,0.95)_34%,rgba(242,191,87,0.15)_50%,rgba(242,191,87,0.9)_64%,rgba(242,191,87,0.12)_80%,rgba(242,191,87,0.75)_100%)] opacity-80" />
-
-              <audio
-                ref={workbench.audioRef}
-                controls
-                src={workbench.audioSrc}
-                onError={workbench.handleAudioLoadError}
-                className="mt-4 w-full [&::-webkit-media-controls-panel]:bg-background [&::-webkit-media-controls-panel]:border [&::-webkit-media-controls-panel]:border-outline"
-              />
+              <div className="mt-4">
+                <AudioPlayer
+                  ref={workbench.audioRef}
+                  src={workbench.audioSrc}
+                  onError={workbench.handleAudioLoadError}
+                />
+              </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-4">
               <button
                 type="button"
                 onClick={() => void workbench.handlePreviewAudio()}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-outline bg-surface-container-low text-sm font-medium text-primary transition-colors hover:border-accent-amber/30 hover:bg-surface-container"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 text-xs font-bold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
               >
                 {workbench.isAudioPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 Preview
@@ -302,7 +306,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <button
                 type="button"
                 onClick={workbench.handleDownloadAudio}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-outline bg-surface-container-low text-sm font-medium text-primary transition-colors hover:border-accent-amber/30 hover:bg-surface-container"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 text-xs font-bold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Download className="h-4 w-4" />
                 Download
@@ -310,7 +314,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <button
                 type="button"
                 onClick={() => void workbench.handleShareAudio()}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-outline bg-surface-container-low text-sm font-medium text-primary transition-colors hover:border-accent-amber/30 hover:bg-surface-container"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 text-xs font-bold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Share2 className="h-4 w-4" />
                 Share
@@ -318,7 +322,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <button
                 type="button"
                 onClick={() => void workbench.handleDeleteAudio()}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-red-500/25 bg-red-500/8 text-sm font-medium text-red-200 transition-colors hover:bg-red-500/12"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 text-xs font-bold text-red-300 hover:bg-red-500/20 active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete
@@ -326,10 +330,10 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </div>
           </div>
         ) : (
-          <div className="flex min-h-[280px] flex-1 flex-col items-center justify-center rounded-[22px] border border-dashed border-accent-amber/30 bg-accent-amber/6 px-5 text-center">
-            <Wand2 className="mb-3 h-8 w-8 text-accent-amber" />
-            <p className="text-sm font-medium text-primary">No audio file yet</p>
-            <p className="mt-2 max-w-[280px] text-xs leading-6 text-secondary">
+          <div className="flex min-h-[280px] flex-1 flex-col items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-[rgba(15,15,17,0.4)] px-5 text-center">
+            <Wand2 className="mb-3 h-8 w-8 text-accent-amber animate-pulse" />
+            <p className="text-sm font-semibold text-primary">No audio file yet</p>
+            <p className="mt-2 max-w-[280px] text-xs leading-relaxed text-secondary/60">
               Choose a voice profile, save your latest edits, then generate the final audio from this Script page.
             </p>
           </div>

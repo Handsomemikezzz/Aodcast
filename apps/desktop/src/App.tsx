@@ -71,28 +71,31 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-background text-on-surface overflow-hidden selection:bg-accent-amber/30 font-body mac-scrollbar">
-      <aside className="w-[240px] flex-shrink-0 flex flex-col bg-surface border-r border-outline">
-        <div className="h-[52px] flex items-center px-4 drag-region">
-          <div className="flex items-center gap-2 text-accent-amber pt-2">
-            <Mic className="w-5 h-5 fill-accent-amber text-accent-amber" />
-            <span className="font-headline font-bold text-[15px] tracking-wide text-primary">Aodcast</span>
+      <aside className="w-[240px] flex-shrink-0 flex flex-col bg-[#141416]/90 border-r border-white/5 backdrop-blur-2xl shadow-lg relative">
+        {/* Brand spacing accommodating macOS traffic lights */}
+        <div className="h-[74px] flex items-end pb-3 px-5 drag-region select-none">
+          <div className="flex items-center gap-2.5 text-accent-amber">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] shadow-md shadow-accent-amber/15">
+              <Mic className="w-4.5 h-4.5 text-black fill-black" />
+            </div>
+            <span className="font-headline font-bold text-[16px] tracking-[0.05em] text-white">Aodcast</span>
           </div>
         </div>
 
-        <nav className="px-3 py-2 space-y-1 mt-2">
+        <nav className="px-3.5 py-2.5 space-y-1.5 mt-2">
           <NavLink
             to="/chat"
             end
             className={({ isActive }) =>
               cn(
-                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-[13px] font-medium",
+                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
                 isActive || location.pathname.startsWith("/chat/")
-                  ? "bg-primary/10 text-primary"
-                  : "text-secondary hover:bg-surface-container-high hover:text-primary",
+                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
+                  : "text-secondary hover:bg-white/5 hover:text-white",
               )
             }
           >
-            <div className="w-6 h-6 flex items-center justify-center">
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <MessageSquare className="w-4 h-4" />
             </div>
             Chat
@@ -103,14 +106,14 @@ export default function App() {
             end
             className={({ isActive }) =>
               cn(
-                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-[13px] font-medium",
+                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
                 isActive || location.pathname.startsWith("/script/")
-                  ? "bg-primary/10 text-primary"
-                  : "text-secondary hover:bg-surface-container-high hover:text-primary",
+                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
+                  : "text-secondary hover:bg-white/5 hover:text-white",
               )
             }
           >
-            <div className="w-6 h-6 flex items-center justify-center">
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Edit3 className="w-4 h-4" />
             </div>
             Script
@@ -120,14 +123,14 @@ export default function App() {
             to="/models"
             className={({ isActive }) =>
               cn(
-                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-[13px] font-medium",
+                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
                 isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-secondary hover:bg-surface-container-high hover:text-primary",
+                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
+                  : "text-secondary hover:bg-white/5 hover:text-white",
               )
             }
           >
-            <div className="w-6 h-6 flex items-center justify-center">
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Package className="w-4 h-4" />
             </div>
             Models
@@ -137,14 +140,14 @@ export default function App() {
             to="/voice-studio"
             className={({ isActive }) =>
               cn(
-                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-[13px] font-medium",
+                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
                 isActive || location.pathname.startsWith("/voice-studio/")
-                  ? "bg-primary/10 text-primary"
-                  : "text-secondary hover:bg-surface-container-high hover:text-primary",
+                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
+                  : "text-secondary hover:bg-white/5 hover:text-white",
               )
             }
           >
-            <div className="w-6 h-6 flex items-center justify-center">
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Mic className="w-4 h-4" />
             </div>
             Voice Studio
@@ -153,18 +156,18 @@ export default function App() {
 
         <div className="flex-1 min-h-0" aria-hidden />
 
-        <div className="p-3 border-t border-outline shrink-0">
+        <div className="p-3.5 border-t border-white/5 shrink-0">
           <button
             type="button"
             onClick={() => navigate("/settings")}
             className={cn(
-              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-[13px] font-medium",
+              "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
               pathSegment === "settings"
-                ? "bg-primary/10 text-primary"
-                : "text-secondary hover:bg-surface-container-high hover:text-primary",
+                ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
+                : "text-secondary hover:bg-white/5 hover:text-white",
             )}
           >
-            <div className="w-6 h-6 flex items-center justify-center">
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Settings className="w-4 h-4" />
             </div>
             Settings
@@ -173,11 +176,11 @@ export default function App() {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 bg-background relative">
-        <header className="h-[52px] flex items-center justify-between px-4 border-b border-outline bg-background/80 backdrop-blur-md drag-region shrink-0">
+        <header className="h-[74px] flex items-end pb-3 px-6 border-b border-white/5 bg-[rgba(15,15,17,0.85)] backdrop-blur-xl drag-region shrink-0 shadow-[0_1px_0_rgba(255,255,255,0.01)]">
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className="font-headline font-semibold text-[14px] text-primary truncate">{title}</h2>
+            <h2 className="font-headline font-semibold text-[15px] tracking-wide text-white truncate">{title}</h2>
             {currentProject && (
-              <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-medium bg-surface-container border border-outline text-secondary uppercase tracking-wider">
+              <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-headline font-semibold bg-white/5 border border-white/10 text-accent-amber uppercase tracking-wider">
                 {currentProject.session.state.replace(/_/g, " ")}
               </span>
             )}
