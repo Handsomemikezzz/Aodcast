@@ -1190,6 +1190,40 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertIn("Unsupported TTS provider", payload["error"]["message"])
 
+    def test_llm_connection_mock_provider_returns_success_instantly(self) -> None:
+        status, _, payload = self.request_json(
+            "POST",
+            "/api/v1/config/llm/test",
+            body={
+                "provider": "mock",
+                "model": "any-model",
+                "base_url": "http://any-url",
+                "api_key": "any-key",
+            },
+            token="runtime-token",
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["status"], "success")
+        self.assertEqual(payload["data"]["latency_ms"], 0)
+
+    def test_tts_connection_mock_remote_provider_returns_success_instantly(self) -> None:
+        status, _, payload = self.request_json(
+            "POST",
+            "/api/v1/config/tts/test",
+            body={
+                "provider": "mock_remote",
+                "model": "any-model",
+                "base_url": "http://any-url",
+                "api_key": "any-key",
+            },
+            token="runtime-token",
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["status"], "success")
+        self.assertEqual(payload["data"]["latency_ms"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

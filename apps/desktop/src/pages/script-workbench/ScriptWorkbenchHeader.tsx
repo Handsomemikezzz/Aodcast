@@ -1,5 +1,6 @@
 import { ArrowLeft, Save } from "lucide-react";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
+import { QuickSettingsPopover } from "../../components/QuickSettingsPopover";
 
 export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkbenchResult }) {
   return (
@@ -35,6 +36,7 @@ export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkb
         </div>
 
         <div className="flex flex-wrap items-center gap-3 lg:justify-end">
+          <QuickSettingsPopover onConfigChange={workbench.refreshWorkspace} />
           <button
             type="button"
             onClick={() => void workbench.handleSave()}

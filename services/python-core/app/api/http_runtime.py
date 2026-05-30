@@ -1275,6 +1275,140 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
+        if self.command == "POST" and path == "/api/v1/config/llm/test":
+            provider = str(body.get("provider") or "").strip()
+            model = str(body.get("model") or "").strip()
+            base_url = str(body.get("base_url") or "").strip()
+            api_key = str(body.get("api_key") or "").strip()
+            if provider == "mock":
+                self._send_bridge_envelope(
+                    success_envelope(
+                        {"status": "success", "latency_ms": 0, "message": "Mock connection successful."},
+                        operation="test_llm_connection"
+                    ),
+                    origin=origin,
+                )
+                return
+            if provider == "openai_compatible":
+                if not base_url:
+                    raise ValueError("Field 'base_url' is required.")
+                if not model:
+                    raise ValueError("Field 'model' is required.")
+                if not api_key:
+                    raise ValueError("Field 'api_key' is required.")
+                import time
+                from openai import OpenAI
+                try:
+                    client = OpenAI(base_url=base_url, api_key=api_key)
+                    start_time = time.perf_counter()
+                    client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": "ping"}],
+                        max_tokens=1,
+                    )
+                    latency_ms = int((time.perf_counter() - start_time) * 1000)
+                    self._send_bridge_envelope(
+                        success_envelope(
+                            {"status": "success", "latency_ms": latency_ms, "message": f"Connection successful. (Latency: {latency_ms}ms)"},
+                            operation="test_llm_connection"
+                        ),
+                        origin=origin,
+                    )
+                except Exception as exc:
+                    self._send_bridge_envelope(
+                        error_envelope(
+                            operation="test_llm_connection",
+                            code="llm_connection_failed",
+                            message=f"Connection failed: {str(exc)}",
+                        ),
+                        origin=origin,
+                    )
+                return
+            raise ValueError(f"Unsupported provider '{provider}' for LLM connection testing.")
+        if self.command == "POST" and path == "/api/v1/config/tts/test":
+            provider = str(body.get("provider") or "").strip()
+            model = str(body.get("model") or "").strip()
+            base_url = str(body.get("base_url") or "").strip()
+            api_key = str(body.get("api_key") or "").strip()
+            voice = str(body.get("voice") or "alloy").strip()
+            audio_format = str(body.get("audio_format") or "wav").strip()
+            if provider == "mock_remote":
+                self._send_bridge_envelope(
+                    success_envelope(
+                        {"status": "success", "latency_ms": 0, "message": "Mock connection successful."},
+                        operation="test_tts_connection"
+                    ),
+                    origin=origin,
+                )
+                return
+            if provider == "local_mlx":
+                capability = detect_local_mlx_capability(self.context.config_store.load_tts_config())
+                if capability.available:
+                    self._send_bridge_envelope(
+                        success_envelope(
+                            {"status": "success", "latency_ms": 0, "message": "Local MLX runtime is healthy."},
+                            operation="test_tts_connection"
+                        ),
+                        origin=origin,
+                    )
+                else:
+                    self._send_bridge_envelope(
+                        error_envelope(
+                            operation="test_tts_connection",
+                            code="tts_connection_failed",
+                            message=f"Local MLX is unavailable: {capability.message}",
+                        ),
+                        origin=origin,
+                    )
+                return
+            if provider == "openai_compatible":
+                if not base_url:
+                    raise ValueError("Field 'base_url' is required.")
+                if not model:
+                    raise ValueError("Field 'model' is required.")
+                if not api_key:
+                    raise ValueError("Field 'api_key' is required.")
+                import time
+                from urllib import request as urllib_request
+                import json
+                try:
+                    payload = {
+                        "model": model,
+                        "voice": voice,
+                        "input": "ping",
+                        "response_format": "mp3",
+                    }
+                    req = urllib_request.Request(
+                        url=base_url.rstrip("/") + "/audio/speech",
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {api_key}",
+                        },
+                        method="POST",
+                    )
+                    start_time = time.perf_counter()
+                    with urllib_request.urlopen(req, timeout=10) as response:
+                        _ = response.read()
+                    latency_ms = int((time.perf_counter() - start_time) * 1000)
+                    self._send_bridge_envelope(
+                        success_envelope(
+                            {"status": "success", "latency_ms": latency_ms, "message": f"Connection successful. (Latency: {latency_ms}ms)"},
+                            operation="test_tts_connection"
+                        ),
+                        origin=origin,
+                    )
+                except Exception as exc:
+                    self._send_bridge_envelope(
+                        error_envelope(
+                            operation="test_tts_connection",
+                            code="tts_connection_failed",
+                            message=f"Connection failed: {str(exc)}",
+                        ),
+                        origin=origin,
+                    )
+                return
+            raise ValueError(f"Unsupported provider '{provider}' for TTS connection testing.")
         if self.command == "PUT" and path == "/api/v1/config/llm":
             provider = str(body.get("provider") or "").strip()
             if not provider:
@@ -1912,6 +2046,10 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "download_model"
         if path.startswith("/api/v1/models/") and path.endswith(":delete"):
             return "delete_model"
+        if path == "/api/v1/config/llm/test":
+            return "test_llm_connection"
+        if path == "/api/v1/config/tts/test":
+            return "test_tts_connection"
         if path == "/api/v1/config/llm/preflight":
             return "check_llm_config"
         if path.startswith("/api/v1/config/llm"):

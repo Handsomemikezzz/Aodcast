@@ -185,6 +185,8 @@ export interface DesktopBridge {
   configureLLMProvider(input: ConfigureLLMInput): Promise<LLMProviderConfig>;
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
+  testLLMConnection(input: ConfigureLLMInput): Promise<{ status: string; latency_ms: number; message: string }>;
+  testTTSConnection(input: ConfigureTTSInput): Promise<{ status: string; latency_ms: number; message: string }>;
   listModelsStatus(): Promise<ModelStatus[]>;
   showModelStorage(): Promise<ModelStorageStatus>;
   migrateModelStorage(destination: string): Promise<{ message: string; task_id?: string; request_state?: RequestState }>;

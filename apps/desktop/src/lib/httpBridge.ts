@@ -811,6 +811,35 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       });
       return response.tts_config!;
     },
+    async testLLMConnection(input: ConfigureLLMInput) {
+      return callHttp<{ status: string; latency_ms: number; message: string }>("/api/v1/config/llm/test", {
+        method: "POST",
+        needsToken: true,
+        body: JSON.stringify({
+          provider: input.provider,
+          model: input.model,
+          base_url: input.base_url,
+          api_key: input.api_key,
+        }),
+      });
+    },
+    async testTTSConnection(input: ConfigureTTSInput) {
+      return callHttp<{ status: string; latency_ms: number; message: string }>("/api/v1/config/tts/test", {
+        method: "POST",
+        needsToken: true,
+        body: JSON.stringify({
+          provider: input.provider,
+          model: input.model,
+          base_url: input.base_url,
+          api_key: input.api_key,
+          voice: input.voice,
+          audio_format: input.audio_format,
+          local_runtime: input.local_runtime,
+          local_model_path: input.local_model_path,
+          local_ref_audio_path: input.local_ref_audio_path,
+        }),
+      });
+    },
     async listModelsStatus() {
       const response = await callHttp<{}>("/api/v1/models");
       return response.models ?? [];

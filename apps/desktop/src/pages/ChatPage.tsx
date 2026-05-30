@@ -22,6 +22,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ProgressBar } from "../components/ProgressBar";
+import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
 import { useBridge } from "../lib/BridgeContext";
 import {
   SessionProject,
@@ -644,6 +645,8 @@ export function ChatPage({
         <Plus className="w-4 h-4" />
         New chat
       </button>
+      <div className="flex-1" />
+      <QuickSettingsPopover onConfigChange={ensureLlmReady} />
     </div>
   );
 
