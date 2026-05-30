@@ -6,10 +6,11 @@ interface AudioPlayerProps {
   src: string;
   className?: string;
   onError?: () => void;
+  variant?: "full" | "minimal";
 }
 
 export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
-  ({ src, className, onError }, ref) => {
+  ({ src, className, onError, variant = "full" }, ref) => {
     const audioRef = useRef<HTMLAudioElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [duration, setDuration] = useState(0);
@@ -108,7 +109,8 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
     return (
       <div 
         className={cn(
-          "flex flex-col gap-3 rounded-2xl border border-white/5 bg-[rgba(20,20,24,0.45)] p-3.5 backdrop-blur-md shadow-sm transition-all duration-200", 
+          "flex flex-col rounded-2xl border border-white/5 bg-[rgba(20,20,24,0.45)] backdrop-blur-md shadow-sm transition-all duration-200", 
+          variant === "minimal" ? "p-2.5 px-3 gap-0" : "p-3.5 gap-3",
           className
         )}
       >
@@ -132,7 +134,8 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
             onClick={togglePlay}
             disabled={hasError || !src}
             className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-black shadow-md transition-all duration-200 focus:outline-none",
+              "flex shrink-0 items-center justify-center rounded-full text-black shadow-md transition-all duration-200 focus:outline-none",
+              variant === "minimal" ? "h-9 w-9" : "h-10 w-10",
               hasError
                 ? "bg-red-500/20 text-red-200 cursor-not-allowed border border-red-500/20"
                 : !src
@@ -141,66 +144,87 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
             )}
           >
             {hasError ? (
-              <AlertCircle className="h-4.5 w-4.5 text-red-400" />
+              <AlertCircle className={variant === "minimal" ? "h-4 w-4 text-red-400" : "h-4.5 w-4.5 text-red-400"} />
             ) : isPlaying ? (
-              <Pause className="h-4.5 w-4.5 fill-current text-black" />
+              <Pause className={variant === "minimal" ? "h-4 w-4 fill-current text-black" : "h-4.5 w-4.5 fill-current text-black"} />
             ) : (
-              <Play className="h-4.5 w-4.5 fill-current ml-0.5 text-black" />
+              <Play className={variant === "minimal" ? "h-4 w-4 fill-current ml-0.5 text-black" : "h-4.5 w-4.5 fill-current ml-0.5 text-black"} />
             )}
           </button>
 
-          {/* Progress Slider Bar */}
-          <div className="flex-1 flex flex-col gap-1.5">
-            <div className="flex items-center justify-between text-[11px] font-headline tracking-wide text-secondary/90 px-0.5">
-              <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(duration)}</span>
+          {variant === "minimal" ? (
+            /* Minimalist Progress Section */
+            <div className="flex-1 flex flex-col gap-1 min-w-0">
+              <div className="flex items-center justify-between text-[10px] font-headline tracking-wide text-secondary/70 px-0.5">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+              
+              <div className="relative w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-[#f2bf57] to-[#d79b2f] transition-all duration-100 rounded-full"
+                  style={{
+                    width: `${duration ? (currentTime / duration) * 100 : 0}%`
+                  }}
+                />
+              </div>
             </div>
-            
-            <div className="relative group w-full flex items-center h-4">
+          ) : (
+            /* Progress Slider Bar */
+            <div className="flex-1 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between text-[11px] font-headline tracking-wide text-secondary/90 px-0.5">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+              
+              <div className="relative group w-full flex items-center h-4">
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 100}
+                  value={currentTime}
+                  onChange={handleSeekChange}
+                  disabled={hasError || !src || duration === 0}
+                  className="premium-slider w-full h-1"
+                  style={{
+                    background: `linear-gradient(to right, #f2bf57 0%, #f2bf57 ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255, 255, 255, 0.08) ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255, 255, 255, 0.08) 100%)`
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Volume Controller */}
+          {variant === "full" && (
+            <div className="flex items-center gap-2 group/volume shrink-0">
+              <button
+                type="button"
+                onClick={toggleMute}
+                disabled={hasError}
+                className="p-1.5 rounded-lg text-secondary hover:text-primary transition-colors focus:outline-none"
+              >
+                {isMuted || volume === 0 ? (
+                  <VolumeX className="h-4 w-4" />
+                ) : (
+                  <Volume2 className="h-4 w-4" />
+                )}
+              </button>
+              
               <input
                 type="range"
                 min={0}
-                max={duration || 100}
-                value={currentTime}
-                onChange={handleSeekChange}
-                disabled={hasError || !src || duration === 0}
-                className="premium-slider w-full h-1"
+                max={1}
+                step={0.01}
+                value={isMuted ? 0 : volume}
+                onChange={handleVolumeChange}
+                disabled={hasError}
+                className="premium-slider w-16 h-1 opacity-60 group-hover/volume:opacity-100 transition-opacity"
                 style={{
-                  background: `linear-gradient(to right, #f2bf57 0%, #f2bf57 ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255, 255, 255, 0.08) ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255, 255, 255, 0.08) 100%)`
+                  background: `linear-gradient(to right, #f2bf57 0%, #f2bf57 ${(isMuted ? 0 : volume) * 100}%, rgba(255, 255, 255, 0.08) ${(isMuted ? 0 : volume) * 100}%, rgba(255, 255, 255, 0.08) 100%)`
                 }}
               />
             </div>
-          </div>
-
-          {/* Volume Controller */}
-          <div className="flex items-center gap-2 group/volume shrink-0">
-            <button
-              type="button"
-              onClick={toggleMute}
-              disabled={hasError}
-              className="p-1.5 rounded-lg text-secondary hover:text-primary transition-colors focus:outline-none"
-            >
-              {isMuted || volume === 0 ? (
-                <VolumeX className="h-4 w-4" />
-              ) : (
-                <Volume2 className="h-4 w-4" />
-              )}
-            </button>
-            
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={isMuted ? 0 : volume}
-              onChange={handleVolumeChange}
-              disabled={hasError}
-              className="premium-slider w-16 h-1 opacity-60 group-hover/volume:opacity-100 transition-opacity"
-              style={{
-                background: `linear-gradient(to right, #f2bf57 0%, #f2bf57 ${(isMuted ? 0 : volume) * 100}%, rgba(255, 255, 255, 0.08) ${(isMuted ? 0 : volume) * 100}%, rgba(255, 255, 255, 0.08) 100%)`
-              }}
-            />
-          </div>
+          )}
         </div>
 
         {hasError && (

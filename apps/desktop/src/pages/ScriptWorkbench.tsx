@@ -93,7 +93,7 @@ export function ScriptWorkbench({
             />
           ) : null}
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_420px] xl:items-start">
+          <div className="flex flex-col gap-5">
             <ScriptEditorPane workbench={workbench} />
             <ScriptAudioSidebar workbench={workbench} />
           </div>

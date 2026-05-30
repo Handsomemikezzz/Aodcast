@@ -603,7 +603,7 @@ export function VoiceStudioPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full overflow-y-auto px-5 py-5 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5">
+      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5">
         <section className="rounded-[32px] border border-white/5 bg-[rgba(20,20,24,0.55)] p-6 backdrop-blur-xl shadow-lg relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-[#f2bf57]/[0.03] to-transparent pointer-events-none" />
           <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -631,8 +631,8 @@ export function VoiceStudioPage() {
         {error ? <p className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
         {message ? <p className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="space-y-5">
+        <div className="flex flex-col gap-5">
+          <div className="mx-auto w-full max-w-[960px] space-y-5">
             <section className="rounded-[32px] border border-white/5 bg-[rgba(20,20,24,0.45)] p-6 backdrop-blur-xl shadow-md">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -666,7 +666,7 @@ export function VoiceStudioPage() {
                   </button>
                 </div>
               </div>
-              <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-6 grid gap-4 grid-cols-1 sm:grid-cols-2">
                 {activeVoiceProfiles.map((profile) => {
                   const isSelected = voiceReference?.voice_profile_id === profile.voice_profile_id;
                   const profileAudioError = profileAudioErrors[profile.voice_profile_id];
@@ -718,7 +718,8 @@ export function VoiceStudioPage() {
                         <AudioPlayer
                           src={resolveAudioFileUrl(profile.audio_path)}
                           onError={() => handleProfileAudioLoadError(profile.voice_profile_id)}
-                          className="mt-3 bg-[rgba(20,20,24,0.35)]"
+                          className="bg-[rgba(20,20,24,0.35)]"
+                          variant="minimal"
                         />
                         {profileAudioError ? <p className="mt-2 text-xs text-red-400">{profileAudioError}</p> : null}
                         <div className="mt-4 flex flex-wrap gap-2">
@@ -861,29 +862,25 @@ export function VoiceStudioPage() {
             ) : null}
           </div>
 
-          <aside className="space-y-5">
-            <section className="rounded-3xl border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md shadow-[0_12px_40px_rgba(0,0,0,0.3)] p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className={cn("h-2 w-2 rounded-full", localEngineReady ? "bg-emerald-400 shadow-[0_0_8px_#10b981]" : "bg-accent-amber animate-pulse shadow-[0_0_8px_#f59e0b]")} />
-                    <h2 className="text-xs font-semibold tracking-wider text-secondary uppercase">当前语音引擎</h2>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-primary">{engineLabel}</p>
-                    <p className={cn("mt-1 text-xs", localEngineReady ? "text-secondary/70" : "text-amber-200/90")}>{engineStatus}</p>
-                  </div>
+          <section className="mx-auto w-full max-w-[960px] rounded-2xl border border-white/5 bg-[rgba(27,27,30,0.65)] p-4 backdrop-blur-md shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3 sm:items-center">
+                <div className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full sm:mt-0", localEngineReady ? "bg-emerald-400 shadow-[0_0_8px_#10b981]" : "bg-accent-amber animate-pulse shadow-[0_0_8px_#f59e0b]")} />
+                <div className="min-w-0">
+                  <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">当前语音引擎</h2>
+                  <p className="mt-0.5 truncate text-sm font-semibold text-primary">{engineLabel}</p>
+                  <p className={cn("mt-0.5 text-xs", localEngineReady ? "text-secondary/70" : "text-amber-200/90")}>{engineStatus}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => navigate("/models")}
-                  className="rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-xs font-semibold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
-                >
-                  Change model
-                </button>
               </div>
-            </section>
-          </aside>
+              <button
+                type="button"
+                onClick={() => navigate("/models")}
+                className="shrink-0 rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-xs font-semibold text-primary transition-all hover:border-white/10 hover:bg-white/10 active:scale-[0.98] cursor-pointer"
+              >
+                Change model
+              </button>
+            </div>
+          </section>
         </div>
       </div>
       {profileDialogMode ? (

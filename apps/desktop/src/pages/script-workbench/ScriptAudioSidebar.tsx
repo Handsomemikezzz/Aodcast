@@ -27,7 +27,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
     : "/voice-studio";
 
   return (
-    <aside className="flex min-h-0 flex-col gap-4 self-start">
+    <section className="mx-auto grid w-full max-w-[960px] gap-4 lg:grid-cols-2 lg:items-start">
       <div className="rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
         <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.04] pb-4">
           <div>
@@ -251,7 +251,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
+      <div className="flex flex-col rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
         <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.04] pb-4">
           <div>
             <p className="text-sm font-bold text-primary font-display tracking-tight">Generated Audio</p>
@@ -261,7 +261,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         </div>
 
         {workbench.audioSrc ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex flex-col gap-4">
             <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.6)] p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -330,7 +330,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </div>
           </div>
         ) : (
-          <div className="flex min-h-[280px] flex-1 flex-col items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-[rgba(15,15,17,0.4)] px-5 text-center">
+          <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-[rgba(15,15,17,0.4)] px-5 text-center">
             <Wand2 className="mb-3 h-8 w-8 text-accent-amber animate-pulse" />
             <p className="text-sm font-semibold text-primary">No audio file yet</p>
             <p className="mt-2 max-w-[280px] text-xs leading-relaxed text-secondary/60">
@@ -339,6 +339,6 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
           </div>
         )}
       </div>
-    </aside>
+    </section>
   );
 }
