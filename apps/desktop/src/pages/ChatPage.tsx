@@ -66,7 +66,8 @@ export function ChatPage({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyActionId, setHistoryActionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const landingInputRef = useRef<HTMLTextAreaElement>(null);
+  const landingInputRef = useRef<HTMLDivElement>(null);
+  const composerInputRef = useRef<HTMLDivElement>(null);
 
   const [landingInput, setLandingInput] = useState("");
   const [landingSubmitting, setLandingSubmitting] = useState(false);
@@ -227,6 +228,28 @@ export function ChatPage({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [project?.transcript?.turns]);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text/plain");
+    document.execCommand("insertText", false, text);
+  };
+
+  // Caret-safe synchronization for landing input
+  useEffect(() => {
+    const el = landingInputRef.current;
+    if (el && el.innerText !== landingInput) {
+      el.innerText = landingInput;
+    }
+  }, [landingInput]);
+
+  // Caret-safe synchronization for active Chat Composer
+  useEffect(() => {
+    const el = composerInputRef.current;
+    if (el && el.innerText !== inputValue) {
+      el.innerText = inputValue;
+    }
+  }, [inputValue]);
 
   const handleStart = async () => {
     if (!sessionId) return;
@@ -706,20 +729,20 @@ export function ChatPage({
                   >
                     <Plus className="w-5 h-5" />
                   </button>
-                  <textarea
+                  <div
                     ref={landingInputRef}
-                    value={landingInput}
-                    onChange={(e) => setLandingInput(e.target.value)}
+                    contentEditable={!landingSubmitting}
+                    suppressContentEditableWarning
+                    onInput={(e) => setLandingInput(e.currentTarget.innerText)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         void handleLandingCreate();
                       }
                     }}
-                    disabled={landingSubmitting}
-                    placeholder="今天你想聊什么?"
-                    rows={1}
-                    className="flex-1 min-h-[44px] max-h-[200px] resize-none bg-transparent border-none focus:ring-0 text-[15px] text-white placeholder:text-outline/75 py-2 px-1 outline-none leading-relaxed"
+                    onPaste={handlePaste}
+                    data-placeholder="今天你想聊什么?"
+                    className="flex-1 min-h-[44px] max-h-[200px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[15px] text-white placeholder:text-outline/75 py-2 px-1 outline-none leading-relaxed composer-editable select-text text-left"
                   />
                   <span
                     title="Voice input coming soon"
@@ -991,9 +1014,11 @@ export function ChatPage({
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-20 select-none">
             <div className="flex flex-col gap-2.5 rounded-2xl border border-white/5 bg-[rgba(22,22,26,0.72)] backdrop-blur-xl p-3 shadow-[0_24px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.02)] focus-within:border-accent-amber/25 focus-within:shadow-[0_24px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(242,191,87,0.05)] transition-all duration-300">
               <div className="flex items-end gap-3.5">
-                <textarea 
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
+                <div 
+                  ref={composerInputRef}
+                  contentEditable={!submitting}
+                  suppressContentEditableWarning
+                  onInput={(e) => setInputValue(e.currentTarget.innerText)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       if (submitting) return;
@@ -1001,9 +1026,9 @@ export function ChatPage({
                       handleSubmit();
                     }
                   }}
-                  className="flex-1 bg-transparent border-none focus:ring-0 resize-none text-[14px] text-white placeholder:text-outline/75 py-1.5 px-2 max-h-[160px] min-h-[38px] outline-none leading-relaxed" 
-                  placeholder="输入你的想法... (Shift+Enter 换行，Enter 发送)" 
-                  rows={1}
+                  onPaste={handlePaste}
+                  className="flex-1 bg-transparent border-none focus:ring-0 overflow-y-auto text-[14px] text-white placeholder:text-outline/75 py-1.5 px-2 max-h-[160px] min-h-[38px] outline-none leading-relaxed composer-editable select-text text-left" 
+                  data-placeholder="输入你的想法... (Shift+Enter 换行，Enter 发送)" 
                 />
                 
                 <div className="flex items-center gap-1.5 shrink-0 mb-0.5">

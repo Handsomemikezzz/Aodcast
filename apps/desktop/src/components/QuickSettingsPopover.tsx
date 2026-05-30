@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SlidersHorizontal, Sparkles, Volume2, Check, Loader2, Settings } from "lucide-react";
+import { SlidersHorizontal, Sparkles, Volume2, Check, Loader2, ChevronDown } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
 import { LLMProviderConfig, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";

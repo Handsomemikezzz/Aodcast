@@ -171,3 +171,26 @@ input[type="range"].premium-slider::-webkit-slider-thumb {
 input[type="range"].premium-slider:hover::-webkit-slider-thumb {
   transform: scale(1.2);
 }
+
+/* Fix WebKit/WKWebView text selection trail and newline block highlight bug in textareas */
+textarea::selection {
+  background-color: rgba(242, 191, 87, 0.22) !important;
+  color: inherit;
+}
+
+/* ContentEditable Composer Placeholder and Layout Styling */
+.composer-editable {
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  outline: none;
+  line-height: 1.4 !important;
+}
+.composer-editable:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(255, 243, 215, 0.4);
+  pointer-events: none;
+  display: block;
+}
+
