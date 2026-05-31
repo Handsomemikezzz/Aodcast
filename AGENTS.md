@@ -16,9 +16,8 @@ If implementation changes invalidate this file, update `AGENTS.md` in the same c
 
 ## Product Scope
 
-Current source of truth: [docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md](docs/superpowers/specs/2026-03-28-echomind-podcast-mvp-design.md)
-Implementation plan: [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md)
-Product overview (sessions, multi-script snapshots): [docs/product/product-overview.md](docs/product/product-overview.md)
+Current source of truth: code, tests, configuration, and launch scripts.
+Product overview: [docs/product/product-overview.md](docs/product/product-overview.md)
 
 Current MVP:
 
@@ -26,7 +25,7 @@ Current MVP:
 - frontend: Tauri app shell
 - backend: local Python orchestration core
 - input: text topic only
-- output: solo podcast script plus final audio, with Voice Studio take selection for final audio
+- output: solo podcast script plus final audio rendered from Script Workbench
 - LLM: user-configured API provider
 - TTS: local MLX-backed provider as the primary first-release path, plus remote API provider support
 
@@ -62,7 +61,7 @@ Out of scope for the current MVP:
 - bridge success payloads and bridge failures must include a normalized `request_state` contract (`operation`, `phase`, `progress_percent`, `message`) so frontend pages can render consistent loading/error/task-state UX.
 - long-running HTTP bridge operations must persist pollable task states and surface incremental `progress_percent` through `show_task_state` before adding new UI long-task flows.
 - long-running HTTP bridge operations that expose `show_task_state` must also support `cancel_task` with cooperative phase transitions (`running -> cancelling -> cancelled`) for desktop-triggered cancellation.
-- Voice Studio full-audio generation uses the same long-task contract and stores at most the final take plus latest candidate take; setting a take as final must keep artifact compatibility fields (`audio_path`, `transcript_path`, `provider`) in sync for Script-page playback.
+- Script Workbench owns final podcast rendering and generated-audio management. Voice Studio owns reusable voice profiles, preview, and script voice selection; legacy take endpoints remain compatibility surfaces only.
 - model-specific runtime logic belongs inside provider runner/runtime modules, not in orchestration or desktop files.
 
 ## Change Protocol
@@ -110,7 +109,7 @@ Maintenance cadence and triggers live in [docs/operations/maintenance-playbook.m
 
 ## Delivery Workflow
 
-Feature delivery should follow the staged plan in [docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md](docs/superpowers/plans/2026-03-28-echomind-podcast-mvp-implementation-plan.md).
+Feature delivery should follow the current product and architecture docs plus the active code contracts.
 
 When using multiple agents:
 
@@ -118,7 +117,7 @@ When using multiple agents:
 - treat schema and governance updates as first-class tasks
 - merge contract changes before dependent implementation work
 - run maintenance agents after structural or cross-boundary changes
-- if teammate spawning is unavailable in the current runtime, the lead agent must still follow the same task boundaries and keep status updates in `docs/operations/progress-tracker.md`
+- if teammate spawning is unavailable in the current runtime, the lead agent must still follow the same task boundaries and report status in the active conversation or task artifact
 
 Feature and maintenance role definitions live in [docs/operations/subagents.md](docs/operations/subagents.md).
 

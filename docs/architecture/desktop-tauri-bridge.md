@@ -10,7 +10,7 @@ The current desktop path is:
 
 `React component -> DesktopBridge -> HTTP bridge -> localhost runtime -> python-core services`
 
-The desktop shell still owns lifecycle concerns, but it no longer owns business-operation transport through a subprocess/stdout JSON bridge.
+The desktop shell owns lifecycle concerns, while business operations use the localhost HTTP bridge.
 
 The desktop-owned responsibilities are:
 
@@ -66,6 +66,9 @@ The bridge contract must also preserve:
 - streamed reply chunks plus a final structured envelope
 - same payload shapes for desktop and same-machine browser clients
 
-## Related Document
+## Verification Anchors
 
-For the broader migration rationale and verification expectations, see `docs/architecture/shared-runtime-http-upgrade.md`.
+- `services/python-core/tests/test_http_bridge_parity.py`
+- `services/python-core/tests/test_http_browser_desktop_parity.py`
+- `services/python-core/tests/test_http_runtime_security.py`
+- `apps/desktop/src/lib/requestState.ts`

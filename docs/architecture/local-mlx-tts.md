@@ -27,8 +27,10 @@ If the local MLX capability check fails:
 
 If the capability check succeeds:
 
-- the provider invokes `mlx_audio.tts.generate`
-- the generated audio artifact is read back into the existing provider response shape
+- the provider routes through `MLXAudioQwenRunner`
+- the runner submits chunked jobs to a persistent `WorkerClient`
+- `WorkerClient` launches `python -m app.providers.tts_local_mlx.mlx_worker`
+- the worker loads the model once per worker lifetime and writes the joined audio output
 - artifact export and failure handling stay inside the existing orchestration flow
 
 ## Current Model Strategy
@@ -54,12 +56,8 @@ The local MLX path currently expects:
 
 The CLI exposes `--show-local-tts-capability` so the environment can be checked before attempting audio rendering.
 
-## Current Repository Validation Path
+## Repository Validation Path
 
-In this repository, local MLX validation currently works through:
+Use `./scripts/dev/run-python-core.sh --show-local-tts-capability` from the repository root. The script prefers `services/python-core/.venv` when present, so do not assume a bare system Python has the same MLX availability.
 
-- `services/python-core/.venv`
-- `mlx` and `mlx_audio` installed into that virtual environment
-- `examples/sample-models/local-mlx-placeholder`
-
-The placeholder directory is still useful for path-validation tests, but the real local generation path now targets `mlx_audio` and the Qwen3-TTS model family.
+The placeholder under `examples/sample-models/local-mlx-placeholder` is only for path-validation tests. It is not an executable model bundle.

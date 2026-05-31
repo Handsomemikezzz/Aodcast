@@ -32,8 +32,10 @@ class HttpRuntimeSecurityPrepTests(unittest.TestCase):
                 ("GET", "/api/v1/config/llm"),
                 ("PUT", "/api/v1/config/llm"),
                 ("GET", "/api/v1/config/llm/preflight"),
+                ("POST", "/api/v1/config/llm/test"),
                 ("GET", "/api/v1/config/tts"),
                 ("PUT", "/api/v1/config/tts"),
+                ("POST", "/api/v1/config/tts/test"),
             },
         )
         self.assertTrue(all("*" not in path for _, path in config_routes))

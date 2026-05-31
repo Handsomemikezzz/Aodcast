@@ -16,10 +16,10 @@ from tests.http_contract_helpers import (
 
 
 class HttpBridgeParityTests(unittest.TestCase):
-    def test_contract_matrix_covers_all_46_bridge_methods(self) -> None:
-        self.assertEqual(len(HTTP_BRIDGE_CONTRACTS), 46)
-        self.assertEqual(len({contract.desktop_method for contract in HTTP_BRIDGE_CONTRACTS}), 46)
-        self.assertEqual(len({(contract.http_method, contract.http_path) for contract in HTTP_BRIDGE_CONTRACTS}), 46)
+    def test_contract_matrix_covers_all_49_bridge_methods(self) -> None:
+        self.assertEqual(len(HTTP_BRIDGE_CONTRACTS), 49)
+        self.assertEqual(len({contract.desktop_method for contract in HTTP_BRIDGE_CONTRACTS}), 49)
+        self.assertEqual(len({(contract.http_method, contract.http_path) for contract in HTTP_BRIDGE_CONTRACTS}), 49)
 
     def test_contract_matrix_matches_desktop_bridge_interface(self) -> None:
         contract_methods = {contract.desktop_method for contract in HTTP_BRIDGE_CONTRACTS}
@@ -42,7 +42,8 @@ class HttpBridgeParityTests(unittest.TestCase):
         infer_operation_returns.update(HTTP_ONLY_BRIDGE_OPERATIONS)
         for contract in HTTP_BRIDGE_CONTRACTS:
             with self.subTest(method=contract.desktop_method):
-                self.assertIn(contract.cli_args[0], cli_text)
+                if contract.cli_args:
+                    self.assertIn(contract.cli_args[0], cli_text)
                 self.assertIn(contract.operation, infer_operation_returns)
 
     def test_stream_contract_preserves_existing_chunk_marker_and_operation(self) -> None:

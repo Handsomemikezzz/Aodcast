@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document describes the current Milestone 2 orchestration shape for the interview phase.
+This document describes the current orchestration shape for the interview phase.
 
 ## Flow
 
@@ -13,10 +13,10 @@ The Python orchestration core currently supports four interview actions:
 - evaluate readiness
 - request finish
 
-Desktop UX baseline (manual trigger):
+Desktop trigger:
 - The Chat page provides a manual **“生成脚本”** action.
-- Trigger path: `request_finish` -> `script:generate` -> open Script page.
-- If a script already exists, overwrite requires explicit user confirmation on the desktop side.
+- Trigger path: `request_finish` -> `generateScript` -> open Script page.
+- Each generation creates a new script snapshot.
 
 ## State Behavior
 
@@ -34,7 +34,7 @@ The current heuristic checks for four dimensions:
 - example or detail
 - conclusion
 
-This is a deterministic baseline for the MVP bootstrap phase. It exists to define orchestration boundaries before real provider-backed prompting is added.
+This deterministic check drives the `ai_can_finish` signal. Question generation can use the configured LLM provider, with mock fallback behavior kept inside the Python provider layer.
 
 ## Prompt Input Shape
 
@@ -47,4 +47,4 @@ The orchestration layer assembles a reusable prompt input object containing:
 - missing readiness dimensions
 - role, goal, strategy, and boundary instructions
 
-This object is the planned handoff shape for future LLM-backed question generation.
+LLM-backed interview question generation consumes this prompt input through the provider adapter.

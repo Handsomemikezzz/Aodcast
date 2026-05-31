@@ -22,7 +22,10 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
     "list_scripts",
     "delete_generated_audio",
     "delete_artifact_audio",
+    "export_podcast_audio",
     "delete_voice_take",
+    "test_llm_connection",
+    "test_tts_connection",
 )
 
 
@@ -56,6 +59,7 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("renderAudio", "render_audio", "POST", "/api/v1/sessions/{session_id}/audio:render", "render_audio", ("--render-audio", "session-123"), "P1-core", long_task=True),
     BridgeContract("deleteGeneratedAudio", "delete_generated_audio", "DELETE", "/api/v1/sessions/{session_id}/audio", "delete_generated_audio", ("--render-audio", "session-123"), "P2-voice-studio"),
     BridgeContract("deleteArtifactAudio", "delete_artifact_audio", "DELETE", "/api/v1/artifacts/audio", "delete_artifact_audio", ("--render-voice-preview",), "P2-voice-studio"),
+    BridgeContract("exportPodcastAudio", "export_podcast_audio", "POST", "/api/v1/artifacts/audio/export", "export_podcast_audio", (), "P2-voice-studio"),
     BridgeContract("listVoicePresets", "list_voice_presets", "GET", "/api/v1/voice-studio/presets", "list_voice_presets", ("--list-voice-presets",), "P2-voice-studio"),
     BridgeContract("renderVoicePreview", "render_voice_preview", "POST", "/api/v1/voice-studio/preview", "render_voice_preview", ("--render-voice-preview",), "P2-voice-studio"),
     BridgeContract("listVoiceProfiles", "list_voice_profiles", "GET", "/api/v1/voice-profiles", "list_voice_profiles", ("--list-voice-profiles",), "P2-voice-studio"),
@@ -76,8 +80,10 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("showLLMConfig", "show_llm_config", "GET", "/api/v1/config/llm", "show_llm_config", ("--show-llm-config",), "P1-complete"),
     BridgeContract("checkLLMConfig", "check_llm_config", "GET", "/api/v1/config/llm/preflight", "check_llm_config", ("--check-llm-config",), "P1-complete"),
     BridgeContract("configureLLMProvider", "configure_llm_provider", "PUT", "/api/v1/config/llm", "configure_llm_provider", ("--configure-llm-provider", "openai"), "P1-complete"),
+    BridgeContract("testLLMConnection", "test_llm_connection", "POST", "/api/v1/config/llm/test", "test_llm_connection", (), "P1-complete"),
     BridgeContract("showTTSConfig", "show_tts_config", "GET", "/api/v1/config/tts", "show_tts_config", ("--show-tts-config",), "P1-complete"),
     BridgeContract("configureTTSProvider", "configure_tts_provider", "PUT", "/api/v1/config/tts", "configure_tts_provider", ("--configure-tts-provider", "mock"), "P1-complete"),
+    BridgeContract("testTTSConnection", "test_tts_connection", "POST", "/api/v1/config/tts/test", "test_tts_connection", (), "P1-complete"),
     BridgeContract("listModelsStatus", "list_models_status", "GET", "/api/v1/models", "list_models_status", ("--list-models-status",), "P1-complete"),
     BridgeContract("showModelStorage", "show_model_storage", "GET", "/api/v1/models/storage", "show_model_storage", ("--show-model-storage",), "P1-complete"),
     BridgeContract("migrateModelStorage", "migrate_model_storage", "POST", "/api/v1/models/storage:migrate", "migrate_model_storage", ("--migrate-model-storage", "/tmp/aodcast-models"), "P1-complete", long_task=True),

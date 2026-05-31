@@ -2,18 +2,21 @@
 
 ## Purpose
 
-This document describes the current Milestone 3 script generation flow.
+This document describes the current script generation flow.
 
 ## Flow
 
-The Python core now supports a draft-generation path after the interview reaches `ready_to_generate`.
+The Python core supports draft generation from a session transcript.
 
 1. Load the persisted session project.
 2. Check LLM configuration readiness through the shared preflight contract when the request comes from the desktop shell.
 3. Load the active LLM configuration from local config storage.
 4. Build a provider adapter from the configured provider name.
 5. Generate a draft from the transcript.
-6. Persist the draft and transition the session to `script_generated`.
+6. Persist a new `ScriptRecord` under `sessions/<session-id>/scripts/<script-id>.json`.
+7. Transition the session to `script_generated`.
+
+Each generation creates a new script snapshot with a new `script_id`. It does not overwrite earlier script files.
 
 ## Provider Layer
 
@@ -43,7 +46,7 @@ The same readiness rules are exposed through `--check-llm-config` and `GET /api/
 
 ## Failure Behavior
 
-- generation failures preserve transcript and script records
+- generation failures preserve transcript and existing script records
 - session state moves to `failed`
 - the error message is stored in `session.last_error`
 - failed sessions can be retried through the same generation path after configuration is fixed

@@ -55,9 +55,12 @@ The shell is implemented through:
 
 ### `Voice Studio`
 
-- simple-default audio production workspace with current engine/model status
-- script summary, voice recipe summary, preview, full-audio take generation, and final/candidate take comparison
-- advanced controls for voice/style/speed/language/output/provider override; local model switching remains in `Models`
+- reusable voice-profile library
+- built-in and user-created profile listing
+- profile sample upload or microphone recording
+- profile preview through the pollable `render_voice_preview` task
+- script-bound profile selection at `/voice-studio/:sessionId/:scriptId`
+- no primary final-audio generation or take-comparison workflow
 
 ### `Settings`
 
@@ -76,8 +79,10 @@ Current bridge-backed desktop responsibilities:
 - interview start/reply/finish
 - script generation and editing
 - audio rendering
+- generated-audio deletion/export
 - local TTS capability inspection
 - model catalog listing and voice-model download/delete actions
+- voice-profile listing, creation, sample upload, update, delete, preview, and selection
 
 ## Current Limits
 

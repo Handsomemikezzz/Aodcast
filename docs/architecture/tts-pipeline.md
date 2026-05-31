@@ -3,14 +3,14 @@
 ## Purpose
 
 This document describes the end-to-end audio rendering pipeline, from the
-desktop Script Workbench / Voice Studio pages down to the MLX worker subprocess that produces the
+desktop Script Workbench and Voice Studio profile preview down to the MLX worker subprocess that produces the
 final audio artifact. It complements [local-mlx-tts.md](local-mlx-tts.md), which documents the
 MLX capability report and runtime requirements in isolation.
 
 ## Components
 
 - `apps/desktop/src/pages/script-workbench/useScriptWorkbenchAudio.ts` - Script Workbench audio controls that start renders, poll progress, and display final artifacts
-- `apps/desktop/src/pages/VoiceStudioPage.tsx` - Voice Studio preview/take controls for expressive voice selection and full-audio take generation
+- `apps/desktop/src/pages/VoiceStudioPage.tsx` - voice-profile management, profile preview, and script-bound profile selection
 - `apps/desktop/src/lib/httpBridge.ts` - HTTP bridge that talks to the
   Python runtime over `localhost`
 - `apps/desktop/src/lib/shellOps.ts` - Tauri-only helpers such as
@@ -41,9 +41,9 @@ create user profiles by copying managed reference audio into the exports area,
 update/delete user profiles, and select a profile for the current script.
 Selecting a profile does not render audio immediately; it updates script-scoped
 voice settings and `artifact.voice_reference` so the next preview and full render
-use the chosen profile reference audio and reference text. The older
+use the chosen profile reference audio and reference text. The legacy
 `voice-preview:lock` endpoint remains for compatibility with existing artifacts,
-but new profile-first UI should not rely on temporary preview locks.
+but profile-first UI should not rely on temporary preview locks.
 
 ## Flow
 
@@ -70,7 +70,7 @@ graph TD
     end
 
     scriptUi -->|renderAudio| bridge
-    voiceStudio -->|listVoiceProfiles/selectVoiceProfile/renderVoicePreview/renderAudio| bridge
+    voiceStudio -->|listVoiceProfiles/selectVoiceProfile/renderVoicePreview| bridge
     bridge -->|POST audio:render| startRender
     startRender --> orchestration
     orchestration --> chunker

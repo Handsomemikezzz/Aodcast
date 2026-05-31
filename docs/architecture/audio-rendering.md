@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document describes the current audio-rendering path after script generation/editing. Script Workbench and Voice Studio are the active desktop entry points; the older Generate/Edit pages have been removed from the routed product surface.
+This document describes the current audio-rendering path after script generation/editing. Script Workbench owns final podcast rendering. Voice Studio owns reusable voice profiles and short preview rendering.
 
 ## Flow
 
@@ -19,13 +19,13 @@ The Python core supports a render-audio path for any active script snapshot with
 9. Write transcript and audio artifacts under local export storage.
 10. Transition the session back to its previous interview/script state for historical renders, or to `completed` when rendering from an existing generated/edited script state.
 
-The desktop Script Workbench and Voice Studio use this override path for their engine controls:
+The desktop Script Workbench uses this override path for its engine controls:
 
 - Cloud rendering runs a single render with the configured cloud provider, or the local-capability fallback provider when the saved config currently points at `local_mlx`
 - Local MLX rendering runs a single render with `local_mlx`
 
 These buttons do **not** rewrite the global TTS settings saved in `Settings`.
-Both Script Workbench and Voice Studio renders use the same saved Voice Studio settings for the selected script, so audio generated from either page matches the selected Voice Studio voice instead of falling back to the raw Settings voice.
+Script Workbench renders use the selected script's saved voice settings, so final audio matches the selected voice profile instead of falling back to the raw Settings voice.
 
 Sessions can contain multiple script snapshots. Artifact playback fields remain backward-compatible at the top level, but the canonical per-script state is also stored under `artifact.script_artifacts[script_id]`. Loading, rendering, selecting, and deleting audio for a script must use the script-scoped project view so one script's voice settings/takes do not overwrite another script snapshot.
 
@@ -66,7 +66,7 @@ The current app can request provider/runtime output formats and serve common aud
 
 Voice Studio preview rendering uses the same localhost HTTP runtime but runs as a pollable background task (`render_voice_preview`) instead of holding the initial POST open. This keeps the Web and Tauri shells responsive while local MLX loads a model or synthesizes the short preview. The final task state carries the preview `audio_path`, provider/model metadata, and normalized settings so the frontend can resolve the artifact through `/api/v1/artifacts/audio`.
 
-When preview requests include a session/script context, the selected Voice Studio settings are saved on that script's artifact as `voice_settings`. Rendering a Voice Studio take also saves the settings and promotes the take to the final script audio by updating `final_take_id`, `audio_path`, `transcript_path`, and `provider`. This keeps Script Workbench playback and subsequent script renders aligned with the most recent Voice Studio choice.
+When preview requests include a session/script context, the selected Voice Studio settings are saved on that script's artifact as `voice_settings`.
 
 Voice profiles are the canonical voice source for profile-first rendering. The two built-in profiles are packaged app assets under `services/python-core/app/assets/voice-profiles/` and contain the English reference line “Hello, welcome to use Aodcast. What shall we talk about today?”. User-saved profiles are stored under `.local-data/voice-profiles/user-profiles.json`, with profile audio copied into `.local-data/exports/_voice_profiles` so it can be served through the normal artifact audio route.
 
@@ -80,5 +80,5 @@ Generated audio is managed through the desktop UI; users should not need to insp
 
 - Voice Studio preview audio can be deleted from the preview player. This removes the standalone file under `.local-data/exports/_previews`; if that file is currently used by a script's `voice_reference`, the reference lock is cleared so future renders do not point at a missing file.
 - User-saved voice profiles can be deleted from the Voice Studio library. This removes the copied profile audio and clears any script `voice_reference` pointing at it. Built-in profiles cannot be deleted.
-- Voice Studio takes can be deleted from the take card. If the deleted take is the current final take, the artifact's `final_take_id`, `audio_path`, `transcript_path`, and `provider` are cleared.
+- Legacy Voice Studio takes can still be deleted through the compatibility bridge method. If the deleted take is the current final take, the artifact's `final_take_id`, `audio_path`, `transcript_path`, and `provider` are cleared.
 - Script Workbench exposes deletion for the current generated audio artifact. This removes the audio/transcript export files and clears the selected script's artifact playback fields while preserving the saved Voice Studio `voice_settings` and other script snapshots.
