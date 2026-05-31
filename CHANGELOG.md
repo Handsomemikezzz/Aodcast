@@ -8,7 +8,8 @@ All notable changes to Aodcast will be documented in this file.
 
 - Local-first macOS desktop workflow for AI-guided solo podcast creation.
 - Interview-driven session flow, script generation, script snapshots, and script editing.
-- Voice Studio for local MLX-oriented preview and take generation workflows.
+- Voice Studio for reusable voice profiles, sample upload/recording, preview rendering, and profile management.
+- Script Workbench final-audio rendering from the selected script snapshot and voice profile.
 - Localhost HTTP runtime bridge between the Tauri/web UI and Python orchestration core.
 - Mock provider paths for smoke tests and development fallback.
 - Shared request-state contracts for long-running operations and cancellation.

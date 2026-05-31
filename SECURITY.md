@@ -8,7 +8,7 @@ Security fixes are considered for the current `main` branch and tagged alpha rel
 
 ## Reporting a vulnerability
 
-If you find a vulnerability, please do not open a public issue with exploit details. Report it privately to the maintainers through the repository owner's preferred private contact channel, or open a GitHub security advisory if available.
+If you find a vulnerability, please do not open a public issue with exploit details. Report it privately to `cxh1210@mail.ustc.edu.cn`, or open a GitHub security advisory if available.
 
 Please include:
 

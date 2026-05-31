@@ -1,43 +1,51 @@
 # Aodcast
 
+[![CI](https://github.com/Handsomemikezzz/Aodcast/actions/workflows/ci.yml/badge.svg)](https://github.com/Handsomemikezzz/Aodcast/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
 ![Desktop](https://img.shields.io/badge/desktop-Tauri-blue)
 ![Backend](https://img.shields.io/badge/backend-Python%203.13-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+English | [简体中文](README.zh-CN.md)
+
 Aodcast is an open-source, local-first macOS desktop app for turning a text idea into a solo podcast script and final audio.
 
 The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It guides the user through an interview, generates editable script snapshots, lets the user choose a reusable voice profile, and renders final audio through local or remote speech providers.
 
-## Features
+> Status: source-code alpha. Aodcast is usable for local development, but it is not yet a hardened packaged desktop distribution. Provider keys and generated content are stored locally; there is no Keychain or dedicated secret vault integration yet.
+
+## What Works
 
 - Text-topic podcast creation with an interview-guided writing flow.
-- Multiple script snapshots per interview session, each with independent editing and audio output.
-- Script Workbench for editing, formatting, saving, deleting unused snapshots, and reviewing generated audio.
-- Inline voice selection from the script page before final audio generation.
+- Multiple script snapshots per interview session.
+- Script Workbench for editing, saving, deleting unused snapshots, choosing a voice profile, and rendering/reviewing generated audio.
 - Voice Studio for built-in and user-created voice profiles, sample upload/recording, preview rendering, and profile management.
-- Local MLX TTS support for supported macOS machines, plus OpenAI-compatible remote provider adapters.
+- Local MLX TTS on supported macOS machines, plus OpenAI-compatible remote provider adapters.
 - Models page for local model storage, downloads, migration, reset, and default local voice model selection.
 - Mock LLM and TTS providers for local smoke testing without paid provider access.
-- Local-first storage under `.local-data/` during development.
+- Local-first development storage under `.local-data/`.
 
 ## Screenshots
 
-### App Overview
+### Chat
 
-![App overview](images/Snipaste_2026-05-07_23-05-40.png)
+Start a session from the interview entry screen.
 
-### Interview Flow
-
-![Interview flow](images/Snipaste_2026-05-07_23-06-07.png)
+![Chat interview entry](images/chat.png)
 
 ### Script Workbench
 
-![Script workbench](images/Snipaste_2026-05-07_23-06-15.png)
+Edit the script, pick a voice profile and engine, then render and review final audio.
+
+![Script Workbench](images/script-workbench.png)
 
 ### Voice Studio
 
-![Voice Studio](images/Snipaste_2026-05-07_23-06-26.png)
+Manage built-in and user-created voice profiles before applying them to a script.
+
+![Voice Studio](images/voice-studio.png)
+
+To refresh screenshots later: run `./scripts/dev/run-dev-all.sh`, capture the current UI, save stable filenames under `images/`, and update both `README.md` and `README.zh-CN.md`. Do not include API keys, local paths, private prompts, or user data.
 
 ## Requirements
 
@@ -47,8 +55,7 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 - Node.js
 - `pnpm`
 - Rust and Cargo
-
-For local MLX TTS, use a supported macOS machine, preferably Apple Silicon, with enough disk space and unified memory for the selected model. Always run the capability check before selecting the local MLX provider.
+- `curl` and `lsof` for the development launcher
 
 Check the local toolchain:
 
@@ -74,17 +81,24 @@ cd ../..
 
 `run-dev-all.sh` starts the Python runtime on `127.0.0.1:8765`, clears stale development server state, and launches the Tauri development app. The Vite web server is served at `http://localhost:1420`.
 
-## Provider Setup
+## First Smoke Test
 
-Mock providers are useful for smoke testing the app flow:
+Use mock providers first. This verifies the app flow without paid API access or local model weights:
 
 ```bash
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
 ./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
 ./scripts/dev/run-python-core.sh --create-demo-session
+./scripts/dev/run-dev-all.sh
 ```
 
-OpenAI-compatible provider adapters can be configured from the Python core CLI:
+In the app, create or open a session, continue the interview, generate a script, and render audio from Script Workbench.
+
+## Provider Setup
+
+### OpenAI-Compatible Providers
+
+Configure an OpenAI-compatible LLM provider:
 
 ```bash
 ./scripts/dev/run-python-core.sh \
@@ -92,7 +106,11 @@ OpenAI-compatible provider adapters can be configured from the Python core CLI:
   --llm-base-url "https://api.openai.com/v1" \
   --llm-model "gpt-4o-mini" \
   --llm-api-key "<your-key>"
+```
 
+Configure an OpenAI-compatible TTS provider:
+
+```bash
 ./scripts/dev/run-python-core.sh \
   --configure-tts-provider openai_compatible \
   --tts-base-url "https://api.openai.com/v1" \
@@ -104,9 +122,11 @@ OpenAI-compatible provider adapters can be configured from the Python core CLI:
 
 See [Configuration](docs/configuration.md) for provider details, optional environment variables, and API key handling notes.
 
-## Local MLX TTS
+### Local MLX TTS
 
-Install the optional local MLX dependency group:
+Local MLX is optional for basic development. Use it only on supported macOS machines, preferably Apple Silicon, with enough disk space and unified memory for the selected model.
+
+Install the optional dependency group:
 
 ```bash
 cd services/python-core
@@ -122,13 +142,13 @@ uv run --with huggingface_hub --with tqdm \
   --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
-Check local MLX capability:
+Check capability before selecting `local_mlx`:
 
 ```bash
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
 
-Configure the local MLX TTS provider in repo-id mode:
+Configure local MLX in repo-id mode:
 
 ```bash
 ./scripts/dev/run-python-core.sh \
@@ -137,26 +157,6 @@ Configure the local MLX TTS provider in repo-id mode:
 ```
 
 See [Local MLX quickstart](docs/local-mlx-quickstart.md) for model storage, troubleshooting, and hardware notes.
-
-## Repository Layout
-
-- `apps/desktop`: Tauri UI, React routes, desktop shell commands, and frontend bridge code.
-- `services/python-core`: interview orchestration, script generation, provider dispatch, local storage, artifacts, and HTTP runtime.
-- `packages/shared-schemas`: shared frontend/backend contract schemas.
-- `scripts`: development, maintenance, release, and model-download helpers.
-- `docs/product`: product behavior notes.
-- `docs/architecture`: architecture and repository layout notes.
-- `docs/operations`: maintenance and agent workflow docs.
-- `examples`: sample placeholders and examples.
-
-Useful docs:
-
-- [Product overview](docs/product/product-overview.md)
-- [Configuration](docs/configuration.md)
-- [Local MLX quickstart](docs/local-mlx-quickstart.md)
-- [Repository layout](docs/architecture/repository-layout.md)
-- [Contributing guide](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
 
 ## Development Commands
 
@@ -190,7 +190,7 @@ Run Python tests:
 
 ```bash
 cd services/python-core
-uv run --with pytest python -m pytest tests
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
 Run the repository hygiene check:
@@ -198,6 +198,26 @@ Run the repository hygiene check:
 ```bash
 ./scripts/maintenance/run-repo-hygiene-check.sh
 ```
+
+## Repository Layout
+
+- `apps/desktop`: Tauri UI, React routes, desktop shell commands, and frontend bridge code.
+- `services/python-core`: interview orchestration, script generation, provider dispatch, local storage, artifacts, and HTTP runtime.
+- `packages/shared-schemas`: shared frontend/backend contract schemas.
+- `scripts`: development, maintenance, release, and model-download helpers.
+- `docs/product`: product behavior notes.
+- `docs/architecture`: architecture and repository layout notes.
+- `docs/operations`: maintenance and agent workflow docs.
+- `examples`: sample placeholders and examples.
+
+Useful docs:
+
+- [Product overview](docs/product/product-overview.md)
+- [Configuration](docs/configuration.md)
+- [Local MLX quickstart](docs/local-mlx-quickstart.md)
+- [Repository layout](docs/architecture/repository-layout.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
 ## Data And Privacy
 
@@ -217,7 +237,7 @@ Do not open public issues or pull requests containing API keys, private prompts,
 
 Aodcast currently focuses on local-first solo podcast creation. The repository does not include speech-to-text input, long-term user memory, cloud backend hosting, multi-host podcast formats, or voice cloning.
 
-The app can serve common audio suffixes and can prepare some uploaded profile samples as WAV references when `ffmpeg` or `afconvert` is available. It does not guarantee generated WAV to AAC/M4A/MP4 transcoding or true video MP4 output.
+The app can serve common audio suffixes and can prepare some uploaded profile samples as WAV references when `ffmpeg` or `afconvert` is available. Export to compressed audio formats depends on local conversion tools. True video MP4 output is out of scope.
 
 ## Contributing
 
@@ -229,7 +249,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 
 ## Security
 
-If you find a vulnerability, do not open a public issue with exploit details. Follow the private reporting guidance in [SECURITY.md](SECURITY.md).
+If you find a vulnerability, do not open a public issue with exploit details. Report it privately to `cxh1210@mail.ustc.edu.cn` or follow [SECURITY.md](SECURITY.md).
 
 ## License
 
