@@ -543,6 +543,24 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         message: response.message,
       };
     },
+    async exportPodcastAudio(audioPath: string, format: string, bitrate: string, filename: string) {
+      const response = await callHttp<{ audio_url: string; file_name: string }>(
+        `/api/v1/artifacts/audio/export`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            audio_path: audioPath,
+            format,
+            bitrate,
+            filename,
+          }),
+        },
+      );
+      return {
+        audio_url: response.audio_url,
+        file_name: response.file_name,
+      };
+    },
     async listVoicePresets() {
       const response = await callHttp<VoicePresetCatalog>("/api/v1/voice-studio/presets");
       return {

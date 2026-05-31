@@ -6,6 +6,10 @@ from typing import Iterator
 from openai import OpenAI
 
 from app.domain.provider_config import LLMProviderConfig
+from app.orchestration.prompts import (
+    SCRIPT_GENERATION_SYSTEM_PROMPT,
+    build_script_generation_user_prompt,
+)
 from app.providers.llm.base import (
     InterviewQuestionRequest,
     ScriptGenerationRequest,
@@ -34,17 +38,14 @@ class OpenAICompatibleProvider:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are a podcast script writer. Produce a solo monologue script with "
-                        "an opening, a coherent body, and a conclusion."
-                    ),
+                    "content": SCRIPT_GENERATION_SYSTEM_PROMPT,
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Topic: {request.topic}\n"
-                        f"Intent: {request.creation_intent}\n"
-                        f"Transcript:\n{request.transcript_text}"
+                    "content": build_script_generation_user_prompt(
+                        topic=request.topic,
+                        creation_intent=request.creation_intent,
+                        transcript_text=request.transcript_text,
                     ),
                 },
             ],

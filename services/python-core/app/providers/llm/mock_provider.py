@@ -31,16 +31,7 @@ class MockLLMProvider:
             "If there is one takeaway from this conversation, it is that good tools "
             "should make complex work more understandable and recoverable."
         )
-        draft = "\n\n".join(
-            [
-                "Opening",
-                opening,
-                "Body",
-                body,
-                "Closing",
-                closing,
-            ]
-        )
+        draft = "\n\n".join([opening, body, closing])
         return ScriptGenerationResponse(
             draft=draft,
             provider_name=self.provider_name,

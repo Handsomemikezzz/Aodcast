@@ -58,7 +58,8 @@ class ScriptGenerationTests(unittest.TestCase):
         self.assertEqual(loaded.session.state, SessionState.SCRIPT_GENERATED)
         assert loaded.script is not None
         assert loaded.artifact is not None
-        self.assertIn("Opening", loaded.script.draft)
+        self.assertNotIn("Opening\n", loaded.script.draft)
+        self.assertIn("Today I want to talk about", loaded.script.draft)
         self.assertEqual(loaded.session.llm_provider, "mock")
         self.assertEqual(loaded.artifact.session_id, session_id)
 

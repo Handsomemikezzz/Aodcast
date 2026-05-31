@@ -48,6 +48,8 @@ type UseScriptWorkbenchAudioResult = {
   handleDownloadAudio: () => void;
   handleShareAudio: (scriptName: string) => Promise<void>;
   handleDeleteAudio: () => Promise<void>;
+  isExportDialogOpen: boolean;
+  closeExportDialog: () => void;
 };
 
 export function useScriptWorkbenchAudio({
@@ -75,6 +77,7 @@ export function useScriptWorkbenchAudio({
   const [pollWarning, setPollWarning] = useState<string | null>(null);
   const [audioMessage, setAudioMessage] = useState<string | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
 
   const audioSrc = useMemo(() => {
     const audioPath = project?.artifact?.audio_path;
@@ -353,14 +356,11 @@ export function useScriptWorkbenchAudio({
   };
 
   const handleDownloadAudio = () => {
-    const outputFilename = project?.artifact?.audio_path?.split("/").pop() || "";
-    if (!audioSrc || !outputFilename) return;
-    const link = document.createElement("a");
-    link.href = audioSrc;
-    link.download = outputFilename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    setIsExportDialogOpen(true);
+  };
+
+  const closeExportDialog = () => {
+    setIsExportDialogOpen(false);
   };
 
   const handleShareAudio = async (scriptName: string) => {
@@ -399,5 +399,7 @@ export function useScriptWorkbenchAudio({
     handleDownloadAudio,
     handleShareAudio,
     handleDeleteAudio,
+    isExportDialogOpen,
+    closeExportDialog,
   };
 }

@@ -1224,6 +1224,37 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["data"]["status"], "success")
         self.assertEqual(payload["data"]["latency_ms"], 0)
 
+    def test_audio_export_route_converts_to_wav(self) -> None:
+        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        status, _, payload = self.request_json(
+            "POST",
+            "/api/v1/artifacts/audio/export",
+            body={
+                "audio_path": str(audio_path),
+                "format": "wav",
+                "filename": "my-podcast-episode",
+            },
+            token="runtime-token",
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["file_name"], "my-podcast-episode.wav")
+        self.assertIn("/api/v1/artifacts/audio?path=", payload["data"]["audio_url"])
+
+    def test_audio_export_route_rejects_unsupported_format(self) -> None:
+        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        status, _, payload = self.request_json(
+            "POST",
+            "/api/v1/artifacts/audio/export",
+            body={
+                "audio_path": str(audio_path),
+                "format": "flac",
+            },
+            token="runtime-token",
+        )
+        self.assertEqual(status, 400)
+        self.assertFalse(payload["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

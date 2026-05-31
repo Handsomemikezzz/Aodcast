@@ -74,6 +74,8 @@ export type UseScriptWorkbenchResult = {
   refreshWorkspace: () => Promise<void>;
   closeDialog: () => void;
   runPendingAction: () => Promise<void>;
+  isExportDialogOpen: boolean;
+  closeExportDialog: () => void;
 };
 
 export function useScriptWorkbench(sessionId: string, scriptId: string, onRefresh: () => Promise<void>): UseScriptWorkbenchResult {
@@ -181,5 +183,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     refreshWorkspace: data.refreshWorkspace,
     closeDialog: editor.closeDialog,
     runPendingAction: editor.runPendingAction,
+    isExportDialogOpen: audio.isExportDialogOpen,
+    closeExportDialog: audio.closeExportDialog,
   };
 }

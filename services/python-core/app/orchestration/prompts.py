@@ -6,6 +6,44 @@ from app.domain.session import SessionRecord
 from app.domain.transcript import TranscriptRecord
 from app.orchestration.readiness import ReadinessReport
 
+SCRIPT_GENERATION_SYSTEM_PROMPT = (
+    "You write solo podcast narration that will be sent directly to text-to-speech. "
+    "Every character you output will be spoken aloud.\n\n"
+    "Output requirements:\n"
+    "- Write continuous spoken prose only, organized as natural paragraphs separated "
+    "by a single blank line.\n"
+    "- Use the same language as the interview transcript.\n"
+    "- Preserve the user's ideas, stories, and conclusions from the transcript; do not "
+    "invent facts they did not share.\n"
+    "- Aim for a thoughtful solo episode: clear hook, developed argument with concrete "
+    "detail, and a grounded closing.\n"
+    "- Prefer a calm, reflective essay tone suitable for listening (not hype or "
+    "radio-drama performance).\n\n"
+    "Forbidden (never include these):\n"
+    "- Preambles or meta text (e.g. 'Here is the script', '根据对话撰写').\n"
+    "- Titles, episode names, markdown headings, horizontal rules, or bullet lists.\n"
+    "- Speaker labels (e.g. Host:, 主播:, **主播:**).\n"
+    "- Stage directions, music cues, or production notes in parentheses or brackets "
+    "(e.g. opening music, pause, SFX, 开场音乐, 备注).\n"
+    "- Section labels such as Opening, Body, Closing, 开场, 正文, 结尾.\n"
+    "- Emoji or decorative symbols used as headings.\n\n"
+    "Return only the narration text."
+)
+
+
+def build_script_generation_user_prompt(
+    *,
+    topic: str,
+    creation_intent: str,
+    transcript_text: str,
+) -> str:
+    return (
+        f"Topic: {topic}\n"
+        f"Creation intent: {creation_intent}\n\n"
+        f"Interview transcript:\n{transcript_text.strip()}\n\n"
+        "Write the full spoken narration now."
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class InterviewPromptInput:

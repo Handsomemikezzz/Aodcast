@@ -1578,6 +1578,140 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.OK, {"ok": True, "status": "shutting_down"}, origin=origin)
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
+            
+        if self.command == "POST" and path == "/api/v1/artifacts/audio/export":
+            audio_path_str = str(body.get("audio_path") or "").strip()
+            target_format = str(body.get("format") or "m4a").strip().lower().replace(".", "")
+            bitrate = str(body.get("bitrate") or "128k").strip().lower()
+            custom_filename = str(body.get("filename") or "").strip()
+
+            if not audio_path_str:
+                raise ValueError("Field 'audio_path' is required.")
+            if target_format not in {"wav", "mp3", "m4a"}:
+                raise ValueError(f"Unsupported export format '{target_format}'. Supported formats: wav, mp3, m4a.")
+
+            # Bitrate normalization
+            bitrate_val = bitrate.rstrip("bps").rstrip("b")
+            if bitrate_val.endswith("k"):
+                bitrate_numeric = int(bitrate_val.rstrip("k")) * 1000
+            else:
+                try:
+                    bitrate_numeric = int(bitrate_val)
+                    if bitrate_numeric < 1000:
+                        bitrate_numeric = bitrate_numeric * 1000
+                except ValueError:
+                    bitrate_numeric = 128000
+
+            bitrate_str = f"{bitrate_numeric // 1000}k"
+
+            # Check safety
+            exports_dir = self.context.artifact_store.exports_dir.resolve()
+            source_path = Path(audio_path_str).resolve(strict=True)
+            if not _path_is_within(source_path, exports_dir):
+                raise ValueError("Source audio file must be inside the exports directory.")
+            if not source_path.is_file():
+                raise ValueError("Source audio file does not exist.")
+
+            # Compile sanitized filename
+            import re
+            import shutil
+            import subprocess
+            from urllib.parse import quote
+
+            if custom_filename:
+                sanitized_name = re.sub(r"[^\w\s-]", "", custom_filename).strip()
+                sanitized_name = re.sub(r"[-\s]+", "-", sanitized_name)
+            else:
+                sanitized_name = source_path.stem
+
+            if not sanitized_name:
+                sanitized_name = "podcast-episode"
+
+            output_filename = f"{sanitized_name}.{target_format}"
+
+            # target converted dir
+            converted_dir = exports_dir / "_converted"
+            converted_dir.mkdir(parents=True, exist_ok=True)
+            target_path = converted_dir / output_filename
+
+            # If target already exists, append unique suffix
+            if target_path.exists():
+                suffix_counter = 1
+                while True:
+                    candidate = converted_dir / f"{sanitized_name}-{suffix_counter}.{target_format}"
+                    if not candidate.exists():
+                        target_path = candidate
+                        output_filename = candidate.name
+                        break
+                    suffix_counter += 1
+
+            # Run encoding process
+            if target_format == "wav":
+                shutil.copy2(source_path, target_path)
+            else:
+                ffmpeg_bin = shutil.which("ffmpeg")
+                if ffmpeg_bin:
+                    codec = "libmp3lame" if target_format == "mp3" else "aac"
+                    cmd = [
+                        ffmpeg_bin,
+                        "-y",
+                        "-i",
+                        str(source_path),
+                        "-codec:a",
+                        codec,
+                        "-b:a",
+                        bitrate_str,
+                        str(target_path),
+                    ]
+                    try:
+                        subprocess.run(cmd, check=True, capture_output=True, text=True)
+                    except subprocess.CalledProcessError as exc:
+                        error_detail = (exc.stderr or exc.stdout or "").strip()
+                        raise RuntimeError(f"FFmpeg conversion failed: {error_detail}")
+                else:
+                    afconvert_bin = shutil.which("afconvert")
+                    if afconvert_bin and target_format == "m4a":
+                        cmd = [
+                            afconvert_bin,
+                            "-f",
+                            "m4af",
+                            "-d",
+                            "aac",
+                            "-b",
+                            str(bitrate_numeric),
+                            str(source_path),
+                            str(target_path),
+                        ]
+                        try:
+                            subprocess.run(cmd, check=True, capture_output=True, text=True)
+                        except subprocess.CalledProcessError as exc:
+                            error_detail = (exc.stderr or exc.stdout or "").strip()
+                            raise RuntimeError(f"afconvert conversion failed: {error_detail}")
+                    else:
+                        if target_format == "mp3":
+                            raise RuntimeError(
+                                "FFmpeg is required to export to MP3 on this system. "
+                                "Please install FFmpeg (e.g. 'brew install ffmpeg') or select M4A format."
+                            )
+                        else:
+                            raise RuntimeError(
+                                "Neither FFmpeg nor afconvert is available on this system to encode M4A. "
+                                "Please install FFmpeg to enable audio compression."
+                            )
+
+            audio_url = f"/api/v1/artifacts/audio?path={quote(str(target_path))}"
+
+            self._send_bridge_envelope(
+                success_envelope(
+                    {
+                        "audio_url": audio_url,
+                        "file_name": output_filename,
+                    },
+                    operation="export_podcast_audio",
+                ),
+                origin=origin,
+            )
+            return
 
         if not path.startswith(session_script_revision_prefix):
             raise ValueError(f"Unknown route: {path}")

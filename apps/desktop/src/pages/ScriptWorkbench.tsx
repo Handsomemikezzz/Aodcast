@@ -1,6 +1,8 @@
 import { motion } from "framer-motion";
 import { useParams } from "react-router-dom";
+import { useBridge } from "../lib/BridgeContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ExportPodcastDialog } from "../components/ExportPodcastDialog";
 import { ScriptAudioSidebar } from "./script-workbench/ScriptAudioSidebar";
 import { ScriptEditorPane } from "./script-workbench/ScriptEditorPane";
 import { ScriptWorkbenchHeader } from "./script-workbench/ScriptWorkbenchHeader";
@@ -50,6 +52,7 @@ export function ScriptWorkbench({
 }) {
   const { sessionId: routeSessionId, scriptId: routeScriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const workbench = useScriptWorkbench(sessionId || routeSessionId || "", scriptId || routeScriptId || "", onRefresh);
+  const bridge = useBridge();
 
   if (workbench.loading) {
     return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading script workspace...</div>;
@@ -169,6 +172,14 @@ export function ScriptWorkbench({
             disabled: workbench.saving,
           },
         ]}
+      />
+
+      <ExportPodcastDialog
+        open={workbench.isExportDialogOpen}
+        audioPath={workbench.project?.artifact?.audio_path || ""}
+        sessionTopic={workbench.project?.session?.topic || ""}
+        bridge={bridge}
+        onClose={workbench.closeExportDialog}
       />
     </>
   );
