@@ -27,6 +27,7 @@ class InterviewQuestionRequest:
     transcript_text: str
     suggested_focus: str
     missing_dimensions: list[str]
+    script_exists: bool = False
 
 
 class LLMProvider(Protocol):

@@ -39,17 +39,30 @@ class MockLLMProvider:
         )
 
     def _build_interview_question(self, request: InterviewQuestionRequest) -> str:
-        missing = ", ".join(request.missing_dimensions) or "none"
-        tail = (
-            " What feels most important to you about that right now?"
-            if request.transcript_text.strip()
-            else " What made you want to explore this topic?"
-        )
-        question = (
-            f"[mock interviewer] Regarding «{request.topic}» "
-            f"(next: {request.suggested_focus}; still need: {missing}) —{tail}"
-        )
-        return question
+        if request.script_exists:
+            reflection = (
+                f"[mock interviewer] That addition will help shape a new script version for '{request.topic}'."
+            )
+            question = "What would you like to expand next for this revised episode?"
+            options = (
+                "A. Add a new concrete example\n"
+                "B. Adjust the core argument\n"
+                "C. Explain how you want this version to differ from the previous script"
+            )
+            recommendation = "I suggest starting with A, as fresh examples often sharpen the new draft. "
+        else:
+            focus = request.suggested_focus
+            reflection = f"[mock interviewer] I hear you on '{request.topic}'."
+            question = f"Let's focus on exploring your {focus} next."
+            options = (
+                f"A. Share a concrete detail or story about {focus}\n"
+                f"B. Tell me how {focus} shapes your viewpoint\n"
+                f"C. Focus on the final takeaway regarding {focus}"
+            )
+            recommendation = "I suggest starting with A, as a concrete example will ground the topic. "
+        ignore_msg = "Of course, feel free to ignore these options and answer in your own way."
+
+        return f"{reflection} {question}\n\n{options}\n\n{recommendation}{ignore_msg}"
 
     def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:
         full_response = self._build_interview_question(request)

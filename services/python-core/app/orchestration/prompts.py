@@ -9,25 +9,35 @@ from app.orchestration.readiness import ReadinessReport
 SCRIPT_GENERATION_SYSTEM_PROMPT = (
     "You write solo podcast narration that will be sent directly to text-to-speech. "
     "Every character you output will be spoken aloud.\n\n"
-    "Output requirements:\n"
-    "- Write continuous spoken prose only, organized as natural paragraphs separated "
-    "by a single blank line.\n"
-    "- Use the same language as the interview transcript.\n"
-    "- Preserve the user's ideas, stories, and conclusions from the transcript; do not "
-    "invent facts they did not share.\n"
-    "- Aim for a thoughtful solo episode: clear hook, developed argument with concrete "
-    "detail, and a grounded closing.\n"
-    "- Prefer a calm, reflective essay tone suitable for listening (not hype or "
-    "radio-drama performance).\n\n"
+    "Goal:\n"
+    "Transform the interview transcript into a strong, engaging spoken essay. "
+    "Do NOT simply summarize the transcript. Instead, synthesize the material into "
+    "a compelling, structured argument with narrative depth.\n\n"
+    "Core Requirements:\n"
+    "- Tone: Thoughtful, calm, and reflective (not hyped or overly dramatic).\n"
+    "- Narrative flow: Write continuous spoken prose only, organized as natural paragraphs "
+    "separated by a single blank line.\n"
+    "- Preserve authenticity: Retain the user's real ideas, stories, and details. Do NOT "
+    "invent facts or make up generic advice/platitudes.\n"
+    "- Structural logic: Build a logical progression: introduce what triggered the topic, "
+    "the core viewpoint, a concrete example to make it real, and a final takeaway.\n"
+    "- Depth & Tension: Surface any tension, contrast, or tradeoff mentioned in the transcript "
+    "to give the argument depth and nuance.\n"
+    "- Language: Match the language of the transcript.\n\n"
+    "Suggested Reasoning Shape (Use this outline internally, do NOT output these outline labels):\n"
+    "1. What triggered this topic?\n"
+    "2. What does the user believe, and why does that belief matter?\n"
+    "3. What concrete example or detail makes it real?\n"
+    "4. What tension, conflict, or tradeoff gives this topic depth?\n"
+    "5. What should the listener ultimately take away?\n\n"
     "Forbidden (never include these):\n"
     "- Preambles or meta text (e.g. 'Here is the script', '根据对话撰写').\n"
-    "- Titles, episode names, markdown headings, horizontal rules, or bullet lists.\n"
+    "- Markdown formatting: no headings, bullet points, horizontal rules, or titles.\n"
     "- Speaker labels (e.g. Host:, 主播:, **主播:**).\n"
-    "- Stage directions, music cues, or production notes in parentheses or brackets "
-    "(e.g. opening music, pause, SFX, 开场音乐, 备注).\n"
-    "- Section labels such as Opening, Body, Closing, 开场, 正文, 结尾.\n"
-    "- Emoji or decorative symbols used as headings.\n\n"
-    "Return only the narration text."
+    "- Stage directions, SFX, music cues, or production notes (e.g. [opening music], (pause)).\n"
+    "- Section labels (e.g. Opening, Body, Closing, 开场, 正文, 结尾).\n"
+    "- Emojis or decorative symbols.\n\n"
+    "Return only the spoken narration text."
 )
 
 
@@ -42,6 +52,67 @@ def build_script_generation_user_prompt(
         f"Creation intent: {creation_intent}\n\n"
         f"Interview transcript:\n{transcript_text.strip()}\n\n"
         "Write the full spoken narration now."
+    )
+
+
+INTERVIEW_STREAM_SYSTEM_PROMPT = (
+    "You are The Archivist, a perceptive conversation partner helping the user explore their ideas "
+    "and gather material for a podcast script. Respond in a warm, companion-like tone. "
+    "In each turn, briefly reflect the user's point, ask one high-value follow-up question, "
+    "offer 2-3 structured answer options labeled A, B, and C, recommend one of them with a rationale, "
+    "and make clear the user can respond freely. Avoid sounding like a dry interrogation or a quiz. "
+    "Keep everything tightly grounded in the user's context and avoid generic platitudes."
+)
+
+
+def build_interview_stream_instructions(*, script_exists: bool, suggested_focus: str) -> str:
+    if script_exists:
+        return (
+            "A draft script has already been generated for this topic, and the user is now coming back to provide more details or changes.\n"
+            "Frame your response to guide them in gathering material for a NEW script version. "
+            "Your response must follow this structure exactly:\n"
+            "1. Briefly reflect on the user's latest input, framing it as a valuable addition for the new script version.\n"
+            "2. Ask one focused follow-up question regarding how this input shapes the episode or what specific detail they want to expand next.\n"
+            "3. Offer 2-3 answer directions labeled A, B, and C (e.g., A. Add a new concrete example, B. Adjust the core argument, C. Explain how they want this version to differ from the previous script).\n"
+            "4. Recommend one option and explain why it makes sense.\n"
+            "5. Conclude with a warm reminder that they can ignore the options and answer in their own way.\n"
+        )
+    return (
+        f"You are still missing some elements to build a complete solo episode. Priority dimension to explore next: {suggested_focus}.\n"
+        "Your response must follow this structure exactly:\n"
+        "1. Briefly reflect on the user's latest point.\n"
+        f"2. Ask one high-value follow-up question tied to exploring the '{suggested_focus}' dimension.\n"
+        "3. Offer 2-3 specific answer directions labeled A, B, and C to help the user respond easily.\n"
+        "4. Recommend one option and explain why it is the most critical next step.\n"
+        "5. Conclude with a warm reminder that they can ignore the options and answer in their own way.\n"
+    )
+
+
+def build_interview_stream_user_content(
+    *,
+    topic: str,
+    creation_intent: str,
+    missing_dimensions: list[str],
+    transcript_text: str,
+    script_exists: bool,
+    suggested_focus: str,
+) -> str:
+    missing = ", ".join(missing_dimensions) or "(none)"
+    transcript_block = transcript_text.strip() or (
+        "(No messages yet — produce a short opening question for the guest.)"
+    )
+    instructions = build_interview_stream_instructions(
+        script_exists=script_exists,
+        suggested_focus=suggested_focus,
+    )
+    return (
+        f"Session topic: {topic}\n"
+        f"Creation intent: {creation_intent}\n"
+        f"Still missing dimensions: {missing}\n\n"
+        f"Transcript so far:\n{transcript_block}\n\n"
+        f"Respond as a perceptive conversation partner in the same language as the user. "
+        f"Instructions:\n{instructions}\n"
+        "Keep the response natural, warm, and conversational. Do not write the podcast script."
     )
 
 
@@ -110,28 +181,111 @@ def build_prompt_input(
     )
 
 
-def build_question(prompt_input: InterviewPromptInput) -> str:
+def build_question(
+    prompt_input: InterviewPromptInput,
+    last_user_turn: str = "",
+    is_zh: bool = False,
+) -> str:
     focus = prompt_input.suggested_focus
+
+    # Build Reflection
+    reflection = ""
+    if last_user_turn:
+        if is_zh:
+            reflection = f"关于你提到的“{last_user_turn}”，我理解了。接下来我们重点讨论一下你的{focus}。"
+        else:
+            reflection = f"I hear you on '{last_user_turn}'. Let's focus on exploring your {focus} next."
+    else:
+        if is_zh:
+            reflection = f"我们开始吧，接下来重点讨论一下你的{focus}。"
+        else:
+            reflection = f"Let's focus on exploring your {focus} next."
+
     if focus == "topic_context":
-        return (
-            f"You want to turn '{prompt_input.topic}' into a podcast. "
-            "What happened or what prompted this topic for you right now?"
-        )
+        if is_zh:
+            return (
+                f"{reflection}\n你想把‘{prompt_input.topic}’做成播客。关于这个话题，现在是什么事情或者什么契机让你想聊它？\n\n"
+                "A. 描述触发这个想法的精确时刻或事件。\n"
+                "B. 讨论这个话题背后的背景环境或情况。\n"
+                "C. 解释为什么这个话题在今天对你来说很紧迫或相关。\n\n"
+                "推荐从 A 开始，因为一个具体的触发时刻能构成一个很好的开场钩子。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+            )
+        else:
+            return (
+                f"{reflection}\nYou want to turn '{prompt_input.topic}' into a podcast. What happened or what prompted this topic for you right now?\n\n"
+                "A. Describe the exact moment or incident that triggered this idea.\n"
+                "B. Discuss the background environment or circumstances around the topic.\n"
+                "C. Explain why this topic feels urgent or relevant to you today.\n\n"
+                "I recommend starting with A, as a specific triggering moment makes a great hook. "
+                "But feel free to ignore these options and answer in your own way."
+            )
     if focus == "core_viewpoint":
-        return (
-            "What is the main thing you believe or want to argue about this topic?"
-        )
+        if is_zh:
+            return (
+                f"{reflection}\n关于这个话题，你想表达或论证的核心观点是什么？\n\n"
+                "A. 直接陈述你的核心论点或观点。\n"
+                "B. 强调大多数人对此有什么误解，以及你的相反观点是什么。\n"
+                "C. 解释你想解决的主要问题或挑战。\n\n"
+                "推荐从 A 开始，以建立一个清晰的锚点。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+            )
+        else:
+            return (
+                f"{reflection}\nWhat is the main thing you believe or want to argue about this topic?\n\n"
+                "A. State your core thesis or viewpoint directly.\n"
+                "B. Highlight what most people get wrong about this and what your contrarian take is.\n"
+                "C. Explain the main problem or challenge you want to address.\n\n"
+                "I recommend starting with A to establish a clear anchor. "
+                "But feel free to ignore these options and answer in your own way."
+            )
     if focus == "example_or_detail":
-        return (
-            "Can you give me one concrete example, story, or detail that makes this "
-            "point feel real?"
-        )
+        if is_zh:
+            return (
+                f"{reflection}\n你能给我一个具体的例子、故事或细节，让这个观点感觉更真实吗？\n\n"
+                "A. 讲述一个具体的个人故事或案例研究。\n"
+                "B. 详细梳理这个在实践中是如何运作的具体例子。\n"
+                "C. 分享具体的数据、引用或描述性观察。\n\n"
+                "推荐从 A 开始，因为个人叙事对听众来说非常吸引人。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+            )
+        else:
+            return (
+                f"{reflection}\nCan you give me one concrete example, story, or detail that makes this point feel real?\n\n"
+                "A. Relate a specific personal story or case study.\n"
+                "B. Walk through a detailed step-by-step example of how this plays out in practice.\n"
+                "C. Share specific data points, quotes, or descriptive observations.\n\n"
+                "I recommend starting with A, as personal narratives are highly engaging for listeners. "
+                "But feel free to ignore these options and answer in your own way."
+            )
     if focus == "conclusion":
+        if is_zh:
+            return (
+                f"{reflection}\n如果听众只记住这一期节目的一点收获或结论，那应该是什么？\n\n"
+                "A. 提供一个可操作的具体建议或关键教训。\n"
+                "B. 总结出一个最终的哲学感悟或总结陈词。\n"
+                "C. 为听众留下一个行动号召或开放性问题来思考。\n\n"
+                "推荐从 A 开始，为听众提供即时的价值。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+            )
+        else:
+            return (
+                f"{reflection}\nIf listeners remember one takeaway or conclusion from this episode, what should it be?\n\n"
+                "A. Provide a single, actionable piece of advice or key lesson.\n"
+                "B. Formulate a final philosophical takeaway or summary statement.\n"
+                "C. Issue a call-to-action or open-ended question for listeners to ponder.\n\n"
+                "I recommend starting with A to give listeners immediate value. "
+                "But feel free to ignore these options and answer in your own way."
+            )
+
+    if is_zh:
         return (
-            "If listeners remember one takeaway or conclusion from this episode, "
-            "what should it be?"
+            "我已经收集了足够的素材来起草这一期节目。如果你愿意，我们可以结束采访并开始生成脚本。\n\n"
+            "A. 现在生成播客脚本草稿（推荐）\n"
+            "B. 先添加另一个具体细节或故事\n"
+            "C. 先调整这一期的核心角度"
         )
-    return (
-        "I have enough material to draft the episode. If you want, we can stop "
-        "the interview and move to script generation."
-    )
+    else:
+        return (
+            "I have enough material to draft the episode. If you want, we can stop "
+            "the interview and move to script generation.\n\n"
+            "A. Generate the podcast script draft now (Recommended)\n"
+            "B. Add another concrete detail or story first\n"
+            "C. Adjust the core angle of this episode"
+        )
