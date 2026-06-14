@@ -15,6 +15,7 @@ local-mlx = [
 ]
 test = [
   "numpy>=2.0",
+  "miniaudio>=1.61",
 ]
 
 [project.scripts]
