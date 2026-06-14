@@ -205,17 +205,14 @@ cd services/python-core
 - `services/python-core`：访谈编排、脚本生成、provider 分发、本地存储、artifact 和 HTTP runtime。
 - `packages/shared-schemas`：前后端共享 contract schema。
 - `scripts`：开发、维护、发布和模型下载脚本。
-- `docs/product`：产品行为说明。
-- `docs/architecture`：架构和仓库结构说明。
-- `docs/operations`：维护和 agent workflow 文档。
+- `docs`：面向用户的配置说明和本地 MLX 指南。
 - `examples`：轻量示例和占位样例。
 
 常用文档：
 
-- [Product overview](docs/product/product-overview.md)
 - [Configuration](docs/configuration.md)
 - [Local MLX quickstart](docs/local-mlx-quickstart.md)
-- [Repository layout](docs/architecture/repository-layout.md)
+- [Agent collaboration contract](AGENTS.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 

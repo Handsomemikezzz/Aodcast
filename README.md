@@ -205,17 +205,14 @@ Run the repository hygiene check:
 - `services/python-core`: interview orchestration, script generation, provider dispatch, local storage, artifacts, and HTTP runtime.
 - `packages/shared-schemas`: shared frontend/backend contract schemas.
 - `scripts`: development, maintenance, release, and model-download helpers.
-- `docs/product`: product behavior notes.
-- `docs/architecture`: architecture and repository layout notes.
-- `docs/operations`: maintenance and agent workflow docs.
+- `docs`: human setup and local MLX guidance.
 - `examples`: sample placeholders and examples.
 
 Useful docs:
 
-- [Product overview](docs/product/product-overview.md)
 - [Configuration](docs/configuration.md)
 - [Local MLX quickstart](docs/local-mlx-quickstart.md)
-- [Repository layout](docs/architecture/repository-layout.md)
+- [Agent collaboration contract](AGENTS.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 

@@ -17,7 +17,6 @@ If implementation changes invalidate this file, update `AGENTS.md` in the same c
 ## Product Scope
 
 Current source of truth: code, tests, configuration, and launch scripts.
-Product overview: [docs/product/product-overview.md](docs/product/product-overview.md)
 
 Current MVP:
 
@@ -42,9 +41,6 @@ Out of scope for the current MVP:
 - `apps/desktop`: Tauri UI and app shell
 - `services/python-core`: interview orchestration, script generation, provider dispatch, storage
 - `packages/shared-schemas`: shared data contracts and schemas
-- `docs/product`: product-facing docs
-- `docs/architecture`: architecture and repository layout docs
-- `docs/operations`: agent governance, maintenance playbooks, subagent definitions
 - `docs/configuration.md` and `docs/local-mlx-quickstart.md`: public setup, provider, and local MLX guidance
 - `.agent`: prompts, checklists, templates, and reports used by agents
 
@@ -55,7 +51,7 @@ Out of scope for the current MVP:
 - cross-boundary changes must update shared contracts first in `packages/shared-schemas`.
 - provider-specific logic belongs only under `services/python-core/app/providers`.
 - interview state logic belongs only under `services/python-core/app/orchestration`.
-- operational rules belong in `docs/operations` and `AGENTS.md`, not in scattered ad hoc notes.
+- operational rules belong in `AGENTS.md`, not in scattered ad hoc notes.
 - desktop bridge calls must flow through `apps/desktop/src/lib/*Bridge.ts -> localhost HTTP runtime -> services/python-core`, not from React components directly to shell commands.
 - the desktop shell may own lifecycle helpers for starting, attaching, health-checking, and shutting down the localhost runtime, but it must not own podcast business logic or per-operation payload translation.
 - bridge success payloads and bridge failures must include a normalized `request_state` contract (`operation`, `phase`, `progress_percent`, `message`) so frontend pages can render consistent loading/error/task-state UX.
@@ -68,16 +64,13 @@ Out of scope for the current MVP:
 
 Before substantial implementation work:
 
-1. confirm the relevant source-of-truth doc
+1. read the relevant code, tests, and configuration first
 2. identify the owned directory boundary
-3. update shared schema or governance docs first if the change crosses boundaries
+3. update shared schema or `AGENTS.md` first if the change crosses boundaries
 4. implement the smallest complete change set
-5. update affected docs before closing the task
+5. update `AGENTS.md`, README, or human setup docs when behavior or workflow changes
 
-When a change affects the product flow, architecture, or repo governance, update:
-
-- [AGENTS.md](AGENTS.md)
-- the active spec or architecture doc under `docs/`
+When a change affects the product flow, architecture, or repo governance, update [AGENTS.md](AGENTS.md).
 
 ## Code Generation Rules
 
@@ -89,27 +82,39 @@ When a change affects the product flow, architecture, or repo governance, update
 
 ## Documentation Rules
 
-- Treat docs as maintained assets, not one-time output.
-- If code changes behavior, state shape, directory ownership, or operator workflow, update the related docs in the same task.
-- Add new operational conventions to `docs/operations` and summarize cross-cutting ones here.
+- Code is the primary architecture reference; do not add parallel architecture docs under `docs/`.
+- If code changes behavior, state shape, directory ownership, or operator workflow, update `AGENTS.md`, README, or the human setup docs in the same task.
+- Add new operational conventions to `AGENTS.md`.
 
 ## Maintenance Subagents
 
-The repository should be maintained continuously by specialized cleanup-oriented subagents. Their definitions live in [docs/operations/subagents.md](docs/operations/subagents.md).
+Run maintenance-oriented subagents after structural or contract changes, and periodically to control repository entropy.
 
-Minimum maintenance roles:
+Maintenance roles:
 
-- `spec-keeper`
-- `code-pruner`
-- `contract-guard`
-- `doc-syncer`
-- `repo-curator`
+- `spec-keeper`: keep `AGENTS.md` and README aligned with code
+- `code-pruner`: identify dead code and duplicate paths
+- `contract-guard`: check schema and bridge contract drift
+- `doc-syncer`: refresh README and human setup docs
+- `repo-curator`: police temporary files and directory sprawl
 
-Maintenance cadence and triggers live in [docs/operations/maintenance-playbook.md](docs/operations/maintenance-playbook.md).
+Event triggers: new provider, directory moves, shared schema changes, session state machine changes, or `AGENTS.md` changes.
+
+Default local sweep before a maintenance report: `./scripts/maintenance/run-repo-hygiene-check.sh`.
 
 ## Delivery Workflow
 
-Feature delivery should follow the current product and architecture docs plus the active code contracts.
+Feature delivery should follow the active code contracts plus `AGENTS.md`.
+
+Delivery roles:
+
+- `schema-steward`: `packages/shared-schemas`
+- `orchestration-builder`: `services/python-core/app/orchestration`, `domain`, `storage`
+- `provider-integrator`: `services/python-core/app/providers`
+- `desktop-builder`: `apps/desktop`
+- `quality-runner`: `services/python-core/tests` and frontend tests when present
+
+Default sequence: schema -> orchestration -> providers -> desktop -> tests -> maintenance pass.
 
 When using multiple agents:
 
@@ -118,8 +123,6 @@ When using multiple agents:
 - merge contract changes before dependent implementation work
 - run maintenance agents after structural or cross-boundary changes
 - if teammate spawning is unavailable in the current runtime, the lead agent must still follow the same task boundaries and report status in the active conversation or task artifact
-
-Feature and maintenance role definitions live in [docs/operations/subagents.md](docs/operations/subagents.md).
 
 ## Known Execution Notes
 
