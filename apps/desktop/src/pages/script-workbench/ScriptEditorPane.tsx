@@ -42,17 +42,17 @@ export function ScriptEditorPane({
         <div className="space-y-4 flex-1 flex flex-col min-h-0">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#9f9b93]">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-secondary">
               <Sparkles className="w-3.5 h-3.5 text-accent-amber" />
               <span>Script Editor</span>
             </div>
-            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-accent-amber">
+            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-surface-container-high/60 border border-outline text-accent-amber">
               {workbench.wordCount} Words
             </span>
           </div>
 
           {/* Glimpse Content */}
-          <div className="flex-1 overflow-hidden relative opacity-55 text-xs text-[#9f9b93] leading-relaxed">
+          <div className="flex-1 overflow-hidden relative opacity-55 text-xs text-secondary leading-relaxed">
             {workbench.script ? (
               <div className="line-clamp-6 whitespace-pre-wrap">
                 {workbench.script}
@@ -60,17 +60,17 @@ export function ScriptEditorPane({
             ) : (
               <div className="text-secondary/30 italic">No script content yet.</div>
             )}
-            <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[rgba(23,23,27,0.45)] to-transparent pointer-events-none" />
+            <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface-container to-transparent pointer-events-none" />
           </div>
         </div>
 
         {/* Stats Summary & Focus Hint */}
         <div className="mt-2 space-y-2 shrink-0">
-          <div className="flex justify-between text-[10px] text-[#9f9b93]/80 border-t border-white/5 pt-2 px-1">
+          <div className="flex justify-between text-[10px] text-secondary/80 border-t border-outline pt-2 px-1">
             <span>Est. {workbench.estMinutes} Spoken</span>
             {workbench.isDirty && <span className="font-semibold text-accent-amber">Unsaved edits</span>}
           </div>
-          <div className="text-[10px] font-medium text-center text-accent-amber/50 animate-pulse pt-1 border-t border-white/5">
+          <div className="text-[10px] font-medium text-center text-accent-amber/50 animate-pulse pt-1 border-t border-outline">
             Click to edit script
           </div>
         </div>
@@ -80,9 +80,9 @@ export function ScriptEditorPane({
 
   return (
     <section className="flex min-w-0 min-h-0 flex-col gap-5 overflow-hidden">
-      <div className="rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.04] px-5 py-4">
-          <div className="inline-flex rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.55)] p-1">
+      <div className="rounded-[32px] border border-outline bg-surface-container backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.05)] overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline px-5 py-4">
+          <div className="inline-flex rounded-2xl border border-outline bg-surface-container-low p-1">
             <button
               type="button"
               onClick={() => setEditorMode("script")}
@@ -101,7 +101,7 @@ export function ScriptEditorPane({
               className={cn(
                 "rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer",
                 editorMode === "plain"
-                  ? "bg-white/10 text-primary"
+                  ? "bg-primary/8 text-primary"
                   : "text-secondary hover:text-primary",
               )}
             >
@@ -123,7 +123,7 @@ export function ScriptEditorPane({
             spellCheck={false}
             placeholder="Write the exact narration you want spoken in the final audio."
             className={cn(
-              "min-h-[520px] w-full resize-none rounded-[24px] border border-white/5 bg-[rgba(15,15,17,0.6)] px-6 py-6 text-primary outline-none transition-all placeholder:text-secondary/30 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40",
+              "min-h-[520px] w-full resize-none rounded-[24px] border border-outline bg-surface-container-low px-6 py-6 text-primary outline-none transition-all placeholder:text-secondary/30 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40",
               editorMode === "script"
                 ? "text-[17px] leading-[2.15rem] tracking-[0.01em]"
                 : "text-[15px] leading-[2rem] font-mono",
@@ -131,7 +131,7 @@ export function ScriptEditorPane({
           />
         </div>
 
-        <div className="border-t border-white/[0.04] px-5 py-4">
+        <div className="border-t border-outline px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-secondary/80 font-medium">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
               <button
@@ -150,11 +150,11 @@ export function ScriptEditorPane({
                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", issuesExpanded && "rotate-180")} />
               </button>
               <span>{workbench.wordCount} words</span>
-              <span className="text-white/10">•</span>
+              <span className="text-primary/10">•</span>
               <span>{workbench.estMinutes} spoken runtime</span>
               {workbench.isDirty ? (
                 <>
-                  <span className="text-white/10">•</span>
+                  <span className="text-primary/10">•</span>
                   <span className="font-semibold text-accent-amber">Unsaved edits</span>
                 </>
               ) : null}
@@ -181,7 +181,7 @@ export function ScriptEditorPane({
                     await workbench.reload();
                   })
                 }
-                className="inline-flex items-center gap-1.5 rounded-xl border border-white/5 bg-white/5 px-3 py-1.5 text-[11px] font-bold text-secondary hover:text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-outline bg-surface-container-low px-3 py-1.5 text-[11px] font-bold text-secondary hover:text-primary hover:bg-primary/8 hover:border-accent-amber/20 active:scale-[0.98] transition-all cursor-pointer"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 Refresh
@@ -199,7 +199,7 @@ export function ScriptEditorPane({
           </div>
 
           {showIssuePanel ? (
-            <div className="mt-4 space-y-3 rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.45)] p-4">
+            <div className="mt-4 space-y-3 rounded-2xl border border-outline bg-surface-container-low p-4">
               {visibleIssues.length ? (
                 <ul className="space-y-2">
                   {visibleIssues.map((issue) => (
@@ -213,7 +213,7 @@ export function ScriptEditorPane({
                 <p className="text-sm text-emerald-200">Ready for TTS. No blocking issues or cleanup suggestions.</p>
               )}
               {infoIssues.length ? (
-                <div className="border-t border-white/5 pt-3">
+                <div className="border-t border-outline pt-3">
                   {infoIssues.map((issue) => (
                     <p key={issue.id} className="text-xs text-secondary/70">
                       {issue.message}

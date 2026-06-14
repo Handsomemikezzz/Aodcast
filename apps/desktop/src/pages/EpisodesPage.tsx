@@ -42,7 +42,7 @@ export function EpisodesPage({
   };
 
   const handleNewEpisode = () => {
-    navigate("/studio");
+    navigate("/chat");
   };
 
   const handleDeleteTarget = async (target: DeleteTarget) => {

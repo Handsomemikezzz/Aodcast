@@ -160,8 +160,8 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-xl border border-white/5 bg-white/[0.03] text-zinc-400 hover:text-white hover:bg-white/[0.08] hover:border-white/10 active:scale-95 transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.01)]",
-          isOpen && "bg-white/[0.08] border-white/10 text-accent-amber"
+          "flex h-9 w-9 items-center justify-center rounded-xl border border-outline bg-surface-container-high/50 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-accent-amber/20 active:scale-95 transition-all",
+          isOpen && "bg-surface-container-high border-accent-amber/20 text-accent-amber"
         )}
         title="Quick Settings"
       >
@@ -176,15 +176,15 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 8 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute right-0 mt-2.5 w-[260px] rounded-2xl border border-white/10 bg-[#161618]/90 backdrop-blur-2xl p-4 shadow-2xl shadow-black/60 text-white"
+            className="absolute right-0 mt-2.5 w-[260px] rounded-2xl theme-modal-surface backdrop-blur-2xl p-4 shadow-2xl text-primary"
           >
-            <div className="flex items-center justify-between border-b border-white/5 pb-2.5 mb-3.5">
-              <span className="text-[12px] font-semibold text-zinc-300 font-headline tracking-wide uppercase">Quick Config</span>
-              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
+            <div className="flex items-center justify-between border-b border-outline pb-2.5 mb-3.5">
+              <span className="text-[12px] font-semibold text-on-surface-variant font-headline tracking-wide uppercase">Quick Config</span>
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin text-secondary" />}
             </div>
 
             {loading ? (
-              <div className="py-8 text-center text-xs text-zinc-500">Syncing settings…</div>
+              <div className="py-8 text-center text-xs text-secondary">Syncing settings…</div>
             ) : (
               <div className="space-y-4">
                 
@@ -192,7 +192,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                 {llmConfig && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-1.5 text-zinc-400 font-medium">
+                      <span className="flex items-center gap-1.5 text-secondary font-medium">
                         <Sparkles className="w-3.5 h-3.5 text-accent-amber" />
                         LLM Model
                       </span>
@@ -206,7 +206,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                           value={llmConfig.model}
                           onChange={(e) => void handleLLMModelChange(e.target.value)}
                           disabled={savingField !== null}
-                          className="w-full rounded-lg border border-white/5 bg-zinc-900 px-3 py-1.5 text-xs text-white outline-none focus:border-accent-amber/50 cursor-pointer appearance-none"
+                          className="w-full rounded-lg border border-outline bg-surface-container-high px-3 py-1.5 text-xs text-primary outline-none focus:border-accent-amber/50 cursor-pointer appearance-none"
                         >
                           {presetModels.map((m) => (
                             <option key={m} value={m}>
@@ -214,12 +214,12 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                             </option>
                           ))}
                         </select>
-                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
+                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-secondary pointer-events-none" />
                       </div>
                     ) : (
-                      <div className="px-3 py-1.5 rounded-lg bg-zinc-900/60 border border-white/5 text-[11px] text-zinc-400 leading-normal truncate">
+                      <div className="px-3 py-1.5 rounded-lg bg-surface-container-high border border-outline text-[11px] text-secondary leading-normal truncate">
                         {llmConfig.model || "(No Model Selected)"}
-                        <p className="text-[9px] text-zinc-600 mt-0.5">Edit endpoint in Settings Page</p>
+                        <p className="text-[9px] text-secondary/70 mt-0.5">Edit endpoint in Settings Page</p>
                       </div>
                     )}
                   </div>
@@ -229,7 +229,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                 {ttsConfig && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-1.5 text-zinc-400 font-medium">
+                      <span className="flex items-center gap-1.5 text-secondary font-medium">
                         <Volume2 className="w-3.5 h-3.5 text-accent-amber" />
                         Audio Voice
                       </span>
@@ -242,7 +242,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                         Local Qwen MLX synthesis is active. Voices are scoped per-script.
                       </div>
                     ) : ttsConfig.provider === "mock_remote" ? (
-                      <div className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-white/5 text-[11px] text-zinc-500">
+                      <div className="px-3 py-1.5 rounded-lg bg-surface-container-high border border-outline text-[11px] text-secondary">
                         Mock Voice Synthesizer
                       </div>
                     ) : (
@@ -251,7 +251,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                           value={ttsConfig.voice}
                           onChange={(e) => void handleTTSVoiceChange(e.target.value)}
                           disabled={savingField !== null}
-                          className="w-full rounded-lg border border-white/5 bg-zinc-900 px-3 py-1.5 text-xs text-white outline-none focus:border-accent-amber/50 cursor-pointer appearance-none"
+                          className="w-full rounded-lg border border-outline bg-surface-container-high px-3 py-1.5 text-xs text-primary outline-none focus:border-accent-amber/50 cursor-pointer appearance-none"
                         >
                           {STANDARD_TTS_VOICES.map((v) => (
                             <option key={v} value={v}>
@@ -259,7 +259,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                             </option>
                           ))}
                         </select>
-                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
+                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-secondary pointer-events-none" />
                       </div>
                     )}
                   </div>

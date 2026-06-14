@@ -414,7 +414,7 @@ export function ModelsPage() {
                   type="button"
                   onClick={() => void handleUseAsDefault(noticeActionModel)}
                   disabled={busySelectName !== null}
-                  className="shrink-0 rounded-md bg-accent-amber px-3 py-1.5 text-xs font-semibold text-black hover:bg-accent-amber/90 disabled:opacity-50"
+                  className="shrink-0 rounded-md bg-accent-amber px-3 py-1.5 text-xs font-semibold text-on-primary hover:bg-accent-amber/90 disabled:opacity-50"
                 >
                   Use as default
                 </button>
@@ -482,7 +482,7 @@ export function ModelsPage() {
                           {isDownloading && busyDownloadName === m.model_name && requestState?.phase === "running" && <button type="button" onClick={() => void handleCancelDownload()} className="px-2 py-1 rounded border border-outline text-[11px] font-medium hover:bg-surface-container">Cancel</button>}
                           {!m.downloaded && !isDownloading && <button type="button" onClick={() => void handleDownload(m)} disabled={isBusy} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-surface-container-high text-primary border border-outline hover:bg-surface-container-highest disabled:opacity-50"><Download className="h-3.5 w-3.5" />Download</button>}
                           {m.downloaded && !isDownloading && !isCurrent && (
-                            <button type="button" onClick={() => void handleUseAsDefault(m)} disabled={isBusy || !m.hf_repo_id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-accent-amber text-black hover:bg-accent-amber/90 disabled:opacity-50">
+                            <button type="button" onClick={() => void handleUseAsDefault(m)} disabled={isBusy || !m.hf_repo_id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-accent-amber text-on-primary hover:bg-accent-amber/90 disabled:opacity-50">
                               {busySelectName === m.model_name ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CircleCheck className="h-3.5 w-3.5" />}Use as default
                             </button>
                           )}
@@ -506,7 +506,32 @@ export function ModelsPage() {
                     </button>
                     <button type="button" onClick={() => setProblems([])} className="inline-flex items-center gap-1 hover:text-primary"><RotateCcw className="h-3.5 w-3.5" />Clear</button>
                   </div>
-                  {problemsOpen && <div className="bg-[#1e1e1e] text-[#d4d4d4] p-3 max-h-48 overflow-auto font-mono text-xs leading-relaxed space-y-2">{problems.map((problem) => <div key={problem.id}><span className="text-[#f44747]">[error]</span> <span className="text-[#569cd6]">{problem.operation}</span>{problem.target ? <span className="text-[#9cdcfe]"> {problem.target}</span> : null}: <span className="text-[#ce9178] whitespace-pre-wrap break-all">{problem.message}</span><div className="text-[#6a9955] mt-0.5">{new Date(problem.createdAt).toLocaleString()}</div>{problem.operation === "download_model" && problem.target && <button type="button" className="mt-1 inline-flex items-center gap-1 text-[#dcdcaa] hover:underline" onClick={() => { const target = models.find((m) => m.model_name === problem.target); if (target) void handleDownload(target); }}><Download className="h-3 w-3" />Retry</button>}</div>)}</div>}
+                  {problemsOpen && (
+                    <div className="theme-code-panel p-3 max-h-48 overflow-auto font-mono text-xs leading-relaxed space-y-2">
+                      {problems.map((problem) => (
+                        <div key={problem.id}>
+                          <span className="theme-code-error">[error]</span>{" "}
+                          <span className="theme-code-keyword">{problem.operation}</span>
+                          {problem.target ? <span className="theme-code-string"> {problem.target}</span> : null}:{" "}
+                          <span className="theme-code-string whitespace-pre-wrap break-all">{problem.message}</span>
+                          <div className="theme-code-comment mt-0.5">{new Date(problem.createdAt).toLocaleString()}</div>
+                          {problem.operation === "download_model" && problem.target && (
+                            <button
+                              type="button"
+                              className="mt-1 inline-flex items-center gap-1 theme-code-action hover:underline"
+                              onClick={() => {
+                                const target = models.find((m) => m.model_name === problem.target);
+                                if (target) void handleDownload(target);
+                              }}
+                            >
+                              <Download className="h-3 w-3" />
+                              Retry
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

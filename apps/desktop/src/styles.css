@@ -1,44 +1,175 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-@theme {
+:root {
+  /* Premium Light Theme (Default, Claude-inspired) */
   --font-headline: "Outfit", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-body: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Dark premium palette: harmonious slate & warm amber */
+  --color-primary: #1c1c1f;
+  --color-primary-container: #f4f2ed;
+  --color-on-primary: #ffffff;
+
+  --color-secondary: #6e6e73;
+  --color-tertiary: #a17b43;
+
+  /* Layered Depth */
+  --color-background: #fbfaf7;
+  --color-surface: rgba(255, 255, 255, 0.7);
+  --color-surface-container: rgba(247, 245, 240, 0.85);
+  --color-surface-container-low: rgba(251, 250, 247, 0.9);
+  --color-surface-container-high: rgba(242, 240, 235, 0.95);
+  --color-surface-container-highest: rgba(235, 232, 225, 0.98);
+
+  --color-on-surface: #1c1c1f;
+  --color-on-surface-variant: #2c2c2f;
+
+  --color-outline: rgba(0, 0, 0, 0.06);
+  --color-outline-variant: rgba(0, 0, 0, 0.03);
+
+  --color-accent-amber: #a17b43;
+  --color-accent-amber-container: rgba(161, 123, 67, 0.08);
+  --color-accent-gradient-from: #c49a5c;
+  --color-accent-gradient-to: #a17b43;
+
+  /* Glass Card Shadows and Backgrounds */
+  --card-bg: rgba(255, 255, 255, 0.65);
+  --card-bg-focused: rgba(255, 255, 255, 0.85);
+  --card-bg-inactive-hover: rgba(255, 255, 255, 0.8);
+  --card-border: rgba(0, 0, 0, 0.06);
+  --card-border-focused: rgba(161, 123, 67, 0.25);
+  --card-shadow: 0 12px 36px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --card-shadow-focused: 0 20px 48px rgba(161, 123, 67, 0.08), 0 0 24px rgba(161, 123, 67, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --body-bg-image: radial-gradient(circle at 50% 0%, rgba(161, 123, 67, 0.05) 0%, transparent 60%),
+                    radial-gradient(circle at 100% 100%, rgba(161, 123, 67, 0.02) 0%, transparent 40%),
+                    linear-gradient(180deg, #faf9f6 0%, #f4f2ed 100%);
+
+  --overlay-bg: rgba(15, 15, 17, 0.28);
+  --modal-bg: rgba(255, 255, 255, 0.92);
+  --panel-bg: rgba(255, 255, 255, 0.78);
+  --panel-bg-elevated: rgba(247, 245, 240, 0.95);
+  --inset-highlight: rgba(255, 255, 255, 0.65);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.14);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.24);
+  --slider-track: rgba(0, 0, 0, 0.08);
+  --slider-track-hover: rgba(0, 0, 0, 0.14);
+  --placeholder-color: rgba(28, 28, 31, 0.42);
+  --selection-bg: rgba(161, 123, 67, 0.22);
+  --glass-shadow-soft: 0 4px 30px rgba(0, 0, 0, 0.04);
+  --glass-inset: inset 0 1px 1px rgba(255, 255, 255, 0.75);
+  --code-bg: #f4f2ed;
+  --code-text: #2c2c2f;
+  --code-error: #b42318;
+  --code-keyword: #7a4d12;
+  --code-string: #8b5a2b;
+  --code-comment: #6e6e73;
+}
+
+html.dark-theme {
+  /* Dark Premium Palette (Slate & Warm Amber) */
   --color-primary: #f7f1e4;
   --color-primary-container: #22201e;
   --color-on-primary: #000000;
-  
+
   --color-secondary: #9f9b93;
   --color-tertiary: #f2bf57;
-  
-  /* Layered Depth: Background -> Sidebar -> Panels */
+
+  /* Layered Depth */
   --color-background: #0f0f11;
   --color-surface: rgba(22, 22, 26, 0.72);
   --color-surface-container: rgba(30, 30, 35, 0.88);
   --color-surface-container-low: rgba(18, 18, 22, 0.95);
   --color-surface-container-high: rgba(42, 42, 48, 0.9);
   --color-surface-container-highest: rgba(55, 55, 62, 0.95);
-  
+
   --color-on-surface: #f7f1e4;
   --color-on-surface-variant: #e1d8c4;
-  
+
   --color-outline: rgba(255, 243, 215, 0.08);
   --color-outline-variant: rgba(255, 243, 215, 0.04);
-  
-  /* Accent colors */
+
   --color-accent-amber: #f2bf57;
   --color-accent-amber-container: rgba(242, 191, 87, 0.12);
+  --color-accent-gradient-from: #f2bf57;
+  --color-accent-gradient-to: #d79b2f;
+
+  /* Glass Card Shadows and Backgrounds */
+  --card-bg: rgba(23, 23, 27, 0.45);
+  --card-bg-focused: rgba(25, 25, 30, 0.65);
+  --card-bg-inactive-hover: rgba(30, 30, 36, 0.55);
+  --card-border: rgba(255, 255, 255, 0.04);
+  --card-border-focused: rgba(242, 191, 87, 0.25);
+  --card-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.02);
+  --card-shadow-focused: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 24px rgba(242, 191, 87, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.03);
+  --body-bg-image: radial-gradient(circle at 50% 0%, rgba(242, 191, 87, 0.07) 0%, transparent 60%),
+                    radial-gradient(circle at 100% 100%, rgba(242, 191, 87, 0.04) 0%, transparent 40%),
+                    linear-gradient(180deg, #121214 0%, #0a0a0c 100%);
+
+  --overlay-bg: rgba(0, 0, 0, 0.45);
+  --modal-bg: rgba(20, 20, 24, 0.9);
+  --panel-bg: rgba(20, 20, 24, 0.55);
+  --panel-bg-elevated: rgba(26, 26, 30, 0.85);
+  --inset-highlight: rgba(255, 255, 255, 0.03);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
+  --slider-track: rgba(255, 255, 255, 0.08);
+  --slider-track-hover: rgba(255, 255, 255, 0.14);
+  --placeholder-color: rgba(255, 243, 215, 0.4);
+  --selection-bg: rgba(242, 191, 87, 0.22);
+  --glass-shadow-soft: 0 4px 30px rgba(0, 0, 0, 0.35);
+  --glass-inset: inset 0 1px 1px rgba(255, 255, 255, 0.02);
+  --code-bg: #1e1e1e;
+  --code-text: #d4d4d4;
+  --code-error: #f44747;
+  --code-keyword: #569cd6;
+  --code-string: #ce9178;
+  --code-comment: #6a9955;
+}
+
+@theme {
+  --font-headline: var(--font-headline);
+  --font-body: var(--font-body);
+
+  --color-primary: var(--color-primary);
+  --color-primary-container: var(--color-primary-container);
+  --color-on-primary: var(--color-on-primary);
+  --color-secondary: var(--color-secondary);
+  --color-tertiary: var(--color-tertiary);
+
+  --color-background: var(--color-background);
+  --color-surface: var(--color-surface);
+  --color-surface-container: var(--color-surface-container);
+  --color-surface-container-low: var(--color-surface-container-low);
+  --color-surface-container-high: var(--color-surface-container-high);
+  --color-surface-container-highest: var(--color-surface-container-highest);
+
+  --color-on-surface: var(--color-on-surface);
+  --color-on-surface-variant: var(--color-on-surface-variant);
+
+  --color-outline: var(--color-outline);
+  --color-outline-variant: var(--color-outline-variant);
+
+  --color-accent-amber: var(--color-accent-amber);
+  --color-accent-amber-container: var(--color-accent-amber-container);
+
+  --color-overlay: var(--overlay-bg);
+  --color-modal: var(--modal-bg);
+  --color-panel: var(--panel-bg);
+  --color-panel-elevated: var(--panel-bg-elevated);
 }
 
 @layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html.dark-theme {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-on-surface font-body overflow-hidden h-screen w-screen m-0 p-0;
-    background-image:
-      radial-gradient(circle at 50% 0%, rgba(242, 191, 87, 0.07) 0%, transparent 60%),
-      radial-gradient(circle at 100% 100%, rgba(242, 191, 87, 0.04) 0%, transparent 40%),
-      linear-gradient(180deg, #121214 0%, #0a0a0c 100%);
+    background-image: var(--body-bg-image);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -46,99 +177,122 @@
 
 /* Glassmorphism & Visual Polish utilities */
 .glass-panel {
-  background: rgba(23, 23, 27, 0.65);
+  background: var(--color-surface);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 
-    0 4px 30px rgba(0, 0, 0, 0.4),
-    inset 0 1px 1px rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-outline);
+  box-shadow: var(--glass-shadow-soft), var(--glass-inset);
 }
 
 .glass-card {
-  background: rgba(28, 28, 33, 0.55);
+  background: var(--color-surface-container);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--color-outline);
+  box-shadow: var(--glass-inset);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .glass-card:hover {
-  background: rgba(35, 35, 42, 0.65);
-  border-color: rgba(242, 191, 87, 0.2);
-  box-shadow: 
-    0 8px 24px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: var(--color-surface-container-high);
+  border-color: var(--color-accent-amber);
 }
 
 .glass-card-selected {
-  background: rgba(242, 191, 87, 0.06);
+  background: var(--color-accent-amber-container);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(242, 191, 87, 0.35);
-  box-shadow: 
-    0 0 20px rgba(242, 191, 87, 0.05),
-    inset 0 1px 1px rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-accent-amber);
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--color-accent-amber) 8%, transparent),
+    var(--glass-inset);
 }
+
+.theme-accent-gradient {
+  background-image: linear-gradient(to bottom, var(--color-accent-gradient-from), var(--color-accent-gradient-to));
+}
+
+.theme-modal-overlay {
+  background: var(--overlay-bg);
+}
+
+.theme-modal-surface {
+  background: var(--modal-bg);
+  border: 1px solid var(--color-outline);
+}
+
+.theme-panel-surface {
+  background: var(--panel-bg);
+  border: 1px solid var(--color-outline);
+}
+
+.theme-panel-elevated {
+  background: var(--panel-bg-elevated);
+  border: 1px solid var(--color-outline);
+}
+
+.prose-theme {
+  color: var(--color-on-surface-variant);
+  --tw-prose-body: var(--color-on-surface-variant);
+  --tw-prose-headings: var(--color-primary);
+  --tw-prose-bold: var(--color-primary);
+  --tw-prose-links: var(--color-accent-amber);
+}
+
+.theme-code-panel {
+  background: var(--code-bg);
+  color: var(--code-text);
+}
+
+.theme-code-error { color: var(--code-error); }
+.theme-code-keyword { color: var(--code-keyword); }
+.theme-code-string { color: var(--code-string); }
+.theme-code-comment { color: var(--code-comment); }
+.theme-code-action { color: var(--code-text); }
 
 /* Claude-Inspired Floating Card Deck Styles */
 .glass-deck-card {
-  background: rgba(23, 23, 27, 0.45);
+  background: var(--card-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  box-shadow: 
-    0 12px 40px rgba(0, 0, 0, 0.35),
-    inset 0 1px 1px rgba(255, 255, 255, 0.02);
-  transition: flex 0.5s cubic-bezier(0.16, 1, 0.3, 1), 
-              opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
-              border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
-              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  transition: flex 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glass-deck-card-focused {
-  background: rgba(25, 25, 30, 0.65);
-  border-color: rgba(242, 191, 87, 0.25);
-  box-shadow: 
-    0 24px 60px rgba(0, 0, 0, 0.6),
-    0 0 24px rgba(242, 191, 87, 0.05),
-    inset 0 1px 1px rgba(255, 255, 255, 0.03);
+  background: var(--card-bg-focused);
+  border-color: var(--card-border-focused);
+  box-shadow: var(--card-shadow-focused);
 }
 
 .glass-deck-card-inactive:hover {
-  background: rgba(30, 30, 36, 0.55);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 
-    0 16px 44px rgba(0, 0, 0, 0.45),
-    inset 0 1px 1px rgba(255, 255, 255, 0.03);
+  background: var(--card-bg-inactive-hover);
+  border-color: var(--color-outline);
 }
 
 .glass-edge-strip {
-  background: rgba(20, 20, 24, 0.55);
+  background: var(--card-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  box-shadow: 
-    0 8px 24px rgba(0, 0, 0, 0.25),
-    inset 0 1px 1px rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glass-edge-strip:hover {
-  background: rgba(242, 191, 87, 0.06);
-  border-color: rgba(242, 191, 87, 0.25);
-  box-shadow: 
-    0 12px 30px rgba(242, 191, 87, 0.05),
-    inset 0 1px 1px rgba(255, 255, 255, 0.02);
+  background: var(--card-bg-inactive-hover);
+  border-color: var(--color-accent-amber);
 }
 
 .writing-mode-vertical {
   writing-mode: vertical-rl;
   text-orientation: mixed;
 }
-
 /* Pulsing accent animation */
 @keyframes pulse-accent {
   0%, 100% {
@@ -155,7 +309,6 @@
   animation: pulse-accent 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
 }
 
-/* Base custom scrollbar for dark theme macOS feel */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -164,14 +317,14 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--scrollbar-thumb);
   border-radius: 10px;
   border: 2px solid transparent;
   background-clip: padding-box;
   transition: background-color 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.18);
+  background-color: var(--scrollbar-thumb-hover);
 }
 
 .mac-scrollbar::-webkit-scrollbar {
@@ -186,7 +339,7 @@
   background: transparent;
 }
 .chat-container::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.12);
+  background-color: var(--scrollbar-thumb);
   border-radius: 10px;
 }
 
@@ -203,25 +356,25 @@ input[type="range"].premium-slider:focus {
 }
 
 input[type="range"].premium-slider::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--slider-track);
   border-radius: 4px;
   height: 4px;
   transition: background 0.15s ease;
 }
 
 input[type="range"].premium-slider:hover::-webkit-slider-runnable-track {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--slider-track-hover);
 }
 
 input[type="range"].premium-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  background: #f2bf57;
+  background: var(--color-accent-amber);
   border-radius: 50%;
   height: 12px;
   width: 12px;
   margin-top: -4px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   transition: transform 0.1s ease;
 }
 
@@ -229,13 +382,11 @@ input[type="range"].premium-slider:hover::-webkit-slider-thumb {
   transform: scale(1.2);
 }
 
-/* Fix WebKit/WKWebView text selection trail and newline block highlight bug in textareas */
 textarea::selection {
-  background-color: rgba(242, 191, 87, 0.22) !important;
+  background-color: var(--selection-bg) !important;
   color: inherit;
 }
 
-/* ContentEditable Composer Placeholder and Layout Styling */
 .composer-editable {
   white-space: pre-wrap;
   word-break: break-word;
@@ -246,8 +397,7 @@ textarea::selection {
 }
 .composer-editable:empty::before {
   content: attr(data-placeholder);
-  color: rgba(255, 243, 215, 0.4);
+  color: var(--placeholder-color);
   pointer-events: none;
   display: block;
 }
-

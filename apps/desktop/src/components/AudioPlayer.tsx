@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { Play, Pause, Volume2, VolumeX, AlertCircle } from "lucide-react";
 import { cn } from "../lib/utils";
+import { accentRangeBackground } from "../lib/theme";
 
 interface AudioPlayerProps {
   src: string;
@@ -21,7 +22,6 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
 
     useImperativeHandle(ref, () => audioRef.current!);
 
-    // Sync isPlaying with audio element state
     const togglePlay = () => {
       if (!audioRef.current || hasError) return;
       if (isPlaying) {
@@ -84,7 +84,6 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
     };
 
     useEffect(() => {
-      // Reset player states when source changes
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
@@ -96,7 +95,6 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
       }
     }, [src]);
 
-    // Format time (e.g. 153.2 -> "02:33")
     const formatTime = (time: number) => {
       if (isNaN(time) || !isFinite(time)) return "00:00";
       const minutes = Math.floor(time / 60);
@@ -106,15 +104,17 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
       return `${padMin}:${padSec}`;
     };
 
+    const seekPercent = duration ? (currentTime / duration) * 100 : 0;
+    const volumePercent = (isMuted ? 0 : volume) * 100;
+
     return (
-      <div 
+      <div
         className={cn(
-          "flex flex-col rounded-2xl border border-white/5 bg-[rgba(20,20,24,0.45)] backdrop-blur-md shadow-sm transition-all duration-200", 
+          "flex flex-col rounded-2xl border border-outline theme-panel-surface backdrop-blur-md shadow-sm transition-all duration-200",
           variant === "minimal" ? "p-2.5 px-3 gap-0" : "p-3.5 gap-3",
           className
         )}
       >
-        {/* Hidden audio element */}
         <audio
           ref={audioRef}
           src={src}
@@ -128,55 +128,50 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
         />
 
         <div className="flex items-center gap-3">
-          {/* Play/Pause Button */}
           <button
             type="button"
             onClick={togglePlay}
             disabled={hasError || !src}
             className={cn(
-              "flex shrink-0 items-center justify-center rounded-full text-black shadow-md transition-all duration-200 focus:outline-none",
+              "flex shrink-0 items-center justify-center rounded-full text-on-primary shadow-md transition-all duration-200 focus:outline-none",
               variant === "minimal" ? "h-9 w-9" : "h-10 w-10",
               hasError
-                ? "bg-red-500/20 text-red-200 cursor-not-allowed border border-red-500/20"
+                ? "bg-red-500/20 text-red-400 cursor-not-allowed border border-red-500/20"
                 : !src
-                ? "bg-white/10 text-white/40 cursor-not-allowed"
-                : "bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] hover:scale-105 active:scale-95 hover:shadow-lg hover:shadow-accent-amber/15"
+                ? "bg-surface-container-high text-secondary/40 cursor-not-allowed"
+                : "theme-accent-gradient hover:scale-105 active:scale-95 hover:shadow-lg hover:shadow-accent-amber/15"
             )}
           >
             {hasError ? (
               <AlertCircle className={variant === "minimal" ? "h-4 w-4 text-red-400" : "h-4.5 w-4.5 text-red-400"} />
             ) : isPlaying ? (
-              <Pause className={variant === "minimal" ? "h-4 w-4 fill-current text-black" : "h-4.5 w-4.5 fill-current text-black"} />
+              <Pause className={variant === "minimal" ? "h-4 w-4 fill-current" : "h-4.5 w-4.5 fill-current"} />
             ) : (
-              <Play className={variant === "minimal" ? "h-4 w-4 fill-current ml-0.5 text-black" : "h-4.5 w-4.5 fill-current ml-0.5 text-black"} />
+              <Play className={variant === "minimal" ? "h-4 w-4 fill-current ml-0.5" : "h-4.5 w-4.5 fill-current ml-0.5"} />
             )}
           </button>
 
           {variant === "minimal" ? (
-            /* Minimalist Progress Section */
             <div className="flex-1 flex flex-col gap-1 min-w-0">
               <div className="flex items-center justify-between text-[10px] font-headline tracking-wide text-secondary/70 px-0.5">
                 <span>{formatTime(currentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
-              
-              <div className="relative w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-[#f2bf57] to-[#d79b2f] transition-all duration-100 rounded-full"
-                  style={{
-                    width: `${duration ? (currentTime / duration) * 100 : 0}%`
-                  }}
+
+              <div className="relative w-full h-1 bg-surface-container-high rounded-full overflow-hidden">
+                <div
+                  className="h-full theme-accent-gradient transition-all duration-100 rounded-full"
+                  style={{ width: `${seekPercent}%` }}
                 />
               </div>
             </div>
           ) : (
-            /* Progress Slider Bar */
             <div className="flex-1 flex flex-col gap-1.5">
               <div className="flex items-center justify-between text-[11px] font-headline tracking-wide text-secondary/90 px-0.5">
                 <span>{formatTime(currentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
-              
+
               <div className="relative group w-full flex items-center h-4">
                 <input
                   type="range"
@@ -186,15 +181,12 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
                   onChange={handleSeekChange}
                   disabled={hasError || !src || duration === 0}
                   className="premium-slider w-full h-1"
-                  style={{
-                    background: `linear-gradient(to right, #f2bf57 0%, #f2bf57 ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255, 255, 255, 0.08) ${duration ? (currentTime / duration) * 100 : 0}%, rgba(255, 255, 255, 0.08) 100%)`
-                  }}
+                  style={{ background: accentRangeBackground(seekPercent) }}
                 />
               </div>
             </div>
           )}
 
-          {/* Volume Controller */}
           {variant === "full" && (
             <div className="flex items-center gap-2 group/volume shrink-0">
               <button
@@ -209,7 +201,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
                   <Volume2 className="h-4 w-4" />
                 )}
               </button>
-              
+
               <input
                 type="range"
                 min={0}
@@ -219,9 +211,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
                 onChange={handleVolumeChange}
                 disabled={hasError}
                 className="premium-slider w-16 h-1 opacity-60 group-hover/volume:opacity-100 transition-opacity"
-                style={{
-                  background: `linear-gradient(to right, #f2bf57 0%, #f2bf57 ${(isMuted ? 0 : volume) * 100}%, rgba(255, 255, 255, 0.08) ${(isMuted ? 0 : volume) * 100}%, rgba(255, 255, 255, 0.08) 100%)`
-                }}
+                style={{ background: accentRangeBackground(volumePercent) }}
               />
             </div>
           )}

@@ -604,8 +604,8 @@ export function VoiceStudioPage() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full overflow-y-auto px-5 py-5 lg:px-8">
       <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5">
-        <section className="rounded-[32px] border border-white/5 bg-[rgba(20,20,24,0.55)] p-6 backdrop-blur-xl shadow-lg relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#f2bf57]/[0.03] to-transparent pointer-events-none" />
+        <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-lg relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-accent-amber/[0.03] to-transparent pointer-events-none" />
           <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-accent-amber">Voice Library</p>
@@ -620,7 +620,7 @@ export function VoiceStudioPage() {
               <button
                 type="button"
                 onClick={() => selectedSessionId && selectedScriptId && navigate(`/script/${selectedSessionId}/${selectedScriptId}`)}
-                className="rounded-2xl border border-white/5 bg-white/5 hover:bg-white/10 hover:border-accent-amber/20 px-4 py-2 text-sm font-semibold text-primary transition-all duration-200 active:scale-95 cursor-pointer"
+                className="rounded-2xl border border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-accent-amber/20 px-4 py-2 text-sm font-semibold text-primary transition-all duration-200 active:scale-95 cursor-pointer"
               >
                 返回 Script
               </button>
@@ -633,7 +633,7 @@ export function VoiceStudioPage() {
 
         <div className="flex flex-col gap-5">
           <div className="mx-auto w-full max-w-[960px] space-y-5">
-            <section className="rounded-[32px] border border-white/5 bg-[rgba(20,20,24,0.45)] p-6 backdrop-blur-xl shadow-md">
+            <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-md">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <h2 className="text-base font-bold font-headline text-primary tracking-wide">音色库</h2>
@@ -653,14 +653,14 @@ export function VoiceStudioPage() {
                   <button 
                     type="button" 
                     onClick={openCreateProfileDialog} 
-                    className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-black transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-2xl theme-accent-gradient hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-on-primary transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                   >
                     <Mic className="h-3.5 w-3.5" /> 创建音色
                   </button>
                   <button 
                     type="button" 
                     onClick={() => void refreshVoiceProfiles()} 
-                    className="inline-flex items-center gap-2 rounded-2xl border border-white/5 bg-white/5 px-4 py-2.5 text-xs font-semibold text-secondary hover:text-primary transition-all duration-200 hover:bg-white/10 cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-2xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-semibold text-secondary hover:text-primary transition-all duration-200 hover:bg-surface-container-high cursor-pointer"
                   >
                     <RefreshCw className="h-3.5 w-3.5" /> 刷新音色库
                   </button>
@@ -688,16 +688,16 @@ export function VoiceStudioPage() {
                           </div>
                           <div className="flex shrink-0 items-center gap-0.5 relative z-10">
                             {profile.source === "user_saved" ? (
-                              <div className="flex items-center rounded-xl border border-white/5 bg-[rgba(20,20,24,0.65)] p-0.5">
+                              <div className="flex items-center rounded-xl border border-outline theme-panel-elevated p-0.5">
                                 <button
                                   type="button"
                                   onClick={() => openEditProfileDialog(profile)}
-                                  className="inline-flex items-center rounded-lg p-1.5 text-secondary hover:bg-white/5 hover:text-primary transition-colors cursor-pointer"
+                                  className="inline-flex items-center rounded-lg p-1.5 text-secondary hover:bg-surface-container-high/60 hover:text-primary transition-colors cursor-pointer"
                                   aria-label={`编辑「${profile.name}」`}
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </button>
-                                <span className="h-4 w-px bg-white/5" aria-hidden />
+                                <span className="h-4 w-px bg-surface-container-high/60" aria-hidden />
                                 <button
                                   type="button"
                                   onClick={() => void handleDeleteVoiceProfile(profile)}
@@ -718,7 +718,7 @@ export function VoiceStudioPage() {
                         <AudioPlayer
                           src={resolveAudioFileUrl(profile.audio_path)}
                           onError={() => handleProfileAudioLoadError(profile.voice_profile_id)}
-                          className="bg-[rgba(20,20,24,0.35)]"
+                          className="bg-surface-container"
                           variant="minimal"
                         />
                         {profileAudioError ? <p className="mt-2 text-xs text-red-400">{profileAudioError}</p> : null}
@@ -732,13 +732,13 @@ export function VoiceStudioPage() {
                                 "rounded-xl border px-3 py-2 text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer",
                                 isSelected
                                   ? "border-accent-amber/20 bg-accent-amber/5 text-accent-amber cursor-default"
-                                  : "border-white/5 bg-white/5 text-primary hover:bg-white/10 hover:border-accent-amber/20 active:scale-95"
+                                  : "border-outline bg-surface-container-high/60 text-primary hover:bg-surface-container-high hover:border-accent-amber/20 active:scale-95"
                               )}
                             >
                               {isSelected ? "已用于当前脚本" : "用于当前脚本"}
                             </button>
                           ) : (
-                            <span className="rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-secondary/80">
+                            <span className="rounded-xl border border-outline bg-surface-container-high/60 px-3 py-2 text-xs font-medium text-secondary/80">
                               打开脚本后可选用
                             </span>
                           )}
@@ -752,12 +752,12 @@ export function VoiceStudioPage() {
 
             {scriptBoundMode ? (
               <>
-                <section className="rounded-[32px] border border-white/5 bg-[rgba(20,20,24,0.45)] p-6 backdrop-blur-xl shadow-md">
+                <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-md">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <h2 className="text-xs font-semibold uppercase tracking-wider text-secondary/80">试听设置</h2>
                       <p className="mt-2 text-xl font-bold font-headline text-primary tracking-tight">
-                        {selectedProfile?.name ?? "未选择音色"} <span className="mx-1 text-white/20 font-light">·</span> {selectedStyle?.name ?? "默认风格"} <span className="mx-1 text-white/20 font-light">·</span> <span className="text-accent-amber">{speed.toFixed(1)}x</span>
+                        {selectedProfile?.name ?? "未选择音色"} <span className="mx-1 text-primary/20 font-light">·</span> {selectedStyle?.name ?? "默认风格"} <span className="mx-1 text-primary/20 font-light">·</span> <span className="text-accent-amber">{speed.toFixed(1)}x</span>
                       </p>
                       <p className="mt-1.5 text-xs text-secondary/70">
                         {selectedProfile ? "将使用该音色的参考音频生成试听。" : "请先为当前脚本选用一个音色。"}
@@ -766,7 +766,7 @@ export function VoiceStudioPage() {
                   </div>
                 </section>
 
-                <section className="rounded-[32px] border border-white/5 bg-[rgba(20,20,24,0.45)] p-6 backdrop-blur-xl shadow-md">
+                <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-md">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <h2 className="text-base font-bold font-headline text-primary tracking-wide">音色试听</h2>
@@ -784,7 +784,7 @@ export function VoiceStudioPage() {
                         !selectedProfileId ||
                         !previewEngineReady
                       }
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-black transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 cursor-pointer shrink-0"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl theme-accent-gradient hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-on-primary transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 cursor-pointer shrink-0"
                     >
                       {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                       生成试听
@@ -805,7 +805,7 @@ export function VoiceStudioPage() {
                           "rounded-full border px-4 py-2 text-xs font-semibold transition-all duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed", 
                           previewTextMode === btn.id 
                             ? "border-accent-amber bg-accent-amber/10 text-accent-amber shadow-sm" 
-                            : "border-white/5 bg-white/5 text-secondary hover:text-primary hover:bg-white/10"
+                            : "border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high"
                         )}
                       >
                         {btn.label}
@@ -820,9 +820,9 @@ export function VoiceStudioPage() {
                     }}
                     rows={3}
                     placeholder="输入一句你想用来比较音色与风格的试音文本"
-                    className={cn("mt-4 w-full resize-none rounded-[20px] border border-white/5 bg-background/50 px-4 py-3.5 text-sm text-primary outline-none transition-all duration-200 focus:border-accent-amber/30", previewTextMode !== "custom" && "hidden")}
+                    className={cn("mt-4 w-full resize-none rounded-[20px] border border-outline bg-background/50 px-4 py-3.5 text-sm text-primary outline-none transition-all duration-200 focus:border-accent-amber/30", previewTextMode !== "custom" && "hidden")}
                   />
-                  <p className="mt-3.5 text-[11px] text-secondary/80 leading-relaxed bg-[rgba(20,20,24,0.25)] px-3.5 py-2.5 rounded-xl border border-white/[0.02]">
+                  <p className="mt-3.5 text-[11px] text-secondary/80 leading-relaxed bg-surface-container-low px-3.5 py-2.5 rounded-xl border border-outline-variant">
                     <span className="font-semibold text-accent-amber/90">当前试音文本：</span>
                     {effectivePreviewText ? `${effectivePreviewText.slice(0, 80)}${effectivePreviewText.length > 80 ? "…" : ""}` : "系统标准试音句"}
                   </p>
@@ -830,7 +830,7 @@ export function VoiceStudioPage() {
                     <p className="mt-3 text-[11px] text-amber-300 font-medium pl-1">请先为当前脚本选用一个音色。</p>
                   ) : null}
                   {previewRequestState && previewRequestState.phase !== "succeeded" ? (
-                    <div className="mt-4 rounded-2xl border border-white/5 bg-background/30 px-4 py-3.5 text-sm text-secondary/90 flex items-center gap-2">
+                    <div className="mt-4 rounded-2xl border border-outline bg-background/30 px-4 py-3.5 text-sm text-secondary/90 flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin text-accent-amber" />
                       <span>{Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}</span>
                     </div>
@@ -862,7 +862,7 @@ export function VoiceStudioPage() {
             ) : null}
           </div>
 
-          <section className="mx-auto w-full max-w-[960px] rounded-2xl border border-white/5 bg-[rgba(27,27,30,0.65)] p-4 backdrop-blur-md shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
+          <section className="mx-auto w-full max-w-[960px] rounded-2xl border border-outline theme-panel-elevated p-4 backdrop-blur-md shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-start gap-3 sm:items-center">
                 <div className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full sm:mt-0", localEngineReady ? "bg-emerald-400 shadow-[0_0_8px_#10b981]" : "bg-accent-amber animate-pulse shadow-[0_0_8px_#f59e0b]")} />
@@ -875,7 +875,7 @@ export function VoiceStudioPage() {
               <button
                 type="button"
                 onClick={() => navigate("/models")}
-                className="shrink-0 rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-xs font-semibold text-primary transition-all hover:border-white/10 hover:bg-white/10 active:scale-[0.98] cursor-pointer"
+                className="shrink-0 rounded-xl border border-outline bg-surface-container-high/60 px-3 py-2 text-xs font-semibold text-primary transition-all hover:border-outline hover:bg-surface-container-high active:scale-[0.98] cursor-pointer"
               >
                 Change model
               </button>
@@ -884,9 +884,9 @@ export function VoiceStudioPage() {
         </div>
       </div>
       {profileDialogMode ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md px-4 py-6">
-          <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-[32px] border border-white/5 bg-[rgba(20,20,24,0.85)] backdrop-blur-2xl p-8 shadow-[0_24px_60px_rgba(0,0,0,0.5)]">
-            <div className="flex items-start justify-between gap-4 border-b border-white/[0.04] pb-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center theme-modal-overlay backdrop-blur-md px-4 py-6">
+          <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-[32px] border border-outline theme-modal-surface backdrop-blur-2xl p-8 shadow-[0_24px_60px_rgba(0,0,0,0.5)]">
+            <div className="flex items-start justify-between gap-4 border-b border-outline pb-5">
               <div>
                 <h2 className="text-lg font-bold font-display text-primary tracking-tight">{profileDialogMode === "create" ? "创建我的音色" : "编辑我的音色"}</h2>
                 <p className="mt-1.5 text-xs leading-relaxed text-secondary/80">
@@ -898,7 +898,7 @@ export function VoiceStudioPage() {
               <button
                 type="button"
                 onClick={resetProfileDialog}
-                className="rounded-xl border border-white/5 bg-white/5 p-2 text-secondary hover:text-primary hover:bg-white/10 transition-colors cursor-pointer"
+                className="rounded-xl border border-outline bg-surface-container-high/60 p-2 text-secondary hover:text-primary hover:bg-surface-container-high transition-colors cursor-pointer"
                 aria-label="关闭"
               >
                 <X className="h-4 w-4" />
@@ -911,7 +911,7 @@ export function VoiceStudioPage() {
                 <input
                   value={newProfileName}
                   onChange={(event) => setNewProfileName(event.target.value)}
-                  className="w-full rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.6)] px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
+                  className="w-full rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
                   placeholder="例如：我的知识讲述音色"
                 />
               </label>
@@ -937,7 +937,7 @@ export function VoiceStudioPage() {
                           "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-xs font-semibold disabled:opacity-40 transition-all cursor-pointer",
                           selected 
                             ? "border-accent-amber/30 bg-accent-amber/10 text-accent-amber shadow-[0_0_12px_rgba(242,191,87,0.1)]" 
-                            : "border-white/5 bg-white/5 text-secondary hover:text-primary hover:bg-white/10 hover:border-white/10",
+                            : "border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-outline",
                         )}
                       >
                         <Icon className="h-3.5 w-3.5" />
@@ -947,7 +947,7 @@ export function VoiceStudioPage() {
                   })}
                 </div>
                 {profileAudioSource === "upload" ? (
-                  <div className="mt-3 rounded-2xl border border-dashed border-white/10 bg-[rgba(15,15,17,0.4)] p-6 text-center hover:border-accent-amber/20 transition-colors">
+                  <div className="mt-3 rounded-2xl border border-dashed border-outline bg-surface-container p-6 text-center hover:border-accent-amber/20 transition-colors">
                     <input
                       ref={profileFileInputRef}
                       type="file"
@@ -958,7 +958,7 @@ export function VoiceStudioPage() {
                     <button
                       type="button"
                       onClick={() => profileFileInputRef.current?.click()}
-                      className="inline-flex items-center gap-2 rounded-xl border border-white/5 bg-white/5 px-4 py-2.5 text-xs font-semibold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
+                      className="inline-flex items-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-semibold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
                     >
                       <Upload className="h-4 w-4" />
                       选择音频文件
@@ -967,7 +967,7 @@ export function VoiceStudioPage() {
                   </div>
                 ) : null}
                 {profileAudioSource === "microphone" ? (
-                  <div className="mt-3 rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-6 flex flex-col items-center justify-center gap-3">
+                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container p-6 flex flex-col items-center justify-center gap-3">
                     <button
                       type="button"
                       onClick={() => (recordingProfileSample ? handleStopProfileRecording() : void handleStartProfileRecording())}
@@ -975,7 +975,7 @@ export function VoiceStudioPage() {
                         "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer",
                         recordingProfileSample 
                           ? "bg-red-500/10 border border-red-500/20 text-red-400 animate-pulse" 
-                          : "bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] text-black shadow-[0_4px_16px_rgba(242,191,87,0.2)]",
+                          : "bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] text-on-primary shadow-[0_4px_16px_rgba(242,191,87,0.2)]",
                       )}
                     >
                       {recordingProfileSample ? <Square className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
@@ -985,18 +985,18 @@ export function VoiceStudioPage() {
                   </div>
                 ) : null}
                 {profileAudioSource === "system" ? (
-                  <div className="mt-3 rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4 text-xs text-secondary/60">
+                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container p-4 text-xs text-secondary/60">
                     系统内录需要新增 macOS 桌面采集能力；当前版本请使用上传或麦克风录音。
                   </div>
                 ) : null}
                 {profileDialogMode === "edit" && existingProfileAudioUrl && !newProfileAudioPreviewUrl ? (
-                  <div className="mt-3 rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.6)] p-4">
+                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high p-4">
                     <p className="mb-2.5 text-xs font-semibold text-primary">当前参考音频</p>
                     <audio controls src={existingProfileAudioUrl} className="w-full rounded-lg" />
                   </div>
                 ) : null}
                 {newProfileAudioPreviewUrl ? (
-                  <div className="mt-3 rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.6)] p-4">
+                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high p-4">
                     <p className="mb-2.5 text-xs font-semibold text-primary">{newProfileAudioFileName || "新参考音频"}</p>
                     <audio controls src={newProfileAudioPreviewUrl} className="w-full rounded-lg" />
                   </div>
@@ -1009,7 +1009,7 @@ export function VoiceStudioPage() {
                   value={newProfileReferenceText}
                   onChange={(event) => setNewProfileReferenceText(event.target.value)}
                   rows={5}
-                  className="w-full resize-none rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.6)] px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans leading-relaxed placeholder:text-secondary/40 focus:bg-background"
+                  className="w-full resize-none rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans leading-relaxed placeholder:text-secondary/40 focus:bg-background"
                   placeholder="逐字填写参考音频里实际说出的内容"
                 />
               </label>
@@ -1032,11 +1032,11 @@ export function VoiceStudioPage() {
                 </div>
               ) : null}
 
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end border-t border-white/[0.04] pt-5">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end border-t border-outline pt-5">
                 <button
                   type="button"
                   onClick={resetProfileDialog}
-                  className="rounded-xl border border-white/5 bg-white/5 px-4 py-2.5 text-xs font-bold text-secondary hover:text-primary hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer"
+                  className="rounded-xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-bold text-secondary hover:text-primary hover:bg-surface-container-high active:scale-[0.98] transition-all cursor-pointer"
                 >
                   取消
                 </button>
@@ -1044,7 +1044,7 @@ export function VoiceStudioPage() {
                   type="button"
                   onClick={() => void handleSaveVoiceProfile()}
                   disabled={savingProfile || recordingProfileSample}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] transition-all px-5 py-2.5 text-xs font-bold text-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_16px_rgba(242,191,87,0.2)]"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] transition-all px-5 py-2.5 text-xs font-bold text-on-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_16px_rgba(242,191,87,0.2)]"
                 >
                   {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : profileDialogMode === "create" ? <Mic className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                   {profileDialogMode === "create"

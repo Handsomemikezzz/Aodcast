@@ -4,7 +4,7 @@ import { QuickSettingsPopover } from "../../components/QuickSettingsPopover";
 
 export function ScriptWorkbenchHeader({ workbench }: { workbench: UseScriptWorkbenchResult }) {
   return (
-    <section className="rounded-[28px] border border-outline bg-[linear-gradient(180deg,rgba(33,33,37,0.96),rgba(25,25,28,0.94))] px-5 py-5 shadow-[0_24px_80px_rgba(0,0,0,0.38)] backdrop-blur-xl lg:px-6">
+    <section className="rounded-[28px] border border-outline theme-panel-elevated px-5 py-5 shadow-2xl backdrop-blur-xl lg:px-6">
       <button
         type="button"
         onClick={() => workbench.navigate("/script")}

@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aodcast</title>
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("aodcast-theme");
+          if (theme === "dark") {
+            document.documentElement.classList.add("dark-theme");
+          }
+        } catch (error) {
+          /* ignore storage failures during first paint */
+        }
+      })();
+    </script>
     <style>
       html, body {
         margin: 0;

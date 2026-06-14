@@ -28,8 +28,8 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
 
   return (
     <section className="mx-auto grid w-full max-w-[960px] gap-4 lg:grid-cols-2 lg:items-start">
-      <div className="rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
-        <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.04] pb-4">
+      <div className="rounded-[32px] border border-outline theme-panel-elevated backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-outline pb-4">
           <div>
             <p className="text-sm font-bold text-primary font-display tracking-tight">Voice Workspace</p>
             <p className="mt-1 text-[11px] text-secondary/80">Persona, engine, live stats, and output actions.</p>
@@ -38,7 +38,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+          <div className="rounded-2xl border border-outline bg-surface-container p-4">
             <div className="mb-2.5 flex items-center justify-between gap-3">
               <p className="text-[10px] font-bold uppercase tracking-wider text-secondary/80">Selected Voice</p>
               <button
@@ -55,7 +55,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               onClick={() => setVoiceMenuOpen((open) => !open)}
               disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
               aria-expanded={voiceMenuOpen}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/5 px-4 py-3 text-left transition-all hover:border-accent-amber/30 hover:bg-white/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-outline bg-surface-container-high/60 px-4 py-3 text-left transition-all hover:border-accent-amber/30 hover:bg-surface-container-high active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-accent-amber/30 bg-accent-amber/10 shrink-0">
@@ -75,7 +75,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <ChevronDown className={cn("h-4 w-4 text-secondary/60 transition-transform shrink-0", voiceMenuOpen && "rotate-180")} />
             </button>
             {voiceMenuOpen ? (
-              <div className="mt-3 max-h-[260px] overflow-y-auto rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.95)] backdrop-blur-xl p-2 shadow-[0_12px_36px_rgba(0,0,0,0.4)]">
+              <div className="mt-3 max-h-[260px] overflow-y-auto rounded-2xl border border-outline bg-surface-container-highest backdrop-blur-xl p-2 shadow-lg">
                 {activeVoiceProfiles.length ? (
                   <div className="space-y-1">
                     {activeVoiceProfiles.map((profile) => {
@@ -91,7 +91,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                           }}
                           className={cn(
                             "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors cursor-pointer",
-                            selected ? "bg-accent-amber/10 text-primary font-semibold" : "text-secondary hover:bg-white/5 hover:text-primary",
+                            selected ? "bg-accent-amber/10 text-primary font-semibold" : "text-secondary hover:bg-surface-container-high/60 hover:text-primary",
                           )}
                         >
                           <span className="min-w-0">
@@ -112,7 +112,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             ) : null}
           </div>
 
-          <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+          <div className="rounded-2xl border border-outline bg-surface-container p-4">
             <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-secondary/80">Rendering Engine</p>
             <div className="grid gap-2.5">
               <button
@@ -123,13 +123,13 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   "rounded-2xl border p-4 text-left transition-all cursor-pointer relative overflow-hidden",
                   workbench.selectedEngine === "local_mlx"
                     ? "border-accent-amber/30 bg-accent-amber/10 shadow-[0_0_16px_rgba(242,191,87,0.06)]"
-                    : "border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10",
+                    : "border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-outline",
                   workbench.localEngineDisabled && "cursor-not-allowed opacity-40",
                 )}
               >
                 <div className="flex items-center gap-3">
                   <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl border shrink-0", 
-                    workbench.selectedEngine === "local_mlx" ? "border-accent-amber/30 bg-accent-amber/10" : "border-white/10 bg-white/5"
+                    workbench.selectedEngine === "local_mlx" ? "border-accent-amber/30 bg-accent-amber/10" : "border-outline bg-surface-container-high/60"
                   )}>
                     <Cpu className={cn("h-4 w-4", workbench.selectedEngine === "local_mlx" ? "text-accent-amber" : "text-secondary")} />
                   </div>
@@ -150,13 +150,13 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   "rounded-2xl border p-4 text-left transition-all cursor-pointer relative overflow-hidden",
                   workbench.selectedEngine === "cloud"
                     ? "border-accent-amber/30 bg-accent-amber/10 shadow-[0_0_16px_rgba(242,191,87,0.06)]"
-                    : "border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10",
+                    : "border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-outline",
                   workbench.cloudEngineDisabled && "cursor-not-allowed opacity-40",
                 )}
               >
                 <div className="flex items-center gap-3">
                   <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl border shrink-0", 
-                    workbench.selectedEngine === "cloud" ? "border-accent-amber/30 bg-accent-amber/10" : "border-white/10 bg-white/5"
+                    workbench.selectedEngine === "cloud" ? "border-accent-amber/30 bg-accent-amber/10" : "border-outline bg-surface-container-high/60"
                   )}>
                     <Cloud className={cn("h-4 w-4", workbench.selectedEngine === "cloud" ? "text-accent-amber" : "text-secondary")} />
                   </div>
@@ -169,13 +169,13 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+          <div className="rounded-2xl border border-outline bg-surface-container p-4">
             <button
               type="button"
               onClick={workbench.handleGenerateAudio}
               disabled={generationDisabled}
               title={needsVoiceProfile ? "Choose a voice before generating local MLX audio." : undefined}
-              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent-amber hover:bg-accent-amber/95 active:scale-[0.98] transition-all px-5 text-sm font-bold text-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_16px_rgba(242,191,87,0.2)]"
+              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent-amber hover:bg-accent-amber/95 active:scale-[0.98] transition-all px-5 text-sm font-bold text-on-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_16px_rgba(242,191,87,0.2)]"
             >
               {workbench.generating ? (
                 <span className="inline-flex h-4 w-4 rounded-full border-2 border-black/20 border-t-black animate-spin" />
@@ -193,14 +193,14 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+            <div className="rounded-2xl border border-outline bg-surface-container p-4">
               <div className="flex items-center gap-2 text-secondary/80">
                 <Clock3 className="h-3.5 w-3.5 text-accent-amber" />
                 <span className="text-[10px] font-bold uppercase tracking-wider">Est. Length</span>
               </div>
               <p className="mt-2 text-[26px] font-display font-bold text-primary">{workbench.estMinutes}</p>
             </div>
-            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4">
+            <div className="rounded-2xl border border-outline bg-surface-container p-4">
               <div className="flex items-center gap-2 text-secondary/80">
                 <History className="h-3.5 w-3.5 text-accent-amber" />
                 <span className="text-[10px] font-bold uppercase tracking-wider">Word Count</span>
@@ -235,14 +235,14 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </div>
           ) : null}
           {!workbench.audioError && activeAudioRequestState ? (
-            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.4)] p-4 text-xs text-secondary">
+            <div className="rounded-2xl border border-outline bg-surface-container p-4 text-xs text-secondary">
               <div className="flex items-center justify-between gap-3 mb-2.5">
                 <span className="font-semibold text-primary">{`${Math.round(activeAudioRequestState.progress_percent)}% · ${activeAudioRequestState.message}`}</span>
                 {workbench.generating && activeAudioRequestState.phase === "running" ? (
                   <button
                     type="button"
                     onClick={() => void workbench.handleCancelAudio()}
-                    className="rounded-lg border border-white/5 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-primary hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer"
+                    className="rounded-lg border border-outline bg-surface-container-high/60 px-2.5 py-1 text-[10px] font-bold text-primary hover:bg-surface-container-high hover:border-outline transition-all cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -254,8 +254,8 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         </div>
       </div>
 
-      <div className="flex flex-col rounded-[32px] border border-white/5 bg-[rgba(27,27,30,0.65)] backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
-        <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.04] pb-4">
+      <div className="flex flex-col rounded-[32px] border border-outline theme-panel-elevated backdrop-blur-md p-5 shadow-[0_20px_50px_rgba(0,0,0,0.4)] overflow-hidden">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-outline pb-4">
           <div>
             <p className="text-sm font-bold text-primary font-display tracking-tight">Generated Audio</p>
             <p className="mt-1 text-[11px] text-secondary/80">Play, delete, download, or reveal the final render.</p>
@@ -265,7 +265,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
 
         {workbench.audioSrc ? (
           <div className="flex flex-col gap-4">
-            <div className="rounded-2xl border border-white/5 bg-[rgba(15,15,17,0.6)] p-5">
+            <div className="rounded-2xl border border-outline bg-surface-container-high p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-primary">{workbench.outputFilename}</p>
@@ -281,7 +281,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 <button
                   type="button"
                   onClick={() => void workbench.handleRevealInFinder()}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-white/5 text-secondary hover:text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.95] transition-all cursor-pointer"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.95] transition-all cursor-pointer"
                   title="Reveal in Finder"
                 >
                   <FolderOpen className="h-4 w-4" />
@@ -301,7 +301,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <button
                 type="button"
                 onClick={() => void workbench.handlePreviewAudio()}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 text-xs font-bold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
               >
                 {workbench.isAudioPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 Preview
@@ -309,7 +309,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <button
                 type="button"
                 onClick={workbench.handleDownloadAudio}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 text-xs font-bold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Download className="h-4 w-4" />
                 Download
@@ -317,7 +317,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <button
                 type="button"
                 onClick={() => void workbench.handleShareAudio()}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/5 text-xs font-bold text-primary hover:bg-white/10 hover:border-white/10 active:scale-[0.98] transition-all cursor-pointer"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Share2 className="h-4 w-4" />
                 Share
@@ -333,7 +333,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </div>
           </div>
         ) : (
-          <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-[rgba(15,15,17,0.4)] px-5 text-center">
+          <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[24px] border border-dashed border-outline bg-surface-container px-5 text-center">
             <Wand2 className="mb-3 h-8 w-8 text-accent-amber animate-pulse" />
             <p className="text-sm font-semibold text-primary">No audio file yet</p>
             <p className="mt-2 max-w-[280px] text-xs leading-relaxed text-secondary/60">

@@ -17,7 +17,7 @@ export function ScriptCleanupPreviewDialog({
   if (!open || !preview) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center theme-modal-overlay px-4 py-6 backdrop-blur-sm">
       <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-outline bg-surface shadow-2xl shadow-black/30">
         <div className="flex items-start justify-between gap-3 border-b border-outline px-5 py-4">
           <div>
@@ -48,13 +48,13 @@ export function ScriptCleanupPreviewDialog({
                   <div className="mt-2 grid gap-2 text-xs">
                     <div>
                       <span className="font-semibold uppercase tracking-wide text-secondary/70">Before</span>
-                      <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-black/20 px-3 py-2 text-secondary">
+                      <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-surface-container-low px-3 py-2 text-secondary">
                         {change.before || "(empty)"}
                       </pre>
                     </div>
                     <div>
                       <span className="font-semibold uppercase tracking-wide text-secondary/70">After</span>
-                      <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-black/20 px-3 py-2 text-primary">
+                      <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-surface-container-low px-3 py-2 text-primary">
                         {change.after || "(removed)"}
                       </pre>
                     </div>

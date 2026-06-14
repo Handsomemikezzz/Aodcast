@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Loader2, MessageSquare, Mic } from "lucide-react";
 import { motion } from "framer-motion";
 import { useBridge } from "../../lib/BridgeContext";
-import { StudioProvider } from "../../lib/StudioContext";
 import { cn } from "../../lib/utils";
 import { useScriptWorkbench } from "../script-workbench/useScriptWorkbench";
 import { ScriptEditorPane } from "../script-workbench/ScriptEditorPane";
@@ -84,6 +83,19 @@ function StudioWorkspace({
     initialRightOpen ? "open" : "collapsed"
   );
 
+  const getTrackStyle = () => {
+    let tx = "0%";
+    if (chatState === "open" && generateState === "open") {
+      if (focusedCard === "chat") tx = "3%";
+      else if (focusedCard === "generate") tx = "-3%";
+    } else if (chatState === "open") {
+      if (focusedCard === "chat") tx = "1.5%";
+    } else if (generateState === "open") {
+      if (focusedCard === "generate") tx = "-1.5%";
+    }
+    return { transform: `translateX(${tx})` };
+  };
+
   if (workbench.loading) {
     return (
       <div className="flex h-full items-center justify-center text-secondary text-sm">
@@ -103,7 +115,7 @@ function StudioWorkspace({
 
   return (
     <>
-      <div className="flex h-full w-full overflow-hidden p-4 gap-4 bg-gradient-to-b from-[#121214] to-[#0a0a0c] relative items-stretch">
+      <div className="flex h-full w-full overflow-hidden p-4 gap-4 bg-background relative items-stretch">
         
         {/* Left collapsed strip */}
         {chatState === "collapsed" && (
@@ -127,121 +139,127 @@ function StudioWorkspace({
           </div>
         )}
 
-        {/* Chat Card (if open) */}
-        {chatState === "open" && (
+        {/* Sliding Card Deck Track */}
+        <div
+          className="flex-1 flex gap-4 min-w-0 h-full items-stretch transition-transform duration-500 ease-out"
+          style={getTrackStyle()}
+        >
+          {/* Chat Card (if open) */}
+          {chatState === "open" && (
+            <div
+              className={cn(
+                "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
+                focusedCard === "chat"
+                  ? "flex-[3.5] glass-deck-card-focused opacity-100 scale-100 translate-y-0"
+                  : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 scale-[0.98] translate-y-0.5"
+              )}
+            >
+              <ConversationDrawer
+                project={workbench.project}
+                onRefresh={onRefresh}
+                onNewScript={(sid, scriptId) =>
+                  navigate(`/studio/${sid}/${scriptId}`)
+                }
+                isFocused={focusedCard === "chat"}
+                onFocus={() => setFocusedCard("chat")}
+                onClose={() => {
+                  setChatState("collapsed");
+                  if (focusedCard === "chat") {
+                    setFocusedCard("edit");
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Center: Script Editor Card (always open in deck) */}
           <div
             className={cn(
               "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
-              focusedCard === "chat"
-                ? "flex-[3.5] glass-deck-card-focused opacity-100"
-                : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 hover:scale-[1.005]"
+              focusedCard === "edit"
+                ? "flex-[3.5] glass-deck-card-focused opacity-100 scale-100 translate-y-0"
+                : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 scale-[0.98] translate-y-0.5"
             )}
           >
-            <ConversationDrawer
-              project={workbench.project}
-              onRefresh={onRefresh}
-              onNewScript={(sid, scriptId) =>
-                navigate(`/studio/${sid}/${scriptId}`)
-              }
-              isFocused={focusedCard === "chat"}
-              onFocus={() => setFocusedCard("chat")}
-              onClose={() => {
-                setChatState("collapsed");
-                if (focusedCard === "chat") {
-                  setFocusedCard("edit");
-                }
-              }}
-            />
-          </div>
-        )}
-
-        {/* Center: Script Editor Card (always open in deck) */}
-        <div
-          className={cn(
-            "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
-            focusedCard === "edit"
-              ? "flex-[3.5] glass-deck-card-focused opacity-100"
-              : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 hover:scale-[1.005]"
-          )}
-        >
-          {focusedCard === "edit" ? (
-            <div className="flex-1 flex flex-col min-w-0 overflow-y-auto px-5 py-5 lg:px-6 mac-scrollbar">
-              <div className="mx-auto flex w-full max-w-[840px] flex-col gap-4">
-                <ScriptWorkbenchHeader workbench={workbench} />
-                {workbench.isSessionDeleted && (
-                  <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="font-medium">This session is in trash.</p>
-                        <p className="mt-1 text-xs text-secondary">Restore it before editing the script or rendering audio.</p>
+            {focusedCard === "edit" ? (
+              <div className="flex-1 flex flex-col min-w-0 overflow-y-auto px-5 py-5 lg:px-6 mac-scrollbar">
+                <div className="mx-auto flex w-full max-w-[840px] flex-col gap-4">
+                  <ScriptWorkbenchHeader workbench={workbench} />
+                  {workbench.isSessionDeleted && (
+                    <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="font-medium">This session is in trash.</p>
+                          <p className="mt-1 text-xs text-secondary">Restore it before editing the script or rendering audio.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void workbench.handleRestoreSession()}
+                          disabled={workbench.busyAction === "restore-session"}
+                          className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
+                        >
+                          Restore Session
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void workbench.handleRestoreSession()}
-                        disabled={workbench.busyAction === "restore-session"}
-                        className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
-                      >
-                        Restore Session
-                      </button>
                     </div>
-                  </div>
-                )}
-                {workbench.isScriptDeleted && (
-                  <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="font-medium">This script snapshot is in trash.</p>
-                        <p className="mt-1 text-xs text-secondary">Restore it to resume editing or render audio.</p>
+                  )}
+                  {workbench.isScriptDeleted && (
+                    <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="font-medium">This script snapshot is in trash.</p>
+                          <p className="mt-1 text-xs text-secondary">Restore it to resume editing or render audio.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void workbench.handleRestoreScript()}
+                          disabled={workbench.busyAction === "restore-script" || workbench.isSessionDeleted}
+                          className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
+                        >
+                          Restore Script
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void workbench.handleRestoreScript()}
-                        disabled={workbench.busyAction === "restore-script" || workbench.isSessionDeleted}
-                        className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
-                      >
-                        Restore Script
-                      </button>
                     </div>
-                  </div>
-                )}
-                <ScriptEditorPane
-                  workbench={workbench}
-                  isFocused={true}
-                />
+                  )}
+                  <ScriptEditorPane
+                    workbench={workbench}
+                    isFocused={true}
+                  />
+                </div>
               </div>
+            ) : (
+              <ScriptEditorPane
+                workbench={workbench}
+                isFocused={false}
+                onFocus={() => setFocusedCard("edit")}
+              />
+            )}
+          </div>
+
+          {/* Voice & Audio Card (if open) */}
+          {generateState === "open" && (
+            <div
+              className={cn(
+                "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
+                focusedCard === "generate"
+                  ? "flex-[3.5] glass-deck-card-focused opacity-100 scale-100 translate-y-0"
+                  : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 scale-[0.98] translate-y-0.5"
+              )}
+            >
+              <VoiceAudioDrawer
+                workbench={workbench}
+                isFocused={focusedCard === "generate"}
+                onFocus={() => setFocusedCard("generate")}
+                onClose={() => {
+                  setGenerateState("collapsed");
+                  if (focusedCard === "generate") {
+                    setFocusedCard("edit");
+                  }
+                }}
+              />
             </div>
-          ) : (
-            <ScriptEditorPane
-              workbench={workbench}
-              isFocused={false}
-              onFocus={() => setFocusedCard("edit")}
-            />
           )}
         </div>
-
-        {/* Voice & Audio Card (if open) */}
-        {generateState === "open" && (
-          <div
-            className={cn(
-              "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
-              focusedCard === "generate"
-                ? "flex-[3.5] glass-deck-card-focused opacity-100"
-                : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 hover:scale-[1.005]"
-            )}
-          >
-            <VoiceAudioDrawer
-              workbench={workbench}
-              isFocused={focusedCard === "generate"}
-              onFocus={() => setFocusedCard("generate")}
-              onClose={() => {
-                setGenerateState("collapsed");
-                if (focusedCard === "generate") {
-                  setFocusedCard("edit");
-                }
-              }}
-            />
-          </div>
-        )}
 
         {/* Right collapsed strip */}
         {generateState === "collapsed" && (
@@ -374,23 +392,17 @@ export function StudioPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   }
 
   if (!scriptId) {
-    return (
-      <StudioProvider>
-        <StudioSessionResolve sessionId={sessionId} onRefresh={onRefresh} />
-      </StudioProvider>
-    );
+    return <StudioSessionResolve sessionId={sessionId} onRefresh={onRefresh} />;
   }
 
   return (
-    <StudioProvider>
-      <StudioWorkspace
-        key={`${sessionId}-${scriptId}`}
-        sessionId={sessionId}
-        scriptId={scriptId}
-        onRefresh={onRefresh}
-        initialLeftOpen={initialLeftOpen}
-        initialRightOpen={initialRightOpen}
-      />
-    </StudioProvider>
+    <StudioWorkspace
+      key={`${sessionId}-${scriptId}`}
+      sessionId={sessionId}
+      scriptId={scriptId}
+      onRefresh={onRefresh}
+      initialLeftOpen={initialLeftOpen}
+      initialRightOpen={initialRightOpen}
+    />
   );
 }

@@ -90,15 +90,15 @@ export function ExportPodcastDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-2xl border border-outline bg-[rgba(26,26,30,0.85)] backdrop-blur-2xl p-6 shadow-[0_24px_50px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.03)] text-left relative overflow-hidden flex flex-col gap-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center theme-modal-overlay px-4 py-6 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="w-full max-w-lg rounded-2xl theme-modal-surface backdrop-blur-2xl p-6 shadow-2xl text-left relative overflow-hidden flex flex-col gap-5">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-outline pb-4 -mx-6 px-6">
           <div className="flex items-center gap-2.5">
             <FileAudio className="w-5 h-5 text-accent-amber" />
             <div>
-              <h2 className="text-base font-headline font-bold text-white tracking-wide">Export Podcast</h2>
+              <h2 className="text-base font-headline font-bold text-primary tracking-wide">Export Podcast</h2>
               <p className="text-xs text-secondary mt-0.5">Compress and optimize audio for platform publishing</p>
             </div>
           </div>
@@ -106,7 +106,7 @@ export function ExportPodcastDialog({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-secondary hover:text-white hover:bg-white/5 transition-all duration-200"
+              className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-surface-container-high transition-all duration-200"
               aria-label="Close dialog"
             >
               <X className="w-4.5 h-4.5" />
@@ -118,7 +118,7 @@ export function ExportPodcastDialog({
         {success ? (
           <div className="py-8 flex flex-col items-center justify-center gap-3 animate-in zoom-in-95 duration-200">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 animate-pulse" />
-            <h3 className="text-sm font-semibold text-white mt-1">Export Completed!</h3>
+            <h3 className="text-sm font-semibold text-primary mt-1">Export Completed!</h3>
             <p className="text-xs text-secondary">Initiating file download...</p>
           </div>
         ) : (
@@ -140,16 +140,16 @@ export function ExportPodcastDialog({
               <label htmlFor="filename" className="text-[11px] font-bold uppercase tracking-wider text-secondary">
                 Output Filename
               </label>
-              <div className="flex items-center gap-2 rounded-xl border border-white/5 bg-black/35 px-3.5 py-2.5 focus-within:border-accent-amber/35 focus-within:shadow-[0_0_15px_rgba(242,191,87,0.04)] transition-all">
+              <div className="flex items-center gap-2 rounded-xl border border-outline bg-surface-container-low px-3.5 py-2.5 focus-within:border-accent-amber/35 transition-all">
                 <input
                   id="filename"
                   disabled={exporting}
                   value={filename}
                   onChange={(e) => setFilename(e.target.value.replace(/[^a-zA-Z0-9\s-_]/g, ""))}
                   placeholder="podcast-episode"
-                  className="flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-outline/75 py-0.5"
+                  className="flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-secondary/60 py-0.5"
                 />
-                <span className="text-xs font-semibold text-secondary select-none uppercase tracking-wider bg-white/5 px-2 py-1 rounded border border-outline-variant">
+                <span className="text-xs font-semibold text-secondary select-none uppercase tracking-wider bg-surface-container-high px-2 py-1 rounded border border-outline-variant">
                   .{format}
                 </span>
               </div>
@@ -160,7 +160,7 @@ export function ExportPodcastDialog({
               <span className="text-[11px] font-bold uppercase tracking-wider text-secondary">
                 Format
               </span>
-              <div className="grid grid-cols-3 gap-2 bg-black/25 p-1 rounded-xl border border-white/5">
+              <div className="grid grid-cols-3 gap-2 bg-surface-container-low p-1 rounded-xl border border-outline">
                 {(["m4a", "mp3", "wav"] as const).map((fmt) => (
                   <button
                     key={fmt}
@@ -173,8 +173,8 @@ export function ExportPodcastDialog({
                     className={cn(
                       "py-2 rounded-lg text-xs font-semibold select-none transition-all duration-200",
                       format === fmt
-                        ? "bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] text-black shadow-md shadow-accent-amber/10"
-                        : "text-secondary hover:text-white hover:bg-white/5"
+                        ? "theme-accent-gradient text-on-primary shadow-md shadow-accent-amber/10"
+                        : "text-secondary hover:text-primary hover:bg-surface-container-high"
                     )}
                   >
                     {fmt === "m4a" ? "M4A (AAC)" : fmt === "mp3" ? "MP3 (Lame)" : "WAV (Lossless)"}
@@ -204,7 +204,7 @@ export function ExportPodcastDialog({
                         "flex flex-col items-center justify-center p-3 rounded-xl border transition-all text-center select-none",
                         quality === q.key
                           ? "border-accent-amber bg-accent-amber/5 text-primary"
-                          : "border-white/5 bg-black/20 text-secondary hover:border-white/10 hover:text-primary"
+                          : "border-outline bg-surface-container-low text-secondary hover:border-accent-amber/20 hover:text-primary"
                       )}
                     >
                       <span className="text-[12px] font-semibold">{q.label}</span>
@@ -216,7 +216,7 @@ export function ExportPodcastDialog({
             )}
             
             {/* Format Descriptive Help text */}
-            <div className="bg-white/[0.02] border border-white/5 rounded-xl px-4 py-3">
+            <div className="bg-surface-container-low border border-outline rounded-xl px-4 py-3">
               <p className="text-[11px] leading-relaxed text-secondary font-medium">
                 {format === "m4a" && "💡 M4A (AAC) provides pristine audio compression at tiny file sizes. Built-in macOS hardware-acceleration ensures lightning-fast exports."}
                 {format === "mp3" && "💡 MP3 ensures universal compatibility with legacy devices and older podcast directory dashboards. Requires FFmpeg on the system."}
@@ -235,7 +235,7 @@ export function ExportPodcastDialog({
                 type="button"
                 disabled={exporting}
                 onClick={onClose}
-                className="px-4 py-2 border border-outline hover:border-white/10 text-secondary hover:text-white rounded-xl text-xs font-semibold transition-all"
+                className="px-4 py-2 border border-outline hover:border-accent-amber/20 text-secondary hover:text-primary rounded-xl text-xs font-semibold transition-all"
               >
                 Cancel
               </button>
@@ -243,7 +243,7 @@ export function ExportPodcastDialog({
                 type="button"
                 disabled={exporting}
                 onClick={handleExport}
-                className="inline-flex items-center gap-1.5 px-4.5 py-2 bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] text-black rounded-xl text-xs font-semibold hover:scale-[1.02] active:scale-[0.98] shadow-md shadow-accent-amber/10 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 px-4.5 py-2 theme-accent-gradient text-on-primary rounded-xl text-xs font-semibold hover:scale-[1.02] active:scale-[0.98] shadow-md shadow-accent-amber/10 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed"
               >
                 {exporting ? (
                   <>

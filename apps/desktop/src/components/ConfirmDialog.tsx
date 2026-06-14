@@ -39,7 +39,7 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center theme-modal-overlay px-4 py-6 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl border border-outline bg-surface shadow-2xl shadow-black/30">
         <div className="flex items-start justify-between gap-3 border-b border-outline px-5 py-4">
           <div className="flex items-start gap-3">

@@ -5,8 +5,9 @@ import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
 
 import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
-import { List, Layers, Mic, Package, Settings } from "lucide-react";
+import { List, Layers, Mic, Package, Settings, Sun, Moon } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
+import { applyTheme, readStoredTheme, type AppTheme } from "./lib/theme";
 
 const ChatPage = lazy(() => import("./pages/ChatPage").then((module) => ({ default: module.ChatPage })));
 const ScriptPage = lazy(() => import("./pages/ScriptPage").then((module) => ({ default: module.ScriptPage })));
@@ -36,7 +37,7 @@ function RedirectVoiceOrExportToScript() {
 function RedirectChatToStudio() {
   const { sessionId } = useParams<{ sessionId?: string }>();
   if (sessionId) return <Navigate to={`/studio/${sessionId}?panel=conversation`} replace />;
-  return <Navigate to="/episodes" replace />;
+  return <Navigate to="/chat" replace />;
 }
 
 function RedirectScriptToStudio() {
@@ -46,18 +47,18 @@ function RedirectScriptToStudio() {
   return <Navigate to="/episodes" replace />;
 }
 
-function RedirectVoiceStudioToStudio() {
-  const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
-  if (sessionId && scriptId) return <Navigate to={`/studio/${sessionId}/${scriptId}?panel=voice`} replace />;
-  return <Navigate to="/voice-studio" replace />;
-}
-
 export default function App() {
   const bridge = useBridge();
   const navigate = useNavigate();
   const location = useLocation();
   const [projects, setProjects] = useState<SessionProject[]>([]);
   const [bridgeError, setBridgeError] = useState<string | null>(null);
+
+  const [theme, setTheme] = useState<AppTheme>(() => readStoredTheme());
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   const fetchProjects = async () => {
     try {
@@ -97,20 +98,20 @@ export default function App() {
     cn(
       "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
       active
-        ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
-        : "text-secondary hover:bg-white/5 hover:text-white",
+        ? "bg-accent-amber/8 border-accent-amber/25 text-accent-amber shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
+        : "text-secondary hover:bg-primary/5 hover:text-primary",
     );
 
   return (
     <div className="flex h-screen w-full bg-background text-on-surface overflow-hidden selection:bg-accent-amber/30 font-body mac-scrollbar">
-      <aside className="w-[240px] flex-shrink-0 flex flex-col bg-[#141416]/90 border-r border-white/5 backdrop-blur-2xl shadow-lg relative">
+      <aside className="w-[240px] flex-shrink-0 flex flex-col bg-surface-container-low/95 border-r border-outline backdrop-blur-2xl shadow-lg relative">
         {/* Brand spacing accommodating macOS traffic lights */}
         <div className="h-[74px] flex items-end pb-3 px-5 drag-region select-none">
           <div className="flex items-center gap-2.5 text-accent-amber">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-b from-[#f2bf57] to-[#d79b2f] shadow-md shadow-accent-amber/15">
-              <Mic className="w-4.5 h-4.5 text-black fill-black" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg theme-accent-gradient shadow-md shadow-accent-amber/15">
+              <Mic className="w-4.5 h-4.5 text-on-primary fill-on-primary" />
             </div>
-            <span className="font-headline font-bold text-[16px] tracking-[0.05em] text-white">Aodcast</span>
+            <span className="font-headline font-bold text-[16px] tracking-[0.05em] text-primary">Aodcast</span>
           </div>
         </div>
 
@@ -150,26 +151,35 @@ export default function App() {
 
         <div className="flex-1 min-h-0" aria-hidden />
 
-        <div className="p-3.5 border-t border-white/5 shrink-0">
+        <div className="p-3.5 border-t border-outline shrink-0 flex items-center gap-2">
           <button
             type="button"
             onClick={() => navigate("/settings")}
-            className={navItemClass(pathSegment === "settings")}
+            className={cn(navItemClass(pathSegment === "settings"), "flex-1")}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Settings className="w-4 h-4" />
             </div>
             Settings
           </button>
+
+          <button
+            type="button"
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            className="p-2 rounded-xl text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer border border-transparent shrink-0"
+            title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
+          >
+            {theme === "light" ? <Moon className="w-4.5 h-4.5" /> : <Sun className="w-4.5 h-4.5" />}
+          </button>
         </div>
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 bg-background relative">
-        <header className="h-[74px] flex items-end pb-3 px-6 border-b border-white/5 bg-[rgba(15,15,17,0.85)] backdrop-blur-xl drag-region shrink-0 shadow-[0_1px_0_rgba(255,255,255,0.01)]">
+        <header className="h-[74px] flex items-end pb-3 px-6 border-b border-outline bg-surface-container-low/85 backdrop-blur-xl drag-region shrink-0 shadow-[0_1px_0_var(--color-outline)]">
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className="font-headline font-semibold text-[15px] tracking-wide text-white truncate">{title}</h2>
+            <h2 className="font-headline font-semibold text-[15px] tracking-wide text-primary truncate">{title}</h2>
             {currentProject && (
-              <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-headline font-semibold bg-white/5 border border-white/10 text-accent-amber uppercase tracking-wider">
+              <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-headline font-semibold bg-accent-amber/10 border border-accent-amber/20 text-accent-amber uppercase tracking-wider">
                 {currentProject.session.state.replace(/_/g, " ")}
               </span>
             )}
@@ -177,7 +187,7 @@ export default function App() {
         </header>
 
         {bridgeError ? (
-          <div className="shrink-0 px-4 py-2.5 text-[13px] leading-snug bg-amber-500/15 border-b border-amber-500/25 text-amber-100">
+          <div className="shrink-0 px-4 py-2.5 text-[13px] leading-snug bg-amber-500/15 border-b border-amber-500/25 text-primary">
             {bridgeError}
           </div>
         ) : null}
@@ -198,7 +208,7 @@ export default function App() {
 
               {/* Legacy routes kept as compatibility redirects */}
               <Route path="/history" element={<Navigate to="/episodes" replace />} />
-              <Route path="/chat" element={<RedirectChatToStudio />} />
+              <Route path="/chat" element={<ChatPage onRefresh={fetchProjects} />} />
               <Route path="/chat/:sessionId" element={<RedirectChatToStudio />} />
               <Route path="/script" element={<Navigate to="/episodes" replace />} />
               <Route path="/script/:sessionId/:scriptId" element={<RedirectScriptToStudio />} />
