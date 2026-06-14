@@ -96,6 +96,23 @@ In the app, create or open a session, continue the interview, generate a script,
 
 ## Provider Setup
 
+Provider settings are stored locally under `.local-data/` and are not intended for version control.
+
+### Development Mock Providers
+
+Use mock providers for smoke testing without paid API access or local model weights:
+
+```bash
+./scripts/dev/run-python-core.sh --configure-llm-provider mock
+./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+```
+
+Check whether the saved LLM configuration is ready for interview and script generation:
+
+```bash
+./scripts/dev/run-python-core.sh --check-llm-config
+```
+
 ### OpenAI-Compatible Providers
 
 Configure an OpenAI-compatible LLM provider:
@@ -120,21 +137,30 @@ Configure an OpenAI-compatible TTS provider:
   --tts-audio-format "wav"
 ```
 
-See [Configuration](docs/configuration.md) for provider details, optional environment variables, and API key handling notes.
+### Environment Variables
+
+Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper-script variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, and `HF_TOKEN`.
 
 ### Local MLX TTS
 
-Local MLX is optional for basic development. Use it only on supported macOS machines, preferably Apple Silicon, with enough disk space and unified memory for the selected model.
+Local MLX TTS is a primary first-release capability for local-first speech generation on supported macOS machines, preferably Apple Silicon, with enough disk space and unified memory for the selected model.
 
 Install the optional dependency group:
 
 ```bash
 cd services/python-core
+uv venv .venv
 uv pip install --python .venv/bin/python -e '.[local-mlx]'
 cd ../..
 ```
 
-Download the default model:
+Default model target:
+
+```text
+mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit
+```
+
+Download model weights into a user-owned model directory:
 
 ```bash
 uv run --with huggingface_hub --with tqdm \
@@ -142,11 +168,15 @@ uv run --with huggingface_hub --with tqdm \
   --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
-Check capability before selecting `local_mlx`:
+If a repository requires authentication, pass `--token` or set `HF_TOKEN` locally. Do not commit tokens.
+
+The local MLX path is runtime-gated. Always check capability before selecting it:
 
 ```bash
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
+
+The capability report is the source of truth. It checks the platform, Python environment, MLX imports, model path, and bootstrap behavior.
 
 Configure local MLX in repo-id mode:
 
@@ -156,7 +186,56 @@ Configure local MLX in repo-id mode:
   --clear-tts-local-model-path
 ```
 
-See [Local MLX quickstart](docs/local-mlx-quickstart.md) for model storage, troubleshooting, and hardware notes.
+Or point to an explicit local model directory:
+
+```bash
+./scripts/dev/run-python-core.sh \
+  --configure-tts-provider local_mlx \
+  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+```
+
+A local model directory must contain a real MLX export, including `.safetensors` weights. Placeholder directories are useful for tests but are not executable model bundles.
+
+#### Manage model storage in the desktop app
+
+The desktop **Models** page is the preferred way to manage local model files:
+
+- it shows the active model storage folder
+- it can open that folder in Finder from the Tauri shell
+- it can change the storage folder and migrate existing Aodcast model directories
+- it can reset storage back to the default cache base
+- it shows inline download progress and recoverable error details
+
+For first-run reliability behind local proxy/VPN setups, Aodcast disables the Hugging Face Xet transfer path for app-managed model downloads and uses the direct HTTP downloader instead.
+
+The app stores the chosen custom model base in local config. Resetting storage clears that custom app setting; environment variables such as `AODCAST_HF_MODEL_BASE` or `HF_HUB_CACHE` still affect the computed default base.
+
+CLI equivalents:
+
+```bash
+./scripts/dev/run-python-core.sh --show-model-storage
+./scripts/dev/run-python-core.sh --migrate-model-storage /path/to/aodcast-models
+./scripts/dev/run-python-core.sh --reset-model-storage
+```
+
+#### Validate with a render
+
+Use mock LLM if you only want to validate the audio path:
+
+```bash
+./scripts/dev/run-python-core.sh --configure-llm-provider mock
+./scripts/dev/run-python-core.sh --create-demo-session
+./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx --clear-tts-local-model-path
+./scripts/dev/run-python-core.sh --render-audio <session-id>
+```
+
+#### Local MLX notes and limitations
+
+- First render may be slow because the worker loads the model.
+- Long scripts are chunked and joined by the project runner.
+- Voice Studio preview rendering is a pollable long task.
+- Aodcast does not currently provide voice cloning.
+- `.mp4` support is audio-container support when the selected provider/runtime creates a valid file; Aodcast does not currently transcode WAV to video MP4.
 
 ## Development Commands
 
@@ -205,13 +284,11 @@ Run the repository hygiene check:
 - `services/python-core`: interview orchestration, script generation, provider dispatch, local storage, artifacts, and HTTP runtime.
 - `packages/shared-schemas`: shared frontend/backend contract schemas.
 - `scripts`: development, maintenance, release, and model-download helpers.
-- `docs`: human setup and local MLX guidance.
+- `docs`: gitignored local scratch (for example `tmp.md`, `plan.md`); setup docs live in README and AGENTS.md.
 - `examples`: sample placeholders and examples.
 
 Useful docs:
 
-- [Configuration](docs/configuration.md)
-- [Local MLX quickstart](docs/local-mlx-quickstart.md)
 - [Agent collaboration contract](AGENTS.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

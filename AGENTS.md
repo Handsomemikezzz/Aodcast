@@ -41,8 +41,21 @@ Out of scope for the current MVP:
 - `apps/desktop`: Tauri UI and app shell
 - `services/python-core`: interview orchestration, script generation, provider dispatch, storage
 - `packages/shared-schemas`: shared data contracts and schemas
-- `docs/configuration.md` and `docs/local-mlx-quickstart.md`: public setup, provider, and local MLX guidance
+- `docs/`: gitignored local scratch for personal notes such as `tmp.md` or `plan.md`; not a documentation source of truth
 - `.agent`: prompts, checklists, templates, and reports used by agents
+
+## Setup And Configuration
+
+Human-facing setup lives in `README.md` and `README.zh-CN.md`. Agent-relevant constraints:
+
+- local data defaults to `.local-data/` during development; it is gitignored and holds provider config, sessions, artifacts, and request-state files
+- API keys are local user-managed configuration; macOS Keychain and dedicated secrets vault support do not exist yet
+- normal development does not require `.env`; optional helper variables include `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, and `HF_TOKEN`
+- development smoke providers are `mock` for LLM and `mock_remote` for TTS; use `--check-llm-config` before interview/script flows
+- local MLX is runtime-gated; always run `--show-local-tts-capability` before selecting `local_mlx`
+- default MLX model target is `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit`
+- local model directories must contain real MLX exports with `.safetensors` weights; placeholder directories are not executable bundles
+- Models page owns app-managed model storage, migration, reset, and downloads; app-managed Hugging Face downloads disable Xet (`HF_HUB_DISABLE_XET=1`)
 
 ## Ownership Rules
 
@@ -82,8 +95,10 @@ When a change affects the product flow, architecture, or repo governance, update
 
 ## Documentation Rules
 
-- Code is the primary architecture reference; do not add parallel architecture docs under `docs/`.
-- If code changes behavior, state shape, directory ownership, or operator workflow, update `AGENTS.md`, README, or the human setup docs in the same task.
+- Code is the primary architecture reference.
+- Human setup belongs in `README.md` and `README.zh-CN.md`; agent rules belong in `AGENTS.md`.
+- Do not add tracked documentation under `docs/`; that directory is gitignored local scratch.
+- If code changes behavior, state shape, directory ownership, or operator workflow, update `AGENTS.md` or README in the same task.
 - Add new operational conventions to `AGENTS.md`.
 
 ## Maintenance Subagents
@@ -159,4 +174,4 @@ When using multiple agents:
 
 ## Open-source Release Docs
 
-Public GitHub releases must keep `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, `docs/configuration.md`, and `docs/local-mlx-quickstart.md` in sync with install, provider, and release behavior. API keys are user-managed local configuration; do not claim secure vaulting unless Keychain or equivalent support is implemented.
+Public GitHub releases must keep `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, `README.md`, and `README.zh-CN.md` in sync with install, provider, and release behavior. API keys are user-managed local configuration; do not claim secure vaulting unless Keychain or equivalent support is implemented.

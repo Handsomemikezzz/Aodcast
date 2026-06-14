@@ -96,6 +96,23 @@ cd ../..
 
 ## Provider 配置
 
+Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
+
+### 开发用 Mock Provider
+
+无需付费 API 或本地模型权重时，可先用 mock provider 做 smoke test：
+
+```bash
+./scripts/dev/run-python-core.sh --configure-llm-provider mock
+./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+```
+
+检查当前 LLM 配置是否可用于访谈和脚本生成：
+
+```bash
+./scripts/dev/run-python-core.sh --check-llm-config
+```
+
 ### OpenAI-Compatible Provider
 
 配置 OpenAI-compatible LLM provider：
@@ -120,21 +137,30 @@ cd ../..
   --tts-audio-format "wav"
 ```
 
-更多 provider、环境变量和 API key 处理说明见 [Configuration](docs/configuration.md)。
+### 环境变量
+
+正常开发不强制要求 `.env`。`.env.example` 记录了可选脚本变量，例如 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE` 和 `HF_TOKEN`。
 
 ### Local MLX TTS
 
-Local MLX 对基础开发不是必需项。只有在支持的 macOS 机器上，尤其是 Apple Silicon，并且有足够磁盘和统一内存时，才建议启用。
+Local MLX TTS 是首发能力之一，面向支持的 macOS 机器做本地语音生成；更推荐 Apple Silicon，并预留足够磁盘和统一内存。
 
 安装可选依赖：
 
 ```bash
 cd services/python-core
+uv venv .venv
 uv pip install --python .venv/bin/python -e '.[local-mlx]'
 cd ../..
 ```
 
-下载默认模型：
+默认模型目标：
+
+```text
+mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit
+```
+
+下载模型权重到用户自有目录：
 
 ```bash
 uv run --with huggingface_hub --with tqdm \
@@ -142,11 +168,15 @@ uv run --with huggingface_hub --with tqdm \
   --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
-选择 `local_mlx` 前先检查能力：
+如果仓库需要认证，可传 `--token` 或在本地设置 `HF_TOKEN`。不要提交 token。
+
+Local MLX 路径受 runtime 能力门控。选择它之前务必先检查：
 
 ```bash
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
+
+能力报告是 source of truth，会检查平台、Python 环境、MLX import、模型路径和 bootstrap 行为。
 
 配置 repo-id 模式的 Local MLX：
 
@@ -156,7 +186,56 @@ uv run --with huggingface_hub --with tqdm \
   --clear-tts-local-model-path
 ```
 
-模型存储、排错和硬件说明见 [Local MLX quickstart](docs/local-mlx-quickstart.md)。
+或显式指定本地模型目录：
+
+```bash
+./scripts/dev/run-python-core.sh \
+  --configure-tts-provider local_mlx \
+  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+```
+
+本地模型目录必须包含真实 MLX 导出和 `.safetensors` 权重。占位目录可用于测试，但不能作为可执行模型包。
+
+#### 在桌面应用中管理模型存储
+
+桌面端 **Models** 页面是管理本地模型文件的首选方式：
+
+- 显示当前模型存储目录
+- 可在 Tauri shell 中用 Finder 打开该目录
+- 可修改存储目录并迁移已有 Aodcast 模型目录
+- 可重置回默认 cache base
+- 显示内联下载进度和可恢复的错误信息
+
+为提升本地代理/VPN 环境下的首次下载可靠性，Aodcast 在应用内管理的 Hugging Face 下载中会禁用 Xet 传输路径，改用直接 HTTP 下载器。
+
+应用会把自定义模型 base 写入本地配置。重置存储会清除这项应用设置；`AODCAST_HF_MODEL_BASE` 或 `HF_HUB_CACHE` 等环境变量仍会影响计算出的默认 base。
+
+CLI 等价命令：
+
+```bash
+./scripts/dev/run-python-core.sh --show-model-storage
+./scripts/dev/run-python-core.sh --migrate-model-storage /path/to/aodcast-models
+./scripts/dev/run-python-core.sh --reset-model-storage
+```
+
+#### 用渲染验证
+
+如果只想验证音频路径，可配合 mock LLM：
+
+```bash
+./scripts/dev/run-python-core.sh --configure-llm-provider mock
+./scripts/dev/run-python-core.sh --create-demo-session
+./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx --clear-tts-local-model-path
+./scripts/dev/run-python-core.sh --render-audio <session-id>
+```
+
+#### Local MLX 说明与限制
+
+- 首次渲染可能较慢，因为 worker 需要加载模型。
+- 长脚本会由项目 runner 分块并拼接。
+- Voice Studio 预览渲染是 pollable long task。
+- Aodcast 当前不提供 voice cloning。
+- `.mp4` 支持的是音频容器能力；Aodcast 当前不会把 WAV 转成视频 MP4。
 
 ## 开发命令
 
@@ -205,13 +284,11 @@ cd services/python-core
 - `services/python-core`：访谈编排、脚本生成、provider 分发、本地存储、artifact 和 HTTP runtime。
 - `packages/shared-schemas`：前后端共享 contract schema。
 - `scripts`：开发、维护、发布和模型下载脚本。
-- `docs`：面向用户的配置说明和本地 MLX 指南。
+- `docs`：被 Git 忽略的本地草稿目录（例如 `tmp.md`、`plan.md`）；安装与配置说明见 README 和 AGENTS.md。
 - `examples`：轻量示例和占位样例。
 
 常用文档：
 
-- [Configuration](docs/configuration.md)
-- [Local MLX quickstart](docs/local-mlx-quickstart.md)
 - [Agent collaboration contract](AGENTS.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)

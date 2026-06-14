@@ -24,6 +24,7 @@ apps/desktop/src-tauri/target/debug
 # Local scratch (experiments, tokens; not for version control)
 /temp/
 .omx/
+# Local scratch (personal notes such as tmp.md or plan.md; not for version control)
 docs/
 voicebox
 
