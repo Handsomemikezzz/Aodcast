@@ -24,7 +24,7 @@ apps/desktop/src-tauri/target/debug
 # Local scratch (experiments, tokens; not for version control)
 /temp/
 .omx/
-docs-local/
+docs/
 voicebox
 
 # Local model weights and downloads

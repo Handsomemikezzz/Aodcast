@@ -608,7 +608,7 @@ export function VoiceStudioPage() {
           <div className="absolute inset-0 bg-gradient-to-br from-[#f2bf57]/[0.03] to-transparent pointer-events-none" />
           <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-accent-amber">Voice Studio</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-accent-amber">Voice Library</p>
               <h1 className="mt-2 font-headline text-2xl font-bold tracking-tight text-primary">音色工坊</h1>
               <p className="mt-2.5 max-w-2xl text-sm leading-relaxed text-secondary/90">
                 {scriptBoundMode

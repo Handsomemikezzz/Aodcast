@@ -5,7 +5,7 @@ import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
 
 import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
-import { MessageSquare, Edit3, Mic, Package, Settings } from "lucide-react";
+import { List, Layers, Mic, Package, Settings } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
 
 const ChatPage = lazy(() => import("./pages/ChatPage").then((module) => ({ default: module.ChatPage })));
@@ -13,6 +13,8 @@ const ScriptPage = lazy(() => import("./pages/ScriptPage").then((module) => ({ d
 const ModelsPage = lazy(() => import("./pages/ModelsPage").then((module) => ({ default: module.ModelsPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const VoiceStudioPage = lazy(() => import("./pages/VoiceStudioPage").then((module) => ({ default: module.VoiceStudioPage })));
+const EpisodesPage = lazy(() => import("./pages/EpisodesPage").then((module) => ({ default: module.EpisodesPage })));
+const StudioPage = lazy(() => import("./pages/studio/StudioPage").then((module) => ({ default: module.StudioPage })));
 
 function RouteFallback() {
   return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading workspace…</div>;
@@ -28,6 +30,26 @@ function RedirectVoiceOrExportToScript() {
   const { sessionId } = useParams<{ sessionId?: string }>();
   if (sessionId) return <Navigate to={`/script/${sessionId}`} replace />;
   return <Navigate to="/script" replace />;
+}
+
+// Compatibility redirects for old routes → studio
+function RedirectChatToStudio() {
+  const { sessionId } = useParams<{ sessionId?: string }>();
+  if (sessionId) return <Navigate to={`/studio/${sessionId}?panel=conversation`} replace />;
+  return <Navigate to="/episodes" replace />;
+}
+
+function RedirectScriptToStudio() {
+  const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
+  if (sessionId && scriptId) return <Navigate to={`/studio/${sessionId}/${scriptId}?focus=script`} replace />;
+  if (sessionId) return <Navigate to={`/studio/${sessionId}`} replace />;
+  return <Navigate to="/episodes" replace />;
+}
+
+function RedirectVoiceStudioToStudio() {
+  const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
+  if (sessionId && scriptId) return <Navigate to={`/studio/${sessionId}/${scriptId}?panel=voice`} replace />;
+  return <Navigate to="/voice-studio" replace />;
 }
 
 export default function App() {
@@ -57,17 +79,27 @@ export default function App() {
   const urlSessionId = pathParts.length >= 2 ? pathParts[1] : null;
 
   const currentProject =
-    urlSessionId && (pathSegment === "chat" || pathSegment === "script")
+    urlSessionId && (pathSegment === "chat" || pathSegment === "script" || pathSegment === "studio")
       ? projects.find((p) => p.session.session_id === urlSessionId)
       : undefined;
 
   let title = "Aodcast";
   if (pathSegment === "models") title = "Models";
   else if (pathSegment === "settings") title = "Settings";
-  else if (pathSegment === "voice-studio") title = "Voice Studio";
+  else if (pathSegment === "voice-studio") title = "Voice Library";
+  else if (pathSegment === "episodes") title = "Episodes";
+  else if (pathSegment === "studio" && !urlSessionId) title = "Studio";
   else if (pathSegment === "chat" && !urlSessionId) title = "Chat";
   else if (pathSegment === "script" && !urlSessionId) title = "Script";
   else if (currentProject) title = currentProject.session.topic;
+
+  const navItemClass = (active: boolean) =>
+    cn(
+      "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
+      active
+        ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
+        : "text-secondary hover:bg-white/5 hover:text-white",
+    );
 
   return (
     <div className="flex h-screen w-full bg-background text-on-surface overflow-hidden selection:bg-accent-amber/30 font-body mac-scrollbar">
@@ -84,73 +116,35 @@ export default function App() {
 
         <nav className="px-3.5 py-2.5 space-y-1.5 mt-2">
           <NavLink
-            to="/chat"
-            end
-            className={({ isActive }) =>
-              cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
-                isActive || location.pathname.startsWith("/chat/")
-                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
-                  : "text-secondary hover:bg-white/5 hover:text-white",
-              )
-            }
+            to="/episodes"
+            className={({ isActive }) => navItemClass(isActive)}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
-              <MessageSquare className="w-4 h-4" />
+              <List className="w-4 h-4" />
             </div>
-            Chat
+            Episodes
           </NavLink>
 
           <NavLink
-            to="/script"
-            end
+            to="/studio"
             className={({ isActive }) =>
-              cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
-                isActive || location.pathname.startsWith("/script/")
-                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
-                  : "text-secondary hover:bg-white/5 hover:text-white",
-              )
+              navItemClass(isActive || location.pathname.startsWith("/studio/"))
             }
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
-              <Edit3 className="w-4 h-4" />
+              <Layers className="w-4 h-4" />
             </div>
-            Script
+            Studio
           </NavLink>
 
           <NavLink
             to="/models"
-            className={({ isActive }) =>
-              cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
-                isActive
-                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
-                  : "text-secondary hover:bg-white/5 hover:text-white",
-              )
-            }
+            className={({ isActive }) => navItemClass(isActive)}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Package className="w-4 h-4" />
             </div>
             Models
-          </NavLink>
-
-          <NavLink
-            to="/voice-studio"
-            className={({ isActive }) =>
-              cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
-                isActive || location.pathname.startsWith("/voice-studio/")
-                  ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
-                  : "text-secondary hover:bg-white/5 hover:text-white",
-              )
-            }
-          >
-            <div className="w-5 h-5 flex items-center justify-center shrink-0">
-              <Mic className="w-4 h-4" />
-            </div>
-            Voice Studio
           </NavLink>
         </nav>
 
@@ -160,12 +154,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => navigate("/settings")}
-            className={cn(
-              "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-[13px] font-medium border border-transparent select-none",
-              pathSegment === "settings"
-                ? "bg-accent-amber/8 border-accent-amber/25 text-[#f5c669] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_4px_12px_rgba(0,0,0,0.15)]"
-                : "text-secondary hover:bg-white/5 hover:text-white",
-            )}
+            className={navItemClass(pathSegment === "settings")}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Settings className="w-4 h-4" />
@@ -196,26 +185,24 @@ export default function App() {
         <div className="flex-1 overflow-hidden relative">
           <Suspense fallback={<RouteFallback />}>
             <Routes>
-              <Route path="/" element={<Navigate to="/chat" replace />} />
-              <Route path="/history" element={<Navigate to="/chat" replace />} />
-              <Route
-                path="/chat"
-                element={<ChatPage onRefresh={fetchProjects} />}
-              />
-              <Route
-                path="/chat/:sessionId"
-                element={<ChatPage onRefresh={fetchProjects} />}
-              />
-              <Route path="/script" element={<ScriptPage projects={projects} onRefresh={fetchProjects} />} />
-              <Route
-                path="/script/:sessionId/:scriptId"
-                element={<ScriptPage projects={projects} onRefresh={fetchProjects} />}
-              />
-              <Route path="/script/:sessionId" element={<ScriptSessionResolve />} />
+              {/* Primary destinations */}
+              <Route path="/" element={<Navigate to="/episodes" replace />} />
+              <Route path="/episodes" element={<EpisodesPage projects={projects} onRefresh={fetchProjects} />} />
+              <Route path="/studio" element={<Navigate to="/episodes" replace />} />
+              <Route path="/studio/:sessionId" element={<StudioPage onRefresh={fetchProjects} />} />
+              <Route path="/studio/:sessionId/:scriptId" element={<StudioPage onRefresh={fetchProjects} />} />
               <Route path="/models" element={<ModelsPage />} />
               <Route path="/voice-studio" element={<VoiceStudioPage />} />
               <Route path="/voice-studio/:sessionId/:scriptId" element={<VoiceStudioPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+
+              {/* Legacy routes kept as compatibility redirects */}
+              <Route path="/history" element={<Navigate to="/episodes" replace />} />
+              <Route path="/chat" element={<RedirectChatToStudio />} />
+              <Route path="/chat/:sessionId" element={<RedirectChatToStudio />} />
+              <Route path="/script" element={<Navigate to="/episodes" replace />} />
+              <Route path="/script/:sessionId/:scriptId" element={<RedirectScriptToStudio />} />
+              <Route path="/script/:sessionId" element={<ScriptSessionResolve />} />
               <Route path="/interview" element={<RedirectInterviewToChat />} />
               <Route path="/interview/:sessionId" element={<RedirectInterviewToChat />} />
               <Route path="/voice" element={<RedirectVoiceOrExportToScript />} />

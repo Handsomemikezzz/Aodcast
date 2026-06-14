@@ -323,3 +323,14 @@ export type ModelStorageStatus = {
   is_custom: boolean;
   exists: boolean;
 };
+
+export type StudioProgressState =
+  | "needs_brief"
+  | "needs_interview"
+  | "ready_to_generate_script"
+  | "script_ready_needs_review"
+  | "script_blocked_for_tts"
+  | "needs_voice"
+  | "ready_to_generate_audio"
+  | "audio_ready"
+  | "script_changed_after_audio";
