@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { DesktopBridge } from "../../lib/desktopBridge";
 import {
   buildRequestState,
@@ -17,6 +17,7 @@ type UseScriptWorkbenchEditorArgs = {
   sessionId: string;
   scriptId: string;
   project: SessionProject | null;
+  setProject: (project: SessionProject) => void;
   script: string;
   setScript: (value: string) => void;
   refreshWorkspace: () => Promise<void>;
@@ -52,6 +53,7 @@ export function useScriptWorkbenchEditor({
   sessionId,
   scriptId,
   project,
+  setProject,
   script,
   setScript,
   refreshWorkspace,
@@ -61,6 +63,7 @@ export function useScriptWorkbenchEditor({
 }: UseScriptWorkbenchEditorArgs): UseScriptWorkbenchEditorResult {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingActionRef = useRef<AsyncAction | null>(null);
+  const latestScriptRef = useRef(script);
 
   const [saving, setSaving] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -91,6 +94,7 @@ export function useScriptWorkbenchEditor({
 
   const handleSave = async (): Promise<boolean> => {
     if (!project?.script || isScriptDeleted || isSessionDeleted || !isDirty) return true;
+    const scriptToSave = script;
     try {
       setSaving(true);
       setEditorError(null);
@@ -100,8 +104,12 @@ export function useScriptWorkbenchEditor({
         progress_percent: 0,
         message: "Saving script...",
       });
-      await bridge.saveEditedScript(sessionId, scriptId, script);
-      await refreshWorkspace();
+      const updatedProject = await bridge.saveEditedScript(sessionId, scriptId, scriptToSave);
+      setProject(updatedProject);
+      if (latestScriptRef.current === scriptToSave) {
+        setScript(updatedProject.script?.final || updatedProject.script?.draft || "");
+        await refreshWorkspace();
+      }
       setEditorRequestState(buildRequestState("save_script", "succeeded", "Script saved."));
       return true;
     } catch (err: unknown) {
@@ -117,6 +125,18 @@ export function useScriptWorkbenchEditor({
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    latestScriptRef.current = script;
+  }, [script]);
+
+  useEffect(() => {
+    if (!project?.script || isScriptDeleted || isSessionDeleted || !isDirty || saving) return undefined;
+    const timeout = window.setTimeout(() => {
+      void handleSave();
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [isDirty, isScriptDeleted, isSessionDeleted, project?.script, saving, script]);
 
   const handleDeleteScript = async () => {
     if (!project?.script || isScriptDeleted || isSessionDeleted) return;

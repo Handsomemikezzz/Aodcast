@@ -95,6 +95,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     sessionId,
     scriptId,
     project: data.project,
+    setProject: data.setProject,
     script: data.script,
     setScript: data.setScript,
     refreshWorkspace: data.refreshWorkspace,

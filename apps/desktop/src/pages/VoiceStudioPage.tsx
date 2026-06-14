@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { CheckCircle2, FileAudio, Loader2, Mic, Pencil, RefreshCw, Square, Trash2, Upload, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
 import { useBridge } from "../lib/BridgeContext";
 import { AudioPlayer } from "../components/AudioPlayer";
@@ -53,6 +53,7 @@ export function VoiceStudioPage() {
   const { sessionId: routeSessionId, scriptId: routeScriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const bridge = useBridge();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const previewAudioRef = useRef<HTMLAudioElement>(null);
   const profileFileInputRef = useRef<HTMLInputElement>(null);
   const profileRecorderRef = useRef<MediaRecorder | null>(null);
@@ -77,6 +78,8 @@ export function VoiceStudioPage() {
   const [previewText, setPreviewText] = useState("");
   const selectedSessionId = routeSessionId ?? "";
   const selectedScriptId = routeScriptId ?? "";
+  const rawReturnTo = searchParams.get("returnTo") ?? "";
+  const returnTo = rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : "";
   const [selectedVoiceId, setSelectedVoiceId] = useState("warm_narrator");
   const [selectedStyleId, setSelectedStyleId] = useState("natural");
   const [speed, setSpeed] = useState(1.0);
@@ -485,7 +488,10 @@ export function VoiceStudioPage() {
           setSpeed(profile.speed);
           setLanguage(profile.language);
           setAudioFormat(profile.audio_format);
-          setMessage(`已创建「${profile.name}」并用于当前脚本。返回 Script 页后可以生成完整音频。`);
+          setMessage(`已创建「${profile.name}」并用于当前脚本。返回 Studio 后可以生成完整音频。`);
+          if (returnTo) {
+            navigate(returnTo);
+          }
         } else {
           setMessage(`已创建「${profile.name}」。打开脚本后可以选用这个音色。`);
         }
@@ -538,7 +544,7 @@ export function VoiceStudioPage() {
 
   const handleSelectVoiceProfile = async (profile: VoiceProfileRecord) => {
     if (!canApplyProfileToScript) {
-      setError("请先从 Script 页面打开 Voice Studio，再把音色应用到具体脚本。");
+      setError("请先从 Studio 打开 Voice Studio，再把音色应用到具体脚本。");
       return;
     }
     try {
@@ -552,7 +558,10 @@ export function VoiceStudioPage() {
       setLanguage(profile.language);
       setAudioFormat(profile.audio_format);
       await refreshVoiceProfiles();
-      setMessage(`已为当前脚本选用「${profile.name}」。返回 Script 页后可以生成完整音频。`);
+      setMessage(`已为当前脚本选用「${profile.name}」。返回 Studio 后可以生成完整音频。`);
+      if (returnTo) {
+        navigate(returnTo);
+      }
     } catch (err) {
       setError(getErrorMessage(err, "Failed to select voice profile."));
     }
@@ -612,17 +621,23 @@ export function VoiceStudioPage() {
               <h1 className="mt-2 font-headline text-2xl font-bold tracking-tight text-primary">音色工坊</h1>
               <p className="mt-2.5 max-w-2xl text-sm leading-relaxed text-secondary/90">
                 {scriptBoundMode
-                  ? `为「${scriptTitle}」选择或创建一个可复用音色。完整音频生成和成品管理会在 Script 页完成。`
+                  ? `为「${scriptTitle}」选择或创建一个可复用音色。完整音频生成和成品管理会在 Studio 完成。`
                   : "管理可复用音色库。打开某个脚本后，可以把这里的音色应用到那一集播客。"}
               </p>
             </div>
             {scriptBoundMode ? (
               <button
                 type="button"
-                onClick={() => selectedSessionId && selectedScriptId && navigate(`/script/${selectedSessionId}/${selectedScriptId}`)}
+                onClick={() => {
+                  if (returnTo) {
+                    navigate(returnTo);
+                    return;
+                  }
+                  if (selectedSessionId && selectedScriptId) navigate(`/studio/${selectedSessionId}/${selectedScriptId}`);
+                }}
                 className="rounded-2xl border border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-accent-amber/20 px-4 py-2 text-sm font-semibold text-primary transition-all duration-200 active:scale-95 cursor-pointer"
               >
-                返回 Script
+                返回 Studio
               </button>
             ) : null}
           </div>
@@ -639,7 +654,7 @@ export function VoiceStudioPage() {
                   <h2 className="text-base font-bold font-headline text-primary tracking-wide">音色库</h2>
                   <p className="mt-1.5 text-xs leading-relaxed text-secondary/80">
                     {scriptBoundMode
-                      ? "当前脚本的试听会使用所选音色的参考音频与参考文本；Script 页面生成音频时也会使用该 profile。"
+                      ? "当前脚本的试听会使用所选音色的参考音频与参考文本；Studio 生成音频时也会使用该 profile。"
                       : "这里是可复用音色资产库。可以播放参考音频、删除我的音色；打开某个脚本后才能把音色应用到具体播客。"}
                   </p>
                   {scriptBoundMode && selectedProfile ? (
@@ -771,7 +786,7 @@ export function VoiceStudioPage() {
                     <div>
                       <h2 className="text-base font-bold font-headline text-primary tracking-wide">音色试听</h2>
                       <p className="mt-1 text-xs text-secondary/85 leading-relaxed">
-                        用当前脚本选用的音色生成一段短试听；完整音频仍在 Script 页面生成。
+                        用当前脚本选用的音色生成一段短试听；完整音频仍在 Studio 生成。
                       </p>
                     </div>
                     <button
@@ -853,7 +868,7 @@ export function VoiceStudioPage() {
                     <div className="mt-4 rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4 text-xs text-emerald-100/90 leading-relaxed">
                       <div className="flex items-start gap-2.5">
                         <CheckCircle2 className="mt-0.5 h-4.5 w-4.5 shrink-0 text-emerald-400" />
-                        <p>已选择「{selectedProfile.name}」。试听会使用这个音色 profile，Script 页面生成音频时也会引用它。</p>
+                        <p>已选择「{selectedProfile.name}」。试听会使用这个音色 profile，Studio 生成音频时也会引用它。</p>
                       </div>
                     </div>
                   ) : null}

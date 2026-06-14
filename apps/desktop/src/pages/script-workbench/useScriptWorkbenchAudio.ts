@@ -250,7 +250,7 @@ export function useScriptWorkbenchAudio({
       let renderProject = project;
       const voiceReference = renderProject?.artifact?.voice_reference;
       if (selectedEngine === "local_mlx" && (voiceReference?.source !== "voice_profile" || !voiceReference.voice_profile_id)) {
-        setAudioError("请先在 Voice Studio 为当前脚本选择一个音色，然后回到 Script 页生成完整音频。");
+        setAudioError("请先在 Voice Studio 为当前脚本选择一个音色，然后回到当前脚本页面生成完整音频。");
         setAudioMessage(null);
         setAudioRequestState(null);
         return;

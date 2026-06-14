@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, Loader2, RefreshCw, Sparkles, Trash2, Wand2, AlertCircle } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 import type { EditorDisplayMode, ScriptIssue } from "./spokenScriptTypes";
@@ -16,14 +16,62 @@ function statusTone(workbench: UseScriptWorkbenchResult): string {
   return "text-emerald-300";
 }
 
+function AutosaveChip({
+  saving,
+  isDirty,
+  editorError,
+  onRetry,
+}: {
+  saving: boolean;
+  isDirty: boolean;
+  editorError: string | null;
+  onRetry: () => void;
+}) {
+  if (editorError) {
+    return (
+      <span className="autosave-chip autosave-chip-error flex items-center gap-1">
+        <AlertCircle className="w-3 h-3" />
+        Save failed
+        <button
+          type="button"
+          onClick={onRetry}
+          className="ml-1 underline underline-offset-2 cursor-pointer hover:no-underline"
+        >
+          Retry
+        </button>
+      </span>
+    );
+  }
+  if (saving) {
+    return (
+      <span className="autosave-chip autosave-chip-saving flex items-center gap-1">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Saving...
+      </span>
+    );
+  }
+  if (isDirty) {
+    return (
+      <span className="autosave-chip autosave-chip-dirty flex items-center gap-1">
+        Unsaved changes
+      </span>
+    );
+  }
+  return (
+    <span className="autosave-chip autosave-chip-saved flex items-center gap-1">
+      <CheckCircle2 className="w-3 h-3" />
+      Saved
+    </span>
+  );
+}
+
 export function ScriptEditorPane({
   workbench,
-  isFocused = true,
-  onFocus,
+  textareaRef: externalRef,
 }: {
   workbench: UseScriptWorkbenchResult;
-  isFocused?: boolean;
-  onFocus?: () => void;
+  /** Optional external ref to focus the textarea programmatically */
+  textareaRef?: React.RefObject<HTMLTextAreaElement>;
 }) {
   const [editorMode, setEditorMode] = useState<EditorDisplayMode>("script");
   const [issuesExpanded, setIssuesExpanded] = useState(false);
@@ -32,64 +80,22 @@ export function ScriptEditorPane({
   const infoIssues = workbench.scriptCheck.issues.filter((issue) => issue.level === "info");
   const showIssuePanel = issuesExpanded && workbench.scriptCheck.issues.length > 0;
 
-  // Preview Mode when not focused
-  if (!isFocused) {
-    return (
-      <div
-        onClick={onFocus}
-        className="flex flex-col h-full w-full select-none cursor-pointer p-4 justify-between"
-      >
-        <div className="space-y-4 flex-1 flex flex-col min-h-0">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-secondary">
-              <Sparkles className="w-3.5 h-3.5 text-accent-amber" />
-              <span>Script Editor</span>
-            </div>
-            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-surface-container-high/60 border border-outline text-accent-amber">
-              {workbench.wordCount} Words
-            </span>
-          </div>
-
-          {/* Glimpse Content */}
-          <div className="flex-1 overflow-hidden relative opacity-55 text-xs text-secondary leading-relaxed">
-            {workbench.script ? (
-              <div className="line-clamp-6 whitespace-pre-wrap">
-                {workbench.script}
-              </div>
-            ) : (
-              <div className="text-secondary/30 italic">No script content yet.</div>
-            )}
-            <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface-container to-transparent pointer-events-none" />
-          </div>
-        </div>
-
-        {/* Stats Summary & Focus Hint */}
-        <div className="mt-2 space-y-2 shrink-0">
-          <div className="flex justify-between text-[10px] text-secondary/80 border-t border-outline pt-2 px-1">
-            <span>Est. {workbench.estMinutes} Spoken</span>
-            {workbench.isDirty && <span className="font-semibold text-accent-amber">Unsaved edits</span>}
-          </div>
-          <div className="text-[10px] font-medium text-center text-accent-amber/50 animate-pulse pt-1 border-t border-outline">
-            Click to edit script
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Use external ref if provided, otherwise fall back to workbench ref
+  const ref = externalRef ?? workbench.textareaRef;
 
   return (
-    <section className="flex min-w-0 min-h-0 flex-col gap-5 overflow-hidden">
-      <div className="rounded-[32px] border border-outline bg-surface-container backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.05)] overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline px-5 py-4">
-          <div className="inline-flex rounded-2xl border border-outline bg-surface-container-low p-1">
+    <section className="flex min-w-0 min-h-0 flex-col gap-5 overflow-hidden h-full">
+      <div className="rounded-[28px] border border-outline bg-surface-container backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-full">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline px-5 py-3 shrink-0">
+          <div className="inline-flex rounded-xl border border-outline bg-surface-container-low p-0.5">
             <button
               type="button"
               onClick={() => setEditorMode("script")}
               className={cn(
-                "rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer",
+                "rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer",
                 editorMode === "script"
-                  ? "bg-accent-amber/15 text-accent-amber shadow-[0_0_16px_rgba(242,191,87,0.08)]"
+                  ? "bg-accent-amber/15 text-accent-amber shadow-[0_0_12px_rgba(161,123,67,0.08)]"
                   : "text-secondary hover:text-primary",
               )}
             >
@@ -99,7 +105,7 @@ export function ScriptEditorPane({
               type="button"
               onClick={() => setEditorMode("plain")}
               className={cn(
-                "rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer",
+                "rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer",
                 editorMode === "plain"
                   ? "bg-primary/8 text-primary"
                   : "text-secondary hover:text-primary",
@@ -114,31 +120,34 @@ export function ScriptEditorPane({
           </div>
         </div>
 
-        <div className="px-5 pb-5 pt-4">
+        {/* Textarea */}
+        <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4 mac-scrollbar">
           <textarea
-            ref={workbench.textareaRef}
+            ref={ref}
             value={workbench.script}
             onChange={(event) => workbench.setScript(event.target.value)}
             disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
             spellCheck={false}
             placeholder="Write the exact narration you want spoken in the final audio."
             className={cn(
-              "min-h-[520px] w-full resize-none rounded-[24px] border border-outline bg-surface-container-low px-6 py-6 text-primary outline-none transition-all placeholder:text-secondary/30 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40",
+              "min-h-[480px] w-full resize-none rounded-[20px] border border-outline bg-surface-container-low px-6 py-6 text-primary outline-none transition-all placeholder:text-secondary/30 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40",
               editorMode === "script"
-                ? "text-[17px] leading-[2.15rem] tracking-[0.01em]"
-                : "text-[15px] leading-[2rem] font-mono",
+                ? "text-[16px] leading-[2.1rem] tracking-[0.01em]"
+                : "text-[14px] leading-[2rem] font-mono",
             )}
           />
         </div>
 
-        <div className="border-t border-outline px-5 py-4">
+        {/* Status bar */}
+        <div className="border-t border-outline px-5 py-3 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-secondary/80 font-medium">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            {/* Left: checks + stats + autosave */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => setIssuesExpanded((expanded) => !expanded)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition-all cursor-pointer",
+                  "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-bold transition-all cursor-pointer text-[11px]",
                   workbench.scriptCheck.blockingCount > 0
                     ? "border-red-500/20 bg-red-500/10 text-red-200 hover:bg-red-500/15"
                     : workbench.scriptCheck.warningCount > 0
@@ -147,32 +156,37 @@ export function ScriptEditorPane({
                 )}
               >
                 <span className={statusTone(workbench)}>{workbench.scriptCheck.statusLabel}</span>
-                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", issuesExpanded && "rotate-180")} />
+                <ChevronDown className={cn("h-3 w-3 transition-transform", issuesExpanded && "rotate-180")} />
               </button>
-              <span>{workbench.wordCount} words</span>
-              <span className="text-primary/10">•</span>
-              <span>{workbench.estMinutes} spoken runtime</span>
-              {workbench.isDirty ? (
-                <>
-                  <span className="text-primary/10">•</span>
-                  <span className="font-semibold text-accent-amber">Unsaved edits</span>
-                </>
-              ) : null}
+              <span className="text-[11px]">{workbench.wordCount} words</span>
+              <span className="text-primary/10">/</span>
+              <span className="text-[11px]">{workbench.estMinutes} spoken</span>
+              <span className="text-primary/10">/</span>
+              <AutosaveChip
+                saving={workbench.saving}
+                isDirty={workbench.isDirty}
+                editorError={workbench.editorError}
+                onRetry={() => void workbench.handleSave()}
+              />
             </div>
+
+            {/* Right: actions */}
             <div className="flex items-center gap-2">
               {workbench.scriptCheck.hasCleanableIssues ? (
                 <button
                   type="button"
                   onClick={workbench.handleOpenCleanupPreview}
                   disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-accent-amber/20 bg-accent-amber/10 px-3 py-1.5 text-[11px] font-bold text-accent-amber hover:bg-accent-amber/15 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1 rounded-xl border border-accent-amber/20 bg-accent-amber/10 px-2.5 py-1 text-[11px] font-bold text-accent-amber hover:bg-accent-amber/15 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                 >
-                  <Wand2 className="h-3.5 w-3.5" />
+                  <Wand2 className="h-3 w-3" />
                   Clean all
                 </button>
               ) : null}
               {workbench.editorRequestState?.phase === "running" ? (
-                <span className="mr-2 text-secondary/60 animate-pulse">{workbench.editorRequestState.message}</span>
+                <span className="mr-1 text-secondary/60 animate-pulse text-[11px]">
+                  {workbench.editorRequestState.message}
+                </span>
               ) : null}
               <button
                 type="button"
@@ -181,25 +195,29 @@ export function ScriptEditorPane({
                     await workbench.reload();
                   })
                 }
-                className="inline-flex items-center gap-1.5 rounded-xl border border-outline bg-surface-container-low px-3 py-1.5 text-[11px] font-bold text-secondary hover:text-primary hover:bg-primary/8 hover:border-accent-amber/20 active:scale-[0.98] transition-all cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-xl border border-outline bg-surface-container-low px-2.5 py-1 text-[11px] font-bold text-secondary hover:text-primary hover:bg-primary/8 hover:border-accent-amber/20 active:scale-[0.98] transition-all cursor-pointer"
               >
-                <RefreshCw className="h-3.5 w-3.5" />
+                <RefreshCw className="h-3 w-3" />
                 Refresh
               </button>
               <button
                 type="button"
                 onClick={() => workbench.setDialogState({ kind: "delete-script" })}
-                disabled={workbench.isScriptDeleted || workbench.isSessionDeleted || workbench.busyAction === "delete-script"}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/10 bg-red-500/5 px-3 py-1.5 text-[11px] font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10 hover:border-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                disabled={
+                  workbench.isScriptDeleted ||
+                  workbench.isSessionDeleted ||
+                  workbench.busyAction === "delete-script"
+                }
+                className="inline-flex items-center gap-1 rounded-xl border border-red-500/10 bg-red-500/5 px-2.5 py-1 text-[11px] font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10 hover:border-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-3 w-3" />
                 Trash
               </button>
             </div>
           </div>
 
           {showIssuePanel ? (
-            <div className="mt-4 space-y-3 rounded-2xl border border-outline bg-surface-container-low p-4">
+            <div className="mt-3 space-y-3 rounded-2xl border border-outline bg-surface-container-low p-3.5">
               {visibleIssues.length ? (
                 <ul className="space-y-2">
                   {visibleIssues.map((issue) => (

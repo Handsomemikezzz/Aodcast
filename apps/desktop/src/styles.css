@@ -401,3 +401,207 @@ textarea::selection {
   pointer-events: none;
   display: block;
 }
+
+/* ── Studio Workbench Layout ────────────────────────────────────── */
+
+/* Transcript overlay drawer — slides in from the left */
+.transcript-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(420px, 90vw);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg-elevated);
+  border-right: 1px solid var(--card-border-focused);
+  box-shadow: 4px 0 32px rgba(0,0,0,0.10);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transform: translateX(-100%);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.transcript-overlay.transcript-overlay-open {
+  transform: translateX(0);
+}
+
+.transcript-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 29;
+  background: rgba(0,0,0,0);
+  pointer-events: none;
+  transition: background 0.35s ease;
+}
+.transcript-overlay-backdrop.transcript-overlay-backdrop-visible {
+  background: rgba(0,0,0,0.12);
+  pointer-events: auto;
+}
+
+/* Workflow Stepper */
+.stepper-root {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.stepper-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  color: var(--color-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  user-select: none;
+}
+.stepper-step:hover {
+  background: rgba(0,0,0,0.04);
+  color: var(--color-primary);
+}
+html.dark-theme .stepper-step:hover {
+  background: rgba(255,255,255,0.05);
+}
+.stepper-step-active {
+  color: var(--color-accent-amber);
+  background: var(--color-accent-amber-container);
+}
+.stepper-step-active:hover {
+  background: color-mix(in srgb, var(--color-accent-amber) 14%, transparent);
+  color: var(--color-accent-amber);
+}
+.stepper-step-done {
+  color: var(--color-secondary);
+}
+.stepper-connector {
+  width: 20px;
+  height: 1px;
+  background: var(--color-outline);
+  flex-shrink: 0;
+  margin: 0 -2px;
+}
+.stepper-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+  opacity: 0.4;
+}
+.stepper-step-active .stepper-dot {
+  opacity: 1;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-amber) 22%, transparent);
+}
+.stepper-step-done .stepper-dot {
+  opacity: 0.6;
+}
+.stepper-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 20px;
+  border: 1px solid;
+  text-transform: uppercase;
+}
+.stepper-badge-done {
+  color: #16a34a;
+  border-color: rgba(22,163,74,0.25);
+  background: rgba(22,163,74,0.08);
+}
+html.dark-theme .stepper-badge-done {
+  color: #4ade80;
+  border-color: rgba(74,222,128,0.25);
+  background: rgba(74,222,128,0.08);
+}
+.stepper-badge-active {
+  color: var(--color-accent-amber);
+  border-color: color-mix(in srgb, var(--color-accent-amber) 35%, transparent);
+  background: var(--color-accent-amber-container);
+}
+.stepper-badge-warning {
+  color: #d97706;
+  border-color: rgba(217,119,6,0.25);
+  background: rgba(217,119,6,0.08);
+}
+html.dark-theme .stepper-badge-warning {
+  color: #fbbf24;
+  border-color: rgba(251,191,36,0.25);
+  background: rgba(251,191,36,0.08);
+}
+.stepper-badge-error {
+  color: #dc2626;
+  border-color: rgba(220,38,38,0.25);
+  background: rgba(220,38,38,0.08);
+}
+html.dark-theme .stepper-badge-error {
+  color: #f87171;
+  border-color: rgba(248,113,113,0.25);
+  background: rgba(248,113,113,0.08);
+}
+
+/* Autosave status chip */
+.autosave-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  transition: all 0.25s ease;
+}
+.autosave-chip-saved {
+  color: #16a34a;
+  border-color: rgba(22,163,74,0.2);
+  background: rgba(22,163,74,0.07);
+}
+html.dark-theme .autosave-chip-saved {
+  color: #4ade80;
+  border-color: rgba(74,222,128,0.2);
+  background: rgba(74,222,128,0.07);
+}
+.autosave-chip-saving {
+  color: var(--color-secondary);
+  border-color: var(--color-outline);
+  background: var(--color-surface-container-low);
+}
+.autosave-chip-dirty {
+  color: var(--color-accent-amber);
+  border-color: color-mix(in srgb, var(--color-accent-amber) 30%, transparent);
+  background: var(--color-accent-amber-container);
+}
+.autosave-chip-error {
+  color: #dc2626;
+  border-color: rgba(220,38,38,0.2);
+  background: rgba(220,38,38,0.07);
+}
+html.dark-theme .autosave-chip-error {
+  color: #f87171;
+  border-color: rgba(248,113,113,0.2);
+  background: rgba(248,113,113,0.07);
+}
+
+/* Voice & Audio panel section divider */
+.voice-panel-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-outline);
+}
+.voice-panel-section:last-child {
+  border-bottom: none;
+}
+.voice-panel-section-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-secondary);
+  margin-bottom: 10px;
+  opacity: 0.7;
+}

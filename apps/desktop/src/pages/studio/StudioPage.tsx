@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Loader2, MessageSquare, Mic } from "lucide-react";
-import { motion } from "framer-motion";
+import { Loader2 } from "lucide-react";
 import { useBridge } from "../../lib/BridgeContext";
-import { cn } from "../../lib/utils";
 import { useScriptWorkbench } from "../script-workbench/useScriptWorkbench";
 import { ScriptEditorPane } from "../script-workbench/ScriptEditorPane";
-import { ScriptWorkbenchHeader } from "../script-workbench/ScriptWorkbenchHeader";
 import { ScriptCleanupPreviewDialog } from "../script-workbench/ScriptCleanupPreviewDialog";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ExportPodcastDialog } from "../../components/ExportPodcastDialog";
 import { ChatPage } from "../ChatPage";
 import { ConversationDrawer } from "./ConversationDrawer";
-import { VoiceAudioDrawer } from "./VoiceAudioDrawer";
+import { VoiceAudioPanel } from "./VoiceAudioDrawer";
+import { StudioHeader } from "./StudioHeader";
+import { TranscriptBar } from "./TranscriptBar";
+import { buildVoiceFreshnessKey, deriveAudioFreshness } from "./studioWorkflow";
 
 // Resolves /studio/:sessionId (no scriptId) to the latest script, then redirects
 function StudioSessionResolve({
@@ -56,44 +56,105 @@ function StudioSessionResolve({
   );
 }
 
-// Inner studio with workbench hoisted so both editor and voice drawer share state
+// ── Main Studio Workspace ────────────────────────────────────────────────────
 function StudioWorkspace({
   sessionId,
   scriptId,
   onRefresh,
-  initialLeftOpen,
-  initialRightOpen,
+  initialTranscriptOpen,
 }: {
   sessionId: string;
   scriptId: string;
   onRefresh: () => Promise<void>;
-  initialLeftOpen: boolean;
-  initialRightOpen: boolean;
+  initialTranscriptOpen: boolean;
 }) {
   const bridge = useBridge();
   const navigate = useNavigate();
   const workbench = useScriptWorkbench(sessionId, scriptId, onRefresh);
-  const [focusedCard, setFocusedCard] = useState<"chat" | "edit" | "generate">(
-    initialLeftOpen ? "chat" : initialRightOpen ? "generate" : "edit"
-  );
-  const [chatState, setChatState] = useState<"open" | "collapsed">(
-    initialLeftOpen ? "open" : "collapsed"
-  );
-  const [generateState, setGenerateState] = useState<"open" | "collapsed">(
-    initialRightOpen ? "open" : "collapsed"
-  );
 
-  const getTrackStyle = () => {
-    let tx = "0%";
-    if (chatState === "open" && generateState === "open") {
-      if (focusedCard === "chat") tx = "3%";
-      else if (focusedCard === "generate") tx = "-3%";
-    } else if (chatState === "open") {
-      if (focusedCard === "chat") tx = "1.5%";
-    } else if (generateState === "open") {
-      if (focusedCard === "generate") tx = "-1.5%";
+  // Transcript overlay state
+  const [transcriptOpen, setTranscriptOpen] = useState(initialTranscriptOpen);
+
+  // Ref to scroll the audio section into view when the Audio stepper step is clicked
+  const audioSectionRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Audio out-of-date: set when script or voice inputs change after audio exists.
+  const [audioOutOfDate, setAudioOutOfDate] = useState(false);
+  const [audioOutOfDateReason, setAudioOutOfDateReason] = useState<string | undefined>(undefined);
+  const prevAudioSrcRef = useRef(workbench.audioSrc);
+  const prevScriptRef = useRef<string | null>(null);
+  const prevVoiceKeyRef = useRef<string | null>(null);
+
+  const serverScript = workbench.project?.script?.final ?? workbench.project?.script?.draft ?? "";
+  const voiceFreshnessKey = buildVoiceFreshnessKey(workbench.project, scriptId);
+
+  useEffect(() => {
+    const hasAudio = Boolean(workbench.audioSrc);
+    if (!hasAudio) {
+      setAudioOutOfDate(false);
+      setAudioOutOfDateReason(undefined);
+      prevScriptRef.current = serverScript;
+      prevVoiceKeyRef.current = voiceFreshnessKey;
+      return;
     }
-    return { transform: `translateX(${tx})` };
+
+    const previousServerScript = prevScriptRef.current ?? serverScript;
+    const previousVoiceKey = prevVoiceKeyRef.current ?? voiceFreshnessKey;
+    const freshness = deriveAudioFreshness({
+      hasAudio,
+      generating: workbench.generating,
+      isDirty: workbench.isDirty,
+      serverScript,
+      currentScript: workbench.script,
+      previousServerScript,
+      voiceKey: voiceFreshnessKey,
+      previousVoiceKey,
+    });
+
+    if (freshness.outOfDate) {
+      setAudioOutOfDate(true);
+      setAudioOutOfDateReason(freshness.reason);
+    }
+
+    prevScriptRef.current = serverScript;
+    prevVoiceKeyRef.current = voiceFreshnessKey;
+  }, [
+    serverScript,
+    scriptId,
+    voiceFreshnessKey,
+    workbench.audioSrc,
+    workbench.generating,
+    workbench.isDirty,
+    workbench.script,
+  ]);
+
+  // Clear out-of-date state when a new audio render completes
+  useEffect(() => {
+    if (workbench.audioSrc && workbench.audioSrc !== prevAudioSrcRef.current) {
+      setAudioOutOfDate(false);
+      setAudioOutOfDateReason(undefined);
+      prevScriptRef.current = serverScript;
+      prevVoiceKeyRef.current = voiceFreshnessKey;
+    }
+    prevAudioSrcRef.current = workbench.audioSrc;
+  }, [serverScript, voiceFreshnessKey, workbench.audioSrc]);
+
+  // Navigate to Voice Studio with return context
+  const handleVoiceNavigate = () => {
+    const path = workbench.project?.script
+      ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}?returnTo=${encodeURIComponent(`/studio/${sessionId}/${scriptId}`)}`
+      : "/voice-studio";
+    navigate(path);
+  };
+
+  const handleScriptFocus = () => {
+    textareaRef.current?.focus();
+    textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
+  const handleAudioFocus = () => {
+    audioSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   if (workbench.loading) {
@@ -113,179 +174,108 @@ function StudioWorkspace({
     );
   }
 
+  const turns = workbench.project.transcript?.turns ?? [];
+
   return (
     <>
-      <div className="flex h-full w-full overflow-hidden p-4 gap-4 bg-background relative items-stretch">
-        
-        {/* Left collapsed strip */}
-        {chatState === "collapsed" && (
-          <div
-            onClick={() => {
-              setChatState("open");
-              setFocusedCard("chat");
-            }}
-            className="w-11 shrink-0 glass-edge-strip rounded-2xl flex flex-col items-center justify-between py-4 cursor-pointer"
-            title="Expand Conversation"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-accent-amber shrink-0">
-              <MessageSquare className="w-3.5 h-3.5" />
-            </div>
-            <span className="writing-mode-vertical text-[10px] font-bold uppercase tracking-wider text-secondary/70 my-4 select-none">
-              Conversation
-            </span>
-            <div className="h-7 w-7 flex items-center justify-center text-secondary/40 shrink-0">
-              <ChevronRight className="w-3.5 h-3.5" />
-            </div>
-          </div>
-        )}
+      {/* ── Full-height studio layout ──────────────────────── */}
+      <div className="flex flex-col h-full w-full overflow-hidden bg-background">
 
-        {/* Sliding Card Deck Track */}
-        <div
-          className="flex-1 flex gap-4 min-w-0 h-full items-stretch transition-transform duration-500 ease-out"
-          style={getTrackStyle()}
-        >
-          {/* Chat Card (if open) */}
-          {chatState === "open" && (
-            <div
-              className={cn(
-                "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
-                focusedCard === "chat"
-                  ? "flex-[3.5] glass-deck-card-focused opacity-100 scale-100 translate-y-0"
-                  : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 scale-[0.98] translate-y-0.5"
-              )}
-            >
-              <ConversationDrawer
-                project={workbench.project}
-                onRefresh={onRefresh}
-                onNewScript={(sid, scriptId) =>
-                  navigate(`/studio/${sid}/${scriptId}`)
-                }
-                isFocused={focusedCard === "chat"}
-                onFocus={() => setFocusedCard("chat")}
-                onClose={() => {
-                  setChatState("collapsed");
-                  if (focusedCard === "chat") {
-                    setFocusedCard("edit");
-                  }
-                }}
-              />
-            </div>
-          )}
+        {/* Header: title + stepper + global CTA */}
+        <StudioHeader
+          workbench={workbench}
+          audioOutOfDate={audioOutOfDate}
+          onTranscriptOpen={() => setTranscriptOpen(true)}
+          onScriptFocus={handleScriptFocus}
+          onVoiceNavigate={handleVoiceNavigate}
+          onAudioFocus={handleAudioFocus}
+          onExport={workbench.handleDownloadAudio}
+        />
 
-          {/* Center: Script Editor Card (always open in deck) */}
-          <div
-            className={cn(
-              "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
-              focusedCard === "edit"
-                ? "flex-[3.5] glass-deck-card-focused opacity-100 scale-100 translate-y-0"
-                : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 scale-[0.98] translate-y-0.5"
-            )}
-          >
-            {focusedCard === "edit" ? (
-              <div className="flex-1 flex flex-col min-w-0 overflow-y-auto px-5 py-5 lg:px-6 mac-scrollbar">
-                <div className="mx-auto flex w-full max-w-[840px] flex-col gap-4">
-                  <ScriptWorkbenchHeader workbench={workbench} />
-                  {workbench.isSessionDeleted && (
-                    <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                          <p className="font-medium">This session is in trash.</p>
-                          <p className="mt-1 text-xs text-secondary">Restore it before editing the script or rendering audio.</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => void workbench.handleRestoreSession()}
-                          disabled={workbench.busyAction === "restore-session"}
-                          className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
-                        >
-                          Restore Session
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {workbench.isScriptDeleted && (
-                    <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                          <p className="font-medium">This script snapshot is in trash.</p>
-                          <p className="mt-1 text-xs text-secondary">Restore it to resume editing or render audio.</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => void workbench.handleRestoreScript()}
-                          disabled={workbench.busyAction === "restore-script" || workbench.isSessionDeleted}
-                          className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
-                        >
-                          Restore Script
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <ScriptEditorPane
-                    workbench={workbench}
-                    isFocused={true}
-                  />
+        {/* Main two-column body — relative container for transcript overlay */}
+        <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative mac-scrollbar">
+
+          {/* Transcript overlay drawer */}
+          <ConversationDrawer
+            project={workbench.project}
+            isOpen={transcriptOpen}
+            onClose={() => setTranscriptOpen(false)}
+            onRefresh={onRefresh}
+            onNewScript={(sid, newScriptId) =>
+              navigate(`/studio/${sid}/${newScriptId}`)
+            }
+          />
+
+          {/* ── Left column: transcript bar + script editor ── */}
+          <div className="flex flex-col w-full lg:flex-1 min-w-0 min-h-[560px] lg:min-h-0 overflow-hidden">
+
+            {/* Transcript collapsed bar */}
+            <TranscriptBar
+              turnCount={turns.length}
+              onOpen={() => setTranscriptOpen(true)}
+            />
+
+            {/* Deleted session / script warnings */}
+            {(workbench.isSessionDeleted || workbench.isScriptDeleted) && (
+              <div className="mx-4 mt-3 rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary shrink-0">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    {workbench.isSessionDeleted ? (
+                      <>
+                        <p className="font-medium">This session is in trash.</p>
+                        <p className="mt-1 text-xs text-secondary">Restore it before editing the script or rendering audio.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium">This script snapshot is in trash.</p>
+                        <p className="mt-1 text-xs text-secondary">Restore it to resume editing or render audio.</p>
+                      </>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      workbench.isSessionDeleted
+                        ? void workbench.handleRestoreSession()
+                        : void workbench.handleRestoreScript()
+                    }
+                    disabled={
+                      workbench.busyAction === "restore-session" ||
+                      workbench.busyAction === "restore-script"
+                    }
+                    className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50 shrink-0"
+                  >
+                    {workbench.isSessionDeleted ? "Restore Session" : "Restore Script"}
+                  </button>
                 </div>
               </div>
-            ) : (
+            )}
+
+            {/* Script editor — takes remaining height */}
+            <div className="flex-1 overflow-hidden p-4">
               <ScriptEditorPane
                 workbench={workbench}
-                isFocused={false}
-                onFocus={() => setFocusedCard("edit")}
-              />
-            )}
-          </div>
-
-          {/* Voice & Audio Card (if open) */}
-          {generateState === "open" && (
-            <div
-              className={cn(
-                "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
-                focusedCard === "generate"
-                  ? "flex-[3.5] glass-deck-card-focused opacity-100 scale-100 translate-y-0"
-                  : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 scale-[0.98] translate-y-0.5"
-              )}
-            >
-              <VoiceAudioDrawer
-                workbench={workbench}
-                isFocused={focusedCard === "generate"}
-                onFocus={() => setFocusedCard("generate")}
-                onClose={() => {
-                  setGenerateState("collapsed");
-                  if (focusedCard === "generate") {
-                    setFocusedCard("edit");
-                  }
-                }}
+                textareaRef={textareaRef}
               />
             </div>
-          )}
+          </div>
+
+          {/* ── Right column: Voice & Audio panel ────────────── */}
+          <div className="w-full lg:w-[280px] xl:w-[300px] shrink-0 border-t lg:border-t-0 lg:border-l border-outline overflow-visible lg:overflow-hidden flex flex-col bg-surface-container-low/30">
+            <div className="px-4 py-2.5 border-b border-outline shrink-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-secondary/60">Voice & Audio</p>
+            </div>
+            <VoiceAudioPanel
+              workbench={workbench}
+              audioOutOfDate={audioOutOfDate}
+              audioOutOfDateReason={audioOutOfDateReason}
+              audioSectionRef={audioSectionRef}
+            />
+          </div>
         </div>
-
-        {/* Right collapsed strip */}
-        {generateState === "collapsed" && (
-          <div
-            onClick={() => {
-              setGenerateState("open");
-              setFocusedCard("generate");
-            }}
-            className="w-11 shrink-0 glass-edge-strip rounded-2xl flex flex-col items-center justify-between py-4 cursor-pointer"
-            title="Expand Voice & Audio"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-accent-amber shrink-0">
-              <Mic className="w-3.5 h-3.5" />
-            </div>
-            <span className="writing-mode-vertical text-[10px] font-bold uppercase tracking-wider text-secondary/70 my-4 select-none">
-              Voice &amp; Audio
-            </span>
-            <div className="h-7 w-7 flex items-center justify-center text-secondary/40 shrink-0">
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </div>
-          </div>
-        )}
-
       </div>
 
-      {/* Dialogs (mounted at workspace level, not inside drawers) */}
+      {/* ── Dialogs ─────────────────────────────────────────── */}
       <ConfirmDialog
         open={workbench.dialogState?.kind === "delete-script"}
         title="Move script to trash?"
@@ -314,13 +304,18 @@ function StudioWorkspace({
           {
             label: "Roll back",
             onClick: () => {
-              const revisionId = workbench.dialogState?.kind === "rollback" ? workbench.dialogState.revisionId : "";
+              const revisionId =
+                workbench.dialogState?.kind === "rollback"
+                  ? workbench.dialogState.revisionId
+                  : "";
               workbench.setDialogState(null);
               if (!revisionId) return;
               void workbench.handleRollbackRevision(revisionId);
             },
             variant: "primary",
-            disabled: workbench.dialogState?.kind === "rollback" && workbench.busyAction === workbench.dialogState.revisionId,
+            disabled:
+              workbench.dialogState?.kind === "rollback" &&
+              workbench.busyAction === workbench.dialogState.revisionId,
           },
         ]}
       />
@@ -334,7 +329,9 @@ function StudioWorkspace({
           {
             label: "Discard changes",
             onClick: () => {
-              workbench.setScript(workbench.project?.script?.final || workbench.project?.script?.draft || "");
+              workbench.setScript(
+                workbench.project?.script?.final || workbench.project?.script?.draft || "",
+              );
               workbench.setDialogState(null);
               void workbench.runPendingAction();
             },
@@ -358,7 +355,9 @@ function StudioWorkspace({
       />
       <ScriptCleanupPreviewDialog
         open={workbench.dialogState?.kind === "cleanup-preview"}
-        preview={workbench.dialogState?.kind === "cleanup-preview" ? workbench.dialogState.preview : null}
+        preview={
+          workbench.dialogState?.kind === "cleanup-preview" ? workbench.dialogState.preview : null
+        }
         onClose={workbench.closeDialog}
         onApply={workbench.handleApplyCleanup}
       />
@@ -373,15 +372,13 @@ function StudioWorkspace({
   );
 }
 
+// ── Entry Point ──────────────────────────────────────────────────────────────
 export function StudioPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const [searchParams] = useSearchParams();
 
-  // Determine initial drawer states from URL params
   const panelParam = searchParams.get("panel");
-  const initialLeftOpen = panelParam === "conversation";
-  // Right drawer open by default on wide screens (handled via CSS), closed by default when entering from non-voice routes
-  const initialRightOpen = panelParam === "voice";
+  const initialTranscriptOpen = panelParam === "conversation";
 
   if (!sessionId) {
     return (
@@ -401,8 +398,7 @@ export function StudioPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
       sessionId={sessionId}
       scriptId={scriptId}
       onRefresh={onRefresh}
-      initialLeftOpen={initialLeftOpen}
-      initialRightOpen={initialRightOpen}
+      initialTranscriptOpen={initialTranscriptOpen}
     />
   );
 }
