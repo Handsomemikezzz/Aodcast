@@ -34,9 +34,13 @@ import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWork
 export function VoiceAudioDrawer({
   workbench,
   onClose,
+  isFocused = true,
+  onFocus,
 }: {
   workbench: UseScriptWorkbenchResult;
   onClose: () => void;
+  isFocused?: boolean;
+  onFocus?: () => void;
 }) {
   const navigate = useNavigate();
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
@@ -66,6 +70,94 @@ export function VoiceAudioDrawer({
   const voiceLibraryPath = workbench.project?.script
     ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}`
     : "/voice-studio";
+
+  // Preview Mode when not focused
+  if (!isFocused) {
+    return (
+      <div
+        onClick={onFocus}
+        className="flex flex-col h-full w-full select-none cursor-pointer p-4 justify-between"
+      >
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#9f9b93]">
+              <Mic className="w-3.5 h-3.5 text-accent-amber" />
+              <span>Voice &amp; Audio</span>
+            </div>
+            {activeAudioRequestState ? (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-accent-amber/10 border border-accent-amber/20 text-[#f5c669] animate-pulse">
+                {Math.round(activeAudioRequestState.progress_percent)}%
+              </span>
+            ) : workbench.audioSrc ? (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+                Ready
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-[#9f9b93]">
+                Empty
+              </span>
+            )}
+          </div>
+
+          {/* Glimpse Content */}
+          <div className="space-y-3 opacity-60">
+            {/* Selected Voice Info */}
+            <div className="rounded-xl border border-white/5 bg-white/5 p-2.5 flex items-center gap-2.5">
+              <Mic className="h-3.5 w-3.5 text-accent-amber shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-primary truncate">
+                  {selectedProfileLabel || "未选择音色"}
+                </p>
+                <p className="text-[10px] text-secondary/70 truncate">
+                  {workbench.selectedEngine === "local_mlx" ? "Local MLX" : workbench.cloudProvider}
+                </p>
+              </div>
+            </div>
+
+            {/* Render Progress Events */}
+            {activeAudioRequestState && (
+              <div className="text-[11px] text-accent-amber">
+                <span className="block truncate font-semibold text-[10px]">{activeAudioRequestState.message}</span>
+                <div className="mt-1 h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent-amber transition-all duration-300"
+                    style={{ width: `${activeAudioRequestState.progress_percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Generated Audio Mini-player */}
+            {workbench.audioSrc && (
+              <div
+                className="rounded-xl border border-white/5 bg-white/5 p-2 flex items-center justify-between gap-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="text-[11px] text-[#9f9b93] truncate flex-1 font-mono">{workbench.outputFilename}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void workbench.handlePreviewAudio();
+                  }}
+                  className="inline-flex h-7 px-2.5 items-center gap-1 rounded-lg border border-accent-amber/25 bg-accent-amber/10 text-[10px] font-bold text-[#f5c669] hover:bg-accent-amber/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  {workbench.isAudioPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                  {workbench.isAudioPlaying ? "Pause" : "Play"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Focus Hint */}
+        <div className="text-[10px] font-medium text-center text-accent-amber/50 animate-pulse pt-2 border-t border-white/5 shrink-0">
+          Click to configure voice
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full w-full">

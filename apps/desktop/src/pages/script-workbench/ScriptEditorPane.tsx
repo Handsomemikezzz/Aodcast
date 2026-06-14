@@ -16,13 +16,67 @@ function statusTone(workbench: UseScriptWorkbenchResult): string {
   return "text-emerald-300";
 }
 
-export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchResult }) {
+export function ScriptEditorPane({
+  workbench,
+  isFocused = true,
+  onFocus,
+}: {
+  workbench: UseScriptWorkbenchResult;
+  isFocused?: boolean;
+  onFocus?: () => void;
+}) {
   const [editorMode, setEditorMode] = useState<EditorDisplayMode>("script");
   const [issuesExpanded, setIssuesExpanded] = useState(false);
 
   const visibleIssues = workbench.scriptCheck.issues.filter((issue) => issue.level !== "info");
   const infoIssues = workbench.scriptCheck.issues.filter((issue) => issue.level === "info");
   const showIssuePanel = issuesExpanded && workbench.scriptCheck.issues.length > 0;
+
+  // Preview Mode when not focused
+  if (!isFocused) {
+    return (
+      <div
+        onClick={onFocus}
+        className="flex flex-col h-full w-full select-none cursor-pointer p-4 justify-between"
+      >
+        <div className="space-y-4 flex-1 flex flex-col min-h-0">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#9f9b93]">
+              <Sparkles className="w-3.5 h-3.5 text-accent-amber" />
+              <span>Script Editor</span>
+            </div>
+            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-accent-amber">
+              {workbench.wordCount} Words
+            </span>
+          </div>
+
+          {/* Glimpse Content */}
+          <div className="flex-1 overflow-hidden relative opacity-55 text-xs text-[#9f9b93] leading-relaxed">
+            {workbench.script ? (
+              <div className="line-clamp-6 whitespace-pre-wrap">
+                {workbench.script}
+              </div>
+            ) : (
+              <div className="text-secondary/30 italic">No script content yet.</div>
+            )}
+            <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[rgba(23,23,27,0.45)] to-transparent pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Stats Summary & Focus Hint */}
+        <div className="mt-2 space-y-2 shrink-0">
+          <div className="flex justify-between text-[10px] text-[#9f9b93]/80 border-t border-white/5 pt-2 px-1">
+            <span>Est. {workbench.estMinutes} Spoken</span>
+            {workbench.isDirty && <span className="font-semibold text-accent-amber">Unsaved edits</span>}
+          </div>
+          <div className="text-[10px] font-medium text-center text-accent-amber/50 animate-pulse pt-1 border-t border-white/5">
+            Click to edit script
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <section className="flex min-w-0 min-h-0 flex-col gap-5 overflow-hidden">

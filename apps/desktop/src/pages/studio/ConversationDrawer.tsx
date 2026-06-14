@@ -44,10 +44,16 @@ export function ConversationDrawer({
   project,
   onRefresh,
   onNewScript,
+  isFocused = true,
+  onFocus,
+  onClose,
 }: {
   project: SessionProject | null;
   onRefresh: () => Promise<void>;
   onNewScript: (sessionId: string, scriptId: string) => void;
+  isFocused?: boolean;
+  onFocus?: () => void;
+  onClose?: () => void;
 }) {
   const bridge = useBridge();
   const navigate = useNavigate();
@@ -106,15 +112,77 @@ export function ConversationDrawer({
     setFollowUpState({ kind: "idle" });
   };
 
+  // Preview Mode when not focused
+  if (!isFocused) {
+    return (
+      <div
+        onClick={onFocus}
+        className="flex flex-col h-full w-full select-none cursor-pointer p-4 justify-between"
+      >
+        <div className="space-y-4">
+          {/* Preview Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#9f9b93]">
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Conversation</span>
+            </div>
+            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-accent-amber">
+              {turns.length} Turns
+            </span>
+          </div>
+
+          {/* Glimpse Content */}
+          <div className="overflow-hidden relative flex flex-col gap-3 opacity-60">
+            {turns.length === 0 ? (
+              <div className="text-[#9f9b93]/50 text-xs py-2">No conversation yet.</div>
+            ) : (
+              <div className="space-y-2.5">
+                {turns.slice(-2).map((turn, i) => (
+                  <div key={i} className="space-y-0.5">
+                    <span className="block text-[9px] font-bold uppercase tracking-wider text-accent-amber/70">
+                      {turn.speaker === "user" ? "User" : "Host"}
+                    </span>
+                    <p className="text-xs text-[#9f9b93] line-clamp-2 leading-relaxed">
+                      {turn.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Click to Focus Hint */}
+        <div className="text-[10px] font-medium text-center text-accent-amber/50 animate-pulse pt-2 border-t border-white/5 shrink-0">
+          Click to focus chat
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full w-full">
       {/* Transcript header */}
-      <div className="px-4 py-3 border-b border-white/5 shrink-0">
+      <div className="px-4 py-3 border-b border-white/5 shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-secondary/70">
           <MessageSquare className="w-3.5 h-3.5" />
           <span>Interview Transcript</span>
-          <span className="ml-auto text-[10px] normal-case font-medium">{turns.length} turns</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-white/5 text-secondary">{turns.length} turns</span>
         </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="p-1 rounded-md text-secondary hover:text-white hover:bg-white/5 transition-colors"
+            aria-label="Collapse panel"
+            title="Collapse"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Transcript scroll area */}

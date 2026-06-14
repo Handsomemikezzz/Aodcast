@@ -74,8 +74,15 @@ function StudioWorkspace({
   const bridge = useBridge();
   const navigate = useNavigate();
   const workbench = useScriptWorkbench(sessionId, scriptId, onRefresh);
-  const [leftOpen, setLeftOpen] = useState(initialLeftOpen);
-  const [rightOpen, setRightOpen] = useState(initialRightOpen);
+  const [focusedCard, setFocusedCard] = useState<"chat" | "edit" | "generate">(
+    initialLeftOpen ? "chat" : initialRightOpen ? "generate" : "edit"
+  );
+  const [chatState, setChatState] = useState<"open" | "collapsed">(
+    initialLeftOpen ? "open" : "collapsed"
+  );
+  const [generateState, setGenerateState] = useState<"open" | "collapsed">(
+    initialRightOpen ? "open" : "collapsed"
+  );
 
   if (workbench.loading) {
     return (
@@ -96,139 +103,168 @@ function StudioWorkspace({
 
   return (
     <>
-      <div className="flex h-full w-full overflow-hidden">
-        {/* Left drawer: Conversation */}
+      <div className="flex h-full w-full overflow-hidden p-4 gap-4 bg-gradient-to-b from-[#121214] to-[#0a0a0c] relative items-stretch">
+        
+        {/* Left collapsed strip */}
+        {chatState === "collapsed" && (
+          <div
+            onClick={() => {
+              setChatState("open");
+              setFocusedCard("chat");
+            }}
+            className="w-11 shrink-0 glass-edge-strip rounded-2xl flex flex-col items-center justify-between py-4 cursor-pointer"
+            title="Expand Conversation"
+          >
+            <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-accent-amber shrink-0">
+              <MessageSquare className="w-3.5 h-3.5" />
+            </div>
+            <span className="writing-mode-vertical text-[10px] font-bold uppercase tracking-wider text-secondary/70 my-4 select-none">
+              Conversation
+            </span>
+            <div className="h-7 w-7 flex items-center justify-center text-secondary/40 shrink-0">
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        )}
+
+        {/* Chat Card (if open) */}
+        {chatState === "open" && (
+          <div
+            className={cn(
+              "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
+              focusedCard === "chat"
+                ? "flex-[3.5] glass-deck-card-focused opacity-100"
+                : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 hover:scale-[1.005]"
+            )}
+          >
+            <ConversationDrawer
+              project={workbench.project}
+              onRefresh={onRefresh}
+              onNewScript={(sid, scriptId) =>
+                navigate(`/studio/${sid}/${scriptId}`)
+              }
+              isFocused={focusedCard === "chat"}
+              onFocus={() => setFocusedCard("chat")}
+              onClose={() => {
+                setChatState("collapsed");
+                if (focusedCard === "chat") {
+                  setFocusedCard("edit");
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {/* Center: Script Editor Card (always open in deck) */}
         <div
           className={cn(
-            "flex-shrink-0 flex flex-col border-r border-white/5 bg-[rgba(14,14,16,0.85)] transition-all duration-300 overflow-hidden",
-            leftOpen ? "w-[340px] xl:w-[380px]" : "w-0",
+            "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
+            focusedCard === "edit"
+              ? "flex-[3.5] glass-deck-card-focused opacity-100"
+              : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 hover:scale-[1.005]"
           )}
         >
-          {leftOpen && (
-            <div className="flex flex-col h-full w-full">
-              <div className="h-9 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-secondary/70">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Conversation
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setLeftOpen(false)}
-                  className="p-1 rounded-md text-secondary hover:text-white hover:bg-white/5 transition-colors"
-                  aria-label="Close conversation panel"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <ConversationDrawer
-                  project={workbench.project}
-                  onRefresh={onRefresh}
-                  onNewScript={(sid, scriptId) =>
-                    navigate(`/studio/${sid}/${scriptId}`)
-                  }
+          {focusedCard === "edit" ? (
+            <div className="flex-1 flex flex-col min-w-0 overflow-y-auto px-5 py-5 lg:px-6 mac-scrollbar">
+              <div className="mx-auto flex w-full max-w-[840px] flex-col gap-4">
+                <ScriptWorkbenchHeader workbench={workbench} />
+                {workbench.isSessionDeleted && (
+                  <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="font-medium">This session is in trash.</p>
+                        <p className="mt-1 text-xs text-secondary">Restore it before editing the script or rendering audio.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void workbench.handleRestoreSession()}
+                        disabled={workbench.busyAction === "restore-session"}
+                        className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
+                      >
+                        Restore Session
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {workbench.isScriptDeleted && (
+                  <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="font-medium">This script snapshot is in trash.</p>
+                        <p className="mt-1 text-xs text-secondary">Restore it to resume editing or render audio.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void workbench.handleRestoreScript()}
+                        disabled={workbench.busyAction === "restore-script" || workbench.isSessionDeleted}
+                        className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
+                      >
+                        Restore Script
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <ScriptEditorPane
+                  workbench={workbench}
+                  isFocused={true}
                 />
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Left drawer toggle (when closed) */}
-        {!leftOpen && (
-          <button
-            type="button"
-            onClick={() => setLeftOpen(true)}
-            className="flex-shrink-0 w-8 flex items-center justify-center border-r border-white/5 text-secondary hover:text-white hover:bg-white/3 transition-colors group"
-            aria-label="Open conversation panel"
-            title="Conversation"
-          >
-            <div className="flex flex-col items-center gap-1">
-              <MessageSquare className="w-3.5 h-3.5 group-hover:text-accent-amber transition-colors" />
-              <ChevronRight className="w-3 h-3" />
-            </div>
-          </button>
-        )}
-
-        {/* Center: Script editor */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex h-full min-h-0 w-full overflow-y-auto px-4 py-5 lg:px-6"
-          >
-            <div className="mx-auto flex w-full max-w-[920px] flex-col gap-5">
-              <ScriptWorkbenchHeader workbench={workbench} />
-              {workbench.isSessionDeleted ? (
-                <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <p className="font-medium">This session is in trash.</p>
-                      <p className="mt-1 text-xs text-secondary">Restore it before editing the script or rendering audio.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void workbench.handleRestoreSession()}
-                      disabled={workbench.busyAction === "restore-session"}
-                      className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
-                    >
-                      Restore Session
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              {workbench.isScriptDeleted ? (
-                <div className="rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <p className="font-medium">This script snapshot is in trash.</p>
-                      <p className="mt-1 text-xs text-secondary">Restore it to resume editing or render audio.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void workbench.handleRestoreScript()}
-                      disabled={workbench.busyAction === "restore-script" || workbench.isSessionDeleted}
-                      className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
-                    >
-                      Restore Script
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              <ScriptEditorPane workbench={workbench} />
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Right drawer toggle (when closed) */}
-        {!rightOpen && (
-          <button
-            type="button"
-            onClick={() => setRightOpen(true)}
-            className="flex-shrink-0 w-8 flex items-center justify-center border-l border-white/5 text-secondary hover:text-white hover:bg-white/3 transition-colors group"
-            aria-label="Open voice & audio panel"
-            title="Voice & Audio"
-          >
-            <div className="flex flex-col items-center gap-1">
-              <ChevronLeft className="w-3 h-3" />
-              <Mic className="w-3.5 h-3.5 group-hover:text-accent-amber transition-colors" />
-            </div>
-          </button>
-        )}
-
-        {/* Right drawer: Voice & Audio */}
-        <div
-          className={cn(
-            "flex-shrink-0 flex flex-col border-l border-white/5 bg-[rgba(14,14,16,0.85)] transition-all duration-300 overflow-hidden",
-            rightOpen ? "w-[360px] xl:w-[400px]" : "w-0",
-          )}
-        >
-          {rightOpen && (
-            <VoiceAudioDrawer
+          ) : (
+            <ScriptEditorPane
               workbench={workbench}
-              onClose={() => setRightOpen(false)}
+              isFocused={false}
+              onFocus={() => setFocusedCard("edit")}
             />
           )}
         </div>
+
+        {/* Voice & Audio Card (if open) */}
+        {generateState === "open" && (
+          <div
+            className={cn(
+              "glass-deck-card rounded-3xl overflow-hidden flex flex-col relative",
+              focusedCard === "generate"
+                ? "flex-[3.5] glass-deck-card-focused opacity-100"
+                : "flex-[0.8] glass-deck-card-inactive opacity-60 hover:opacity-85 hover:scale-[1.005]"
+            )}
+          >
+            <VoiceAudioDrawer
+              workbench={workbench}
+              isFocused={focusedCard === "generate"}
+              onFocus={() => setFocusedCard("generate")}
+              onClose={() => {
+                setGenerateState("collapsed");
+                if (focusedCard === "generate") {
+                  setFocusedCard("edit");
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {/* Right collapsed strip */}
+        {generateState === "collapsed" && (
+          <div
+            onClick={() => {
+              setGenerateState("open");
+              setFocusedCard("generate");
+            }}
+            className="w-11 shrink-0 glass-edge-strip rounded-2xl flex flex-col items-center justify-between py-4 cursor-pointer"
+            title="Expand Voice & Audio"
+          >
+            <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-accent-amber shrink-0">
+              <Mic className="w-3.5 h-3.5" />
+            </div>
+            <span className="writing-mode-vertical text-[10px] font-bold uppercase tracking-wider text-secondary/70 my-4 select-none">
+              Voice &amp; Audio
+            </span>
+            <div className="h-7 w-7 flex items-center justify-center text-secondary/40 shrink-0">
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Dialogs (mounted at workspace level, not inside drawers) */}
