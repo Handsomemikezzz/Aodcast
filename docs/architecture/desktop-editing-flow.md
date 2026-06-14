@@ -46,6 +46,83 @@ The shell is implemented through:
 - unsaved-change confirmation before refresh and trash
 - in-app confirmation dialogs for destructive actions instead of browser-native `window.confirm`
 
+#### Spoken Script Editor MVP Contract
+
+The next Script editor iteration treats the script body as the exact text sent to text-to-speech. Every visible character in the body should be assumed to be spoken. Non-spoken material such as notes, stage directions, speaker labels, markdown structure, pause hints, or production comments must not be silently mixed into the script body.
+
+Implementation boundary:
+
+- MVP behavior is frontend-owned under `apps/desktop`.
+- The backend continues to persist and render the existing plain `draft` / `final` script strings.
+- No shared schema change is required for the MVP.
+- Render blocking is enforced by the Script Workbench UI before starting audio generation; backend hardening can be added later.
+
+Editor modes:
+
+- Default mode is `Script`, a spoken-script editing surface built on the current plain-text editor path.
+- `Script` mode should look and feel like editing a clean narration draft: larger readable type, natural paragraph spacing, and no markdown toolbar or markdown-facing copy.
+- A low-priority `Plain text` mode remains available as an escape hatch for precise repair, copy/paste cleanup, and debugging.
+- `Script` and `Plain text` show the same real text and edit the same string. They may differ in density, typography, line height, and wrapping, but must not hide, replace, or visually clean characters that will be saved or sent to TTS.
+- The editor keeps explicit save behavior. It does not auto-save on blur.
+
+Readability checks:
+
+- Checks run locally in the frontend as lightweight derived state from the current editor text.
+- The editor footer shows a persistent status such as `Ready for TTS`, `2 blocking issues`, or `5 suggestions`.
+- Expanding the status reveals the issue list and cleanup actions.
+- The Generate final audio control uses the same check result and shows only a concise blocking summary near the button.
+- Checks should not interrupt typing with modal warnings.
+
+Issue levels:
+
+- `blocking`: prevents final audio generation until fixed.
+- `warning`: recommends cleanup but allows rendering.
+- `info`: provides read-only context such as estimated length or structure statistics.
+
+Blocking issues:
+
+- Empty or whitespace-only script.
+- Speaker labels that would be read aloud, such as `Host:`, `Narrator:`, `主播：`, `旁白：`, or similar line prefixes.
+- Stage directions or production notes, such as `[music]`, `[opening music]`, `(pause)`, `（停顿）`, `【音效】`, or similar bracketed directions.
+- Markdown structure leftovers, including heading prefixes, list prefixes, block quotes, or horizontal rules, such as line-leading `#`, `- `, `* `, `1. `, `> `, or `---`.
+
+Warnings:
+
+- High-confidence filler words that may sound odd when synthesized, such as standalone `嗯`, `呃`, `那个`, or `you know`.
+- Very long Chinese sentences: roughly more than 80 Han characters without a clear pause punctuation mark.
+- Very long English sentences: roughly more than 45 words.
+- Very long Chinese paragraphs: roughly more than 260 Han characters.
+- Very long English paragraphs: roughly more than 160 words.
+- Weak pause structure, such as a dense script with too few paragraph breaks for comfortable listening.
+
+Clean all behavior:
+
+- `Clean all` must show a change preview before applying edits.
+- Applying cleanup updates the current editor value only. It does not auto-save.
+- After cleanup, the editor enters the existing unsaved-edits flow; persistence continues through the existing Save/revision path.
+- Cleanup may remove blocking issues and high-confidence filler words.
+- Cleanup must not split long sentences, split long paragraphs, rewrite tone, rewrite content, or run AI rewriting.
+- Ambiguous conversational particles, especially sentence-final Chinese particles such as `啊`, `呢`, and `吧`, should not be deleted automatically.
+
+Non-goals for the MVP:
+
+- no rich-text editor framework
+- no structured paragraph schema
+- no hidden text transformation in `Script` mode
+- no inline non-spoken chips
+- no SSML syntax in the script body
+- no provider-aware prosody or pause conversion
+- no automatic AI script rewrite or coaching
+- no backend render guard unless added in a later hardening pass
+
+Future options:
+
+- inline non-spoken pause/prosody controls that render through provider-aware conversion
+- backend validation for blocking render issues
+- structured paragraph and section metadata
+- AI-assisted script coaching and rewrite suggestions
+- richer diff review for cleanup actions
+
 ### `Models`
 
 - voice model status listing

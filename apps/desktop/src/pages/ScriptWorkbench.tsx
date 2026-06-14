@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useBridge } from "../lib/BridgeContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ExportPodcastDialog } from "../components/ExportPodcastDialog";
+import { ScriptCleanupPreviewDialog } from "./script-workbench/ScriptCleanupPreviewDialog";
 import { ScriptAudioSidebar } from "./script-workbench/ScriptAudioSidebar";
 import { ScriptEditorPane } from "./script-workbench/ScriptEditorPane";
 import { ScriptWorkbenchHeader } from "./script-workbench/ScriptWorkbenchHeader";
@@ -172,6 +173,13 @@ export function ScriptWorkbench({
             disabled: workbench.saving,
           },
         ]}
+      />
+
+      <ScriptCleanupPreviewDialog
+        open={workbench.dialogState?.kind === "cleanup-preview"}
+        preview={workbench.dialogState?.kind === "cleanup-preview" ? workbench.dialogState.preview : null}
+        onClose={workbench.closeDialog}
+        onApply={workbench.handleApplyCleanup}
       />
 
       <ExportPodcastDialog

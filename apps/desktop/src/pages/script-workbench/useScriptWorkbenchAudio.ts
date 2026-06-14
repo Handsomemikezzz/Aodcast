@@ -14,6 +14,7 @@ import {
 } from "../../lib/requestState";
 import { revealInFinder } from "../../lib/shellOps";
 import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
+import { analyzeSpokenScript } from "./spokenScriptChecks";
 import type { RequestState, RuntimeInfo, SessionProject } from "../../types";
 
 const POLL_INTERVAL_MS = 1000;
@@ -40,7 +41,7 @@ type UseScriptWorkbenchAudioResult = {
   isAudioPlaying: boolean;
   audioRef: RefObject<HTMLAudioElement>;
   audioSrc: string;
-  triggerRenderAudio: () => Promise<void>;
+  triggerRenderAudio: (options?: { scriptToRender?: string }) => Promise<void>;
   handleCancelAudio: () => Promise<void>;
   handlePreviewAudio: () => Promise<void>;
   handleAudioLoadError: () => void;
@@ -224,8 +225,18 @@ export function useScriptWorkbenchAudio({
     };
   }, [project?.artifact?.audio_path]);
 
-  const triggerRenderAudio = async () => {
+  const triggerRenderAudio = async (options?: { scriptToRender?: string }) => {
     try {
+      if (options?.scriptToRender !== undefined) {
+        const renderCheck = analyzeSpokenScript(options.scriptToRender);
+        if (!renderCheck.canRender) {
+          setAudioError(renderCheck.blockingSummary || "Fix blocking script issues before generating audio.");
+          setAudioMessage(null);
+          setAudioRequestState(null);
+          return;
+        }
+      }
+
       expectedRunTokenRef.current = null;
       stopTaskPolling();
       const existingState = await syncTaskState();

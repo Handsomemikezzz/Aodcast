@@ -6,6 +6,10 @@ import type { EditorTransform } from "./workbenchUtils";
 import { useScriptWorkbenchAudio } from "./useScriptWorkbenchAudio";
 import { useScriptWorkbenchData } from "./useScriptWorkbenchData";
 import { useScriptWorkbenchEditor } from "./useScriptWorkbenchEditor";
+import { useSpokenScriptChecks } from "./useSpokenScriptChecks";
+import { getPersistedScriptText } from "./spokenScriptChecks";
+import { buildScriptCleanupPreview } from "./spokenScriptCleanup";
+import type { ScriptCheckResult } from "./spokenScriptTypes";
 import type { PendingDialogState } from "./workbenchTypes";
 
 export type { PendingDialogState } from "./workbenchTypes";
@@ -76,6 +80,9 @@ export type UseScriptWorkbenchResult = {
   runPendingAction: () => Promise<void>;
   isExportDialogOpen: boolean;
   closeExportDialog: () => void;
+  scriptCheck: ScriptCheckResult;
+  handleOpenCleanupPreview: () => void;
+  handleApplyCleanup: () => void;
 };
 
 export function useScriptWorkbench(sessionId: string, scriptId: string, onRefresh: () => Promise<void>): UseScriptWorkbenchResult {
@@ -95,6 +102,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     isSessionDeleted: data.isSessionDeleted,
     isDirty: data.isDirty,
   });
+
   const audio = useScriptWorkbenchAudio({
     bridge,
     sessionId,
@@ -107,14 +115,31 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     cloudProvider: data.cloudProvider,
   });
 
+  const scriptCheck = useSpokenScriptChecks(data.script);
+
   const localEngineDisabled = audio.generating || !data.capability?.available || data.isScriptDeleted || data.isSessionDeleted;
   const cloudEngineDisabled = audio.generating || data.isScriptDeleted || data.isSessionDeleted;
 
+  const runRenderAudioGuarded = async () => {
+    const latestProject = await bridge.showScript(sessionId, scriptId);
+    const scriptToRender = getPersistedScriptText(latestProject.script?.final, latestProject.script?.draft);
+    await audio.triggerRenderAudio({ scriptToRender });
+  };
+
   const handleGenerateAudio = () => {
-    if (data.isScriptDeleted || data.isSessionDeleted || data.script.trim().length === 0) return;
-    editor.runWithUnsavedCheck(async () => {
-      await audio.triggerRenderAudio();
-    });
+    if (data.isScriptDeleted || data.isSessionDeleted || !scriptCheck.canRender) return;
+    editor.runWithUnsavedCheck(runRenderAudioGuarded);
+  };
+
+  const handleOpenCleanupPreview = () => {
+    const preview = buildScriptCleanupPreview(data.script);
+    editor.setDialogState({ kind: "cleanup-preview", preview });
+  };
+
+  const handleApplyCleanup = () => {
+    if (editor.dialogState?.kind !== "cleanup-preview") return;
+    data.setScript(editor.dialogState.preview.cleaned);
+    editor.setDialogState(null);
   };
 
   const handleShareAudio = async () => {
@@ -185,5 +210,8 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     runPendingAction: editor.runPendingAction,
     isExportDialogOpen: audio.isExportDialogOpen,
     closeExportDialog: audio.closeExportDialog,
+    scriptCheck,
+    handleOpenCleanupPreview,
+    handleApplyCleanup,
   };
 }

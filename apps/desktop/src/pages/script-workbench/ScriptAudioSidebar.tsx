@@ -19,7 +19,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
   const needsVoiceProfile = workbench.selectedEngine === "local_mlx" && (!selectedProfileId || workbench.project?.artifact?.voice_reference?.source !== "voice_profile");
   const generationDisabled =
     workbench.generating ||
-    workbench.script.trim().length === 0 ||
+    !workbench.scriptCheck.canRender ||
     needsVoiceProfile ||
     (workbench.selectedEngine === "local_mlx" ? workbench.localEngineDisabled : workbench.cloudEngineDisabled);
   const scriptVoiceStudioPath = workbench.project?.script
@@ -184,6 +184,9 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               )}
               {workbench.generating ? "Generating..." : "Generate final audio"}
             </button>
+            {workbench.scriptCheck.blockingSummary ? (
+              <p className="mt-2 text-xs leading-5 text-red-200/90 font-medium pl-1">{workbench.scriptCheck.blockingSummary}</p>
+            ) : null}
             {needsVoiceProfile ? (
               <p className="mt-2 text-xs leading-5 text-amber-200/80 font-medium pl-1">请先在上方为 Local MLX 选择一个音色。</p>
             ) : null}
