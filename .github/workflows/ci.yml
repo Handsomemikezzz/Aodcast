@@ -43,7 +43,7 @@ jobs:
         working-directory: services/python-core
         run: |
           uv venv .venv
-          uv pip install --python .venv/bin/python -e .
+          uv pip install --python .venv/bin/python -e ".[test]"
 
       - name: Install desktop dependencies
         working-directory: apps/desktop

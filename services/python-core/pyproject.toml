@@ -13,6 +13,9 @@ local-mlx = [
   "mlx; sys_platform == 'darwin'",
   "mlx-audio>=0.3.0; sys_platform == 'darwin'",
 ]
+test = [
+  "numpy>=2.0",
+]
 
 [project.scripts]
 aodcast-python-core = "app.main:run"

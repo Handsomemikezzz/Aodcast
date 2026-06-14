@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Callable
 from unittest.mock import patch
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    raise unittest.SkipTest("numpy is not installed; skipping local MLX tests")
 
 from app.domain.tts_config import TTSProviderConfig
 from app.providers.tts_api.base import TTSGenerationRequest
