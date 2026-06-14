@@ -27,23 +27,23 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 
 ## Screenshots
 
-### Chat
+### Episodes
 
-Start a session from the interview entry screen.
+Create and manage podcast episodes from the home screen.
 
-![Chat interview entry](images/chat.png)
+![Episodes](images/episodes.png)
 
-### Script Workbench
+### Studio
 
-Edit the script, pick a voice profile and engine, then render and review final audio.
+Follow the interview → script → voice → audio workflow in one workspace.
 
-![Script Workbench](images/script-workbench.png)
+![Studio](images/studio.png)
 
-### Voice Studio
+### Models
 
-Manage built-in and user-created voice profiles before applying them to a script.
+Download, relocate, and manage local MLX TTS voice models.
 
-![Voice Studio](images/voice-studio.png)
+![Models](images/models.png)
 
 To refresh screenshots later: run `./scripts/dev/run-dev-all.sh`, capture the current UI, save stable filenames under `images/`, and update both `README.md` and `README.zh-CN.md`. Do not include API keys, local paths, private prompts, or user data.
 
