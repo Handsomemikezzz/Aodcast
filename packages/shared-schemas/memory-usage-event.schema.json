@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/memory-usage-event.schema.json",
+  "title": "MemoryUsageEvent",
+  "description": "A compact audit record of when memory was used in an operation. Stores only operation, ids, and time; never the prompt or memory body.",
+  "type": "object",
+  "required": ["operation", "memory_ids", "used_at"],
+  "properties": {
+    "operation": { "type": "string" },
+    "session_id": { "type": "string" },
+    "memory_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "used_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

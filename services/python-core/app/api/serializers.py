@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.domain.memory import MemoryEntry
 from app.domain.project import SessionProject
 from app.orchestration.audio_rendering import AudioRenderResult, VoiceRenderSettings, VoiceTakeRenderResult
 from app.orchestration.interview_service import InterviewTurnResult
@@ -12,6 +13,31 @@ def serialize_project(project: SessionProject) -> dict[str, object]:
         "transcript": project.transcript.to_dict() if project.transcript else None,
         "script": project.script.to_dict() if project.script else None,
         "artifact": project.artifact.to_dict() if project.artifact else None,
+    }
+
+
+def serialize_memory_entry(entry: MemoryEntry) -> dict[str, object]:
+    return entry.to_dict()
+
+
+def serialize_memory_overview(overview) -> dict[str, object]:
+    settings = overview.state.settings
+    worker = overview.state.worker
+    return {
+        "settings": {
+            "first_run_acknowledged": settings.first_run_acknowledged,
+            "writing_enabled": settings.writing_enabled,
+            "usage_enabled": settings.usage_enabled,
+            "last_maintenance_at": settings.last_maintenance_at,
+            "changes_since_maintenance": settings.changes_since_maintenance,
+        },
+        "worker": {
+            "status": worker.status.value,
+            "last_error": worker.last_error,
+            "updated_at": worker.updated_at,
+        },
+        "entry_count": overview.entry_count,
+        "pending_job_count": overview.pending_job_count,
     }
 
 

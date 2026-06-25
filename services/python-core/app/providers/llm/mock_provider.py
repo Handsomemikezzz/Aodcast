@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from app.providers.llm.base import (
     InterviewQuestionRequest,
+    MemoryExtractionRequest,
+    MemoryExtractionResponse,
     ScriptGenerationRequest,
     ScriptGenerationResponse,
 )
 from typing import Iterator
 import time
+
+
+_PREFERENCE_TRIGGERS = ("喜欢", "不喜欢", "prefer", "以后", "口吻", "风格")
+_VIEWPOINT_TRIGGERS = ("觉得", "认为", "believe", "观点", "立场")
+_PROFILE_TRIGGERS = ("我是", "背景", "职业", "工作", "i am", "my job")
 
 
 class MockLLMProvider:
@@ -69,3 +76,44 @@ class MockLLMProvider:
         for word in full_response.split(" "):
             yield word + " "
             time.sleep(0.05)
+
+    def extract_memories(self, request: MemoryExtractionRequest) -> MemoryExtractionResponse:
+        """Deterministic heuristic extraction (no network).
+
+        Produces at most one candidate from the first user turn that contains a
+        recognizable preference/viewpoint/profile trigger, quoting that turn
+        verbatim so server-side evidence validation passes.
+        """
+        candidates: list[dict[str, object]] = []
+        for turn in request.user_turns:
+            content = (turn.get("content") or "").strip()
+            turn_id = turn.get("turn_id") or ""
+            if not content or not turn_id:
+                continue
+            lowered = content.lower()
+            if any(trigger in content or trigger in lowered for trigger in _PREFERENCE_TRIGGERS):
+                memory_type = "preference"
+            elif any(trigger in content or trigger in lowered for trigger in _VIEWPOINT_TRIGGERS):
+                memory_type = "viewpoint"
+            elif any(trigger in content or trigger in lowered for trigger in _PROFILE_TRIGGERS):
+                memory_type = "profile"
+            else:
+                continue
+            candidates.append(
+                {
+                    "type": memory_type,
+                    "name": content[:24],
+                    "description": content[:60],
+                    "body": content,
+                    "keywords": [],
+                    "sensitive": False,
+                    "evidence": [{"turn_id": turn_id, "quote": content}],
+                    "merge_target_id": "",
+                }
+            )
+            break
+        return MemoryExtractionResponse(
+            candidates=candidates,
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+        )

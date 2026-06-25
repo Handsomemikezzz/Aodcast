@@ -8,8 +8,10 @@ import type {
   CreateSessionInput,
   DesktopBridge,
   DesktopBridgeError,
+  ListMemoriesOptions,
   ListProjectsOptions,
   LockVoicePreviewInput,
+  MemorySettingsInput,
   RenderAudioOptions,
   RenderVoicePreviewOptions,
   ShowSessionOptions,
@@ -21,6 +23,9 @@ import type {
   InterviewTurnResult,
   LLMConfigPreflight,
   LLMProviderConfig,
+  MemoryEntry,
+  MemoryOverview,
+  MemoryUsageEvent,
   ModelStorageStatus,
   ModelStatus,
   RequestState,
@@ -86,6 +91,12 @@ type BridgeShape<T> = {
   standard_preview_text?: string;
   take?: VoiceTakeRenderResult["take"];
   settings?: VoiceRenderSettings;
+  memory?: MemoryOverview;
+  items?: MemoryEntry[];
+  item?: MemoryEntry;
+  events?: MemoryUsageEvent[];
+  memory_id?: string;
+  deleted?: boolean;
 } & T;
 
 type RuntimeContext = {
@@ -918,6 +929,67 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({}),
       });
       return asRequestState(response.task_state) ?? asRequestState(response.request_state);
+    },
+    async getMemoryOverview() {
+      const response = await callHttp<{}>("/api/v1/memory");
+      return response.memory as MemoryOverview;
+    },
+    async updateMemorySettings(input: MemorySettingsInput) {
+      const response = await callHttp<{}>("/api/v1/memory/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          writing_enabled: input.writingEnabled,
+          usage_enabled: input.usageEnabled,
+        }),
+      });
+      return response.memory as MemoryOverview;
+    },
+    async acknowledgeMemory() {
+      const response = await callHttp<{}>("/api/v1/memory:acknowledge", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      return response.memory as MemoryOverview;
+    },
+    async listMemories(options?: ListMemoriesOptions) {
+      const response = await callHttp<{}>("/api/v1/memory/items", {
+        query: {
+          search: options?.search?.trim(),
+          type: options?.type,
+        },
+      });
+      return (response.items ?? []) as MemoryEntry[];
+    },
+    async getMemory(memoryId: string) {
+      const response = await callHttp<{}>(`/api/v1/memory/items/${encodeURIComponent(memoryId)}`);
+      return response.item as MemoryEntry;
+    },
+    async deleteMemory(memoryId: string) {
+      const response = await callHttp<{}>(`/api/v1/memory/items/${encodeURIComponent(memoryId)}`, {
+        method: "DELETE",
+      });
+      return {
+        memory_id: typeof response.memory_id === "string" ? response.memory_id : memoryId,
+        deleted: Boolean(response.deleted),
+      };
+    },
+    async clearAllMemory() {
+      const response = await callHttp<{}>("/api/v1/memory:clear", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      return response.memory as MemoryOverview;
+    },
+    async listMemoryUsage() {
+      const response = await callHttp<{}>("/api/v1/memory/usage");
+      return (response.events ?? []) as MemoryUsageEvent[];
+    },
+    async setSessionMemoryMode(sessionId: string, mode: "enabled" | "disabled") {
+      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}:memory-mode`, {
+        method: "POST",
+        body: JSON.stringify({ mode }),
+      });
+      return response.project!;
     },
   };
 }

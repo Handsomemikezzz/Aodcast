@@ -27,11 +27,11 @@ Current MVP:
 - output: solo podcast script plus final audio rendered from Script Workbench
 - LLM: user-configured API provider
 - TTS: local MLX-backed provider as the primary first-release path, plus remote API provider support
+- memory: file-native, local-only long-term user memory across episodes (Memory v1)
 
 Out of scope for the current MVP:
 
 - speech-to-text input
-- long-term user memory
 - multi-host podcast formats
 - cloud backend dependency
 - voice cloning
@@ -64,6 +64,7 @@ Human-facing setup lives in `README.md` and `README.zh-CN.md`. Agent-relevant co
 - cross-boundary changes must update shared contracts first in `packages/shared-schemas`.
 - provider-specific logic belongs only under `services/python-core/app/providers`.
 - interview state logic belongs only under `services/python-core/app/orchestration`.
+- long-term memory logic belongs only under `services/python-core/app`: domain model in `domain/memory.py`, file-native persistence in `storage/memory_file_store.py`, extraction/retrieval/validation/service in `orchestration/memory_*.py` and `orchestration/sensitive.py`, and the background worker in `workers/memory_worker.py`. Memory must stay file-native (`.local-data/memory/`); do not reintroduce SQLite, FTS5, vector stores, or embeddings. `entries/*.md` is the only source of truth; `catalog.json` and `MEMORY.md` are rebuildable indexes. Long-term memory is evidence-first: only user turns may become memories, and the main interview/script flow uses read-only retrieval that must never block on memory work.
 - operational rules belong in `AGENTS.md`, not in scattered ad hoc notes.
 - desktop bridge calls must flow through `apps/desktop/src/lib/*Bridge.ts -> localhost HTTP runtime -> services/python-core`, not from React components directly to shell commands.
 - the desktop shell may own lifecycle helpers for starting, attaching, health-checking, and shutting down the localhost runtime, but it must not own podcast business logic or per-operation payload translation.

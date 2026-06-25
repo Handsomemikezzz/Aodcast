@@ -5,7 +5,7 @@ import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
 
 import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
-import { List, Layers, Mic, Package, Settings, Sun, Moon } from "lucide-react";
+import { List, Layers, Mic, Package, Settings, Sun, Moon, Brain } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
 import { applyTheme, readStoredTheme, type AppTheme } from "./lib/theme";
 
@@ -16,6 +16,7 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => 
 const VoiceStudioPage = lazy(() => import("./pages/VoiceStudioPage").then((module) => ({ default: module.VoiceStudioPage })));
 const EpisodesPage = lazy(() => import("./pages/EpisodesPage").then((module) => ({ default: module.EpisodesPage })));
 const StudioPage = lazy(() => import("./pages/studio/StudioPage").then((module) => ({ default: module.StudioPage })));
+const MemoryPage = lazy(() => import("./pages/MemoryPage").then((module) => ({ default: module.MemoryPage })));
 
 function RouteFallback() {
   return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading workspace…</div>;
@@ -88,6 +89,7 @@ export default function App() {
   if (pathSegment === "models") title = "Models";
   else if (pathSegment === "settings") title = "Settings";
   else if (pathSegment === "voice-studio") title = "Voice Library";
+  else if (pathSegment === "memory") title = "Memory";
   else if (pathSegment === "episodes") title = "Episodes";
   else if (pathSegment === "studio" && !urlSessionId) title = "Studio";
   else if (pathSegment === "chat" && !urlSessionId) title = "Chat";
@@ -147,6 +149,16 @@ export default function App() {
             </div>
             Models
           </NavLink>
+
+          <NavLink
+            to="/memory"
+            className={({ isActive }) => navItemClass(isActive)}
+          >
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
+              <Brain className="w-4 h-4" />
+            </div>
+            Memory
+          </NavLink>
         </nav>
 
         <div className="flex-1 min-h-0" aria-hidden />
@@ -202,6 +214,7 @@ export default function App() {
               <Route path="/studio/:sessionId" element={<StudioPage onRefresh={fetchProjects} />} />
               <Route path="/studio/:sessionId/:scriptId" element={<StudioPage onRefresh={fetchProjects} />} />
               <Route path="/models" element={<ModelsPage />} />
+              <Route path="/memory" element={<MemoryPage />} />
               <Route path="/voice-studio" element={<VoiceStudioPage />} />
               <Route path="/voice-studio/:sessionId/:scriptId" element={<VoiceStudioPage />} />
               <Route path="/settings" element={<SettingsPage />} />

@@ -10,6 +10,9 @@ Current MVP contracts:
 - `artifact.schema.json`
 - `voice-profile.schema.json`
 - `bridge-request-state.schema.json`
+- `memory-entry.schema.json`
+- `memory-state.schema.json`
+- `memory-usage-event.schema.json`
 
 Rules:
 

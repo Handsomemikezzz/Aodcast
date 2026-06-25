@@ -4,6 +4,9 @@ import {
   InterviewTurnResult,
   LLMConfigPreflight,
   LLMProviderConfig,
+  MemoryEntry,
+  MemoryOverview,
+  MemoryUsageEvent,
   ModelStorageStatus,
   ModelStatus,
   RequestState,
@@ -18,6 +21,16 @@ import {
   VoiceRenderSettings,
   VoiceTakeRenderResult,
 } from "../types";
+
+export type MemorySettingsInput = {
+  writingEnabled?: boolean;
+  usageEnabled?: boolean;
+};
+
+export type ListMemoriesOptions = {
+  search?: string;
+  type?: string;
+};
 
 export type ListProjectsOptions = {
   search?: string;
@@ -200,4 +213,22 @@ export interface DesktopBridge {
   showTaskState(taskId: string): Promise<RequestState | null>;
   /** Request cooperative cancellation for a long-running task. */
   cancelTask(taskId: string): Promise<RequestState | null>;
+  /** Read long-term memory settings plus background worker status. */
+  getMemoryOverview(): Promise<MemoryOverview>;
+  /** Toggle global memory writing and/or usage. */
+  updateMemorySettings(input: MemorySettingsInput): Promise<MemoryOverview>;
+  /** Complete the first-run notice and enable memory writing + usage. */
+  acknowledgeMemory(): Promise<MemoryOverview>;
+  /** List long-term memory entries, optionally filtered by search text or type. */
+  listMemories(options?: ListMemoriesOptions): Promise<MemoryEntry[]>;
+  /** Load one memory entry with body and evidence. */
+  getMemory(memoryId: string): Promise<MemoryEntry>;
+  /** Delete one memory entry and write an irreversible forget fingerprint. */
+  deleteMemory(memoryId: string): Promise<{ memory_id: string; deleted: boolean }>;
+  /** Clear all long-term memory and reset memory state. */
+  clearAllMemory(): Promise<MemoryOverview>;
+  /** List recent memory usage events across episodes. */
+  listMemoryUsage(): Promise<MemoryUsageEvent[]>;
+  /** Enable or disable memory for one episode (gates both reading and writing). */
+  setSessionMemoryMode(sessionId: string, mode: "enabled" | "disabled"): Promise<SessionProject>;
 }

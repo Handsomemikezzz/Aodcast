@@ -26,6 +26,15 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
     "delete_voice_take",
     "test_llm_connection",
     "test_tts_connection",
+    "show_memory_overview",
+    "update_memory_settings",
+    "acknowledge_memory",
+    "list_memory_items",
+    "show_memory_item",
+    "delete_memory_item",
+    "clear_memory",
+    "list_memory_usage",
+    "set_session_memory_mode",
 )
 
 
@@ -92,6 +101,15 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("deleteModel", "delete_model", "POST", "/api/v1/models/{model_name}:delete", "delete_model", ("--delete-model", "qwen-tts-0.6B"), "P1-complete"),
     BridgeContract("showTaskState", "show_task_state", "GET", "/api/v1/tasks/{task_id}", "show_task_state", ("--show-task-state", "render_audio:session-123"), "P1-core", long_task=True),
     BridgeContract("cancelTask", "cancel_task", "POST", "/api/v1/tasks/{task_id}:cancel", "cancel_task", ("--cancel-task", "render_audio:session-123"), "P1-core", long_task=True),
+    BridgeContract("getMemoryOverview", "get_memory_overview", "GET", "/api/v1/memory", "show_memory_overview", (), "P3-memory"),
+    BridgeContract("updateMemorySettings", "update_memory_settings", "PATCH", "/api/v1/memory/settings", "update_memory_settings", (), "P3-memory"),
+    BridgeContract("acknowledgeMemory", "acknowledge_memory", "POST", "/api/v1/memory:acknowledge", "acknowledge_memory", (), "P3-memory"),
+    BridgeContract("listMemories", "list_memories", "GET", "/api/v1/memory/items", "list_memory_items", (), "P3-memory"),
+    BridgeContract("getMemory", "get_memory", "GET", "/api/v1/memory/items/{memory_id}", "show_memory_item", (), "P3-memory"),
+    BridgeContract("deleteMemory", "delete_memory", "DELETE", "/api/v1/memory/items/{memory_id}", "delete_memory_item", (), "P3-memory"),
+    BridgeContract("clearAllMemory", "clear_all_memory", "POST", "/api/v1/memory:clear", "clear_memory", (), "P3-memory"),
+    BridgeContract("listMemoryUsage", "list_memory_usage", "GET", "/api/v1/memory/usage", "list_memory_usage", (), "P3-memory"),
+    BridgeContract("setSessionMemoryMode", "set_session_memory_mode", "POST", "/api/v1/sessions/{session_id}:memory-mode", "set_session_memory_mode", (), "P3-memory"),
 )
 
 

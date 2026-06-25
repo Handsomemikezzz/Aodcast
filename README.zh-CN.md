@@ -305,11 +305,13 @@ Aodcast 是本地优先应用。开发期间，生成的 session、脚本、tran
 
 API key 作为本地用户配置保存。Aodcast 目前没有 macOS Keychain 或专用密钥保险库。请保护本地配置文件、shell history、日志、截图、备份、同步目录、生成 transcript 和生成音频。
 
+长期记忆仅保存在本地。启用后，Aodcast 会把少量可复用的用户知识以 Markdown 文件形式保存在 `.local-data/memory/`，以便采访和脚本在不同 Episode 之间保持一致。记忆是可选的（首次使用会提示），可以按 Episode 或全局关闭，并且可以完整查看和删除。高敏感秘密（密码、API key、支付凭据、完整证件号、精确住址）即使用户要求也永不保存。
+
 不要在公开 issue 或 PR 中提交 API key、私人 prompt、私人生成内容、本地数据路径、transcript 或音频 artifact。
 
 ## 当前范围
 
-Aodcast 当前聚焦本地优先的单人播客创作。仓库不包含语音转文本输入、长期用户记忆、云端后端托管、多主持人播客格式或 voice cloning。
+Aodcast 当前聚焦本地优先的单人播客创作。仓库不包含语音转文本输入、云端后端托管、多主持人播客格式或 voice cloning。
 
 应用可以服务常见音频后缀，并且在 `ffmpeg` 或 `afconvert` 可用时，把部分上传的 profile 样本准备成 Local MLX 兼容的 WAV reference。压缩音频导出依赖本机转换工具。真正的视频 MP4 输出不在当前范围内。
 

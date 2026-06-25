@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Any, Iterator
 
 from openai import OpenAI
 
 from app.domain.provider_config import LLMProviderConfig
 from app.orchestration.prompts import (
     INTERVIEW_STREAM_SYSTEM_PROMPT,
+    MEMORY_EXTRACTION_SYSTEM_PROMPT,
     SCRIPT_GENERATION_SYSTEM_PROMPT,
     build_interview_stream_user_content,
+    build_memory_extraction_user_content,
     build_script_generation_user_prompt,
 )
 from app.providers.llm.base import (
     InterviewQuestionRequest,
+    MemoryExtractionRequest,
+    MemoryExtractionResponse,
     ScriptGenerationRequest,
     ScriptGenerationResponse,
 )
@@ -80,6 +85,7 @@ class OpenAICompatibleProvider:
             transcript_text=request.transcript_text,
             script_exists=request.script_exists,
             suggested_focus=request.suggested_focus,
+            memory_context=request.memory_context,
         )
         client = OpenAI(
             base_url=self.config.base_url,
@@ -97,3 +103,66 @@ class OpenAICompatibleProvider:
         for chunk in response:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
+
+    def extract_memories(self, request: MemoryExtractionRequest) -> MemoryExtractionResponse:
+        if not self.config.base_url:
+            raise ValueError("OpenAI-compatible provider requires a base_url.")
+        if not self.config.model:
+            raise ValueError("OpenAI-compatible provider requires a model.")
+        if not self.config.api_key:
+            raise ValueError("OpenAI-compatible provider requires an api_key.")
+
+        user_content = build_memory_extraction_user_content(
+            topic=request.topic,
+            creation_intent=request.creation_intent,
+            user_turns=list(request.user_turns),
+            existing_candidates=list(request.existing_candidates),
+            explicit_intent=request.explicit_intent,
+        )
+        client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
+        response = client.chat.completions.create(
+            model=self.config.model,
+            messages=[
+                {"role": "system", "content": MEMORY_EXTRACTION_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0,
+            stream=False,
+        )
+        content = ""
+        if response.choices and response.choices[0].message:
+            content = response.choices[0].message.content or ""
+        candidates = _parse_candidates(content)
+        return MemoryExtractionResponse(
+            candidates=candidates,
+            provider_name=self.config.provider,
+            model_name=self.config.model,
+        )
+
+
+def _parse_candidates(content: str) -> list[dict[str, Any]]:
+    text = content.strip()
+    if not text:
+        return []
+    # Tolerate fenced JSON or leading/trailing prose around the object.
+    if "```" in text:
+        fence = text.split("```")
+        for segment in fence:
+            segment = segment.strip()
+            if segment.startswith("json"):
+                segment = segment[len("json"):].strip()
+            if segment.startswith("{"):
+                text = segment
+                break
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return []
+    try:
+        payload = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    candidates = payload.get("candidates") if isinstance(payload, dict) else None
+    if not isinstance(candidates, list):
+        return []
+    return [item for item in candidates if isinstance(item, dict)]

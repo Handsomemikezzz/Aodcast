@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/memory-entry.schema.json",
+  "title": "MemoryEntry",
+  "description": "A single long-term memory unit. Source of truth is the Markdown file; this contract describes the serialized form exposed across the bridge.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "description",
+    "type",
+    "origin",
+    "sensitive",
+    "created_at",
+    "updated_at",
+    "use_count",
+    "source_count"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "type": {
+      "type": "string",
+      "enum": ["profile", "experience", "viewpoint", "preference"]
+    },
+    "origin": { "type": "string", "enum": ["auto", "explicit"] },
+    "sensitive": { "type": "boolean" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "last_used_at": { "type": ["string", "null"], "format": "date-time" },
+    "use_count": { "type": "integer", "minimum": 0 },
+    "source_count": { "type": "integer", "minimum": 0 },
+    "body": { "type": "string" },
+    "keywords": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["session_id", "turn_id", "observed_at", "quote"],
+        "properties": {
+          "session_id": { "type": "string" },
+          "turn_id": { "type": "string" },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "quote": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

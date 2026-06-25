@@ -22,6 +22,10 @@ export type SessionRecord = {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  memory_mode?: "enabled" | "disabled";
+  memory_processed_through_turn_id?: string;
+  authorized_memory_ids?: string[];
+  memory_usage_events?: { operation: string; memory_ids: string[]; used_at: string }[];
 };
 
 export type TranscriptTurn = {
@@ -334,3 +338,60 @@ export type StudioProgressState =
   | "ready_to_generate_audio"
   | "audio_ready"
   | "script_changed_after_audio";
+
+export type MemoryType = "profile" | "experience" | "viewpoint" | "preference";
+
+export type MemoryOrigin = "auto" | "explicit";
+
+export type MemoryEvidence = {
+  session_id: string;
+  turn_id: string;
+  observed_at: string;
+  quote: string;
+};
+
+export type MemoryEntry = {
+  id: string;
+  name: string;
+  description: string;
+  type: MemoryType;
+  origin: MemoryOrigin;
+  sensitive: boolean;
+  created_at: string;
+  updated_at: string;
+  last_used_at?: string | null;
+  use_count: number;
+  source_count: number;
+  body?: string;
+  keywords?: string[];
+  evidence?: MemoryEvidence[];
+};
+
+export type MemorySettings = {
+  first_run_acknowledged: boolean;
+  writing_enabled: boolean;
+  usage_enabled: boolean;
+  last_maintenance_at?: string | null;
+  changes_since_maintenance: number;
+};
+
+export type MemoryWorkerState = {
+  status: "idle" | "running" | "error";
+  last_error: string;
+  updated_at?: string | null;
+};
+
+export type MemoryOverview = {
+  settings: MemorySettings;
+  worker: MemoryWorkerState;
+  entry_count: number;
+  pending_job_count: number;
+};
+
+export type MemoryUsageEvent = {
+  session_id: string;
+  session_topic: string;
+  operation: string;
+  memory_ids: string[];
+  used_at: string;
+};

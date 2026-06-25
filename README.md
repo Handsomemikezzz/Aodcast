@@ -305,11 +305,13 @@ This directory is ignored by Git and must not be committed.
 
 API keys are stored as local user-managed configuration. Aodcast does not currently provide macOS Keychain integration or a dedicated secrets vault. Protect local config files, shell history, logs, screenshots, backups, synced folders, generated transcripts, and generated audio.
 
+Long-term memory is local-only. When enabled, Aodcast saves a small set of reusable user knowledge as Markdown files under `.local-data/memory/` so interviews and scripts can stay consistent across episodes. Memory is opt-in (first-run notice), can be turned off per episode or globally, and is fully viewable and deletable. High-sensitivity secrets (passwords, API keys, payment credentials, full ID numbers, precise addresses) are never saved, even on request.
+
 Do not open public issues or pull requests containing API keys, private prompts, private generated content, local data paths, transcripts, or audio artifacts.
 
 ## Current Scope
 
-Aodcast currently focuses on local-first solo podcast creation. The repository does not include speech-to-text input, long-term user memory, cloud backend hosting, multi-host podcast formats, or voice cloning.
+Aodcast currently focuses on local-first solo podcast creation. The repository does not include speech-to-text input, cloud backend hosting, multi-host podcast formats, or voice cloning.
 
 The app can serve common audio suffixes and can prepare some uploaded profile samples as WAV references when `ffmpeg` or `afconvert` is available. Export to compressed audio formats depends on local conversion tools. True video MP4 output is out of scope.
 

@@ -35,7 +35,27 @@
     "last_error": { "type": "string" },
     "deleted_at": { "type": ["string", "null"], "format": "date-time" },
     "created_at": { "type": "string", "format": "date-time" },
-    "updated_at": { "type": "string", "format": "date-time" }
+    "updated_at": { "type": "string", "format": "date-time" },
+    "memory_mode": { "type": "string", "enum": ["enabled", "disabled"] },
+    "memory_processed_through_turn_id": { "type": "string" },
+    "authorized_memory_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "memory_usage_events": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["operation", "memory_ids", "used_at"],
+        "properties": {
+          "operation": { "type": "string" },
+          "memory_ids": { "type": "array", "items": { "type": "string" } },
+          "used_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "additionalProperties": false
 }

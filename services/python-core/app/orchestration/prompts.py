@@ -96,6 +96,7 @@ def build_interview_stream_user_content(
     transcript_text: str,
     script_exists: bool,
     suggested_focus: str,
+    memory_context: str = "",
 ) -> str:
     missing = ", ".join(missing_dimensions) or "(none)"
     transcript_block = transcript_text.strip() or (
@@ -105,14 +106,75 @@ def build_interview_stream_user_content(
         script_exists=script_exists,
         suggested_focus=suggested_focus,
     )
+    memory_block = f"{memory_context.strip()}\n\n" if memory_context.strip() else ""
     return (
         f"Session topic: {topic}\n"
         f"Creation intent: {creation_intent}\n"
         f"Still missing dimensions: {missing}\n\n"
+        f"{memory_block}"
         f"Transcript so far:\n{transcript_block}\n\n"
         f"Respond as a perceptive conversation partner in the same language as the user. "
         f"Instructions:\n{instructions}\n"
         "Keep the response natural, warm, and conversational. Do not write the podcast script."
+    )
+
+
+MEMORY_EXTRACTION_SYSTEM_PROMPT = (
+    "You extract reusable long-term memory about the USER from their own words, for a "
+    "local-first podcast tool. You return STRICT JSON only — no prose, no markdown fences.\n\n"
+    "Only the user's own turns may become memory. Never treat assistant text, scripts, or "
+    "summaries as facts. Capture only knowledge that is reusable across future episodes: "
+    "stable background, identity, long-term goals (profile); important reusable experiences "
+    "or stories (experience); stable opinions or value judgments (viewpoint); tone, structure, "
+    "and expression preferences (preference).\n\n"
+    "Do NOT capture: one-off task requests for the current episode, momentary moods, idle "
+    "hypotheticals, or your own guesses about the user.\n\n"
+    "NEVER store high-sensitivity secrets, even if asked: passwords, API keys, tokens, private "
+    "keys, bank/payment credentials, full ID/passport numbers, or precise home addresses. Omit "
+    "such candidates entirely. Private-but-not-secret background (health, relationships, family) "
+    "may be captured ONLY when the user explicitly asks to remember it; mark those sensitive=true.\n\n"
+    "Output schema:\n"
+    '{"candidates": [{"type": "profile|experience|viewpoint|preference", "name": "short label", '
+    '"description": "one-line summary for retrieval", "body": "the memory in the user\'s own '
+    'language and meaning", "keywords": ["zh and en synonyms"], "sensitive": false, '
+    '"evidence": [{"turn_id": "<id from input>", "quote": "shortest verbatim substring from that '
+    'user turn"}], "merge_target_id": "<existing id to merge into, or empty>"}]}\n\n'
+    "Rules: at most 3 candidates; one topic unit per candidate; every candidate cites at least one "
+    "evidence item whose turn_id is in the input and whose quote is an EXACT substring of that "
+    "user turn; prefer merge_target_id when an existing candidate covers the same topic. If nothing "
+    'qualifies, return {"candidates": []}.'
+)
+
+
+def build_memory_extraction_user_content(
+    *,
+    topic: str,
+    creation_intent: str,
+    user_turns: list[dict[str, str]],
+    existing_candidates: list[dict[str, str]],
+    explicit_intent: str = "",
+) -> str:
+    turn_lines = "\n".join(
+        f'- turn_id: {turn.get("turn_id", "")}\n  content: {turn.get("content", "").strip()}'
+        for turn in user_turns
+    ) or "(no user turns)"
+    existing_lines = "\n".join(
+        f'- id: {cand.get("id", "")} | type: {cand.get("type", "")} | name: {cand.get("name", "")} '
+        f'| description: {cand.get("description", "")}'
+        for cand in existing_candidates
+    ) or "(none)"
+    explicit_block = (
+        f"\nThe user explicitly asked to remember this; prioritize capturing it:\n{explicit_intent.strip()}\n"
+        if explicit_intent.strip()
+        else ""
+    )
+    return (
+        f"Session topic: {topic}\n"
+        f"Creation intent: {creation_intent}\n\n"
+        f"Existing memory candidates (prefer merging):\n{existing_lines}\n\n"
+        f"User turns to analyze (only these may be evidence):\n{turn_lines}\n"
+        f"{explicit_block}\n"
+        "Return the JSON object now."
     )
 
 

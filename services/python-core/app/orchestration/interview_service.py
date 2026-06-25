@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, Union
+from typing import TYPE_CHECKING, Iterator, Union
 
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
@@ -16,6 +16,9 @@ from app.providers.llm.base import InterviewQuestionRequest
 from app.providers.llm.factory import build_llm_provider
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+
+if TYPE_CHECKING:
+    from app.orchestration.memory_service import MemoryService
 
 
 def _transcript_text(transcript: TranscriptRecord) -> str:
@@ -32,6 +35,25 @@ def _get_last_user_turn(transcript: TranscriptRecord) -> str:
     return user_turns[-1] if user_turns else ""
 
 
+# Deterministic explicit "remember this" directives (§10.2 obvious-instruction rule).
+_EXPLICIT_REMEMBER_MARKERS = (
+    "请记住",
+    "记住",
+    "记一下",
+    "帮我记住",
+    "remember that",
+    "please remember",
+    "note that i",
+)
+
+
+def detect_explicit_remember(content: str) -> bool:
+    lowered = content.strip().lower()
+    if not lowered:
+        return False
+    return any(marker in content or marker in lowered for marker in _EXPLICIT_REMEMBER_MARKERS)
+
+
 @dataclass(frozen=True, slots=True)
 class InterviewTurnResult:
     project: SessionProject
@@ -42,9 +64,15 @@ class InterviewTurnResult:
 
 
 class InterviewOrchestrator:
-    def __init__(self, store: ProjectStore, config_store: ConfigStore) -> None:
+    def __init__(
+        self,
+        store: ProjectStore,
+        config_store: ConfigStore,
+        memory_service: "MemoryService | None" = None,
+    ) -> None:
         self.store = store
         self.config_store = config_store
+        self.memory_service = memory_service
 
     def _stream_next_question(
         self,
@@ -54,6 +82,19 @@ class InterviewOrchestrator:
     ) -> Iterator[str]:
         llm_config = self.config_store.load_llm_config()
         provider = build_llm_provider(llm_config)
+        memory_context = ""
+        if self.memory_service is not None:
+            try:
+                retrieved = self.memory_service.build_interview_context(
+                    project.session,
+                    recent_user_message=_get_last_user_turn(transcript),
+                )
+                memory_context = retrieved.prompt_block
+                if retrieved.item_count:
+                    # Persisted by the caller's save_project after streaming.
+                    project.session.record_memory_usage("interview", list(retrieved.memory_ids))
+            except Exception:
+                memory_context = ""
         request = InterviewQuestionRequest(
             session_id=prompt_input.session_id,
             topic=prompt_input.topic,
@@ -62,6 +103,7 @@ class InterviewOrchestrator:
             suggested_focus=prompt_input.suggested_focus,
             missing_dimensions=list(prompt_input.missing_dimensions),
             script_exists=(project.script is not None),
+            memory_context=memory_context,
         )
         try:
             yield from provider.stream_interview_question(request)
@@ -127,10 +169,29 @@ class InterviewOrchestrator:
         project.transcript = transcript
 
         project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
-        transcript.append(Speaker.USER, content)
+        user_turn = transcript.append(Speaker.USER, content)
         # Persist the user turn before streaming provider output so partial failures
         # still leave the user's message visible when reopening the session.
         self.store.save_project(project)
+
+        # Fire-and-forget: schedule background memory extraction once enough new
+        # user turns have accumulated. Never blocks or fails the interview.
+        if self.memory_service is not None:
+            try:
+                if detect_explicit_remember(content):
+                    from app.orchestration.memory_service import ExplicitMemoryRejected
+
+                    try:
+                        self.memory_service.remember_explicit(
+                            session_id,
+                            source_turn_id=user_turn.turn_id,
+                            raw_intent=content,
+                        )
+                    except ExplicitMemoryRejected:
+                        pass
+                self.memory_service.enqueue_extraction(project.session)
+            except Exception:
+                pass
 
         project.session.transition(SessionState.READINESS_EVALUATION)
         readiness = evaluate_readiness(transcript)
@@ -220,6 +281,12 @@ class InterviewOrchestrator:
         readiness = evaluate_readiness(transcript)
         prompt_input = build_prompt_input(project.session, transcript, readiness)
         self.store.save_project(project)
+        # Leaving the interview / moving to script generation: flush remaining turns.
+        if self.memory_service is not None:
+            try:
+                self.memory_service.enqueue_extraction_now(project.session)
+            except Exception:
+                pass
         return InterviewTurnResult(
             project=project,
             readiness=readiness,

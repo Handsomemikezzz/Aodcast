@@ -23,6 +23,8 @@ from app.api.bridge_envelope import (
 )
 from app.api.serializers import (
     serialize_generation_result,
+    serialize_memory_entry,
+    serialize_memory_overview,
     serialize_project,
     serialize_script_revisions,
     serialize_turn_result,
@@ -34,7 +36,7 @@ from app.config import AppConfig
 from app.domain.artifact import ArtifactRecord
 from app.domain.project import SessionProject
 from app.domain.session import SessionRecord, SessionState
-from app.domain.transcript import TranscriptRecord
+from app.domain.transcript import Speaker, TranscriptRecord
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, STYLE_PRESETS, VOICE_PRESETS
 from app.models_catalog import (
     build_models_status,
@@ -49,6 +51,7 @@ from app.orchestration.audio_rendering import (
     AudioRenderProgress,
 )
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
+from app.orchestration.memory_service import MemoryService
 from app.orchestration.script_generation import ScriptGenerationService
 from app.providers.llm.factory import validate_llm_provider
 from app.providers.llm.preflight import check_llm_config
@@ -152,6 +155,7 @@ class RuntimeContext:
     active_tasks: dict[str, threading.Thread] = field(default_factory=dict)
     bootstrap_nonce_used: bool = False
     voice_profile_store: VoiceProfileStore | None = None
+    memory_service: MemoryService | None = None
 
     def runtime_metadata(self) -> dict[str, object]:
         return {
@@ -202,6 +206,12 @@ class RuntimeContext:
             self.voice_profile_store = VoiceProfileStore(self.config.data_dir, self.artifact_store)
             self.voice_profile_store.bootstrap()
         return self.voice_profile_store
+
+    def get_memory_service(self) -> MemoryService:
+        if self.memory_service is None:
+            self.memory_service = MemoryService(self.config.data_dir, self.store, self.config_store)
+            self.memory_service.bootstrap()
+        return self.memory_service
 
     def start_render_audio(
         self,
@@ -1106,6 +1116,101 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         self.context.store.save_project(project)
         self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rollback_script_revision"), origin=origin)
 
+    def _route_memory(
+        self,
+        path: str,
+        query: dict[str, list[str]],
+        body: dict[str, Any],
+        origin: str | None,
+    ) -> None:
+        memory = self.context.get_memory_service()
+
+        def send_overview(operation: str) -> None:
+            self._send_bridge_envelope(
+                success_envelope(
+                    {"memory": serialize_memory_overview(memory.get_overview())},
+                    operation=operation,
+                ),
+                origin=origin,
+            )
+
+        if self.command == "GET" and path == "/api/v1/memory":
+            send_overview("show_memory_overview")
+            return
+        if self.command == "PATCH" and path == "/api/v1/memory/settings":
+            writing = body.get("writing_enabled")
+            usage = body.get("usage_enabled")
+            memory.update_settings(
+                writing_enabled=bool(writing) if writing is not None else None,
+                usage_enabled=bool(usage) if usage is not None else None,
+            )
+            send_overview("update_memory_settings")
+            return
+        if self.command == "POST" and path == "/api/v1/memory:acknowledge":
+            memory.acknowledge_first_run()
+            send_overview("acknowledge_memory")
+            return
+        if self.command == "POST" and path == "/api/v1/memory:clear":
+            memory.clear_all()
+            send_overview("clear_memory")
+            return
+        if self.command == "GET" and path == "/api/v1/memory/usage":
+            self._send_bridge_envelope(
+                success_envelope(
+                    {"events": self._collect_memory_usage_events()},
+                    operation="list_memory_usage",
+                ),
+                origin=origin,
+            )
+            return
+        if self.command == "GET" and path == "/api/v1/memory/items":
+            search = (query.get("search") or [""])[-1].strip() or None
+            mem_type = (query.get("type") or [""])[-1].strip() or None
+            items = [serialize_memory_entry(entry) for entry in memory.list_memories(search=search, type=mem_type)]
+            self._send_bridge_envelope(
+                success_envelope({"items": items}, operation="list_memory_items"),
+                origin=origin,
+            )
+            return
+        if path.startswith("/api/v1/memory/items/"):
+            memory_id = unquote(path.removeprefix("/api/v1/memory/items/")).strip("/")
+            if self.command == "GET":
+                entry = memory.get_memory(memory_id)
+                if entry is None:
+                    raise ValueError(f"Unknown memory id '{memory_id}'.")
+                self._send_bridge_envelope(
+                    success_envelope({"item": serialize_memory_entry(entry)}, operation="show_memory_item"),
+                    origin=origin,
+                )
+                return
+            if self.command == "DELETE":
+                deleted = memory.delete_memory(memory_id)
+                self._send_bridge_envelope(
+                    success_envelope(
+                        {"memory_id": memory_id, "deleted": deleted},
+                        operation="delete_memory_item",
+                    ),
+                    origin=origin,
+                )
+                return
+        raise ValueError(f"Unsupported memory route: {self.command} {path}")
+
+    def _collect_memory_usage_events(self, *, limit: int = 50) -> list[dict[str, object]]:
+        events: list[dict[str, object]] = []
+        for session in self.context.store.list_sessions(include_deleted=True):
+            for event in session.memory_usage_events:
+                events.append(
+                    {
+                        "session_id": session.session_id,
+                        "session_topic": session.topic,
+                        "operation": event.get("operation", ""),
+                        "memory_ids": event.get("memory_ids", []),
+                        "used_at": event.get("used_at", ""),
+                    }
+                )
+        events.sort(key=lambda item: str(item.get("used_at") or ""), reverse=True)
+        return events[:limit]
+
     def _route(
         self,
         path: str,
@@ -1143,6 +1248,9 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if self.command == "GET" and path == "/api/v1/runtime/tts/local-capability":
             capability = detect_local_mlx_capability(self.context.config_store.load_tts_config()).to_dict()
             self._send_bridge_envelope(success_envelope({"tts_capability": capability}, operation="show_local_tts_capability"), origin=origin)
+            return
+        if path == "/api/v1/memory" or path.startswith("/api/v1/memory/") or path.startswith("/api/v1/memory:"):
+            self._route_memory(path, query, body, origin)
             return
         if self.command == "GET" and path == "/api/v1/voice-profiles":
             profiles = [profile.to_dict() for profile in self.context.get_voice_profile_store().list_profiles()]
@@ -1757,6 +1865,24 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             self.context.store.save_project(project)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_session"), origin=origin)
             return
+        if self.command == "POST" and suffix == ":memory-mode":
+            mode = str(body.get("mode") or "").strip()
+            if mode not in ("enabled", "disabled"):
+                raise ValueError("Field 'mode' must be 'enabled' or 'disabled'.")
+            project = self.context.store.load_project(session_id)
+            was_disabled = not project.session.memory_enabled()
+            project.session.set_memory_mode(mode)
+            if mode == "enabled" and was_disabled:
+                # Re-enabling never backfills the closed period: jump the cursor
+                # to the latest user turn so only new turns are processed.
+                transcript = project.transcript
+                if transcript and transcript.turns:
+                    user_turns = [t for t in transcript.turns if t.speaker == Speaker.USER]
+                    if user_turns:
+                        project.session.advance_memory_cursor(user_turns[-1].turn_id)
+            self.context.store.save_project(project)
+            self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="set_session_memory_mode"), origin=origin)
+            return
         if self.command == "POST" and suffix == "/interview:start":
             project = self.context.store.load_project(session_id)
             ensure_session_is_active(project)
@@ -2302,7 +2428,8 @@ def serve_http(
     artifact_store = ArtifactStore(config.data_dir)
     voice_profile_store = VoiceProfileStore(config.data_dir, artifact_store)
     request_state_store = RequestStateStore(config.data_dir)
-    orchestrator = InterviewOrchestrator(store, config_store)
+    memory_service = MemoryService(config.data_dir, store, config_store)
+    orchestrator = InterviewOrchestrator(store, config_store, memory_service)
     script_generation = ScriptGenerationService(store, config_store)
     audio_rendering = AudioRenderingService(store, config_store, artifact_store)
 
@@ -2311,6 +2438,7 @@ def serve_http(
     artifact_store.bootstrap()
     voice_profile_store.bootstrap()
     request_state_store.bootstrap()
+    memory_service.bootstrap()
 
     context = RuntimeContext(
         cwd=cwd,
@@ -2323,6 +2451,7 @@ def serve_http(
         orchestrator=orchestrator,
         script_generation=script_generation,
         audio_rendering=audio_rendering,
+        memory_service=memory_service,
         runtime_token=runtime_token or "",
         bootstrap_nonce=bootstrap_nonce,
         bootstrap_created_at=time.time(),
@@ -2349,5 +2478,6 @@ def serve_http(
     except KeyboardInterrupt:  # pragma: no cover - manual stop path
         pass
     finally:
+        memory_service.shutdown()
         server.server_close()
     return 0

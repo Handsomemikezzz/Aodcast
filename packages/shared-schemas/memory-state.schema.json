@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/memory-state.schema.json",
+  "title": "MemoryState",
+  "description": "Global memory settings plus background worker/maintenance status persisted in .local-data/memory/state.json and surfaced as the Memory overview.",
+  "type": "object",
+  "required": [
+    "first_run_acknowledged",
+    "writing_enabled",
+    "usage_enabled"
+  ],
+  "properties": {
+    "first_run_acknowledged": { "type": "boolean" },
+    "writing_enabled": { "type": "boolean" },
+    "usage_enabled": { "type": "boolean" },
+    "last_maintenance_at": { "type": ["string", "null"], "format": "date-time" },
+    "changes_since_maintenance": { "type": "integer", "minimum": 0 },
+    "entry_count": { "type": "integer", "minimum": 0 },
+    "pending_job_count": { "type": "integer", "minimum": 0 },
+    "worker_status": {
+      "type": "string",
+      "enum": ["idle", "running", "error"]
+    },
+    "worker_last_error": { "type": "string" },
+    "worker_updated_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "additionalProperties": false
+}
