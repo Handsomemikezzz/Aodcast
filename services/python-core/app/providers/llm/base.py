@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Iterator
+from typing import Any, Literal, Protocol, Iterator
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +102,36 @@ class MemoryMergeResponse:
     model_name: str
 
 
+@dataclass(frozen=True, slots=True)
+class MemoryActionRequest:
+    """§10.5: Lightweight classification to detect memory control intent.
+
+    `candidate_names` is a snapshot of existing memory entry names so the model
+    can reference them when signalling correction or forgetting. Only names, never
+    bodies or sensitive content, are sent to the classifier.
+    """
+
+    user_message: str
+    candidate_names: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryActionResponse:
+    """§10.5: Structured control signal returned by the classifier.
+
+    - `remember`         : user explicitly wants to save something
+    - `correct`          : user is correcting a previous memory
+    - `forget_candidates`: user wants to delete a past memory (subject extracted)
+    - `none`             : no memory action implied
+    `subject` carries the topic the user mentioned (used to seed candidate search).
+    """
+
+    action: Literal["remember", "correct", "forget_candidates", "none"]
+    subject: str
+    provider_name: str
+    model_name: str
+
+
 class LLMProvider(Protocol):
     def generate_script(self, request: ScriptGenerationRequest) -> ScriptGenerationResponse:
         """Generate a script draft from interview transcript text."""
@@ -117,3 +147,11 @@ class LLMProvider(Protocol):
 
     def merge_memories(self, request: MemoryMergeRequest) -> MemoryMergeResponse:
         """Consolidate a candidate group of duplicate memories (structured JSON)."""
+
+    def classify_memory_action(self, request: MemoryActionRequest) -> MemoryActionResponse:
+        """§10.5: Classify the user message for memory control intent (structured JSON).
+
+        Providers that cannot reliably produce structured JSON must return
+        MemoryActionResponse(action="none", subject="", ...).  The caller treats
+        any exception as a `none` result and falls back to deterministic rules.
+        """

@@ -98,6 +98,7 @@ type BridgeShape<T> = {
   events?: MemoryUsageEvent[];
   memory_id?: string;
   deleted?: boolean;
+  superseded?: boolean;
 } & T;
 
 type RuntimeContext = {
@@ -1013,6 +1014,22 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     async listMemorySuperseded() {
       const response = await callHttp<{}>("/api/v1/memory/superseded");
       return (response.items ?? []) as MemoryEntry[];
+    },
+    /** §10.4: Find active memories matching a free-text query for forget disambiguation. */
+    async findForgetCandidates(query: string) {
+      const response = await callHttp<{}>(`/api/v1/memory/forget-candidates?q=${encodeURIComponent(query)}`);
+      return (response.candidates ?? []) as MemoryEntry[];
+    },
+    /** §10.3: Move a specific memory to superseded/ (user-confirmed correction target). */
+    async supersedeMemory(memoryId: string) {
+      const response = await callHttp<{}>("/api/v1/memory:supersede", {
+        method: "POST",
+        body: JSON.stringify({ memory_id: memoryId }),
+      });
+      return {
+        memory_id: typeof response.memory_id === "string" ? response.memory_id : memoryId,
+        superseded: Boolean(response.superseded),
+      };
     },
   };
 }

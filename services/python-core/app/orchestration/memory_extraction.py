@@ -65,6 +65,29 @@ class MemoryExtractor:
         self._advance_cursor(session_id, cursor_target)
         return written
 
+    def normalize_correction(
+        self,
+        session_id: str,
+        *,
+        source_turn_id: str,
+        raw_intent: str,
+        target_id: str = "",
+    ) -> list[MemoryEntry]:
+        """§10.3: Normalize a correction intent and supersede the old memory.
+
+        Creates a new explicit memory (same path as normalize_explicit), then
+        moves the target to superseded/ if a target_id is provided.  When no
+        target_id is given only the new memory is written; the caller is
+        responsible for surfacing ambiguous candidates to the user.
+        """
+        new_entries = self.normalize_explicit(
+            session_id, source_turn_id=source_turn_id, raw_intent=raw_intent
+        )
+        if target_id:
+            # Move the old entry out of active entries into the superseded pool.
+            self.memory_store.move_to_superseded(target_id)
+        return new_entries
+
     def normalize_explicit(
         self, session_id: str, *, source_turn_id: str, raw_intent: str
     ) -> list[MemoryEntry]:

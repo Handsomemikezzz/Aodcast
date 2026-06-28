@@ -23,6 +23,9 @@ class MemoryOrigin(StrEnum):
 class PendingJobKind(StrEnum):
     EXTRACT_TURNS = "extract_turns"
     NORMALIZE_EXPLICIT_MEMORY = "normalize_explicit_memory"
+    # §10.3: user corrects an existing memory; new entry is created and old one
+    # is moved to superseded/ once target is confirmed.
+    APPLY_CORRECTION = "apply_correction"
     REBUILD_INDEXES = "rebuild_indexes"
     MAINTAIN_MEMORIES = "maintain_memories"
     PURGE_SUPERSEDED = "purge_superseded"
@@ -197,6 +200,8 @@ class PendingJob:
     to_turn_id: str = ""
     raw_intent: str = ""
     source_turn_id: str = ""
+    # §10.3: optional memory id to supersede when applying a correction.
+    target_id: str = ""
     job_id: str = field(default_factory=new_job_id)
     retry_count: int = 0
     last_error: str = ""
@@ -217,6 +222,7 @@ class PendingJob:
             to_turn_id=payload.get("to_turn_id", ""),
             raw_intent=payload.get("raw_intent", ""),
             source_turn_id=payload.get("source_turn_id", ""),
+            target_id=payload.get("target_id", ""),
             retry_count=int(payload.get("retry_count", 0) or 0),
             last_error=payload.get("last_error", ""),
             created_at=payload.get("created_at", utc_now_iso()),

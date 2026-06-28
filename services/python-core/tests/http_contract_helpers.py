@@ -39,6 +39,8 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
     "authorize_memory",
     "run_memory_maintenance",
     "list_memory_superseded",
+    "list_forget_candidates",
+    "supersede_memory",
 )
 
 
@@ -118,6 +120,8 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("authorizeMemory", "authorize_memory", "POST", "/api/v1/sessions/{session_id}/memory:authorize", "authorize_memory", (), "P3-memory"),
     BridgeContract("runMemoryMaintenance", "run_memory_maintenance", "POST", "/api/v1/memory:maintain", "run_memory_maintenance", (), "P3-memory"),
     BridgeContract("listMemorySuperseded", "list_memory_superseded", "GET", "/api/v1/memory/superseded", "list_memory_superseded", (), "P3-memory"),
+    BridgeContract("findForgetCandidates", "find_forget_candidates", "GET", "/api/v1/memory/forget-candidates", "list_forget_candidates", (), "P3-memory"),
+    BridgeContract("supersedeMemory", "supersede_memory", "POST", "/api/v1/memory:supersede", "supersede_memory", (), "P3-memory"),
 )
 
 

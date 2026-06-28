@@ -1204,6 +1204,32 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                     origin=origin,
                 )
                 return
+        # §10.4: list active memories matching a free-text query (forget disambiguation).
+        if self.command == "GET" and path == "/api/v1/memory/forget-candidates":
+            q = (query.get("q") or [""])[-1].strip()
+            candidates = memory.find_forget_candidates(q)
+            self._send_bridge_envelope(
+                success_envelope(
+                    {"candidates": [serialize_memory_entry(e) for e in candidates]},
+                    operation="list_forget_candidates",
+                ),
+                origin=origin,
+            )
+            return
+        # §10.3: user-confirmed supersede of a specific memory (correction disambiguation).
+        if self.command == "POST" and path == "/api/v1/memory:supersede":
+            memory_id = str(body.get("memory_id") or "").strip()
+            if not memory_id:
+                raise ValueError("Field 'memory_id' is required.")
+            ok = memory.supersede_memory(memory_id)
+            self._send_bridge_envelope(
+                success_envelope(
+                    {"memory_id": memory_id, "superseded": ok},
+                    operation="supersede_memory",
+                ),
+                origin=origin,
+            )
+            return
         raise ValueError(f"Unsupported memory route: {self.command} {path}")
 
     def _notify_memory_session_event(self, session_id: str, *, deleted: bool) -> None:

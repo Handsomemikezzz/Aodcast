@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterator, Union
 
 from app.domain.project import SessionProject
-from app.domain.session import SessionState
+from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.orchestration.prompts import (
     InterviewPromptInput,
@@ -46,12 +46,56 @@ _EXPLICIT_REMEMBER_MARKERS = (
     "note that i",
 )
 
+# §10.3: Deterministic correction markers — user explicitly corrects a past memory.
+_EXPLICIT_CORRECT_MARKERS = (
+    "你记错了",
+    "记错了",
+    "纠正一下",
+    "不对，我",
+    "说错了，应该是",
+    "actually, i",
+    "that's not right",
+    "that's wrong",
+    "not quite right",
+    "i meant to say",
+    "let me correct",
+)
+
+# §10.4: Deterministic forget markers — user explicitly asks to delete a past memory.
+_EXPLICIT_FORGET_MARKERS = (
+    "忘记我之前",
+    "忘掉我之前",
+    "别记",
+    "别记录这个",
+    "删掉这条记忆",
+    "please forget",
+    "forget that",
+    "forget what i said about",
+    "don't remember that",
+)
+
 
 def detect_explicit_remember(content: str) -> bool:
     lowered = content.strip().lower()
     if not lowered:
         return False
     return any(marker in content or marker in lowered for marker in _EXPLICIT_REMEMBER_MARKERS)
+
+
+def detect_explicit_correct(content: str) -> bool:
+    """§10.3: True when the user unambiguously signals a correction of a stored memory."""
+    lowered = content.strip().lower()
+    if not lowered:
+        return False
+    return any(marker in content or marker in lowered for marker in _EXPLICIT_CORRECT_MARKERS)
+
+
+def detect_explicit_forget(content: str) -> bool:
+    """§10.4: True when the user explicitly asks to forget/delete a past memory."""
+    lowered = content.strip().lower()
+    if not lowered:
+        return False
+    return any(marker in content or marker in lowered for marker in _EXPLICIT_FORGET_MARKERS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +105,131 @@ class InterviewTurnResult:
     prompt_input: InterviewPromptInput
     next_question: str | None
     ai_can_finish: bool
+    # §10.5: internal memory control signal detected from this user turn.
+    # Values: "remember" | "correct" | "forget_candidates" | "none" | None (not evaluated)
+    memory_action: str | None = None
+    # §10.4: populated when memory_action == "forget_candidates" or
+    # memory_action == "correct" with multiple ambiguous targets, so the frontend
+    # can render a disambiguation panel.
+    memory_action_candidates: list = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        # Default mutable field — dataclass frozen=True prevents normal assignment.
+        if self.memory_action_candidates is None:
+            object.__setattr__(self, "memory_action_candidates", [])
+
+
+def _dispatch_memory_action(
+    memory_service: "MemoryService",
+    config_store: ConfigStore,
+    session_id: str,
+    turn_id: str,
+    content: str,
+    session: "SessionRecord",
+) -> tuple[str | None, list]:
+    """§10.3–10.5: Classify user intent and execute the corresponding memory action.
+
+    Returns (action_label, candidate_list):
+    - action_label: one of "remember", "correct", "forget_candidates", "none", or None
+    - candidate_list: list of MemoryEntry dicts for disambiguation panels; empty otherwise
+
+    Execution order:
+      1. Deterministic forget markers  → §10.4
+      2. Deterministic correction markers → §10.3
+      3. Deterministic remember markers  → §10.2 (already handled, just label)
+      4. Optional LLM classify_memory_action → §10.5 (fallback to none on error)
+
+    Deletions are NEVER applied solely by model output; candidates are surfaced to
+    the frontend which confirms via bridge.deleteMemory / bridge.supersedeMemory.
+    """
+    from app.orchestration.memory_service import ExplicitMemoryRejected
+    from app.providers.llm.base import MemoryActionRequest
+    from app.providers.llm.factory import build_llm_provider
+
+    # §10.4: Forget — deterministic detection takes priority.
+    if detect_explicit_forget(content):
+        candidates = memory_service.find_forget_candidates(content)
+        if len(candidates) == 1:
+            # Unambiguous single target: delete immediately (user already stated intent).
+            memory_service.delete_memory(candidates[0].id)
+            return "none", []
+        if len(candidates) > 1:
+            # Ambiguous: surface to user for pick; deletion requires explicit UI confirmation.
+            return "forget_candidates", [c.to_dict() for c in candidates]
+        # No matching memory — nothing to forget.
+        return "none", []
+
+    # §10.3: Correction — deterministic detection.
+    if detect_explicit_correct(content):
+        candidates = memory_service.find_forget_candidates(content)
+        target_id = candidates[0].id if len(candidates) == 1 else ""
+        try:
+            memory_service.apply_correction(
+                session_id,
+                source_turn_id=turn_id,
+                raw_intent=content,
+                target_id=target_id,
+            )
+        except ExplicitMemoryRejected:
+            pass
+        if len(candidates) > 1:
+            # Surface candidates so user can confirm which old memory to supersede.
+            return "correct", [c.to_dict() for c in candidates]
+        return "correct", []
+
+    # §10.2: Remember — already persisted if detect_explicit_remember fired;
+    # still classify for the UI label.
+    if detect_explicit_remember(content):
+        try:
+            memory_service.remember_explicit(
+                session_id, source_turn_id=turn_id, raw_intent=content
+            )
+        except ExplicitMemoryRejected:
+            pass
+        return "remember", []
+
+    # §10.5: No deterministic hit — fall back to optional LLM classifier.
+    try:
+        existing_names = [e.name for e in memory_service.list_memories()]
+        llm_config = config_store.load_llm_config()
+        provider = build_llm_provider(llm_config)
+        result = provider.classify_memory_action(
+            MemoryActionRequest(user_message=content, candidate_names=existing_names)
+        )
+        if result.action == "remember":
+            try:
+                memory_service.remember_explicit(
+                    session_id, source_turn_id=turn_id, raw_intent=content
+                )
+            except ExplicitMemoryRejected:
+                pass
+            return "remember", []
+        if result.action == "correct":
+            subject = result.subject or content
+            candidates = memory_service.find_forget_candidates(subject)
+            target_id = candidates[0].id if len(candidates) == 1 else ""
+            try:
+                memory_service.apply_correction(
+                    session_id,
+                    source_turn_id=turn_id,
+                    raw_intent=content,
+                    target_id=target_id,
+                )
+            except ExplicitMemoryRejected:
+                pass
+            return "correct", [c.to_dict() for c in candidates] if len(candidates) > 1 else []
+        if result.action == "forget_candidates":
+            subject = result.subject or content
+            candidates = memory_service.find_forget_candidates(subject)
+            if len(candidates) == 1:
+                memory_service.delete_memory(candidates[0].id)
+                return "none", []
+            if candidates:
+                return "forget_candidates", [c.to_dict() for c in candidates]
+    except Exception:
+        pass
+
+    return "none", []
 
 
 class InterviewOrchestrator:
@@ -174,21 +343,23 @@ class InterviewOrchestrator:
         # still leave the user's message visible when reopening the session.
         self.store.save_project(project)
 
-        # Fire-and-forget: schedule background memory extraction once enough new
-        # user turns have accumulated. Never blocks or fails the interview.
+        # §10.5: Detect and dispatch memory control signals. Never blocks or
+        # fails the interview — all exceptions are swallowed here.
+        detected_action: str | None = None
+        action_candidates: list = []
         if self.memory_service is not None:
             try:
-                if detect_explicit_remember(content):
-                    from app.orchestration.memory_service import ExplicitMemoryRejected
-
-                    try:
-                        self.memory_service.remember_explicit(
-                            session_id,
-                            source_turn_id=user_turn.turn_id,
-                            raw_intent=content,
-                        )
-                    except ExplicitMemoryRejected:
-                        pass
+                detected_action, action_candidates = _dispatch_memory_action(
+                    self.memory_service,
+                    self.config_store,
+                    session_id,
+                    user_turn.turn_id,
+                    content,
+                    project.session,
+                )
+            except Exception:
+                pass
+            try:
                 self.memory_service.enqueue_extraction(project.session)
             except Exception:
                 pass
@@ -206,6 +377,8 @@ class InterviewOrchestrator:
                 prompt_input=prompt_input,
                 next_question=None,
                 ai_can_finish=True,
+                memory_action=detected_action,
+                memory_action_candidates=action_candidates,
             )
             return
 
@@ -246,6 +419,8 @@ class InterviewOrchestrator:
                 prompt_input=prompt_input,
                 next_question=deterministic_message,
                 ai_can_finish=True,
+                memory_action=detected_action,
+                memory_action_candidates=action_candidates,
             )
             return
 
@@ -271,6 +446,8 @@ class InterviewOrchestrator:
             prompt_input=prompt_input,
             next_question=next_question,
             ai_can_finish=readiness.is_ready,
+            memory_action=detected_action,
+            memory_action_candidates=action_candidates,
         )
 
     def request_finish(self, session_id: str) -> InterviewTurnResult:

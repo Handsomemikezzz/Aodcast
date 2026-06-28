@@ -423,3 +423,40 @@ def build_question(
             "B. Add another concrete detail or story first\n"
             "C. Adjust the core angle of this episode"
         )
+
+
+# ---------------------------------------------------------------------------
+# §10.5 Memory action classification prompt
+# ---------------------------------------------------------------------------
+
+_MEMORY_ACTION_SYSTEM = (
+    "You classify a single user message to detect explicit memory-management intent.\n"
+    "Return a JSON object with exactly two string fields: 'action' and 'subject'.\n\n"
+    "'action' must be one of:\n"
+    "  - 'remember'         : user explicitly asks to save or remember something\n"
+    "  - 'correct'          : user is correcting or updating a previously stated fact\n"
+    "  - 'forget_candidates': user asks to forget or delete a past memory\n"
+    "  - 'none'             : no clear memory-management intent\n\n"
+    "'subject' is a short phrase (≤ 8 words) naming the topic the user mentioned, "
+    "or an empty string when action is 'none'.\n\n"
+    "Rules:\n"
+    "- Only classify as 'remember'/'correct'/'forget_candidates' when the user's intent "
+    "is explicit and unambiguous. Prefer 'none' when uncertain.\n"
+    "- Never infer deletion intent from a casual correction of an AI mistake.\n"
+    "- Return ONLY the JSON object, no explanation, no markdown fences."
+)
+
+
+def build_memory_action_classification_prompt(
+    user_message: str, candidate_names: list[str]
+) -> str:
+    """Build the user-turn text for the §10.5 memory action classifier."""
+    candidate_block = ""
+    if candidate_names:
+        names_fmt = "\n".join(f"  - {n}" for n in candidate_names[:20])
+        candidate_block = f"\nExisting memory topics for reference:\n{names_fmt}\n"
+    return (
+        f"User message:\n{user_message.strip()}\n"
+        f"{candidate_block}\n"
+        "Classify the user's memory-management intent."
+    )

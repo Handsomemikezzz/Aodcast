@@ -13,7 +13,9 @@ from app.orchestration.prompts import (
     MEMORY_MAINTENANCE_SYSTEM_PROMPT,
     MEMORY_RERANK_SYSTEM_PROMPT,
     SCRIPT_GENERATION_SYSTEM_PROMPT,
+    _MEMORY_ACTION_SYSTEM,
     build_interview_stream_user_content,
+    build_memory_action_classification_prompt,
     build_memory_extraction_user_content,
     build_memory_maintenance_user_content,
     build_memory_rerank_user_content,
@@ -21,6 +23,8 @@ from app.orchestration.prompts import (
 )
 from app.providers.llm.base import (
     InterviewQuestionRequest,
+    MemoryActionRequest,
+    MemoryActionResponse,
     MemoryExtractionRequest,
     MemoryExtractionResponse,
     MemoryMergeRequest,
@@ -203,6 +207,43 @@ class OpenAICompatibleProvider:
             keywords=[str(k) for k in (payload.get("keywords") or []) if isinstance(k, (str, int))],
             evidence_turn_ids=[str(t) for t in (payload.get("evidence_turn_ids") or []) if isinstance(t, (str, int))],
             drop_ids=[str(d) for d in (payload.get("drop_ids") or []) if isinstance(d, (str, int))],
+            provider_name=self.config.provider,
+            model_name=self.config.model,
+        )
+
+    def classify_memory_action(self, request: MemoryActionRequest) -> MemoryActionResponse:
+        """§10.5: Lightweight non-streaming classification of user memory intent."""
+        _VALID_ACTIONS = {"remember", "correct", "forget_candidates", "none"}
+        _FALLBACK = MemoryActionResponse(
+            action="none", subject="", provider_name=self.config.provider, model_name=self.config.model
+        )
+        if not self.config.base_url or not self.config.model or not self.config.api_key:
+            return _FALLBACK
+        client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
+        user_content = build_memory_action_classification_prompt(
+            request.user_message, request.candidate_names
+        )
+        try:
+            response = client.chat.completions.create(
+                model=self.config.model,
+                messages=[
+                    {"role": "system", "content": _MEMORY_ACTION_SYSTEM},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=0.0,
+                max_tokens=100,
+            )
+        except Exception:
+            return _FALLBACK
+        raw = (response.choices[0].message.content or "").strip() if response.choices else ""
+        payload = _parse_object(raw)
+        action = str(payload.get("action") or "none").strip()
+        if action not in _VALID_ACTIONS:
+            action = "none"
+        subject = str(payload.get("subject") or "").strip()
+        return MemoryActionResponse(
+            action=action,  # type: ignore[arg-type]
+            subject=subject,
             provider_name=self.config.provider,
             model_name=self.config.model,
         )

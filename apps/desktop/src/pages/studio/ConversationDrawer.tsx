@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Brain, Check, Loader2, MessageSquare, Send, Sparkles, X } from "lucide-react";
+import { Brain, Check, Loader2, MessageSquare, Send, Sparkles, Trash2, RotateCcw, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useBridge } from "../../lib/BridgeContext";
 import { cn } from "../../lib/utils";
@@ -10,7 +10,11 @@ type FollowUpState =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "choice"; newTurns: TranscriptTurn[] }
-  | { kind: "authorize"; candidates: MemoryEntry[] };
+  | { kind: "authorize"; candidates: MemoryEntry[] }
+  /** §10.4: User asked to forget — surface candidates so they can pick. */
+  | { kind: "forget"; candidates: MemoryEntry[] }
+  /** §10.3: User corrected something — surface candidates so they can confirm which to supersede. */
+  | { kind: "correct"; candidates: MemoryEntry[] };
 
 function TranscriptView({ turns }: { turns: TranscriptTurn[] }) {
   return (
@@ -98,9 +102,26 @@ export function ConversationDrawer({
     setFollowUpState({ kind: "submitting" });
     try {
       const result = await bridge.submitReplyStream(sessionId, content, () => {});
+      await onRefresh();
+
+      // §10.5: Check for memory control signal and show appropriate panel.
+      const action = result.memory_action;
+      const candidates = (result.memory_action_candidates ?? []) as MemoryEntry[];
+
+      if (action === "forget_candidates" && candidates.length > 0) {
+        // §10.4: Multiple forget candidates — user must pick which to delete.
+        setFollowUpState({ kind: "forget", candidates });
+        return;
+      }
+      if (action === "correct" && candidates.length > 0) {
+        // §10.3: Ambiguous correction target — user must confirm which to supersede.
+        setFollowUpState({ kind: "correct", candidates });
+        return;
+      }
+
+      // Default: show the choice panel (generate new snapshot or keep as source).
       const newTurns = result.project.transcript?.turns ?? [];
       setFollowUpState({ kind: "choice", newTurns });
-      await onRefresh();
     } catch (err) {
       setFollowUpError(getErrorMessage(err, "Failed to submit follow-up."));
       setFollowUpState({ kind: "idle" });
@@ -158,6 +179,30 @@ export function ConversationDrawer({
 
   const handleKeepAsSource = () => {
     setFollowUpState({ kind: "idle" });
+  };
+
+  /** §10.4: User confirmed which memory to delete (forget disambiguation). */
+  const handleForgetConfirm = async (memoryId: string) => {
+    if (!sessionId) return;
+    try {
+      await bridge.deleteMemory(memoryId);
+      await onRefresh();
+      setFollowUpState({ kind: "idle" });
+    } catch (err) {
+      setFollowUpError(getErrorMessage(err, "Failed to forget memory."));
+    }
+  };
+
+  /** §10.3: User confirmed which old memory to supersede (correction disambiguation). */
+  const handleSupersedeConfirm = async (memoryId: string) => {
+    if (!sessionId) return;
+    try {
+      await bridge.supersedeMemory(memoryId);
+      await onRefresh();
+      setFollowUpState({ kind: "idle" });
+    } catch (err) {
+      setFollowUpError(getErrorMessage(err, "Failed to supersede memory."));
+    }
   };
 
   return (
@@ -351,8 +396,110 @@ export function ConversationDrawer({
           </div>
         ) : null}
 
+        {/* §10.4: Forget disambiguation panel */}
+        {followUpState.kind === "forget" ? (
+          <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-red-400">
+                忘记哪条记忆?
+              </p>
+              <button
+                type="button"
+                onClick={handleKeepAsSource}
+                className="p-1 rounded text-secondary hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                aria-label="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-xs text-secondary leading-relaxed">
+              找到以下相关记忆，请选择要删除的条目。删除后不可恢复。
+            </p>
+            <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
+              {followUpState.candidates.map((candidate) => (
+                <div
+                  key={candidate.id}
+                  className="flex items-start justify-between gap-2 rounded-xl border border-outline bg-surface-container-low px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-primary truncate">
+                      {candidate.sensitive ? "（敏感）" : ""}
+                      {candidate.name}
+                    </p>
+                    <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleForgetConfirm(candidate.id)}
+                    className="shrink-0 rounded-md border border-red-500/25 px-2 py-1 text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            {followUpError ? (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {followUpError}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* §10.3: Correction disambiguation panel */}
+        {followUpState.kind === "correct" ? (
+          <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-accent-amber">
+                替代哪条旧记忆?
+              </p>
+              <button
+                type="button"
+                onClick={handleKeepAsSource}
+                className="p-1 rounded text-secondary hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                aria-label="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-xs text-secondary leading-relaxed">
+              新记忆已开始创建。请选择要被替代（移入历史）的旧条目。
+            </p>
+            <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
+              {followUpState.candidates.map((candidate) => (
+                <div
+                  key={candidate.id}
+                  className="flex items-start justify-between gap-2 rounded-xl border border-outline bg-surface-container-low px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-primary truncate">
+                      {candidate.name}
+                    </p>
+                    <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleSupersedeConfirm(candidate.id)}
+                    className="shrink-0 rounded-md border border-outline px-2 py-1 text-[11px] font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            {followUpError ? (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {followUpError}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Follow-up input */}
-        {followUpState.kind !== "choice" && followUpState.kind !== "authorize" && (
+        {followUpState.kind !== "choice" &&
+          followUpState.kind !== "authorize" &&
+          followUpState.kind !== "forget" &&
+          followUpState.kind !== "correct" && (
           <div className="shrink-0 border-t border-outline p-3 space-y-2">
             {followUpError ? (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">

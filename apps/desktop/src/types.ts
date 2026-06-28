@@ -154,12 +154,22 @@ type BridgeResultMeta = {
   runtime?: RuntimeInfo;
 };
 
+export type MemoryActionSignal =
+  | "remember"
+  | "correct"
+  | "forget_candidates"
+  | "none";
+
 export type InterviewTurnResult = BridgeResultMeta & {
   project: SessionProject;
   readiness: Readiness;
   prompt_input: PromptInput;
   next_question: string | null;
   ai_can_finish: boolean;
+  /** §10.5: memory control signal detected from this turn. */
+  memory_action?: MemoryActionSignal;
+  /** §10.3/§10.4: disambiguation candidates when target is ambiguous. */
+  memory_action_candidates?: MemoryEntry[];
 };
 
 export type GenerationResult = BridgeResultMeta & {

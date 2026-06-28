@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from app.providers.llm.base import (
     InterviewQuestionRequest,
+    MemoryActionRequest,
+    MemoryActionResponse,
     MemoryExtractionRequest,
     MemoryExtractionResponse,
     MemoryMergeRequest,
@@ -201,6 +203,15 @@ class MockLLMProvider:
             keywords=merged_keywords[:12],
             evidence_turn_ids=evidence_turn_ids[:3],
             drop_ids=[str(e.get("id")) for e in entries if e.get("id") != primary.get("id")],
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+        )
+
+    def classify_memory_action(self, request: MemoryActionRequest) -> MemoryActionResponse:
+        """§10.5: Mock always returns none — deterministic rules handle test scenarios."""
+        return MemoryActionResponse(
+            action="none",
+            subject="",
             provider_name=self.provider_name,
             model_name=self.model_name,
         )

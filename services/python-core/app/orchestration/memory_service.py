@@ -243,6 +243,70 @@ class MemoryService:
         )
         self.worker.notify()
 
+    def apply_correction(
+        self,
+        session_id: str,
+        *,
+        source_turn_id: str,
+        raw_intent: str,
+        target_id: str = "",
+    ) -> None:
+        """§10.3: Enqueue a correction job.
+
+        Immediately validates for forbidden content and the writing gate, then
+        durably enqueues an APPLY_CORRECTION job.  The worker creates a new
+        explicit memory and, when target_id is given, moves the old entry to
+        superseded/.  When the target is ambiguous (empty target_id) the caller
+        is responsible for surfacing candidates to the user and triggering the
+        supersede separately via `supersede_memory`.
+        """
+        forbidden = detect_forbidden(raw_intent)
+        if forbidden:
+            raise ExplicitMemoryRejected(
+                "无法保存包含敏感秘密的信息（如密码、密钥、支付凭据、证件号或精确住址）。"
+            )
+        state = self.store.load_state()
+        if not state.settings.writing_enabled:
+            raise ExplicitMemoryRejected("记忆记录当前已关闭。")
+        self.store.enqueue(
+            PendingJob(
+                kind=PendingJobKind.APPLY_CORRECTION,
+                session_id=session_id,
+                source_turn_id=source_turn_id,
+                raw_intent=raw_intent,
+                target_id=target_id,
+            )
+        )
+        self.worker.notify()
+
+    def find_forget_candidates(self, query: str, *, max_results: int = 5) -> list:
+        """§10.4: Return active memory entries that match the given free-text query.
+
+        Used to locate candidates when the user says 'forget my memory about X'.
+        Returns at most `max_results` entries ordered by the store's default sort
+        (recency / use-count).  The caller decides whether to auto-delete (single
+        result) or surface a disambiguation panel (multiple results).
+        """
+        from app.domain.memory import MemoryEntry
+
+        query = query.strip()
+        if not query:
+            return []
+        return self.store.list_entries(search=query)[:max_results]
+
+    def supersede_memory(self, memory_id: str) -> bool:
+        """§10.3: Move an active entry to superseded/ (user-confirmed disambiguation).
+
+        Returns True when the entry was found and moved; False when not found.
+        Does not add a forget fingerprint — the entry remains recoverable in the
+        superseded pool for 30 days (§15.3).
+        """
+        entry = self.store.get_entry(memory_id)
+        if entry is None:
+            return False
+        self.store.move_to_superseded(memory_id)
+        return True
+
     # ----------------------------------------------------------------- retrieval
     def build_interview_context(self, session: SessionRecord, *, recent_user_message: str = ""):
         from app.domain.memory import RetrievedMemoryContext

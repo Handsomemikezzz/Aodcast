@@ -127,6 +127,14 @@ class MemoryWorker:
             self.extractor.normalize_explicit(
                 job.session_id, source_turn_id=job.source_turn_id, raw_intent=job.raw_intent
             )
+        elif job.kind == PendingJobKind.APPLY_CORRECTION:
+            # §10.3: create new explicit memory and optionally supersede the old entry.
+            self.extractor.normalize_correction(
+                job.session_id,
+                source_turn_id=job.source_turn_id,
+                raw_intent=job.raw_intent,
+                target_id=job.target_id,
+            )
         elif job.kind == PendingJobKind.REBUILD_INDEXES:
             self.memory_store.rebuild_indexes()
         elif job.kind == PendingJobKind.MAINTAIN_MEMORIES:

@@ -239,4 +239,8 @@ export interface DesktopBridge {
   runMemoryMaintenance(): Promise<MemoryOverview>;
   /** List recently superseded memories (read-only history). */
   listMemorySuperseded(): Promise<MemoryEntry[]>;
+  /** §10.4: Find active memories matching a free-text query for forget disambiguation. */
+  findForgetCandidates(query: string): Promise<MemoryEntry[]>;
+  /** §10.3: Move a specific memory to superseded/ (user-confirmed correction target). */
+  supersedeMemory(memoryId: string): Promise<{ memory_id: string; superseded: boolean }>;
 }

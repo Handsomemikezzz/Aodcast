@@ -43,7 +43,7 @@ def serialize_memory_overview(overview) -> dict[str, object]:
 
 
 def serialize_turn_result(result: InterviewTurnResult) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "project": serialize_project(result.project),
         "readiness": {
             "topic_context": result.readiness.topic_context,
@@ -57,6 +57,12 @@ def serialize_turn_result(result: InterviewTurnResult) -> dict[str, object]:
         "next_question": result.next_question,
         "ai_can_finish": result.ai_can_finish,
     }
+    # §10.5: surface memory control signal and disambiguation candidates to frontend.
+    if result.memory_action is not None:
+        payload["memory_action"] = result.memory_action
+    if result.memory_action_candidates:
+        payload["memory_action_candidates"] = list(result.memory_action_candidates)
+    return payload
 
 
 def serialize_generation_result(result: ScriptGenerationResult) -> dict[str, object]:
