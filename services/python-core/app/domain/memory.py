@@ -24,6 +24,9 @@ class PendingJobKind(StrEnum):
     EXTRACT_TURNS = "extract_turns"
     NORMALIZE_EXPLICIT_MEMORY = "normalize_explicit_memory"
     REBUILD_INDEXES = "rebuild_indexes"
+    MAINTAIN_MEMORIES = "maintain_memories"
+    PURGE_SUPERSEDED = "purge_superseded"
+    DELETE_SOURCE = "delete_source"
 
 
 class WorkerStatus(StrEnum):
@@ -75,6 +78,7 @@ class MemoryEntry:
     updated_at: str = field(default_factory=utc_now_iso)
     last_used_at: str | None = None
     use_count: int = 0
+    superseded_at: str | None = None
 
     @property
     def source_count(self) -> int:
@@ -97,6 +101,7 @@ class MemoryEntry:
             "last_used_at": self.last_used_at,
             "use_count": self.use_count,
             "source_count": self.source_count,
+            "superseded_at": self.superseded_at,
             "body": self.body,
             "keywords": list(self.keywords),
             "evidence": [item.to_dict() for item in self.evidence],
@@ -114,6 +119,7 @@ class MemoryEntry:
             body=payload.get("body", ""),
             keywords=list(payload.get("keywords", []) or []),
             evidence=[MemoryEvidence.from_dict(item) for item in payload.get("evidence", []) or []],
+            superseded_at=payload.get("superseded_at") or None,
             created_at=payload.get("created_at", utc_now_iso()),
             updated_at=payload.get("updated_at", utc_now_iso()),
             last_used_at=payload.get("last_used_at") or None,

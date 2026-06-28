@@ -386,6 +386,7 @@ export type MemoryOverview = {
   worker: MemoryWorkerState;
   entry_count: number;
   pending_job_count: number;
+  superseded_count?: number;
 };
 
 export type MemoryUsageEvent = {

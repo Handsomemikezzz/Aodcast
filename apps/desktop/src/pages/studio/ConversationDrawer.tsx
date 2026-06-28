@@ -4,12 +4,13 @@ import ReactMarkdown from "react-markdown";
 import { useBridge } from "../../lib/BridgeContext";
 import { cn } from "../../lib/utils";
 import { getErrorMessage } from "../../lib/requestState";
-import type { SessionProject, TranscriptTurn } from "../../types";
+import type { MemoryEntry, SessionProject, TranscriptTurn } from "../../types";
 
 type FollowUpState =
   | { kind: "idle" }
   | { kind: "submitting" }
-  | { kind: "choice"; newTurns: TranscriptTurn[] };
+  | { kind: "choice"; newTurns: TranscriptTurn[] }
+  | { kind: "authorize"; candidates: MemoryEntry[] };
 
 function TranscriptView({ turns }: { turns: TranscriptTurn[] }) {
   return (
@@ -61,6 +62,7 @@ export function ConversationDrawer({
   const [followUpState, setFollowUpState] = useState<FollowUpState>({ kind: "idle" });
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [generatingSnapshot, setGeneratingSnapshot] = useState(false);
+  const [authorizedIds, setAuthorizedIds] = useState<Set<string>>(new Set());
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   const sessionId = project?.session.session_id ?? "";
@@ -107,6 +109,24 @@ export function ConversationDrawer({
 
   const handleGenerateSnapshot = async () => {
     if (!sessionId) return;
+    setFollowUpError(null);
+    // §14.4: surface relevant past experiences / sensitive memories for explicit
+    // current-episode authorization before they can shape the script.
+    try {
+      const candidates = await bridge.listMemoryCandidates(sessionId);
+      if (candidates.length > 0) {
+        setAuthorizedIds(new Set());
+        setFollowUpState({ kind: "authorize", candidates });
+        return;
+      }
+    } catch {
+      // Authorization is best-effort; fall through to generation on failure.
+    }
+    await doGenerateSnapshot();
+  };
+
+  const doGenerateSnapshot = async () => {
+    if (!sessionId) return;
     setGeneratingSnapshot(true);
     setFollowUpError(null);
     try {
@@ -122,6 +142,17 @@ export function ConversationDrawer({
       setFollowUpError(getErrorMessage(err, "Failed to generate script snapshot."));
     } finally {
       setGeneratingSnapshot(false);
+    }
+  };
+
+  const handleAuthorize = async (memoryId: string) => {
+    if (!sessionId) return;
+    try {
+      await bridge.authorizeMemory(sessionId, memoryId);
+      setAuthorizedIds((prev) => new Set(prev).add(memoryId));
+      await onRefresh();
+    } catch (err) {
+      setFollowUpError(getErrorMessage(err, "Failed to authorize memory."));
     }
   };
 
@@ -246,8 +277,82 @@ export function ConversationDrawer({
           </div>
         ) : null}
 
+        {/* Memory authorization panel (before generating a snapshot) */}
+        {followUpState.kind === "authorize" ? (
+          <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-accent-amber">
+                在脚本中引用这些过往经历?
+              </p>
+              <button
+                type="button"
+                onClick={handleKeepAsSource}
+                className="p-1 rounded text-secondary hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                aria-label="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-xs text-secondary leading-relaxed">
+              这些记忆只有在你授权后,才会被用于本集脚本。
+            </p>
+            <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
+              {followUpState.candidates.map((candidate) => {
+                const authorized = authorizedIds.has(candidate.id);
+                return (
+                  <div
+                    key={candidate.id}
+                    className="flex items-start justify-between gap-2 rounded-xl border border-outline bg-surface-container-low px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium text-primary truncate">
+                        {candidate.sensitive ? "（敏感）" : ""}
+                        {candidate.name}
+                      </p>
+                      <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleAuthorize(candidate.id)}
+                      disabled={authorized}
+                      className={
+                        "shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors cursor-pointer disabled:cursor-default " +
+                        (authorized
+                          ? "border-accent-amber/25 bg-accent-amber/10 text-accent-amber"
+                          : "border-outline text-secondary hover:bg-primary/5 hover:text-primary")
+                      }
+                    >
+                      {authorized ? "已授权" : "授权使用"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {followUpError ? (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {followUpError}
+              </div>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => void doGenerateSnapshot()}
+                disabled={generatingSnapshot}
+                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-sm font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {generatingSnapshot ? (
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                ) : (
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                )}
+                生成脚本
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {/* Follow-up input */}
-        {followUpState.kind !== "choice" && (
+        {followUpState.kind !== "choice" && followUpState.kind !== "authorize" && (
           <div className="shrink-0 border-t border-outline p-3 space-y-2">
             {followUpError ? (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">

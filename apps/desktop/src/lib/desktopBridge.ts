@@ -231,4 +231,12 @@ export interface DesktopBridge {
   listMemoryUsage(): Promise<MemoryUsageEvent[]>;
   /** Enable or disable memory for one episode (gates both reading and writing). */
   setSessionMemoryMode(sessionId: string, mode: "enabled" | "disabled"): Promise<SessionProject>;
+  /** List relevant experience/sensitive memories that need this episode's authorization before script use. */
+  listMemoryCandidates(sessionId: string): Promise<MemoryEntry[]>;
+  /** Authorize one memory for use in the current episode's script. */
+  authorizeMemory(sessionId: string, memoryId: string): Promise<SessionProject>;
+  /** Schedule a background memory maintenance (merge/dedup/evict) batch. */
+  runMemoryMaintenance(): Promise<MemoryOverview>;
+  /** List recently superseded memories (read-only history). */
+  listMemorySuperseded(): Promise<MemoryEntry[]>;
 }

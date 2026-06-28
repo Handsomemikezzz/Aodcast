@@ -94,6 +94,7 @@ type BridgeShape<T> = {
   memory?: MemoryOverview;
   items?: MemoryEntry[];
   item?: MemoryEntry;
+  candidates?: MemoryEntry[];
   events?: MemoryUsageEvent[];
   memory_id?: string;
   deleted?: boolean;
@@ -990,6 +991,28 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({ mode }),
       });
       return response.project!;
+    },
+    async listMemoryCandidates(sessionId: string) {
+      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/memory-candidates`);
+      return (response.candidates ?? []) as MemoryEntry[];
+    },
+    async authorizeMemory(sessionId: string, memoryId: string) {
+      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/memory:authorize`, {
+        method: "POST",
+        body: JSON.stringify({ memory_id: memoryId }),
+      });
+      return response.project!;
+    },
+    async runMemoryMaintenance() {
+      const response = await callHttp<{}>("/api/v1/memory:maintain", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      return response.memory as MemoryOverview;
+    },
+    async listMemorySuperseded() {
+      const response = await callHttp<{}>("/api/v1/memory/superseded");
+      return (response.items ?? []) as MemoryEntry[];
     },
   };
 }

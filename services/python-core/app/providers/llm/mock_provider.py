@@ -4,11 +4,26 @@ from app.providers.llm.base import (
     InterviewQuestionRequest,
     MemoryExtractionRequest,
     MemoryExtractionResponse,
+    MemoryMergeRequest,
+    MemoryMergeResponse,
+    MemoryRerankRequest,
+    MemoryRerankResponse,
     ScriptGenerationRequest,
     ScriptGenerationResponse,
 )
 from typing import Iterator
+import re
 import time
+
+
+def _mock_tokens(text: str) -> list[str]:
+    lowered = text.lower()
+    latin = re.findall(r"[a-z0-9]{2,}", lowered)
+    cjk = re.findall(r"[㐀-鿿]{2,}", lowered)
+    bigrams: list[str] = []
+    for run in cjk:
+        bigrams.extend(run[i : i + 2] for i in range(len(run) - 1))
+    return [*latin, *bigrams]
 
 
 _PREFERENCE_TRIGGERS = ("喜欢", "不喜欢", "prefer", "以后", "口吻", "风格")
@@ -38,7 +53,11 @@ class MockLLMProvider:
             "If there is one takeaway from this conversation, it is that good tools "
             "should make complex work more understandable and recoverable."
         )
-        draft = "\n\n".join([opening, body, closing])
+        parts = [opening, body, closing]
+        if request.memory_context.strip():
+            # Surface that memory shaped this draft so callers/tests can observe it.
+            parts.append(f"[memory-informed]\n{request.memory_context.strip()}")
+        draft = "\n\n".join(parts)
         return ScriptGenerationResponse(
             draft=draft,
             provider_name=self.provider_name,
@@ -114,6 +133,74 @@ class MockLLMProvider:
             break
         return MemoryExtractionResponse(
             candidates=candidates,
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+        )
+
+    def rerank_memories(self, request: MemoryRerankRequest) -> MemoryRerankResponse:
+        """Deterministic rerank: score each candidate by token overlap (latin words
+        + CJK bigrams) with the topic/intent, then take the highest-scoring ids in
+        stable order."""
+        query_tokens = set(_mock_tokens(f"{request.topic} {request.creation_intent}"))
+
+        def score(candidate: dict[str, str]) -> int:
+            tokens = _mock_tokens(f"{candidate.get('name', '')} {candidate.get('description', '')}")
+            return sum(1 for token in tokens if token in query_tokens)
+
+        ordered = sorted(
+            enumerate(request.candidates),
+            key=lambda pair: (-score(pair[1]), pair[0]),
+        )
+        selected = [
+            str(candidate.get("id", ""))
+            for _, candidate in ordered
+            if candidate.get("id")
+        ][: max(0, request.max_select)]
+        return MemoryRerankResponse(
+            selected_ids=selected,
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+        )
+
+    def merge_memories(self, request: MemoryMergeRequest) -> MemoryMergeResponse:
+        """Deterministic merge: if the group shares a keyword and a single type,
+        keep the earliest-created entry as primary and drop the rest. Otherwise
+        signal 'no merge' with an empty primary_id."""
+        entries = list(request.entries)
+        empty = MemoryMergeResponse(
+            primary_id="", name="", description="", body="", keywords=[],
+            evidence_turn_ids=[], drop_ids=[],
+            provider_name=self.provider_name, model_name=self.model_name,
+        )
+        if len(entries) < 2:
+            return empty
+        types = {str(e.get("type")) for e in entries}
+        if len(types) != 1:
+            return empty
+        keyword_sets = [set(e.get("keywords") or []) for e in entries]
+        shared = set.intersection(*keyword_sets) if keyword_sets else set()
+        if not shared:
+            return empty
+
+        primary = min(entries, key=lambda e: str(e.get("created_at", "")))
+        merged_keywords: list[str] = []
+        evidence_turn_ids: list[str] = []
+        for entry in entries:
+            for kw in entry.get("keywords") or []:
+                if kw not in merged_keywords:
+                    merged_keywords.append(kw)
+            for ev in entry.get("evidence") or []:
+                tid = ev.get("turn_id")
+                if tid and tid not in evidence_turn_ids:
+                    evidence_turn_ids.append(tid)
+        return MemoryMergeResponse(
+            primary_id=str(primary.get("id", "")),
+            name=str(primary.get("name", "")),
+            description=str(primary.get("description", "")),
+            body=str(primary.get("body", "")),
+            keywords=merged_keywords[:12],
+            evidence_turn_ids=evidence_turn_ids[:3],
+            drop_ids=[str(e.get("id")) for e in entries if e.get("id") != primary.get("id")],
             provider_name=self.provider_name,
             model_name=self.model_name,
         )

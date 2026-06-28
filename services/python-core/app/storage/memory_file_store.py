@@ -8,7 +8,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.domain.common import utc_now_iso
+from app.domain.common import is_within_days_since, utc_now_iso
 from app.domain.memory import (
     ForgetFingerprint,
     MemoryEntry,
@@ -137,17 +137,59 @@ class MemoryFileStore:
             source = self.entries_dir / f"{memory_id}.md"
             if not source.is_file():
                 return
+            entry = self._read_entry_file(source, quarantine_on_error=False)
             target = self.superseded_dir / f"{memory_id}.md"
-            source.replace(target)
+            if entry is not None:
+                # Stamp the supersede time so the 30-day GC has an anchor (§15.3).
+                entry.superseded_at = utc_now_iso()
+                self._write_text(target, self._entry_to_markdown(entry))
+                source.unlink(missing_ok=True)
+            else:
+                source.replace(target)
             self._rebuild_indexes_unlocked()
 
-    def delete_entry(self, memory_id: str) -> bool:
+    def list_superseded(self) -> list[MemoryEntry]:
+        entries: list[MemoryEntry] = []
+        for path in sorted(self.superseded_dir.glob("mem_*.md")):
+            entry = self._read_entry_file(path, quarantine_on_error=False)
+            if entry is not None:
+                entries.append(entry)
+        # Most recently superseded first.
+        entries.sort(key=lambda e: _reverse_str(e.superseded_at or ""))
+        return entries
+
+    def purge_superseded(self, *, days: int = 30) -> int:
+        """Physically delete superseded entries older than `days`, leaving an
+        irreversible forget fingerprint (§15.3). Returns the number purged."""
+        removed = 0
+        with self._locked():
+            for path in list(self.superseded_dir.glob("mem_*.md")):
+                entry = self._read_entry_file(path, quarantine_on_error=False)
+                if entry is None:
+                    continue
+                stamp = entry.superseded_at
+                # Keep entries still inside the window; purge those past it.
+                if stamp and is_within_days_since(stamp, days=days):
+                    continue
+                self._append_forget_unlocked(
+                    ForgetFingerprint(
+                        content_hash=content_fingerprint(entry.body),
+                        turn_ids=[ev.turn_id for ev in entry.evidence if ev.turn_id],
+                    )
+                )
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
+
+    def delete_entry(self, memory_id: str, *, forget: bool = True) -> bool:
         with self._locked():
             path = self.entries_dir / f"{memory_id}.md"
             if not path.is_file():
                 return False
             entry = self._read_entry_file(path, quarantine_on_error=False)
-            if entry is not None:
+            # §15.4: episode-delete source removal passes forget=False so the same
+            # evidence can rebuild the memory if the episode is restored / re-told.
+            if forget and entry is not None:
                 self._append_forget_unlocked(
                     ForgetFingerprint(
                         content_hash=content_fingerprint(entry.body),
@@ -157,6 +199,11 @@ class MemoryFileStore:
             path.unlink(missing_ok=True)
             self._rebuild_indexes_unlocked()
             return True
+
+    def count_entries(self, *, origin: MemoryOrigin | None = None) -> int:
+        if origin is None:
+            return len(self.list_entries())
+        return sum(1 for e in self.list_entries() if e.origin == origin)
 
     def clear_all(self) -> None:
         with self._locked():
@@ -191,6 +238,20 @@ class MemoryFileStore:
 
     def save_worker_state(self, worker: WorkerState) -> None:
         self._write_json(self.worker_file, worker.to_dict())
+
+    def note_change(self, n: int = 1) -> None:
+        """Count a new/updated memory unit toward the next maintenance gate (§9.2)."""
+        with self._locked():
+            state = self.load_state()
+            state.settings.changes_since_maintenance += n
+            self.save_settings(state.settings)
+
+    def mark_maintained(self) -> None:
+        with self._locked():
+            state = self.load_state()
+            state.settings.last_maintenance_at = utc_now_iso()
+            state.settings.changes_since_maintenance = 0
+            self.save_settings(state.settings)
 
     # ------------------------------------------------------------------ pending
     def enqueue(self, job: PendingJob) -> PendingJob:
@@ -335,6 +396,7 @@ class MemoryFileStore:
             f"last_used_at: {last_used}",
             f"use_count: {entry.use_count}",
             f"source_count: {entry.source_count}",
+            f"superseded_at: {entry.superseded_at or ''}",
             "---",
         ]
         body_section = ["", "## Memory", "", entry.body.strip(), ""]
@@ -364,6 +426,7 @@ class MemoryFileStore:
                 "updated_at": front.get("updated_at", utc_now_iso()),
                 "last_used_at": front.get("last_used_at") or None,
                 "use_count": int(front.get("use_count", "0") or "0"),
+                "superseded_at": front.get("superseded_at") or None,
                 "body": sections.get("Memory", "").strip(),
                 "keywords": [
                     kw.strip()

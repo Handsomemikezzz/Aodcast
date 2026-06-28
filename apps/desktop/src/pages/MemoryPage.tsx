@@ -3,10 +3,12 @@ import { motion } from "framer-motion";
 import {
   AlertTriangle,
   Brain,
+  History,
   Loader2,
   Lock,
   Sparkles,
   Trash2,
+  Wand2,
 } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -158,6 +160,7 @@ export function MemoryPage() {
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [usage, setUsage] = useState<MemoryUsageEvent[]>([]);
+  const [superseded, setSuperseded] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -165,21 +168,24 @@ export function MemoryPage() {
   const [deleteTarget, setDeleteTarget] = useState<MemoryEntry | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [maintaining, setMaintaining] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [ov, items, events] = await Promise.all([
+      const [ov, items, events, sup] = await Promise.all([
         bridge.getMemoryOverview(),
         bridge.listMemories({
           search: search.trim() || undefined,
           type: typeFilter === "all" ? undefined : typeFilter,
         }),
         bridge.listMemoryUsage(),
+        bridge.listMemorySuperseded(),
       ]);
       setOverview(ov);
       setEntries(items);
       setUsage(events);
+      setSuperseded(sup);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load memory."));
     } finally {
@@ -237,6 +243,20 @@ export function MemoryPage() {
       await load();
     } catch (err) {
       setError(getErrorMessage(err, "Failed to clear memory."));
+    }
+  };
+
+  const handleMaintain = async () => {
+    setMaintaining(true);
+    setError(null);
+    try {
+      await bridge.runMemoryMaintenance();
+      // Maintenance runs in the background; reflect the queued/running state.
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to start maintenance."));
+    } finally {
+      setMaintaining(false);
     }
   };
 
@@ -338,6 +358,22 @@ export function MemoryPage() {
                 </span>
                 <span>{overview?.entry_count ?? 0} memories</span>
               </div>
+              <div className="flex items-center justify-between gap-3 border-t border-outline pt-3">
+                <span className="text-[11px] text-secondary/70">
+                  {settings?.last_maintenance_at
+                    ? `上次整理 ${new Date(settings.last_maintenance_at).toLocaleString()}`
+                    : "尚未整理"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleMaintain()}
+                  disabled={maintaining || busy}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-outline px-2.5 py-1 text-[11px] font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {maintaining ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                  整理记忆
+                </button>
+              </div>
             </div>
           )}
 
@@ -394,6 +430,24 @@ export function MemoryPage() {
                     <span className="text-secondary/60 shrink-0">
                       {event.memory_ids.length} memor{event.memory_ids.length === 1 ? "y" : "ies"} · {event.operation}
                     </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Recently superseded */}
+          {superseded.length > 0 ? (
+            <div className="mt-8">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-secondary/70 mb-2 flex items-center gap-1.5">
+                <History className="w-3 h-3" />
+                最近被替代
+              </p>
+              <div className="rounded-xl border border-outline bg-surface-container-low divide-y divide-outline-variant overflow-hidden">
+                {superseded.slice(0, 10).map((entry) => (
+                  <div key={entry.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[12px]">
+                    <span className="text-secondary truncate">{entry.name}</span>
+                    <span className="text-secondary/60 shrink-0 capitalize">{entry.type}</span>
                   </div>
                 ))}
               </div>

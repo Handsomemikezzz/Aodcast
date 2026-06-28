@@ -38,6 +38,7 @@ def serialize_memory_overview(overview) -> dict[str, object]:
         },
         "entry_count": overview.entry_count,
         "pending_job_count": overview.pending_job_count,
+        "superseded_count": overview.superseded_count,
     }
 
 

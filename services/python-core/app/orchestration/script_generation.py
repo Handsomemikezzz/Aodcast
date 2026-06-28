@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.domain.common import utc_now_iso
@@ -16,6 +17,9 @@ from app.providers.llm.factory import build_llm_provider
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 
+if TYPE_CHECKING:
+    from app.orchestration.memory_service import MemoryService
+
 
 @dataclass(frozen=True, slots=True)
 class ScriptGenerationResult:
@@ -25,9 +29,15 @@ class ScriptGenerationResult:
 
 
 class ScriptGenerationService:
-    def __init__(self, store: ProjectStore, config_store: ConfigStore) -> None:
+    def __init__(
+        self,
+        store: ProjectStore,
+        config_store: ConfigStore,
+        memory_service: "MemoryService | None" = None,
+    ) -> None:
         self.store = store
         self.config_store = config_store
+        self.memory_service = memory_service
 
     def generate_draft(
         self,
@@ -46,12 +56,24 @@ class ScriptGenerationService:
         if override_provider:
             llm_config.provider = override_provider
 
+        # Read-only script-stage memory retrieval. Never blocks generation.
+        # build_script_context records the usage event on project.session, which
+        # is persisted by save_project below.
+        memory_context = ""
+        if self.memory_service is not None:
+            try:
+                ctx = self.memory_service.build_script_context(project.session)
+                memory_context = ctx.prompt_block
+            except Exception:
+                memory_context = ""
+
         provider = build_llm_provider(llm_config)
         request = ScriptGenerationRequest(
             session_id=session_id,
             topic=project.session.topic,
             creation_intent=project.session.creation_intent,
             transcript_text=_transcript_text(transcript),
+            memory_context=memory_context,
         )
 
         script = ScriptRecord(

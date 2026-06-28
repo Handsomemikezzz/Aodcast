@@ -14,6 +14,7 @@ from app.domain.memory import (
 from app.domain.session import SessionRecord
 from app.domain.transcript import Speaker
 from app.orchestration.memory_extraction import MemoryExtractor
+from app.orchestration.memory_maintenance import MemoryMaintenance
 from app.orchestration.memory_retrieval import MemoryRetrieval, RetrievalQuery
 from app.orchestration.sensitive import detect_forbidden
 from app.storage.config_store import ConfigStore
@@ -30,6 +31,7 @@ class MemoryOverview:
     state: MemoryState
     entry_count: int
     pending_job_count: int
+    superseded_count: int = 0
 
 
 class ExplicitMemoryRejected(ValueError):
@@ -50,7 +52,13 @@ class MemoryService:
         self.store = MemoryFileStore(data_dir)
         self.extractor = MemoryExtractor(project_store, config_store, self.store)
         self.retrieval = MemoryRetrieval(self.store)
-        self.worker = MemoryWorker(self.store, self.extractor)
+        self.maintenance = MemoryMaintenance(self.store, config_store)
+        self.worker = MemoryWorker(
+            self.store,
+            self.extractor,
+            maintenance=self.maintenance,
+            delete_source=self.delete_source,
+        )
 
     # --------------------------------------------------------------- lifecycle
     def bootstrap(self) -> None:
@@ -75,6 +83,7 @@ class MemoryService:
             state=state,
             entry_count=len(self.store.list_entries()),
             pending_job_count=len(self.store.list_pending()),
+            superseded_count=len(self.store.list_superseded()),
         )
 
     def acknowledge_first_run(self) -> MemoryState:
@@ -123,6 +132,51 @@ class MemoryService:
     def clear_all(self) -> None:
         self.store.clear_all()
         self._purge_authorizations(None)
+
+    def list_superseded(self) -> list[MemoryEntry]:
+        return self.store.list_superseded()
+
+    # ------------------------------------------------------------- maintenance
+    def run_maintenance_now(self) -> None:
+        """Manual trigger (§19): enqueue a maintenance batch if not already queued."""
+        if not self._has_pending(PendingJobKind.MAINTAIN_MEMORIES):
+            self.store.enqueue(PendingJob(kind=PendingJobKind.MAINTAIN_MEMORIES))
+            self.worker.notify()
+
+    # ----------------------------------------------------- episode lifecycle
+    def on_session_deleted(self, session_id: str) -> None:
+        """§15.4: strip this session's evidence contributions from memory."""
+        self.store.enqueue(PendingJob(kind=PendingJobKind.DELETE_SOURCE, session_id=session_id))
+        self.worker.notify()
+
+    def on_session_restored(self, session_id: str) -> None:
+        """§15.4: restoring re-triggers extraction rather than restoring old files."""
+        session = self.project_store.load_session(session_id)
+        if not self._writing_active(session):
+            return
+        self.store.enqueue(
+            PendingJob(
+                kind=PendingJobKind.EXTRACT_TURNS,
+                session_id=session_id,
+                from_turn_id="",
+            )
+        )
+        self.worker.notify()
+
+    def delete_source(self, session_id: str) -> None:
+        """Worker job: drop a session's evidence; delete entries left with none.
+
+        Entries removed here use forget=False so the same evidence can rebuild
+        the memory if the episode is restored / re-told (§15.4)."""
+        for entry in self.store.list_entries():
+            remaining = [ev for ev in entry.evidence if ev.session_id != session_id]
+            if len(remaining) == len(entry.evidence):
+                continue
+            if not remaining:
+                self.store.delete_entry(entry.id, forget=False)
+            else:
+                entry.evidence = remaining
+                self.store.save_entry(entry)
 
     # -------------------------------------------------------------------- writes
     def enqueue_extraction(self, session: SessionRecord) -> None:
@@ -205,11 +259,92 @@ class MemoryService:
             )
         )
 
+    def build_script_context(self, session: SessionRecord):
+        """Script-stage retrieval (§13.4). Gated by usage + episode memory mode.
+
+        Records a usage event on the passed-in session (caller persists it). The
+        rerank step is bound to the configured provider; failure falls back to
+        local ordering inside the retrieval layer.
+        """
+        from app.domain.memory import RetrievedMemoryContext
+
+        state = self.store.load_state()
+        if not state.settings.usage_enabled or not session.memory_enabled():
+            return RetrievedMemoryContext.empty()
+
+        transcript = self.project_store.load_transcript(session.session_id)
+        transcript_text = "\n".join(t.content for t in transcript.turns if t.speaker == Speaker.USER)
+        query = RetrievalQuery(
+            topic=session.topic,
+            creation_intent=session.creation_intent,
+            transcript_text=transcript_text,
+            authorized_memory_ids=tuple(session.authorized_memory_ids),
+        )
+        context = self.retrieval.build_script_context(
+            query, rerank=self._build_rerank(session.topic, session.creation_intent)
+        )
+        if context.item_count:
+            session.record_memory_usage("script", list(context.memory_ids))
+        return context
+
+    def list_authorization_candidates(self, session: SessionRecord) -> list:
+        transcript = self.project_store.load_transcript(session.session_id)
+        transcript_text = "\n".join(t.content for t in transcript.turns if t.speaker == Speaker.USER)
+        return self.retrieval.list_script_authorization_candidates(
+            RetrievalQuery(
+                topic=session.topic,
+                creation_intent=session.creation_intent,
+                transcript_text=transcript_text,
+                authorized_memory_ids=tuple(session.authorized_memory_ids),
+            )
+        )
+
+    def authorize(self, session_id: str, memory_id: str) -> SessionRecord:
+        if self.store.get_entry(memory_id) is None:
+            raise ValueError(f"Unknown memory id '{memory_id}'.")
+        session = self.project_store.load_session(session_id)
+        session.authorize_memory(memory_id)
+        self.project_store.save_session(session)
+        return session
+
+    def revoke(self, session_id: str, memory_id: str) -> SessionRecord:
+        session = self.project_store.load_session(session_id)
+        if memory_id in session.authorized_memory_ids:
+            session.authorized_memory_ids = [
+                mid for mid in session.authorized_memory_ids if mid != memory_id
+            ]
+            session.updated_at = utc_now_iso()
+            self.project_store.save_session(session)
+        return session
+
+    def _build_rerank(self, topic: str, creation_intent: str):
+        """Bind a rerank callable to the currently configured provider."""
+        from app.providers.llm.base import MemoryRerankRequest
+        from app.providers.llm.factory import build_llm_provider
+
+        provider = build_llm_provider(self.config_store.load_llm_config())
+
+        def rerank(index: list[dict]) -> list[str]:
+            response = provider.rerank_memories(
+                MemoryRerankRequest(
+                    topic=topic,
+                    creation_intent=creation_intent,
+                    candidates=index,
+                    max_select=5,
+                )
+            )
+            return response.selected_ids
+
+        return rerank
+
     # ------------------------------------------------------------------ helpers
     def _writing_active(self, session: SessionRecord) -> bool:
         if not session.memory_enabled():
             return False
         return self.store.load_state().settings.writing_enabled
+
+    def _has_pending(self, kind: PendingJobKind) -> bool:
+        return any(job.kind == kind for job in self.store.list_pending())
 
     @staticmethod
     def _user_turns_after(user_turns, cursor: str):

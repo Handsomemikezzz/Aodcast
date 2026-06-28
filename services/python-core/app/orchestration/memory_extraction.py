@@ -114,6 +114,9 @@ class MemoryExtractor:
                     continue
             self.memory_store.save_entry(entry)
             written.append(entry)
+        if written:
+            # Count new/updated units toward the next maintenance gate (§9.2/§17.3).
+            self.memory_store.note_change(len(written))
         return written
 
     def _merge_into(self, target_id: str, incoming: MemoryEntry) -> MemoryEntry | None:

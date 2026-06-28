@@ -1154,6 +1154,17 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             memory.clear_all()
             send_overview("clear_memory")
             return
+        if self.command == "POST" and path == "/api/v1/memory:maintain":
+            memory.run_maintenance_now()
+            send_overview("run_memory_maintenance")
+            return
+        if self.command == "GET" and path == "/api/v1/memory/superseded":
+            items = [serialize_memory_entry(entry) for entry in memory.list_superseded()]
+            self._send_bridge_envelope(
+                success_envelope({"items": items}, operation="list_memory_superseded"),
+                origin=origin,
+            )
+            return
         if self.command == "GET" and path == "/api/v1/memory/usage":
             self._send_bridge_envelope(
                 success_envelope(
@@ -1194,6 +1205,18 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
         raise ValueError(f"Unsupported memory route: {self.command} {path}")
+
+    def _notify_memory_session_event(self, session_id: str, *, deleted: bool) -> None:
+        """Best-effort §15.4 source-lifecycle hook. Never blocks the response."""
+        if self.context.memory_service is None:
+            return
+        try:
+            if deleted:
+                self.context.memory_service.on_session_deleted(session_id)
+            else:
+                self.context.memory_service.on_session_restored(session_id)
+        except Exception:
+            pass
 
     def _collect_memory_usage_events(self, *, limit: int = 50) -> list[dict[str, object]]:
         events: list[dict[str, object]] = []
@@ -1855,6 +1878,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 raise ValueError("Session is already deleted.")
             project.session.soft_delete()
             self.context.store.save_project(project)
+            self._notify_memory_session_event(session_id, deleted=True)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="delete_session"), origin=origin)
             return
         if self.command == "POST" and suffix == ":restore":
@@ -1863,6 +1887,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 raise ValueError("Session is not deleted.")
             project.session.restore()
             self.context.store.save_project(project)
+            self._notify_memory_session_event(session_id, deleted=False)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_session"), origin=origin)
             return
         if self.command == "POST" and suffix == ":memory-mode":
@@ -1882,6 +1907,30 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                         project.session.advance_memory_cursor(user_turns[-1].turn_id)
             self.context.store.save_project(project)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="set_session_memory_mode"), origin=origin)
+            return
+        if self.command == "GET" and suffix == "/memory-candidates":
+            memory = self.context.get_memory_service()
+            session = self.context.store.load_session(session_id)
+            candidates = [
+                serialize_memory_entry(entry)
+                for entry in memory.list_authorization_candidates(session)
+            ]
+            self._send_bridge_envelope(
+                success_envelope({"candidates": candidates}, operation="list_memory_candidates"),
+                origin=origin,
+            )
+            return
+        if self.command == "POST" and suffix == "/memory:authorize":
+            memory_id = str(body.get("memory_id") or "").strip()
+            if not memory_id:
+                raise ValueError("Field 'memory_id' is required.")
+            memory = self.context.get_memory_service()
+            memory.authorize(session_id, memory_id)
+            project = self.context.store.load_project(session_id)
+            self._send_bridge_envelope(
+                success_envelope({"project": serialize_project(project)}, operation="authorize_memory"),
+                origin=origin,
+            )
             return
         if self.command == "POST" and suffix == "/interview:start":
             project = self.context.store.load_project(session_id)
@@ -2430,7 +2479,7 @@ def serve_http(
     request_state_store = RequestStateStore(config.data_dir)
     memory_service = MemoryService(config.data_dir, store, config_store)
     orchestrator = InterviewOrchestrator(store, config_store, memory_service)
-    script_generation = ScriptGenerationService(store, config_store)
+    script_generation = ScriptGenerationService(store, config_store, memory_service)
     audio_rendering = AudioRenderingService(store, config_store, artifact_store)
 
     store.bootstrap()

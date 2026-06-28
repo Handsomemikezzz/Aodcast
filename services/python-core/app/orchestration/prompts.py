@@ -46,12 +46,84 @@ def build_script_generation_user_prompt(
     topic: str,
     creation_intent: str,
     transcript_text: str,
+    memory_context: str = "",
 ) -> str:
+    memory_block = f"{memory_context.strip()}\n\n" if memory_context.strip() else ""
     return (
         f"Topic: {topic}\n"
         f"Creation intent: {creation_intent}\n\n"
+        f"{memory_block}"
         f"Interview transcript:\n{transcript_text.strip()}\n\n"
         "Write the full spoken narration now."
+    )
+
+
+MEMORY_RERANK_SYSTEM_PROMPT = (
+    "You select which long-term memories are most useful for writing the current "
+    "podcast script. You return STRICT JSON only: {\"selected_ids\": [\"id1\", ...]}. "
+    "Pick at most the requested number, ordered by relevance to the topic and intent. "
+    "Only choose from the provided candidate ids. If none are relevant, return "
+    "{\"selected_ids\": []}. Do not invent ids and do not add commentary."
+)
+
+
+def build_memory_rerank_user_content(
+    *,
+    topic: str,
+    creation_intent: str,
+    candidates: list[dict[str, str]],
+    max_select: int,
+) -> str:
+    candidate_lines = "\n".join(
+        f'- id: {c.get("id", "")} | type: {c.get("type", "")} | name: {c.get("name", "")} '
+        f'| description: {c.get("description", "")}'
+        for c in candidates
+    ) or "(no candidates)"
+    return (
+        f"Topic: {topic}\n"
+        f"Creation intent: {creation_intent}\n"
+        f"Select at most {max_select} memory ids most useful for this script.\n\n"
+        f"Candidates:\n{candidate_lines}\n\n"
+        "Return the JSON object now."
+    )
+
+
+MEMORY_MAINTENANCE_SYSTEM_PROMPT = (
+    "You consolidate a small group of long-term memories that look like duplicates "
+    "of the same topic. You return STRICT JSON only — no prose, no markdown fences.\n\n"
+    "Allowed: merge semantic duplicates into one entry, compress redundant wording, "
+    "refresh the name/description, and drop duplicate evidence. You may ONLY reuse "
+    "evidence turn_ids that already appear in the provided group — never invent facts, "
+    "quotes, or turn_ids. Keep the user's original language and meaning.\n\n"
+    "Output schema:\n"
+    '{"primary_id": "<id to keep, or empty string if no merge>", "name": "...", '
+    '"description": "...", "body": "...", "keywords": ["..."], '
+    '"evidence_turn_ids": ["<from the group only>"], "drop_ids": ["<ids merged away>"]}\n\n'
+    "If the entries are not真正重复 (not truly the same topic), return "
+    '{"primary_id": "", "drop_ids": []}. primary_id and every drop_id must be ids '
+    "from the group. Do not merge unrelated memories just to reduce count."
+)
+
+
+def build_memory_maintenance_user_content(*, entries: list[dict]) -> str:
+    blocks = []
+    for entry in entries:
+        evidence = "; ".join(
+            f'{ev.get("turn_id", "")}:"{ev.get("quote", "")}"' for ev in entry.get("evidence", [])
+        )
+        blocks.append(
+            f'- id: {entry.get("id", "")} | type: {entry.get("type", "")}\n'
+            f'  name: {entry.get("name", "")}\n'
+            f'  description: {entry.get("description", "")}\n'
+            f'  body: {entry.get("body", "")}\n'
+            f'  keywords: {", ".join(entry.get("keywords", []))}\n'
+            f'  evidence: {evidence}'
+        )
+    group = "\n".join(blocks) or "(empty group)"
+    return (
+        "Candidate group (possible duplicates of one topic):\n"
+        f"{group}\n\n"
+        "Return the JSON merge decision now."
     )
 
 
