@@ -8,6 +8,7 @@ from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.orchestration.prompts import (
     InterviewPromptInput,
+    build_interview_prompt_plan,
     build_prompt_input,
     build_question,
 )
@@ -33,6 +34,31 @@ def _detect_language_is_zh(topic: str, transcript: TranscriptRecord) -> bool:
 def _get_last_user_turn(transcript: TranscriptRecord) -> str:
     user_turns = [turn.content for turn in transcript.turns if turn.speaker == Speaker.USER]
     return user_turns[-1] if user_turns else ""
+
+
+def _get_preceding_agent_focus(transcript: TranscriptRecord) -> str:
+    """Return the interview_focus from the last agent turn, or 'unknown'."""
+    for turn in reversed(transcript.turns):
+        if turn.speaker == Speaker.AGENT:
+            return str(turn.metadata.get("interview_focus") or "unknown")
+    return "unknown"
+
+
+def _agent_turn_metadata(plan_out: list) -> dict:
+    """Extract compact turn metadata from a plan_out list populated by _stream_next_question."""
+    if not plan_out:
+        return {"interview_focus": "unknown", "turn_role": "question"}
+    plan = plan_out[0]
+    return {
+        "interview_focus": str(plan.metadata.gates.get("suggested_focus", "unknown")),
+        "turn_role": "question",
+        "prompt_version": plan.metadata.prompt_version,
+        # Keep section_ids compact: only the non-private section IDs for debugging.
+        "prompt_section_ids": [
+            sid for sid in plan.metadata.section_ids
+            if not sid.startswith("transcript")
+        ],
+    }
 
 
 # Deterministic explicit "remember this" directives (§10.2 obvious-instruction rule).
@@ -248,7 +274,15 @@ class InterviewOrchestrator:
         project: SessionProject,
         prompt_input: InterviewPromptInput,
         transcript: TranscriptRecord,
+        readiness: ReadinessReport | None = None,
+        plan_out: list | None = None,
     ) -> Iterator[str]:
+        """Stream the next interview question chunk by chunk.
+
+        ``plan_out``: if a list is passed, the assembled PromptPlan is appended
+        as its first element so the caller can inspect metadata for turn tagging
+        without changing the generator return type.
+        """
         llm_config = self.config_store.load_llm_config()
         provider = build_llm_provider(llm_config)
         memory_context = ""
@@ -264,6 +298,26 @@ class InterviewOrchestrator:
                     project.session.record_memory_usage("interview", list(retrieved.memory_ids))
             except Exception:
                 memory_context = ""
+
+        # Build the PromptPlan for this turn.  Falls back gracefully when
+        # readiness is not supplied (e.g. start_interview before first user reply).
+        try:
+            effective_readiness = readiness or evaluate_readiness(transcript)
+            prompt_plan = build_interview_prompt_plan(
+                topic=prompt_input.topic,
+                creation_intent=prompt_input.creation_intent,
+                transcript=transcript,
+                readiness=effective_readiness,
+                script_exists=(project.script is not None),
+                memory_context=memory_context,
+                transcript_text=_transcript_text(transcript),
+            )
+        except Exception:
+            prompt_plan = None
+
+        if plan_out is not None and prompt_plan is not None:
+            plan_out.append(prompt_plan)
+
         request = InterviewQuestionRequest(
             session_id=prompt_input.session_id,
             topic=prompt_input.topic,
@@ -273,6 +327,7 @@ class InterviewOrchestrator:
             missing_dimensions=list(prompt_input.missing_dimensions),
             script_exists=(project.script is not None),
             memory_context=memory_context,
+            prompt_plan=prompt_plan,
         )
         try:
             yield from provider.stream_interview_question(request)
@@ -288,8 +343,15 @@ class InterviewOrchestrator:
         project: SessionProject,
         prompt_input: InterviewPromptInput,
         transcript: TranscriptRecord,
+        readiness: ReadinessReport | None = None,
+        plan_out: list | None = None,
     ) -> str:
-        question = "".join(self._stream_next_question(project, prompt_input, transcript)).strip()
+        question = "".join(
+            self._stream_next_question(
+                project, prompt_input, transcript,
+                readiness=readiness, plan_out=plan_out,
+            )
+        ).strip()
         if not question:
             last_user_turn = _get_last_user_turn(transcript)
             is_zh = _detect_language_is_zh(prompt_input.topic, transcript)
@@ -305,8 +367,13 @@ class InterviewOrchestrator:
             project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
             readiness = evaluate_readiness(transcript)
             prompt_input = build_prompt_input(project.session, transcript, readiness)
-            next_question = self._collect_streamed_next_question(project, prompt_input, transcript)
-            transcript.append(Speaker.AGENT, next_question)
+            plan_out: list = []
+            next_question = self._collect_streamed_next_question(
+                project, prompt_input, transcript, readiness=readiness, plan_out=plan_out
+            )
+            # Tag the opening agent turn with interview focus metadata.
+            agent_meta = _agent_turn_metadata(plan_out)
+            transcript.append(Speaker.AGENT, next_question, metadata=agent_meta)
             self.store.save_project(project)
             return InterviewTurnResult(
                 project=project,
@@ -338,7 +405,14 @@ class InterviewOrchestrator:
         project.transcript = transcript
 
         project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
-        user_turn = transcript.append(Speaker.USER, content)
+        # Tag user turn with the interview_focus from the preceding agent turn.
+        # This links user answers to the dimension the agent was exploring, enabling
+        # deterministic EpisodeBrief construction without post-hoc keyword matching.
+        preceding_focus = _get_preceding_agent_focus(transcript)
+        user_turn = transcript.append(Speaker.USER, content, metadata={
+            "interview_focus": preceding_focus,
+            "turn_role": "answer",
+        })
         # Persist the user turn before streaming provider output so partial failures
         # still leave the user's message visible when reopening the session.
         self.store.save_project(project)
@@ -410,7 +484,10 @@ class InterviewOrchestrator:
             for i in range(0, len(deterministic_message), chunk_size):
                 yield deterministic_message[i : i + chunk_size]
 
-            transcript.append(Speaker.AGENT, deterministic_message)
+            transcript.append(Speaker.AGENT, deterministic_message, metadata={
+                "interview_focus": "ready_to_generate",
+                "turn_role": "ready_message",
+            })
             self.store.save_project(project)
 
             yield InterviewTurnResult(
@@ -426,8 +503,11 @@ class InterviewOrchestrator:
 
         project.session.transition(SessionState.INTERVIEW_IN_PROGRESS)
 
+        plan_out: list = []
         full_question = []
-        for chunk in self._stream_next_question(project, prompt_input, transcript):
+        for chunk in self._stream_next_question(
+            project, prompt_input, transcript, readiness=readiness, plan_out=plan_out
+        ):
             full_question.append(chunk)
             yield chunk
 
@@ -437,7 +517,10 @@ class InterviewOrchestrator:
             is_zh = _detect_language_is_zh(project.session.topic, transcript)
             next_question = build_question(prompt_input, last_user_turn=last_user_turn, is_zh=is_zh)
             yield next_question
-        transcript.append(Speaker.AGENT, next_question)
+
+        # Tag agent turn with focus metadata from the assembled PromptPlan.
+        agent_meta = _agent_turn_metadata(plan_out)
+        transcript.append(Speaker.AGENT, next_question, metadata=agent_meta)
         self.store.save_project(project)
 
         yield InterviewTurnResult(

@@ -91,15 +91,23 @@ class OpenAICompatibleProvider:
         if not self.config.api_key:
             raise ValueError("OpenAI-compatible provider requires an api_key.")
 
-        user_content = build_interview_stream_user_content(
-            topic=request.topic,
-            creation_intent=request.creation_intent,
-            missing_dimensions=list(request.missing_dimensions),
-            transcript_text=request.transcript_text,
-            script_exists=request.script_exists,
-            suggested_focus=request.suggested_focus,
-            memory_context=request.memory_context,
-        )
+        # Prefer the orchestration-assembled PromptPlan when supplied; otherwise
+        # fall back to the legacy string builders for backward compatibility.
+        if request.prompt_plan is not None:
+            system_content = request.prompt_plan.system
+            user_content = request.prompt_plan.user
+        else:
+            system_content = INTERVIEW_STREAM_SYSTEM_PROMPT
+            user_content = build_interview_stream_user_content(
+                topic=request.topic,
+                creation_intent=request.creation_intent,
+                missing_dimensions=list(request.missing_dimensions),
+                transcript_text=request.transcript_text,
+                script_exists=request.script_exists,
+                suggested_focus=request.suggested_focus,
+                memory_context=request.memory_context,
+            )
+
         client = OpenAI(
             base_url=self.config.base_url,
             api_key=self.config.api_key,
@@ -107,7 +115,7 @@ class OpenAICompatibleProvider:
         response = client.chat.completions.create(
             model=self.config.model,
             messages=[
-                {"role": "system", "content": INTERVIEW_STREAM_SYSTEM_PROMPT},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": user_content},
             ],
             stream=True,

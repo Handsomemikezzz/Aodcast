@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, Iterator
+from typing import TYPE_CHECKING, Any, Literal, Protocol, Iterator
+
+if TYPE_CHECKING:
+    from app.orchestration.prompts.registry import PromptPlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +33,10 @@ class InterviewQuestionRequest:
     missing_dimensions: list[str]
     script_exists: bool = False
     memory_context: str = ""
+    # When present, providers must use plan.system / plan.user instead of
+    # building the prompt from individual fields. Allows orchestration-layer
+    # PromptPlan assembly without breaking existing provider call sites.
+    prompt_plan: "PromptPlan | None" = None
 
 
 @dataclass(frozen=True, slots=True)

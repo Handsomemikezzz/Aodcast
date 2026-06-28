@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
@@ -36,10 +36,21 @@ class TranscriptTurn:
     content: str
     created_at: str = field(default_factory=utc_now_iso)
     turn_id: str = field(default_factory=new_turn_id)
+    # Lightweight routing metadata added during the interview.
+    # Keys: interview_focus, turn_role, prompt_version, prompt_section_ids.
+    # Optional — legacy turns without this field remain fully readable.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload["speaker"] = self.speaker.value
+        payload: dict[str, Any] = {
+            "speaker": self.speaker.value,
+            "content": self.content,
+            "created_at": self.created_at,
+            "turn_id": self.turn_id,
+        }
+        # Omit empty metadata to keep legacy-compatible JSON compact.
+        if self.metadata:
+            payload["metadata"] = dict(self.metadata)
         return payload
 
     @classmethod
@@ -55,6 +66,8 @@ class TranscriptTurn:
             content=content,
             created_at=created_at,
             turn_id=turn_id,
+            # Existing saved transcripts without metadata load as empty dict (backward compat).
+            metadata=dict(payload.get("metadata") or {}),
         )
 
 
@@ -63,8 +76,17 @@ class TranscriptRecord:
     session_id: str
     turns: list[TranscriptTurn] = field(default_factory=list)
 
-    def append(self, speaker: Speaker, content: str) -> TranscriptTurn:
-        turn = TranscriptTurn(speaker=speaker, content=content)
+    def append(
+        self,
+        speaker: Speaker,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> TranscriptTurn:
+        turn = TranscriptTurn(
+            speaker=speaker,
+            content=content,
+            metadata=dict(metadata) if metadata else {},
+        )
         self.turns.append(turn)
         return turn
 

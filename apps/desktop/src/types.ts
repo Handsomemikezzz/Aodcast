@@ -28,10 +28,26 @@ export type SessionRecord = {
   memory_usage_events?: { operation: string; memory_ids: string[]; used_at: string }[];
 };
 
+/** Lightweight interview routing metadata stored on transcript turns.
+ *  Optional — legacy turns without this field load as-is. */
+export type TranscriptTurnMetadata = {
+  /** The readiness dimension being explored at the time of this turn. */
+  interview_focus?: string;
+  /** Role of this turn in the interview flow. */
+  turn_role?: "question" | "answer" | "ready_message" | "revision_note" | "freeform";
+  /** Prompt version that produced this agent turn, when available. */
+  prompt_version?: string;
+  /** Compact section ids for agent turns, for debugging. */
+  prompt_section_ids?: string[];
+};
+
 export type TranscriptTurn = {
   speaker: Speaker;
   content: string;
   created_at: string;
+  turn_id?: string;
+  /** Optional — absent on turns saved before metadata support was added. */
+  metadata?: TranscriptTurnMetadata;
 };
 
 export type TranscriptRecord = {
