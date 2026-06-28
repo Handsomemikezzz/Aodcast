@@ -48,6 +48,20 @@ class OpenAICompatibleProvider:
         if not self.config.api_key:
             raise ValueError("OpenAI-compatible provider requires an api_key.")
 
+        # Prefer the orchestration-assembled PromptPlan when supplied; otherwise
+        # fall back to legacy string builders for backward compatibility.
+        if request.prompt_plan is not None:
+            system_content = request.prompt_plan.system
+            user_content = request.prompt_plan.user
+        else:
+            system_content = SCRIPT_GENERATION_SYSTEM_PROMPT
+            user_content = build_script_generation_user_prompt(
+                topic=request.topic,
+                creation_intent=request.creation_intent,
+                transcript_text=request.transcript_text,
+                memory_context=request.memory_context,
+            )
+
         client = OpenAI(
             base_url=self.config.base_url,
             api_key=self.config.api_key,
@@ -55,19 +69,8 @@ class OpenAICompatibleProvider:
         response = client.chat.completions.create(
             model=self.config.model,
             messages=[
-                {
-                    "role": "system",
-                    "content": SCRIPT_GENERATION_SYSTEM_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": build_script_generation_user_prompt(
-                        topic=request.topic,
-                        creation_intent=request.creation_intent,
-                        transcript_text=request.transcript_text,
-                        memory_context=request.memory_context,
-                    ),
-                },
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
             stream=True,
         )

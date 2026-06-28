@@ -32,21 +32,31 @@ from app.orchestration.prompts.interview import (
     build_question,
 )
 
-# Script profile (Phase 2 placeholder)
+# Script profile (Phase 2)
 from app.orchestration.prompts.script import (
     SCRIPT_GENERATION_SYSTEM_PROMPT,
+    EpisodeBrief,
+    ScriptStyleProfile,
+    build_episode_brief,
+    build_script_generation_metadata,
     build_script_generation_user_prompt,
+    build_script_prompt_plan,
+    build_script_style_profile,
 )
 
-# Memory profiles (Phase 3 placeholder)
+# Memory profiles (Phase 3)
 from app.orchestration.prompts.memory import (
     MEMORY_EXTRACTION_SYSTEM_PROMPT,
     MEMORY_MAINTENANCE_SYSTEM_PROMPT,
     MEMORY_RERANK_SYSTEM_PROMPT,
     _MEMORY_ACTION_SYSTEM,
     build_memory_action_classification_prompt,
+    build_memory_action_plan,
+    build_memory_extraction_plan,
     build_memory_extraction_user_content,
     build_memory_maintenance_user_content,
+    build_memory_merge_plan,
+    build_memory_rerank_plan,
     build_memory_rerank_user_content,
 )
 
@@ -66,16 +76,26 @@ __all__ = [
     "build_interview_stream_user_content",
     "build_prompt_input",
     "build_question",
-    # Script
+    # Script (Phase 2)
     "SCRIPT_GENERATION_SYSTEM_PROMPT",
+    "EpisodeBrief",
+    "ScriptStyleProfile",
+    "build_episode_brief",
+    "build_script_generation_metadata",
     "build_script_generation_user_prompt",
-    # Memory
+    "build_script_prompt_plan",
+    "build_script_style_profile",
+    # Memory (Phase 3)
     "MEMORY_EXTRACTION_SYSTEM_PROMPT",
     "MEMORY_MAINTENANCE_SYSTEM_PROMPT",
     "MEMORY_RERANK_SYSTEM_PROMPT",
     "_MEMORY_ACTION_SYSTEM",
     "build_memory_action_classification_prompt",
+    "build_memory_action_plan",
+    "build_memory_extraction_plan",
     "build_memory_extraction_user_content",
     "build_memory_maintenance_user_content",
+    "build_memory_merge_plan",
+    "build_memory_rerank_plan",
     "build_memory_rerank_user_content",
 ]

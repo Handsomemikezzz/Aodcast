@@ -14,6 +14,9 @@ class ScriptGenerationRequest:
     creation_intent: str
     transcript_text: str
     memory_context: str = ""
+    # When present, providers must use plan.system / plan.user instead of the
+    # legacy string builders. Enables PromptPlan-driven script generation.
+    prompt_plan: "PromptPlan | None" = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -11,6 +11,12 @@ from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionState
 from app.orchestration.prompts import build_prompt_input
+from app.orchestration.prompts.script import (
+    build_episode_brief,
+    build_script_generation_metadata,
+    build_script_prompt_plan,
+    build_script_style_profile,
+)
 from app.orchestration.readiness import evaluate_readiness
 from app.providers.llm.base import ScriptGenerationRequest
 from app.providers.llm.factory import build_llm_provider
@@ -60,12 +66,32 @@ class ScriptGenerationService:
         # build_script_context records the usage event on project.session, which
         # is persisted by save_project below.
         memory_context = ""
+        memory_ids_used: list[str] = []
         if self.memory_service is not None:
             try:
                 ctx = self.memory_service.build_script_context(project.session)
                 memory_context = ctx.prompt_block
+                memory_ids_used = list(ctx.memory_ids)
             except Exception:
                 memory_context = ""
+
+        # Build EpisodeBrief and ScriptStyleProfile for the PromptPlan.
+        brief = build_episode_brief(
+            project.session.topic,
+            project.session.creation_intent,
+            transcript,
+        )
+        style_profile = build_script_style_profile(project.session, transcript)
+
+        prompt_plan = build_script_prompt_plan(
+            topic=project.session.topic,
+            creation_intent=project.session.creation_intent,
+            transcript=transcript,
+            style_profile=style_profile,
+            brief=brief,
+            memory_context=memory_context,
+            memory_ids_used=memory_ids_used,
+        )
 
         provider = build_llm_provider(llm_config)
         request = ScriptGenerationRequest(
@@ -74,6 +100,7 @@ class ScriptGenerationService:
             creation_intent=project.session.creation_intent,
             transcript_text=_transcript_text(transcript),
             memory_context=memory_context,
+            prompt_plan=prompt_plan,
         )
 
         script = ScriptRecord(
@@ -92,6 +119,18 @@ class ScriptGenerationService:
             raise
 
         script.replace_with_generated_draft(response.draft)
+
+        # Persist compact generation metadata (§9.2) — no full prompt text,
+        # transcript text, memory bodies, or sensitive content.
+        script.generation_metadata = build_script_generation_metadata(
+            plan=prompt_plan,
+            style_profile=style_profile,
+            brief=brief,
+            provider=response.provider_name,
+            model=response.model_name,
+            memory_ids_used=memory_ids_used,
+        )
+
         project.script = script
         if project.artifact is None:
             project.artifact = ArtifactRecord(

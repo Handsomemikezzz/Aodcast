@@ -46,6 +46,9 @@ class ScriptRecord:
     revisions: list[ScriptRevision] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
+    # Compact, non-sensitive generation metadata (§9.2).
+    # Never contains full prompt text, transcript, or memory bodies.
+    generation_metadata: dict[str, Any] = field(default_factory=dict)
 
     def _snapshot(self, *, reason: str) -> None:
         self.revisions.append(
@@ -124,7 +127,7 @@ class ScriptRecord:
         self.updated_at = utc_now_iso()
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "session_id": self.session_id,
             "script_id": self.script_id,
             "name": self.name,
@@ -135,6 +138,10 @@ class ScriptRecord:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+        # Omit empty metadata to keep JSON compact for legacy scripts.
+        if self.generation_metadata:
+            payload["generation_metadata"] = dict(self.generation_metadata)
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ScriptRecord":
@@ -150,4 +157,6 @@ class ScriptRecord:
             revisions=[ScriptRevision.from_dict(item) for item in payload.get("revisions", [])],
             created_at=str(created),
             updated_at=str(updated),
+            # Existing saved scripts without generation_metadata load as empty dict.
+            generation_metadata=dict(payload.get("generation_metadata") or {}),
         )
