@@ -136,18 +136,24 @@ class OpenAICompatibleProvider:
         if not self.config.api_key:
             raise ValueError("OpenAI-compatible provider requires an api_key.")
 
-        user_content = build_memory_extraction_user_content(
-            topic=request.topic,
-            creation_intent=request.creation_intent,
-            user_turns=list(request.user_turns),
-            existing_candidates=list(request.existing_candidates),
-            explicit_intent=request.explicit_intent,
-        )
+        if request.prompt_plan is not None:
+            system_content = request.prompt_plan.system
+            user_content = request.prompt_plan.user
+        else:
+            system_content = MEMORY_EXTRACTION_SYSTEM_PROMPT
+            user_content = build_memory_extraction_user_content(
+                topic=request.topic,
+                creation_intent=request.creation_intent,
+                user_turns=list(request.user_turns),
+                existing_candidates=list(request.existing_candidates),
+                explicit_intent=request.explicit_intent,
+            )
+
         client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
         response = client.chat.completions.create(
             model=self.config.model,
             messages=[
-                {"role": "system", "content": MEMORY_EXTRACTION_SYSTEM_PROMPT},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": user_content},
             ],
             temperature=0,
@@ -166,20 +172,25 @@ class OpenAICompatibleProvider:
     def rerank_memories(self, request: MemoryRerankRequest) -> MemoryRerankResponse:
         if not self.config.base_url or not self.config.model or not self.config.api_key:
             raise ValueError("OpenAI-compatible provider requires base_url, model, and api_key.")
+
+        if request.prompt_plan is not None:
+            system_content = request.prompt_plan.system
+            user_content = request.prompt_plan.user
+        else:
+            system_content = MEMORY_RERANK_SYSTEM_PROMPT
+            user_content = build_memory_rerank_user_content(
+                topic=request.topic,
+                creation_intent=request.creation_intent,
+                candidates=list(request.candidates),
+                max_select=request.max_select,
+            )
+
         client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
         response = client.chat.completions.create(
             model=self.config.model,
             messages=[
-                {"role": "system", "content": MEMORY_RERANK_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": build_memory_rerank_user_content(
-                        topic=request.topic,
-                        creation_intent=request.creation_intent,
-                        candidates=list(request.candidates),
-                        max_select=request.max_select,
-                    ),
-                },
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
             temperature=0,
             stream=False,
@@ -196,12 +207,20 @@ class OpenAICompatibleProvider:
     def merge_memories(self, request: MemoryMergeRequest) -> MemoryMergeResponse:
         if not self.config.base_url or not self.config.model or not self.config.api_key:
             raise ValueError("OpenAI-compatible provider requires base_url, model, and api_key.")
+
+        if request.prompt_plan is not None:
+            system_content = request.prompt_plan.system
+            user_content = request.prompt_plan.user
+        else:
+            system_content = MEMORY_MAINTENANCE_SYSTEM_PROMPT
+            user_content = build_memory_maintenance_user_content(entries=list(request.entries))
+
         client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
         response = client.chat.completions.create(
             model=self.config.model,
             messages=[
-                {"role": "system", "content": MEMORY_MAINTENANCE_SYSTEM_PROMPT},
-                {"role": "user", "content": build_memory_maintenance_user_content(entries=list(request.entries))},
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content},
             ],
             temperature=0,
             stream=False,
@@ -230,15 +249,22 @@ class OpenAICompatibleProvider:
         )
         if not self.config.base_url or not self.config.model or not self.config.api_key:
             return _FALLBACK
+
+        if request.prompt_plan is not None:
+            system_content = request.prompt_plan.system
+            user_content = request.prompt_plan.user
+        else:
+            system_content = _MEMORY_ACTION_SYSTEM
+            user_content = build_memory_action_classification_prompt(
+                request.user_message, request.candidate_names
+            )
+
         client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
-        user_content = build_memory_action_classification_prompt(
-            request.user_message, request.candidate_names
-        )
         try:
             response = client.chat.completions.create(
                 model=self.config.model,
                 messages=[
-                    {"role": "system", "content": _MEMORY_ACTION_SYSTEM},
+                    {"role": "system", "content": system_content},
                     {"role": "user", "content": user_content},
                 ],
                 temperature=0.0,

@@ -8,14 +8,19 @@
     "session_id": { "type": "string" },
     "turns": {
       "type": "array",
-      "items": {
+        "items": {
         "type": "object",
         "required": ["speaker", "content", "created_at"],
         "properties": {
           "turn_id": { "type": "string" },
           "speaker": { "type": "string", "enum": ["agent", "user"] },
           "content": { "type": "string", "minLength": 1 },
-          "created_at": { "type": "string", "format": "date-time" }
+          "created_at": { "type": "string", "format": "date-time" },
+          "metadata": {
+            "type": "object",
+            "description": "Non-sensitive prompt assembly metadata attached by interview orchestration (interview_focus, turn_role, prompt_version, prompt_section_ids).",
+            "additionalProperties": true
+          }
         },
         "additionalProperties": false
       }

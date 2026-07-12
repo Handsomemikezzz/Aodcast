@@ -307,15 +307,17 @@ def _determine_option_mode(
         readiness.conclusion,
     ])
 
-    # Near-ready: 3/4 dimensions done, or already fully ready.
-    if done_count >= 3:
-        return "two_actions"
-
-    # Revision mode always gets abc (content differs via focus.revision section).
+    # Revision mode takes highest priority: script already exists, user is refining.
+    # Must be checked BEFORE the near-ready gate so a fully-ready revision session
+    # gets revision-focused options ("abc"), not the near-ready shortcut ("two_actions").
     if script_exists:
         return "abc"
 
-    # Detailed last user answer → one sharper question, no A/B/C.
+    # Near-ready (3/4 dimensions done, no script yet): compact confirm/skip actions.
+    if done_count >= 3:
+        return "two_actions"
+
+    # Detailed last user answer → one sharper follow-up, no A/B/C.
     user_turns = [t for t in transcript.turns if t.speaker == Speaker.USER]
     if user_turns and len(user_turns[-1].content) > 250:
         return "none"

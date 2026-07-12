@@ -57,6 +57,7 @@ class MemoryExtractionRequest:
     user_turns: list[dict[str, str]]
     existing_candidates: list[dict[str, str]] = field(default_factory=list)
     explicit_intent: str = ""
+    prompt_plan: "PromptPlan | None" = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,7 @@ class MemoryRerankRequest:
     creation_intent: str
     candidates: list[dict[str, str]]
     max_select: int = 5
+    prompt_plan: "PromptPlan | None" = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +99,7 @@ class MemoryMergeRequest:
     """
 
     entries: list[dict[str, Any]]
+    prompt_plan: "PromptPlan | None" = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +126,7 @@ class MemoryActionRequest:
 
     user_message: str
     candidate_names: list[str] = field(default_factory=list)
+    prompt_plan: "PromptPlan | None" = None
 
 
 @dataclass(frozen=True, slots=True)

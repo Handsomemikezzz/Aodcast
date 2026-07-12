@@ -478,6 +478,7 @@ class TestEpisodeBriefFormatting(unittest.TestCase):
             supporting_examples=("Example A", "Example B"),
             tensions_or_tradeoffs=("But speed conflicts with safety.",),
             desired_takeaway="Choose carefully.",
+            revision_notes=(),
             evidence_turn_ids=("turn_001",),
             recent_user_turns=("Recent comment.",),
             omitted_agent_turn_count=3,
@@ -495,7 +496,8 @@ class TestEpisodeBriefFormatting(unittest.TestCase):
             topic="T", creation_intent="I", language="zh",
             topic_trigger="Trigger", core_viewpoint="Viewpoint",
             supporting_examples=("Ex 1",), tensions_or_tradeoffs=(),
-            desired_takeaway="Takeaway", evidence_turn_ids=("t1", "t2"),
+            desired_takeaway="Takeaway", revision_notes=("Please shorten it.",),
+            evidence_turn_ids=("t1", "t2"),
             recent_user_turns=("Recent",),
             omitted_agent_turn_count=2, used_full_transcript=True,
         )
@@ -504,6 +506,62 @@ class TestEpisodeBriefFormatting(unittest.TestCase):
         json.dumps(d)  # must not raise
         self.assertEqual(d["language"], "zh")
         self.assertEqual(d["omitted_agent_turn_count"], 2)
+
+
+# ---------------------------------------------------------------------------
+# Revision focus integration (Fix 4)
+# ---------------------------------------------------------------------------
+
+class TestRevisionFocusBrief(unittest.TestCase):
+    def test_revision_tagged_turns_populate_revision_notes(self) -> None:
+        """Turns tagged interview_focus='revision' land in revision_notes, not unknown."""
+        tr = _make_transcript(
+            ("user", "I believe in slow living.", "core_viewpoint"),
+            ("user", "Please make the tone warmer.", "revision"),
+            ("user", "And remove the third paragraph.", "revision"),
+        )
+        brief = build_episode_brief("Slow living", "share it", tr)
+        self.assertEqual(len(brief.revision_notes), 2)
+        self.assertIn("warmer", brief.revision_notes[0])
+        self.assertIn("third paragraph", brief.revision_notes[1])
+
+    def test_revision_notes_appear_first_in_formatted_brief(self) -> None:
+        """Revision requests appear before other material in the formatted brief."""
+        tr = _make_transcript(
+            ("user", "I believe in slow living.", "core_viewpoint"),
+            ("user", "Please make the tone warmer.", "revision"),
+        )
+        brief = build_episode_brief("Slow living", "share it", tr)
+        formatted = _format_episode_brief(brief)
+        revision_idx = formatted.index("Revision requests")
+        viewpoint_idx = formatted.index("Core viewpoint")
+        self.assertLess(revision_idx, viewpoint_idx)
+
+    def test_revision_gates_in_plan_metadata(self) -> None:
+        """Plan gates expose is_revision=True when revision turns are present."""
+        tr = _make_transcript(
+            ("user", "Core belief here.", "core_viewpoint"),
+            ("user", "Make it shorter.", "revision"),
+        )
+        brief = build_episode_brief("T", "I", tr)
+        style = _make_style_profile()
+        plan = build_script_prompt_plan(
+            topic="T", creation_intent="I", transcript=tr,
+            style_profile=style, brief=brief,
+        )
+        self.assertTrue(plan.metadata.gates["is_revision"])
+        self.assertEqual(plan.metadata.gates["revision_note_count"], 1)
+
+    def test_no_revision_turns_gives_empty_notes(self) -> None:
+        tr = _make_transcript(
+            ("user", "Just normal content.", "core_viewpoint"),
+        )
+        brief = build_episode_brief("T", "I", tr)
+        self.assertEqual(brief.revision_notes, ())
+        self.assertFalse(build_script_prompt_plan(
+            topic="T", creation_intent="I", transcript=tr,
+            style_profile=_make_style_profile(), brief=brief,
+        ).metadata.gates["is_revision"])
 
 
 if __name__ == "__main__":

@@ -383,18 +383,26 @@ class MemoryService:
 
     def _build_rerank(self, topic: str, creation_intent: str):
         """Bind a rerank callable to the currently configured provider."""
+        from app.orchestration.prompts.memory import build_memory_rerank_plan
         from app.providers.llm.base import MemoryRerankRequest
         from app.providers.llm.factory import build_llm_provider
 
         provider = build_llm_provider(self.config_store.load_llm_config())
 
         def rerank(index: list[dict]) -> list[str]:
+            plan = build_memory_rerank_plan(
+                topic=topic,
+                creation_intent=creation_intent,
+                candidates=index,
+                max_select=5,
+            )
             response = provider.rerank_memories(
                 MemoryRerankRequest(
                     topic=topic,
                     creation_intent=creation_intent,
                     candidates=index,
                     max_select=5,
+                    prompt_plan=plan,
                 )
             )
             return response.selected_ids

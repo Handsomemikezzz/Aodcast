@@ -27,7 +27,12 @@
       }
     },
     "created_at": { "type": "string", "format": "date-time" },
-    "updated_at": { "type": "string", "format": "date-time" }
+    "updated_at": { "type": "string", "format": "date-time" },
+    "generation_metadata": {
+      "type": "object",
+      "description": "Compact, non-sensitive metadata from the script generation PromptPlan (prompt_version, style_profile, episode_brief_stats, provider, model). Omitted for legacy scripts.",
+      "additionalProperties": true
+    }
   },
   "additionalProperties": false
 }

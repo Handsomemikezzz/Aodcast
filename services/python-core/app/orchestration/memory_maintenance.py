@@ -11,6 +11,7 @@ from app.orchestration.memory_validation import (
     MAX_DESCRIPTION,
     MAX_NAME,
 )
+from app.orchestration.prompts.memory import build_memory_merge_plan
 from app.orchestration.sensitive import contains_forbidden
 from app.providers.llm.base import MemoryMergeRequest
 from app.providers.llm.factory import build_llm_provider
@@ -73,8 +74,10 @@ class MemoryMaintenance:
                 more_remains = True
                 break
             try:
+                entries = [self._index(e) for e in group]
+                merge_plan = build_memory_merge_plan(entries=entries)
                 decision = provider.merge_memories(
-                    MemoryMergeRequest(entries=[self._index(e) for e in group])
+                    MemoryMergeRequest(entries=entries, prompt_plan=merge_plan)
                 )
             except Exception:
                 # Provider failure on one group must not abort the batch.

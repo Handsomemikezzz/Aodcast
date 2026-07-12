@@ -216,11 +216,21 @@ def _dispatch_memory_action(
 
     # §10.5: No deterministic hit — fall back to optional LLM classifier.
     try:
+        from app.orchestration.prompts.memory import build_memory_action_plan
+
         existing_names = [e.name for e in memory_service.list_memories()]
+        action_plan = build_memory_action_plan(
+            user_message=content,
+            candidate_names=existing_names,
+        )
         llm_config = config_store.load_llm_config()
         provider = build_llm_provider(llm_config)
         result = provider.classify_memory_action(
-            MemoryActionRequest(user_message=content, candidate_names=existing_names)
+            MemoryActionRequest(
+                user_message=content,
+                candidate_names=existing_names,
+                prompt_plan=action_plan,
+            )
         )
         if result.action == "remember":
             try:

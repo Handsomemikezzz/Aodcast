@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.domain.memory import MemoryEntry, MemoryOrigin, MemoryEvidence
 from app.domain.transcript import Speaker, TranscriptRecord
+from app.orchestration.prompts.memory import build_memory_extraction_plan
 from app.providers.llm.base import MemoryExtractionRequest
 from app.providers.llm.factory import build_llm_provider
 from app.orchestration.memory_validation import (
@@ -43,13 +44,22 @@ class MemoryExtractor:
             return []
 
         session = self.project_store.load_session(session_id)
+        turn_dicts = [{"turn_id": t.turn_id, "content": t.content} for t in batch]
+        existing = self._existing_hints()
+        plan = build_memory_extraction_plan(
+            topic=session.topic,
+            creation_intent=session.creation_intent,
+            user_turns=turn_dicts,
+            existing_candidates=existing,
+        )
         provider = build_llm_provider(self.config_store.load_llm_config())
         request = MemoryExtractionRequest(
             session_id=session_id,
             topic=session.topic,
             creation_intent=session.creation_intent,
-            user_turns=[{"turn_id": t.turn_id, "content": t.content} for t in batch],
-            existing_candidates=self._existing_hints(),
+            user_turns=turn_dicts,
+            existing_candidates=existing,
+            prompt_plan=plan,
         )
         response = provider.extract_memories(request)
 
@@ -105,14 +115,25 @@ class MemoryExtractor:
             source_turn = user_turns[-1]
 
         session = self.project_store.load_session(session_id)
+        turn_dicts = [{"turn_id": source_turn.turn_id, "content": source_turn.content}]
+        existing = self._existing_hints()
+        explicit = raw_intent or source_turn.content
+        plan = build_memory_extraction_plan(
+            topic=session.topic,
+            creation_intent=session.creation_intent,
+            user_turns=turn_dicts,
+            existing_candidates=existing,
+            explicit_intent=explicit,
+        )
         provider = build_llm_provider(self.config_store.load_llm_config())
         request = MemoryExtractionRequest(
             session_id=session_id,
             topic=session.topic,
             creation_intent=session.creation_intent,
-            user_turns=[{"turn_id": source_turn.turn_id, "content": source_turn.content}],
-            existing_candidates=self._existing_hints(),
-            explicit_intent=raw_intent or source_turn.content,
+            user_turns=turn_dicts,
+            existing_candidates=existing,
+            explicit_intent=explicit,
+            prompt_plan=plan,
         )
         response = provider.extract_memories(request)
         return self._persist(

@@ -43,6 +43,11 @@ class EpisodeBrief:
 
     Primary signal is ``interview_focus`` metadata on user turns.
     Keyword/readiness heuristics serve as fallback for legacy untagged turns.
+
+    ``revision_notes`` captures user turns tagged ``revision`` (edit requests
+    made after an initial script was generated). When non-empty the script
+    generation prompt surfaces them as a distinct "Revision requests" block so
+    the LLM knows to adjust the existing material rather than retell the story.
     """
 
     topic: str
@@ -53,6 +58,8 @@ class EpisodeBrief:
     supporting_examples: tuple[str, ...]
     tensions_or_tradeoffs: tuple[str, ...]
     desired_takeaway: str
+    # Explicit edit requests from revision turns (interview_focus == "revision").
+    revision_notes: tuple[str, ...]
     evidence_turn_ids: tuple[str, ...]
     recent_user_turns: tuple[str, ...]
     omitted_agent_turn_count: int
@@ -68,6 +75,7 @@ class EpisodeBrief:
             "supporting_examples": list(self.supporting_examples),
             "tensions_or_tradeoffs": list(self.tensions_or_tradeoffs),
             "desired_takeaway": self.desired_takeaway,
+            "revision_notes": list(self.revision_notes),
             "evidence_turn_ids": list(self.evidence_turn_ids),
             "recent_user_turns": [t[:120] for t in self.recent_user_turns],
             "omitted_agent_turn_count": self.omitted_agent_turn_count,
@@ -240,12 +248,15 @@ def build_episode_brief(
 
     use_full = total_user_chars <= full_transcript_char_budget or len(transcript.turns) <= 16
 
-    # Group user turns by interview_focus metadata
+    # Group user turns by interview_focus metadata.
+    # "revision" is an explicit focus group: turns tagged after a script was
+    # generated capture the user's edit requests and must not fall into "unknown".
     focus_groups: dict[str, list] = {
         "topic_context": [],
         "core_viewpoint": [],
         "example_or_detail": [],
         "conclusion": [],
+        "revision": [],
         "unknown": [],
     }
     evidence_ids: list[str] = []
@@ -308,6 +319,10 @@ def build_episode_brief(
         supporting_examples=_all_contents(focus_groups["example_or_detail"]),
         tensions_or_tradeoffs=tuple(tensions),
         desired_takeaway=_first_content(focus_groups["conclusion"]),
+        # Revision turns capture explicit edit requests made after script generation.
+        # All of them are preserved (not just the first) so every edit request
+        # reaches the script generation prompt.
+        revision_notes=_all_contents(focus_groups["revision"]),
         evidence_turn_ids=tuple(dict.fromkeys(evidence_ids)),  # deduplicate, preserve order
         recent_user_turns=recent,
         omitted_agent_turn_count=len(agent_turns),
@@ -472,6 +487,8 @@ def build_script_prompt_plan(
             "language": style_profile.language,
             "has_memory_context": bool(memory_context.strip()),
             "memory_ids_used": list(memory_ids_used or []),
+            "is_revision": len(brief.revision_notes) > 0,
+            "revision_note_count": len(brief.revision_notes),
         },
         omitted_sections=omitted,
     )
@@ -487,8 +504,18 @@ def _format_full_transcript(transcript: "TranscriptRecord") -> str:
 
 
 def _format_episode_brief(brief: EpisodeBrief) -> str:
-    """Format an EpisodeBrief as a structured text block for the prompt."""
+    """Format an EpisodeBrief as a structured text block for the prompt.
+
+    Revision notes are surfaced first when present so the LLM treats edit
+    requests as the primary directive rather than regenerating the original.
+    """
     lines: list[str] = ["=== Episode Brief ==="]
+
+    # Revision requests go first — they are the primary directive for re-generation.
+    if brief.revision_notes:
+        notes = "\n  - ".join(brief.revision_notes)
+        lines.append(f"Revision requests from user (apply these changes):\n  - {notes}")
+
     if brief.topic_trigger:
         lines.append(f"Topic trigger: {brief.topic_trigger}")
     if brief.core_viewpoint:
