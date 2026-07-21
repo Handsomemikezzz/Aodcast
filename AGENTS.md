@@ -63,7 +63,7 @@ Human-facing setup lives in `README.md` and `README.zh-CN.md`. Agent-relevant co
 - backend-focused agents should work inside `services/python-core` unless a schema change is required.
 - cross-boundary changes must update shared contracts first in `packages/shared-schemas`.
 - provider-specific logic belongs only under `services/python-core/app/providers`.
-- interview state logic belongs only under `services/python-core/app/orchestration`.
+- interview state logic belongs only under `services/python-core/app/orchestration`. Content-dimension readiness alone must not hard-stop the interview or push a deterministic "generate script now" message; script soft-offer requires `can_offer_script` (dimensions + `MIN_USER_TURNS_FOR_SCRIPT_OFFER` in `readiness.py`). While the user keeps talking, stay in `interview_in_progress`, keep digging via `soft_ready` option mode, and only move to `ready_to_generate` on explicit finish (`user_requested_finish` / `request_finish`).
 - long-term memory logic belongs only under `services/python-core/app`: domain model in `domain/memory.py`, file-native persistence in `storage/memory_file_store.py`, extraction/retrieval/validation/service in `orchestration/memory_*.py` and `orchestration/sensitive.py`, and the background worker in `workers/memory_worker.py`. Memory must stay file-native (`.local-data/memory/`); do not reintroduce SQLite, FTS5, vector stores, or embeddings. `entries/*.md` is the only source of truth; `catalog.json` and `MEMORY.md` are rebuildable indexes. Long-term memory is evidence-first: only user turns may become memories, and the main interview/script flow uses read-only retrieval that must never block on memory work.
 - operational rules belong in `AGENTS.md`, not in scattered ad hoc notes.
 - desktop bridge calls must flow through `apps/desktop/src/lib/*Bridge.ts -> localhost HTTP runtime -> services/python-core`, not from React components directly to shell commands.
@@ -142,6 +142,7 @@ When using multiple agents:
 
 ## Known Execution Notes
 
+- 2026-07-21: Interview script soft-offer requires both content-dimension readiness and `MIN_USER_TURNS_FOR_SCRIPT_OFFER` (default 4 user answers). Do not restore the old deterministic `ready_to_generate` cutover that fired after a single keyword-complete reply; keep digging with `option_mode.soft_ready` and only transition to `ready_to_generate` on explicit finish.
 - 2026-03-29: Rust tooling is now available in this environment (`cargo 1.94.1` on `PATH`). Native compile checks can run locally (`cargo check` under `apps/desktop/src-tauri`) and should be used in integration validation.
 - 2026-03-29: Avoid calling `pnpm --dir apps/desktop tauri:build -- ...` with extra `--` cargo-style flags (`--debug`, `--no-bundle`). They are forwarded to `cargo build` and fail as unexpected args. Use plain `pnpm --dir apps/desktop tauri:build` for shell validation.
 - 2026-04-02: DMG packaging can fail in non-interactive environments when Finder AppleScript times out (`-1712`) inside `bundle_dmg.sh`. The desktop build script now runs `CI=true tauri build`, which makes bundler pass `--skip-jenkins` and avoids Finder-dependent styling during DMG creation.

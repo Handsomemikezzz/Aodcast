@@ -129,6 +129,11 @@ export type Readiness = {
   example_or_detail: boolean;
   conclusion: boolean;
   is_ready: boolean;
+  /** User answer count used for the script soft-offer floor. */
+  user_turn_count?: number;
+  meets_turn_floor?: boolean;
+  /** True when content dims + turn floor allow soft-offering script generation. */
+  can_offer_script?: boolean;
   missing_dimensions: string[];
 };
 

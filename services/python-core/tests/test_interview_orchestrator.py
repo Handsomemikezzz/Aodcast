@@ -11,8 +11,21 @@ from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker
 from app.orchestration.interview_service import InterviewOrchestrator
 from app.orchestration.interview_service import InterviewTurnResult
+from app.orchestration.readiness import MIN_USER_TURNS_FOR_SCRIPT_OFFER
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+
+READY_EN = (
+    "I think local-first AI tools matter because teams need reliable workflows. "
+    "For example, last week I had to recover a broken setup by rebuilding the project "
+    "locally, and the takeaway is that tooling should fail in a way users can recover."
+)
+
+READY_ZH = (
+    "我认为本地优先的 AI 工具很重要，因为团队需要在网络不稳定时也能继续工作。"
+    "比如上周我在没有外网的情况下修复了一个项目，具体来说我只能依赖本地缓存和日志。"
+    "所以我的结论是，好的工具应该让用户在出错时也能恢复。"
+)
 
 
 class InterviewOrchestratorTests(unittest.TestCase):
@@ -56,6 +69,17 @@ class InterviewOrchestratorTests(unittest.TestCase):
         assert final_result is not None
         return final_result
 
+    def seed_prior_user_turns(self, store: ProjectStore, session_id: str, count: int) -> None:
+        """Pad user answers without streaming so turn-floor tests stay fast."""
+        project = store.load_project(session_id)
+        assert project.transcript is not None
+        for index in range(count):
+            project.transcript.append(
+                Speaker.USER,
+                f"Prior context turn {index + 1} because the story needs more runway.",
+            )
+        store.save_project(project)
+
     def test_start_interview_appends_first_agent_question(self) -> None:
         store, orchestrator = self.build_orchestrator()
         session = SessionRecord(topic="Local-first tools", creation_intent="Test start")
@@ -91,53 +115,61 @@ class InterviewOrchestratorTests(unittest.TestCase):
         self.assertEqual(len(loaded.transcript.turns), 3)
         self.assertEqual(loaded.transcript.turns[-1].speaker, Speaker.AGENT)
 
-    def test_ready_response_transitions_to_ready_to_generate_with_deterministic_message(self) -> None:
+    def test_early_ready_content_keeps_interviewing_without_hard_cutover(self) -> None:
         store, orchestrator = self.build_orchestrator()
         session = SessionRecord(topic="AI workflow", creation_intent="Test ready")
         store.save_project(SessionProject(session=session))
         orchestrator.start_interview(session.session_id)
 
-        result = self.submit_streaming_reply(
-            orchestrator,
-            session.session_id,
-            (
-                "I think local-first AI tools matter because teams need reliable workflows. "
-                "For example, last week I had to recover a broken setup by rebuilding the project "
-                "locally, and the takeaway is that tooling should fail in a way users can recover."
-            ),
-        )
+        result = self.submit_streaming_reply(orchestrator, session.session_id, READY_EN)
 
-        self.assertEqual(result.project.session.state, SessionState.READY_TO_GENERATE)
-        self.assertTrue(result.ai_can_finish)
+        self.assertEqual(result.project.session.state, SessionState.INTERVIEW_IN_PROGRESS)
         self.assertTrue(result.readiness.is_ready)
+        self.assertFalse(result.readiness.can_offer_script)
+        self.assertFalse(result.ai_can_finish)
         self.assertIsNotNone(result.next_question)
-        self.assertIn("We have successfully gathered the topic context", result.next_question)
+        self.assertNotIn("We have successfully gathered the topic context", result.next_question or "")
+        self.assertNotIn("Generate podcast script (Recommended)", result.next_question or "")
 
-    def test_chinese_ready_response_is_recognized_as_complete(self) -> None:
+    def test_chinese_ready_content_keeps_interviewing_until_turn_floor(self) -> None:
         store, orchestrator = self.build_orchestrator()
         session = SessionRecord(topic="本地优先工具", creation_intent="测试中文完整度")
         store.save_project(SessionProject(session=session))
         orchestrator.start_interview(session.session_id)
 
-        result = self.submit_streaming_reply(
-            orchestrator,
-            session.session_id,
-            (
-                "我认为本地优先的 AI 工具很重要，因为团队需要在网络不稳定时也能继续工作。"
-                "比如上周我在没有外网的情况下修复了一个项目，具体来说我只能依赖本地缓存和日志。"
-                "所以我的结论是，好的工具应该让用户在出错时也能恢复。"
-            ),
-        )
+        result = self.submit_streaming_reply(orchestrator, session.session_id, READY_ZH)
 
-        self.assertEqual(result.project.session.state, SessionState.READY_TO_GENERATE)
-        self.assertTrue(result.ai_can_finish)
+        self.assertEqual(result.project.session.state, SessionState.INTERVIEW_IN_PROGRESS)
         self.assertTrue(result.readiness.topic_context)
         self.assertTrue(result.readiness.core_viewpoint)
         self.assertTrue(result.readiness.example_or_detail)
         self.assertTrue(result.readiness.conclusion)
         self.assertEqual(result.readiness.missing_dimensions(), [])
+        self.assertFalse(result.readiness.can_offer_script)
+        self.assertFalse(result.ai_can_finish)
         self.assertIsNotNone(result.next_question)
-        self.assertIn("我们已经收集到了本期节目的背景信息", result.next_question)
+        self.assertNotIn("我们已经收集到了本期节目的背景信息", result.next_question or "")
+
+    def test_soft_offer_after_turn_floor_without_ready_state(self) -> None:
+        store, orchestrator = self.build_orchestrator()
+        session = SessionRecord(topic="AI workflow", creation_intent="Test soft ready")
+        store.save_project(SessionProject(session=session))
+        orchestrator.start_interview(session.session_id)
+        self.seed_prior_user_turns(
+            store,
+            session.session_id,
+            MIN_USER_TURNS_FOR_SCRIPT_OFFER - 1,
+        )
+
+        result = self.submit_streaming_reply(orchestrator, session.session_id, READY_EN)
+
+        self.assertEqual(result.project.session.state, SessionState.INTERVIEW_IN_PROGRESS)
+        self.assertTrue(result.readiness.can_offer_script)
+        self.assertTrue(result.ai_can_finish)
+        self.assertEqual(result.readiness.user_turn_count, MIN_USER_TURNS_FOR_SCRIPT_OFFER)
+        self.assertEqual(result.prompt_input.suggested_focus, "deepen")
+        self.assertIsNotNone(result.next_question)
+        self.assertNotIn("We have successfully gathered the topic context", result.next_question or "")
 
     def test_ready_response_with_existing_script_keeps_interview_running(self) -> None:
         store, orchestrator = self.build_orchestrator()
@@ -147,19 +179,12 @@ class InterviewOrchestratorTests(unittest.TestCase):
         store.save_project(SessionProject(session=session, script=script))
         orchestrator.start_interview(session.session_id)
 
-        result = self.submit_streaming_reply(
-            orchestrator,
-            session.session_id,
-            (
-                "I think local-first AI tools matter because teams need reliable workflows. "
-                "For example, last week I had to recover a broken setup by rebuilding the project "
-                "locally, and the takeaway is that tooling should fail in a way users can recover."
-            ),
-        )
+        result = self.submit_streaming_reply(orchestrator, session.session_id, READY_EN)
 
         self.assertEqual(result.project.session.state, SessionState.INTERVIEW_IN_PROGRESS)
-        self.assertTrue(result.ai_can_finish)
         self.assertTrue(result.readiness.is_ready)
+        # Turn floor not met yet — soft offer stays off even though dims are covered.
+        self.assertFalse(result.ai_can_finish)
         self.assertIsNotNone(result.next_question)
         self.assertNotIn("We have successfully gathered the topic context", result.next_question)
         self.assertIn("A. Add a new concrete example", result.next_question)
@@ -186,20 +211,18 @@ class InterviewOrchestratorTests(unittest.TestCase):
         from app.domain.transcript import TranscriptRecord
         transcript = TranscriptRecord(session_id=session.session_id)
         transcript.append(Speaker.USER, "I want to get organized.")
-        
-        # Test English fallback prompt
+
         from app.orchestration.readiness import evaluate_readiness
         readiness = evaluate_readiness(transcript)
         prompt_input = build_prompt_input(session, transcript, readiness)
-        
+
         question_en = build_question(prompt_input, last_user_turn="I want to get organized.", is_zh=False)
         self.assertIn("I hear you on 'I want to get organized.'", question_en)
         self.assertIn("A.", question_en)
         self.assertIn("B.", question_en)
         self.assertIn("C.", question_en)
         self.assertIn("I recommend starting with", question_en)
-        
-        # Test Chinese fallback prompt
+
         session_zh = SessionRecord(topic="个人效率", creation_intent="起草文章")
         prompt_input_zh = build_prompt_input(session_zh, transcript, readiness)
         question_zh = build_question(prompt_input_zh, last_user_turn="我想整理桌面", is_zh=True)

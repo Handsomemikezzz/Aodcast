@@ -4,6 +4,10 @@ from dataclasses import dataclass
 
 from app.domain.transcript import Speaker, TranscriptRecord
 
+# Interview loops (user answers) required before we soft-offer script generation.
+# Content dimensions alone must not cut the conversation short.
+MIN_USER_TURNS_FOR_SCRIPT_OFFER = 4
+
 
 @dataclass(frozen=True, slots=True)
 class ReadinessReport:
@@ -11,15 +15,26 @@ class ReadinessReport:
     core_viewpoint: bool
     example_or_detail: bool
     conclusion: bool
+    user_turn_count: int = 0
 
     @property
     def is_ready(self) -> bool:
+        """True when the four content dimensions look covered (keyword heuristics)."""
         return (
             self.topic_context
             and self.core_viewpoint
             and self.example_or_detail
             and self.conclusion
         )
+
+    @property
+    def meets_turn_floor(self) -> bool:
+        return self.user_turn_count >= MIN_USER_TURNS_FOR_SCRIPT_OFFER
+
+    @property
+    def can_offer_script(self) -> bool:
+        """Content ready AND enough interview loops — soft-offer only, never a hard stop."""
+        return self.is_ready and self.meets_turn_floor
 
     def missing_dimensions(self) -> list[str]:
         missing: list[str] = []
@@ -52,6 +67,7 @@ def evaluate_readiness(transcript: TranscriptRecord) -> ReadinessReport:
         core_viewpoint=core_viewpoint,
         example_or_detail=example_or_detail,
         conclusion=conclusion,
+        user_turn_count=len(user_turns),
     )
 
 

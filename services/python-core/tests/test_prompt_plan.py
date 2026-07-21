@@ -34,12 +34,14 @@ def _readiness(
     core_viewpoint: bool = True,
     example_or_detail: bool = True,
     conclusion: bool = True,
+    user_turn_count: int = 0,
 ) -> ReadinessReport:
     return ReadinessReport(
         topic_context=topic_context,
         core_viewpoint=core_viewpoint,
         example_or_detail=example_or_detail,
         conclusion=conclusion,
+        user_turn_count=user_turn_count,
     )
 
 
@@ -201,12 +203,12 @@ class TestFocusSectionSelection(unittest.TestCase):
         self.assertNotIn("focus.topic_context", plan.metadata.section_ids)
         self.assertNotIn("focus.core_viewpoint", plan.metadata.section_ids)
 
-    def test_no_focus_section_when_all_ready(self) -> None:
-        """When all dims complete and no script, no focus section is loaded."""
+    def test_deepen_focus_when_all_dims_complete(self) -> None:
+        """When all dims complete and no script, keep digging via focus.deepen."""
         r = _readiness()  # all True
         plan = _make_plan(readiness=r)
-        for sid in plan.metadata.section_ids:
-            self.assertFalse(sid.startswith("focus."), f"Unexpected focus section: {sid}")
+        self.assertIn("focus.deepen", plan.metadata.section_ids)
+        self.assertEqual(plan.metadata.gates.get("suggested_focus"), "deepen")
 
     def test_required_core_sections_always_present(self) -> None:
         """§10: required core sections present for every profile."""
@@ -250,7 +252,7 @@ class TestOptionMode(unittest.TestCase):
         )
         self.assertIn("option_mode.abc", plan.metadata.section_ids)
         self.assertNotIn("option_mode.none", plan.metadata.section_ids)
-        self.assertNotIn("option_mode.two_actions", plan.metadata.section_ids)
+        self.assertNotIn("option_mode.soft_ready", plan.metadata.section_ids)
 
     def test_none_mode_section_loaded_when_detailed_answer(self) -> None:
         """§10: dynamic option_mode=none is a valid state without breaking response."""
@@ -263,29 +265,49 @@ class TestOptionMode(unittest.TestCase):
         )
         self.assertIn("option_mode.none", plan.metadata.section_ids)
         self.assertNotIn("option_mode.abc", plan.metadata.section_ids)
-        self.assertNotIn("option_mode.two_actions", plan.metadata.section_ids)
+        self.assertNotIn("option_mode.soft_ready", plan.metadata.section_ids)
 
-    def test_two_actions_mode_when_near_ready(self) -> None:
-        """3/4 dims done → two_actions option mode."""
-        r = _readiness(topic_context=True, core_viewpoint=True, example_or_detail=True, conclusion=False)
+    def test_near_ready_keeps_abc_without_script_push(self) -> None:
+        """3/4 dims alone must not soft-offer script generation."""
+        r = _readiness(
+            topic_context=True,
+            core_viewpoint=True,
+            example_or_detail=True,
+            conclusion=False,
+            user_turn_count=4,
+        )
         tr = _empty_transcript()
         mode = _determine_option_mode(r, tr, script_exists=False)
-        self.assertEqual(mode, "two_actions")
+        self.assertEqual(mode, "abc")
 
-    def test_two_actions_section_in_plan_when_near_ready(self) -> None:
-        r = _readiness(topic_context=True, core_viewpoint=True, example_or_detail=True, conclusion=False)
+    def test_soft_ready_requires_dims_and_turn_floor(self) -> None:
+        """Full dims + turn floor → soft_ready; dims alone are not enough."""
+        r_early = _readiness(user_turn_count=1)
+        r_ready = _readiness(user_turn_count=4)
+        tr = _empty_transcript()
+        self.assertEqual(_determine_option_mode(r_early, tr, script_exists=False), "abc")
+        self.assertEqual(_determine_option_mode(r_ready, tr, script_exists=False), "soft_ready")
+
+    def test_soft_ready_section_in_plan_when_can_offer(self) -> None:
+        r = _readiness(user_turn_count=4)
         plan = _make_plan(readiness=r)
-        self.assertIn("option_mode.two_actions", plan.metadata.section_ids)
+        self.assertIn("option_mode.soft_ready", plan.metadata.section_ids)
+        self.assertIn("focus.deepen", plan.metadata.section_ids)
+        self.assertTrue(plan.metadata.gates.get("can_offer_script"))
 
     def test_gate_option_mode_matches_section(self) -> None:
         """option_mode gate must match the option_mode.* section loaded."""
-        # 2/4 dims done → abc (large readiness gap)
-        r_abc = _readiness(topic_context=False, core_viewpoint=False, example_or_detail=True, conclusion=True)
-        # 3/4 dims done → two_actions (near-ready)
-        r_two = _readiness(topic_context=True, core_viewpoint=True, example_or_detail=True, conclusion=False)
+        r_abc = _readiness(
+            topic_context=False,
+            core_viewpoint=False,
+            example_or_detail=True,
+            conclusion=True,
+            user_turn_count=2,
+        )
+        r_soft = _readiness(user_turn_count=4)
         for r, expected_mode in [
             (r_abc, "abc"),
-            (r_two, "two_actions"),
+            (r_soft, "soft_ready"),
         ]:
             plan = _make_plan(readiness=r)
             gate_mode = plan.metadata.gates.get("option_mode")
@@ -386,6 +408,9 @@ class TestPlanMetadata(unittest.TestCase):
         self.assertIn("suggested_focus", gates)
         self.assertIn("missing_dimensions", gates)
         self.assertIn("has_memory_context", gates)
+        self.assertIn("user_turn_count", gates)
+        self.assertIn("can_offer_script", gates)
+        self.assertIn("meets_turn_floor", gates)
 
     def test_system_and_user_non_empty(self) -> None:
         """Plan must always produce non-empty system and user text."""
@@ -405,8 +430,8 @@ class TestResolveFocus(unittest.TestCase):
     def test_revision_when_script_exists(self) -> None:
         self.assertEqual(_resolve_focus(["topic_context"], True), "revision")
 
-    def test_ready_to_generate_when_no_missing(self) -> None:
-        self.assertEqual(_resolve_focus([], False), "ready_to_generate")
+    def test_deepen_when_no_missing(self) -> None:
+        self.assertEqual(_resolve_focus([], False), "deepen")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,9 @@ PromptPlan assembly layer.
 
 Key design decisions (per design doc §6):
 - Readiness drives focus section selection (one section per missing dimension).
-- Option mode is state-dependent: ``abc`` | ``two_actions`` | ``none``.
+- Option mode is state-dependent: ``abc`` | ``soft_ready`` | ``none``.
+- Script soft-offer requires content dimensions AND a minimum user-turn floor;
+  never hard-stop the interview when material looks complete.
 - Stable sections (role, task contract, output scope) stay in the system prompt.
 - Dynamic sections (episode context, focus, options, memory, transcript) go in
   the user message so the stable prefix can be cached in future provider integrations.
@@ -116,6 +118,17 @@ _FOCUS_SECTIONS: dict[str, PromptSection] = {
         ),
         cache_policy=CachePolicy.STABLE,
     ),
+    # Used when content dimensions are covered but the interview should keep digging.
+    "deepen": PromptSection(
+        section_id="focus.deepen",
+        content=(
+            "Priority: deepen material that is already directionally complete.\n"
+            "Core dimensions have some coverage. Push for sharper contrast, a more "
+            "specific scene, a tension or tradeoff, or a listener-relevant implication. "
+            "Do not treat the interview as finished."
+        ),
+        cache_policy=CachePolicy.STABLE,
+    ),
     "revision": PromptSection(
         section_id="focus.revision",
         content=(
@@ -156,13 +169,19 @@ _OPTION_MODE_SECTIONS: dict[str, PromptSection] = {
         ),
         cache_policy=CachePolicy.STABLE,
     ),
-    "two_actions": PromptSection(
-        section_id="option_mode.two_actions",
+    "soft_ready": PromptSection(
+        section_id="option_mode.soft_ready",
         content=(
-            "The episode material is nearly complete. Offer exactly two practical next steps:\n"
-            "A. Generate the podcast script draft now (recommended).\n"
-            "B. Add one more concrete detail or story before generating.\n"
-            "Keep the response short. Affirm that the material gathered so far is strong."
+            "Material is already enough to draft a podcast script, but the user is still "
+            "talking — keep interviewing.\n"
+            "Structure your response:\n"
+            "1. Briefly acknowledge what they just shared (1 sentence).\n"
+            "2. Ask one sharper follow-up that digs deeper (contrast, concrete scene, "
+            "stake, or listener implication). This is the main ask.\n"
+            "3. Softly note — in one short closing line — that the current material is "
+            "already enough to generate a script draft anytime (they can use Generate "
+            "Script when ready). Do NOT make generating the primary CTA. Do NOT use an "
+            "A/B choice where A is generate script."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
@@ -187,7 +206,7 @@ def build_interview_prompt_plan(
 
     Section selection rules (§6.1, §6.2):
     - Revision mode (script_exists): load focus.revision section, use abc option mode.
-    - Near-ready (3/4 dims done, not yet ready): use two_actions option mode.
+    - Soft-ready (dims covered + turn floor, no script): deepen focus + soft_ready mode.
     - Detailed last user answer (>250 chars): use none option mode (no A/B/C).
     - Otherwise: load the first missing focus section, use abc option mode.
     """
@@ -203,6 +222,9 @@ def build_interview_prompt_plan(
         "suggested_focus": _resolve_focus(missing, script_exists),
         "missing_dimensions": list(missing),
         "has_memory_context": bool(memory_context.strip()),
+        "user_turn_count": readiness.user_turn_count,
+        "can_offer_script": readiness.can_offer_script,
+        "meets_turn_floor": readiness.meets_turn_floor,
     }
 
     omitted: list[dict[str, str]] = []
@@ -220,7 +242,7 @@ def build_interview_prompt_plan(
     if focus_section:
         system_sections.append(focus_section)
     else:
-        omitted.append({"section_id": "focus.*", "reason": "ready_to_generate — no missing dimensions"})
+        omitted.append({"section_id": "focus.*", "reason": "no focus section for key"})
 
     # Load the option mode section.
     option_section = _OPTION_MODE_SECTIONS.get(option_mode)
@@ -286,7 +308,8 @@ def _resolve_focus(missing: list[str], script_exists: bool) -> str:
     """Return the focus key to use for section selection."""
     if script_exists:
         return "revision"
-    return missing[0] if missing else "ready_to_generate"
+    # Dimensions covered → keep digging rather than treating the interview as done.
+    return missing[0] if missing else "deepen"
 
 
 def _determine_option_mode(
@@ -296,26 +319,17 @@ def _determine_option_mode(
 ) -> str:
     """Determine option mode per §6.2 rules.
 
-    Returns one of: ``"abc"``, ``"none"``, ``"two_actions"``.
+    Returns one of: ``"abc"``, ``"none"``, ``"soft_ready"``.
     """
     from app.domain.transcript import Speaker
 
-    done_count = sum([
-        readiness.topic_context,
-        readiness.core_viewpoint,
-        readiness.example_or_detail,
-        readiness.conclusion,
-    ])
-
     # Revision mode takes highest priority: script already exists, user is refining.
-    # Must be checked BEFORE the near-ready gate so a fully-ready revision session
-    # gets revision-focused options ("abc"), not the near-ready shortcut ("two_actions").
     if script_exists:
         return "abc"
 
-    # Near-ready (3/4 dimensions done, no script yet): compact confirm/skip actions.
-    if done_count >= 3:
-        return "two_actions"
+    # Enough material + enough loops: keep digging, soft-remind that a draft is possible.
+    if readiness.can_offer_script:
+        return "soft_ready"
 
     # Detailed last user answer → one sharper follow-up, no A/B/C.
     user_turns = [t for t in transcript.turns if t.speaker == Speaker.USER]
@@ -443,7 +457,7 @@ def build_prompt_input(
     readiness: "ReadinessReport",
 ) -> "InterviewPromptInput":
     missing = readiness.missing_dimensions()
-    focus = missing[0] if missing else "ready_to_generate"
+    focus = missing[0] if missing else "deepen"
 
     return InterviewPromptInput(
         session_id=session.session_id,
@@ -463,7 +477,8 @@ def build_prompt_input(
         ),
         strategy_instruction=(
             "Ask one high-value follow-up that fills the most important missing "
-            "dimension first."
+            "dimension first. When dimensions are covered, deepen nuance instead "
+            "of ending the interview."
         ),
         boundary_instruction=(
             "Do not invent user details, ask multiple unrelated questions at once, "
@@ -564,18 +579,22 @@ def build_question(
             "I recommend starting with A to give listeners immediate value. "
             "But feel free to ignore these options and answer in your own way."
         )
-    # ready_to_generate / unknown
+    # deepen / soft-ready fallback — keep digging; soft-remind only, never hard-stop.
     if is_zh:
         return (
-            "我已经收集了足够的素材来起草这一期节目。如果你愿意，我们可以结束采访并开始生成脚本。\n\n"
-            "A. 现在生成播客脚本草稿（推荐）\n"
-            "B. 先添加另一个具体细节或故事\n"
-            "C. 先调整这一期的核心角度"
+            f"{reflection}\n还有哪个细节或张力，能让听众更清楚地感受到你真正想说的点？\n\n"
+            "A. 补一个更具体的场景或对话瞬间。\n"
+            "B. 说说你曾经差点选反方向时的权衡。\n"
+            "C. 点出这件事对听众当下可能意味着什么。\n\n"
+            "推荐从 A 继续深挖。另外，目前的素材已经可以生成一版脚本草稿；"
+            "你也可以随时点「生成脚本」，我们不必现在就停。"
         )
     return (
-        "I have enough material to draft the episode. If you want, we can stop "
-        "the interview and move to script generation.\n\n"
-        "A. Generate the podcast script draft now (Recommended)\n"
-        "B. Add another concrete detail or story first\n"
-        "C. Adjust the core angle of this episode"
+        f"{reflection}\nWhat detail or tension would make your real point hit harder for a listener?\n\n"
+        "A. Add a more concrete scene or moment of dialogue.\n"
+        "B. Name a tradeoff where you almost chose the opposite path.\n"
+        "C. Spell out what this might mean for a listener right now.\n\n"
+        "I recommend starting with A to dig deeper. Also, the material so far is "
+        "already enough to generate a script draft anytime — you can use Generate "
+        "Script when you want; we do not need to stop now."
     )

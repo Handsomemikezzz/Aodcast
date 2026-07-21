@@ -1002,7 +1002,24 @@ export function ChatPage({
               )}
             </div>
 
-            {/* Script hints (non-blocking; composer stays available below) */}
+            {/* Soft script offer while interview continues (non-blocking) */}
+            {!isDeletedSession && readiness?.can_offer_script && state === "interview_in_progress" && (
+              <div className="py-3 border-t border-outline/60 mt-4 flex flex-wrap items-center gap-3">
+                <p className="text-xs text-secondary flex-1 min-w-[200px]">
+                  当前素材已经可以生成脚本；也可以继续聊，我们会接着帮你深挖。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateScript()}
+                  disabled={submitting}
+                  className="px-4 py-2 bg-surface-container-high/60 hover:bg-surface-container-high border border-outline rounded-xl text-xs font-semibold text-primary transition-colors shrink-0"
+                >
+                  {submitting ? "生成中…" : "生成脚本"}
+                </button>
+              </div>
+            )}
+
+            {/* Script hints after explicit ready / generated states */}
             {isFinished && !isDeletedSession && (
               <div className="py-4 border-t border-outline mt-6 flex flex-wrap items-center gap-3">
                 <p className="text-xs text-secondary flex-1 min-w-[200px]">
