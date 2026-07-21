@@ -16,12 +16,12 @@ import {
   Search,
   Send,
   Sparkles,
+  Square,
   Target,
   Trash2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ProgressBar } from "../components/ProgressBar";
 import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
 import { useBridge } from "../lib/BridgeContext";
 import {
@@ -37,6 +37,7 @@ import {
   buildRequestState,
   getErrorMessage,
   getErrorRequestState,
+  isAbortError,
   withRequestStateFallback,
 } from "../lib/requestState";
 
@@ -75,6 +76,8 @@ export function ChatPage({
   const [showLlmSetupAction, setShowLlmSetupAction] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
   const submittingRef = useRef(false);
+  // True only while submitReplyStream is in flight — drives Send↔Stop (not generate_script).
+  const [replyStreaming, setReplyStreaming] = useState(false);
   const replyStreamAbortRef = useRef<AbortController | null>(null);
   const consumedInitialReplyRef = useRef<string | null>(null);
   const historyRequestIdRef = useRef(0);
@@ -158,6 +161,17 @@ export function ChatPage({
 
   const refreshWorkspace = async () => {
     await Promise.allSettled([fetchProject(), loadHistory(), onRefresh()]);
+  };
+
+  /** Align transcript after Stop without flipping the page into the loading shell. */
+  const syncSessionQuietly = async () => {
+    if (!sessionId) return;
+    try {
+      const current = await bridge.showSession(sessionId, { includeDeleted: true });
+      setProject(current);
+    } catch {
+      /* keep optimistic transcript if quiet sync fails */
+    }
   };
 
   const handleLandingCreate = async () => {
@@ -300,6 +314,8 @@ export function ChatPage({
       const ready = await ensureLlmReady();
       if (!ready) return;
 
+      setReplyStreaming(true);
+
       const previousTranscript = project
         ? {
             session_id: project.transcript?.session_id ?? project.session.session_id,
@@ -314,12 +330,7 @@ export function ChatPage({
 
       setStreamingMessage("");
       setInputValue("");
-      setRequestState({
-        operation: "submit_reply",
-        phase: "running",
-        progress_percent: 0,
-        message: "Submitting reply...",
-      });
+      // Do not drive chat composer with long-task request_state chrome.
 
       optimisticTranscriptRef.current = previousTranscript;
       setProject((prev) => {
@@ -356,12 +367,21 @@ export function ChatPage({
       optimisticTranscriptRef.current = null;
       await refreshWorkspace();
     } catch (err) {
+      // Stop generation: keep user turn, drop partial assistant, sync from server.
+      if (isAbortError(err)) {
+        optimisticTranscriptRef.current = null;
+        setRequestState(buildRequestState("submit_reply", "cancelled", "Generation stopped."));
+        await syncSessionQuietly();
+        return;
+      }
+
       setError(getErrorMessage(err, "Failed to submit reply."));
       const rollbackTranscript = optimisticTranscriptRef.current;
       if (rollbackTranscript) {
         setProject((prev) => (prev ? { ...prev, transcript: rollbackTranscript } : prev));
       }
-      setInputValue(content);
+      // Prefer an in-progress draft over restoring the already-sent text.
+      setInputValue((prev) => (prev.trim() ? prev : content));
       setRequestState(
         withRequestStateFallback(
           getErrorRequestState(err),
@@ -373,12 +393,17 @@ export function ChatPage({
       optimisticTranscriptRef.current = null;
       setStreamingMessage(null);
       submittingRef.current = false;
+      setReplyStreaming(false);
       setSubmitting(false);
     }
   };
 
   const handleSubmit = async () => {
     await submitReplyContent(inputValue);
+  };
+
+  const handleStopReply = () => {
+    replyStreamAbortRef.current?.abort();
   };
 
   useEffect(() => {
@@ -694,11 +719,8 @@ export function ChatPage({
           <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--color-accent-amber)_6%,transparent),transparent_45%)]">
             <div className="w-full max-w-2xl flex flex-col items-center gap-6">
               <h2 className="text-3xl sm:text-4xl font-headline font-bold text-center tracking-wide leading-tight select-none bg-gradient-to-b from-primary via-primary to-primary/40 bg-clip-text text-transparent">
-                我们先从哪里开始呢？
+                今天你想聊什么?
               </h2>
-              <p className="text-secondary text-sm text-center -mt-2 select-none font-medium opacity-80 max-w-md">
-                通过与 AI 的对话，深度挖掘你的选题灵感，一键整理并生成专业级别的播客脚本。
-              </p>
 
               <div className="w-full flex flex-col gap-2 mt-4">
                 {landingError ? (
@@ -717,17 +739,18 @@ export function ChatPage({
                 ) : null}
                 <div
                   className={cn(
-                    "flex items-end gap-2.5 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl px-4 py-3 shadow-[0_20px_50px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.02)]",
+                    // ~1.6× text line height: slightly roomier than 1.5×
+                    "flex items-center gap-2 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl px-3.5 py-2 shadow-[0_20px_50px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.02)]",
                     "focus-within:border-accent-amber/35 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.3),0_0_20px_rgba(242,191,87,0.06)] transition-all duration-300",
                   )}
                 >
                   <button
                     type="button"
                     onClick={() => landingInputRef.current?.focus()}
-                    className="p-2 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-xl transition-all duration-200 shrink-0 mb-0.5"
+                    className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0"
                     aria-label="Focus input"
                   >
-                    <Plus className="w-5 h-5" />
+                    <Plus className="w-4 h-4" />
                   </button>
                   <div
                     ref={landingInputRef}
@@ -742,27 +765,27 @@ export function ChatPage({
                     }}
                     onPaste={handlePaste}
                     data-placeholder="今天你想聊什么?"
-                    className="flex-1 min-h-[44px] max-h-[200px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[15px] text-primary placeholder:text-outline/75 py-2 px-1 outline-none leading-relaxed composer-editable select-text text-left"
+                    className="flex-1 min-h-[24px] max-h-[160px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[14px] text-primary placeholder:text-outline/75 py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
                   />
                   <span
                     title="Voice input coming soon"
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-outline bg-surface-container-high/60 px-3 py-2 text-[10px] font-headline font-semibold uppercase tracking-[0.16em] text-secondary shrink-0 mb-0.5 select-none shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-outline bg-surface-container-high/60 px-2.5 py-1 text-[10px] font-headline font-semibold uppercase tracking-[0.16em] text-secondary shrink-0 select-none shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
                     aria-label="Voice input coming soon"
                   >
-                    <span className="h-2 w-2 rounded-full bg-accent-amber/60 pulse-amber shrink-0" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent-amber/60 pulse-amber shrink-0" />
                     Soon
                   </span>
                   <button
                     type="button"
                     onClick={() => void handleLandingCreate()}
                     disabled={!landingInput.trim() || landingSubmitting}
-                    className="p-2.5 theme-accent-gradient text-on-primary rounded-xl hover:scale-105 active:scale-95 shadow-md shadow-accent-amber/15 transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed shrink-0 mb-0.5"
+                    className="p-1.5 theme-accent-gradient text-on-primary rounded-lg hover:scale-105 active:scale-95 shadow-md shadow-accent-amber/15 transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed shrink-0"
                     aria-label="Start chat"
                   >
                     {landingSubmitting ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <Send className="w-5 h-5 text-on-primary" />
+                      <Send className="w-4 h-4 text-on-primary" />
                     )}
                   </button>
                 </div>
@@ -1016,11 +1039,12 @@ export function ChatPage({
               <div className="flex items-end gap-3.5">
                 <div
                   ref={composerInputRef}
-                  contentEditable={!submitting}
+                  contentEditable
                   suppressContentEditableWarning
                   onInput={(e) => setInputValue(e.currentTarget.innerText)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
+                      // Block send while any chat action is in flight; drafts may still be typed.
                       if (submitting) return;
                       e.preventDefault();
                       handleSubmit();
@@ -1045,32 +1069,34 @@ export function ChatPage({
                   >
                     <Mic className="w-4 h-4" />
                   </span>
-                  <button
-                    onClick={handleSubmit}
-                    disabled={!inputValue.trim() || submitting}
-                    className="p-2 theme-accent-gradient text-on-primary hover:scale-105 active:scale-95 rounded-xl transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"
-                  >
-                    <Send className="w-4 h-4 text-on-primary" />
-                  </button>
+                  {replyStreaming ? (
+                    <button
+                      type="button"
+                      onClick={handleStopReply}
+                      title="停止生成"
+                      aria-label="停止生成"
+                      className="p-2 bg-on-surface/90 text-background hover:scale-105 active:scale-95 rounded-xl transition-all duration-200"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={!inputValue.trim() || submitting}
+                      className="p-2 theme-accent-gradient text-on-primary hover:scale-105 active:scale-95 rounded-xl transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-4 h-4 text-on-primary" />
+                    </button>
+                  )}
                 </div>
               </div>
 
               <div className="flex justify-between items-center px-2">
                 <p className="text-[10px] text-secondary/70 tracking-wide">
-                  {requestState?.phase === "running"
-                    ? requestState.message
-                    : "The Archivist is listening. You can type or record thoughts."}
+                  The Archivist is listening. You can type or record thoughts.
                 </p>
               </div>
-              {requestState?.phase === "running" ? (
-                <div className="rounded-xl border border-outline bg-background/60 p-2.5 mt-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="mb-1 flex items-center justify-between gap-3 text-[10px] text-secondary px-0.5">
-                    <span className="truncate">{requestState.message}</span>
-                    <span className="shrink-0">{Math.round(requestState.progress_percent)}%</span>
-                  </div>
-                  <ProgressBar value={requestState.progress_percent} />
-                </div>
-              ) : null}
             </div>
           </div>
         )}

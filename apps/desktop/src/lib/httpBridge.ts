@@ -159,8 +159,11 @@ async function ensureDesktopRuntime(): Promise<RuntimeContext> {
 }
 
 function normalizeError(error: unknown): Error {
+  // Preserve AbortError so chat Stop can treat client abort as a stopped turn, not a failure.
   if (typeof error === "object" && error !== null && (error as { name?: string }).name === "AbortError") {
-    return new Error("Reply stream was interrupted. You can send again.");
+    const aborted = new Error("Reply stream was interrupted.");
+    aborted.name = "AbortError";
+    return aborted;
   }
   if (error instanceof TypeError) {
     const message = error.message.trim();

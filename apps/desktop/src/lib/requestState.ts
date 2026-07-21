@@ -60,6 +60,11 @@ export function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/** True when fetch/SSE was aborted (Stop generation or visibility interrupt). */
+export function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { name?: string }).name === "AbortError";
+}
+
 export function getErrorRequestState(error: unknown): RequestState | null {
   if (typeof error !== "object" || error === null) return null;
   const candidate = error as { requestState?: unknown };
