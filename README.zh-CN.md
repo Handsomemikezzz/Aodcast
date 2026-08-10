@@ -284,7 +284,7 @@ cd services/python-core
 - `services/python-core`：访谈编排、脚本生成、provider 分发、本地存储、artifact 和 HTTP runtime。
 - `packages/shared-schemas`：前后端共享 contract schema。
 - `scripts`：开发、维护、发布和模型下载脚本。
-- `docs`：被 Git 忽略的本地草稿目录（例如 `tmp.md`、`plan.md`）；安装与配置说明见 README 和 AGENTS.md。
+- `docs`：被 Git 忽略的本地草稿目录（例如 `tmp.md`、`plan.md`）；人读安装说明见 README；Agent 约束见 AGENTS.md。
 - `examples`：轻量示例和占位样例。
 
 常用文档：
@@ -311,9 +311,57 @@ API key 作为本地用户配置保存。Aodcast 目前没有 macOS Keychain 或
 
 ## 当前范围
 
-Aodcast 当前聚焦本地优先的单人播客创作。仓库不包含语音转文本输入、云端后端托管、多主持人播客格式或 voice cloning。
+Aodcast 当前聚焦本地优先的单人播客创作：
+
+- 平台：macOS 桌面（Tauri）+ 本地 Python orchestration core
+- 输入：仅文本主题
+- 输出：单人播客脚本 + Script Workbench 渲染的最终音频
+- LLM：用户配置的 API provider
+- TTS：本地 MLX 为首发主路径，同时支持远程 API provider
+- 记忆：文件原生、仅本地的跨 Episode 长期用户记忆
+
+当前不包含：语音转文本输入、多主持人格式、云端后端依赖、voice cloning。
 
 应用可以服务常见音频后缀，并且在 `ffmpeg` 或 `afconvert` 可用时，把部分上传的 profile 样本准备成 Local MLX 兼容的 WAV reference。压缩音频导出依赖本机转换工具。真正的视频 MP4 输出不在当前范围内。
+
+## 架构与行为说明
+
+以下描述面向人和运维的产品行为。Agent 编码约束见 [AGENTS.md](AGENTS.md)。
+
+### 访谈与脚本软提议
+
+脚本 soft-offer 需要内容维度就绪，以及最少用户回答轮数（`MIN_USER_TURNS_FOR_SCRIPT_OFFER`，默认 4）。访谈不会在单次关键词完整回复后硬切到生成；在用户明确结束前保持进行中，并通过 soft-ready 选项模式继续追问。
+
+### 记忆
+
+长期记忆以文件形式保存在 `.local-data/memory/`。`entries/*.md` 是唯一 source of truth；`catalog.json` 与 `MEMORY.md` 可重建。只有用户发言可成为记忆。访谈/脚本主流程只做只读检索，且不得阻塞于后台记忆工作。
+
+### Desktop bridge 与长任务
+
+UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频渲染、音色预览、模型迁移/下载等）会持久化可轮询的 `request_state`，暴露进度，支持取消，并用 `run_token` 避免重入后的陈旧 UI 状态。有状态的长任务操作应串行执行，除非明确在测并发。
+
+### Voice Studio 与 Script Workbench
+
+- Script Workbench 负责最终播客渲染与生成音频管理。
+- Voice Studio 负责可复用音色档案、预览与脚本音色选择。
+- 脚本 `renderAudio` 使用脚本 artifact 的 `voice_settings`，回退到 Voice Studio 默认值，而不是 Settings 里的原始 `tts_config.voice`。
+- 多脚本 session 在 `artifact.script_artifacts` 下按脚本隔离 playback/takes。
+- 预览锁定写入脚本级 `artifact.voice_reference`；本地 MLX/Qwen 全量渲染与 take 渲染在存在时把它作为 `ref_audio`。锁定提升连续性，不保证比特级一致输出。
+- 内置档案音频位于 `services/python-core/app/assets/voice-profiles/`（纳入版本控制）。用户档案复制到 `.local-data/exports/_voice_profiles`。用户建档通过上传或麦克风录音走 HTTP，不要求用户手填本地音频路径。系统音频捕获尚不可用。
+- Artifact 音频播放在 Web 与 Tauri 中都走 localhost HTTP 路由 `/api/v1/artifacts/audio`。
+- Reveal in Finder 等 Tauri-only 助手不在 HTTP `DesktopBridge` 接口中。
+
+### Local MLX runtime
+
+Local MLX TTS 运行在持久 worker 子进程中；模型在 worker 生命周期内只加载一次，不要把一次性 CLI 生成当作生产路径。长文本会分块拼接；worker 读 PCM 时必须匹配模型声道/采样率元数据，否则会出现拉长或浑浊。以 `./scripts/dev/run-python-core.sh` 与 `--show-local-tts-capability` 为能力门控依据（部分环境即使 import 看似正常，原生 MLX bootstrap 仍可能失败）。应用内 Hugging Face 下载禁用 Xet（`HF_HUB_DISABLE_XET=1`）。
+
+### 开发运维
+
+- `./scripts/dev/run-dev-all.sh` 默认重启 `8765` 上的 Python runtime；只有需要进程连续性时才用 `--reuse-runtime`。
+- 音频渲染排障：先看 `/healthz` runtime 元数据，再看 `.local-data/runtime/request-state/*`，最后才查前端 `run_token` 过滤。
+- CLI 写后读应串行（`start-interview`、`reply-session`、`generate-script`、`render-audio`、configure/show）；并行读写可能读到陈旧状态。
+- 桌面打包验证用 `pnpm --dir apps/desktop tauri:build`（不要在 `--` 后追加 cargo 风格参数）。非交互 DMG 依赖 `CI=true` 跳过 Finder AppleScript 样式。
+- 新建脚本先 `chmod +x` 再执行，不要让权限与执行竞态。
 
 ## 贡献
 

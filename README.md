@@ -284,7 +284,7 @@ Run the repository hygiene check:
 - `services/python-core`: interview orchestration, script generation, provider dispatch, local storage, artifacts, and HTTP runtime.
 - `packages/shared-schemas`: shared frontend/backend contract schemas.
 - `scripts`: development, maintenance, release, and model-download helpers.
-- `docs`: gitignored local scratch (for example `tmp.md`, `plan.md`); setup docs live in README and AGENTS.md.
+- `docs`: gitignored local scratch (for example `tmp.md`, `plan.md`); human setup lives in README; agent constraints live in AGENTS.md.
 - `examples`: sample placeholders and examples.
 
 Useful docs:
@@ -311,9 +311,57 @@ Do not open public issues or pull requests containing API keys, private prompts,
 
 ## Current Scope
 
-Aodcast currently focuses on local-first solo podcast creation. The repository does not include speech-to-text input, cloud backend hosting, multi-host podcast formats, or voice cloning.
+Aodcast currently focuses on local-first solo podcast creation:
+
+- platform: macOS desktop (Tauri) + local Python orchestration core
+- input: text topic only
+- output: solo podcast script plus final audio from Script Workbench
+- LLM: user-configured API provider
+- TTS: local MLX as the primary first-release path, plus remote API providers
+- memory: file-native, local-only long-term user memory across episodes
+
+Out of scope: speech-to-text input, multi-host formats, cloud backend dependency, voice cloning.
 
 The app can serve common audio suffixes and can prepare some uploaded profile samples as WAV references when `ffmpeg` or `afconvert` is available. Export to compressed audio formats depends on local conversion tools. True video MP4 output is out of scope.
+
+## Architecture And Behavior Notes
+
+These notes describe current product behavior for humans and operators. Agent coding constraints live in [AGENTS.md](AGENTS.md).
+
+### Interview and script offer
+
+Script soft-offer requires both content-dimension readiness and a minimum number of user answers (`MIN_USER_TURNS_FOR_SCRIPT_OFFER`, default 4). The interview does not hard-cut to generate after a single keyword-complete reply; it stays in progress with a soft-ready option mode until the user explicitly finishes.
+
+### Memory
+
+Long-term memory is file-native under `.local-data/memory/`. `entries/*.md` is the source of truth; `catalog.json` and `MEMORY.md` are rebuildable indexes. Only user turns become memories. Interview/script flows use read-only retrieval and do not block on background memory work.
+
+### Desktop bridge and long tasks
+
+UI calls go through the desktop HTTP bridge to the local Python runtime. Long operations (audio render, voice preview, model migration/download, and similar) persist pollable `request_state`, expose progress, support cancel, and use `run_token` so retriggered runs do not show stale UI state. Stateful long-task operations should be sequenced unless concurrency is under test.
+
+### Voice Studio and Script Workbench
+
+- Script Workbench owns final podcast rendering and generated-audio management.
+- Voice Studio owns reusable voice profiles, preview, and script voice selection.
+- Script `renderAudio` uses the script artifact’s `voice_settings`, falling back to Voice Studio defaults—not raw Settings `tts_config.voice`.
+- Multi-script sessions keep per-script playback/takes under `artifact.script_artifacts`.
+- Preview lock stores script-scoped `artifact.voice_reference`; local MLX/Qwen full renders and take renders pass that path as `ref_audio` when present. Locks improve continuity; they do not guarantee bit-identical output.
+- Built-in profile audio lives under `services/python-core/app/assets/voice-profiles/` (tracked). User profiles copy into `.local-data/exports/_voice_profiles`. User profile creation uses upload or microphone recording via HTTP; typing local audio paths is not part of the UI. System audio capture is not available yet.
+- Artifact audio playback uses the localhost HTTP route `/api/v1/artifacts/audio` in both Web and Tauri shells.
+- Tauri-only helpers such as Reveal in Finder live in shell helpers and are not part of the HTTP `DesktopBridge` surface.
+
+### Local MLX runtime
+
+Local MLX TTS runs in a persistent worker subprocess. The model loads once per worker lifetime; do not treat one-off CLI generation as the production path. Long text is chunked and joined; worker PCM reads must match model channel/sample-rate metadata or audio will sound stretched or muddy. Use `./scripts/dev/run-python-core.sh` and `--show-local-tts-capability` as the capability source of truth (some environments fail at native MLX bootstrap even when imports look fine). App-managed Hugging Face downloads disable Xet (`HF_HUB_DISABLE_XET=1`).
+
+### Development operators
+
+- `./scripts/dev/run-dev-all.sh` defaults to restarting the Python runtime on port `8765`; use `--reuse-runtime` only when process continuity is intentional.
+- For audio-render debugging: check `/healthz` runtime metadata first, then `.local-data/runtime/request-state/*`, then frontend `run_token` filtering.
+- Prefer sequenced CLI write-then-read flows (`start-interview`, `reply-session`, `generate-script`, `render-audio`, configure/show commands); parallel write/read can observe stale state.
+- Desktop package validation: `pnpm --dir apps/desktop tauri:build` (do not forward extra cargo-style flags after `--`). Non-interactive DMG builds rely on `CI=true` so Finder AppleScript styling is skipped.
+- Apply `chmod +x` before running a newly created script; do not race permission and execution.
 
 ## Contributing
 
