@@ -5,7 +5,7 @@ import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
 
 import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
-import { List, Layers, Mic, Package, Settings, Sun, Moon, Brain } from "lucide-react";
+import { List, Layers, Mic, AudioLines, Package, Settings, Sun, Moon, Brain } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
 import { applyTheme, readStoredTheme, type AppTheme } from "./lib/theme";
 
@@ -88,7 +88,7 @@ export default function App() {
   let title = "Aodcast";
   if (pathSegment === "models") title = "Models";
   else if (pathSegment === "settings") title = "Settings";
-  else if (pathSegment === "voice-studio") title = "Voice Library";
+  else if (pathSegment === "voice-studio") title = "Voice";
   else if (pathSegment === "memory") title = "Memory";
   else if (pathSegment === "episodes") title = "Episodes";
   else if (pathSegment === "studio" && !urlSessionId) title = "Studio";
@@ -138,6 +138,18 @@ export default function App() {
               <Layers className="w-4 h-4" />
             </div>
             Studio
+          </NavLink>
+
+          <NavLink
+            to="/voice-studio"
+            className={({ isActive }) =>
+              navItemClass(isActive || location.pathname.startsWith("/voice-studio"))
+            }
+          >
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
+              <AudioLines className="w-4 h-4" />
+            </div>
+            Voice
           </NavLink>
 
           <NavLink

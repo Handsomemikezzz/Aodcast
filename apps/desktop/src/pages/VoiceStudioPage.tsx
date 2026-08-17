@@ -5,6 +5,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
 import { useBridge } from "../lib/BridgeContext";
 import { AudioPlayer } from "../components/AudioPlayer";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { getErrorMessage } from "../lib/requestState";
 import { cn } from "../lib/utils";
 import { filterActiveVoiceProfiles, resolveProjectVoiceSettings } from "../lib/voiceSettings";
@@ -105,6 +106,7 @@ export function VoiceStudioPage() {
   const [error, setError] = useState<string | null>(null);
   const [profileAudioErrors, setProfileAudioErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const [profileToDelete, setProfileToDelete] = useState<VoiceProfileRecord | null>(null);
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
   const scriptBoundMode = Boolean(routeSessionId && routeScriptId);
@@ -569,7 +571,6 @@ export function VoiceStudioPage() {
 
   const handleDeleteVoiceProfile = async (profile: VoiceProfileRecord) => {
     if (profile.source === "built_in") return;
-    if (!window.confirm(`删除「${profile.name}」？已使用该音色的脚本会清除对应参考。`)) return;
     try {
       setError(null);
       await bridge.deleteVoiceProfile(profile.voice_profile_id);
@@ -578,6 +579,7 @@ export function VoiceStudioPage() {
         await loadProject(selectedSessionId, selectedScriptId);
       }
       resetProfileDialog();
+      setProfileToDelete(null);
       setMessage("音色已删除。");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to delete voice profile."));
@@ -715,7 +717,7 @@ export function VoiceStudioPage() {
                                 <span className="h-4 w-px bg-surface-container-high/60" aria-hidden />
                                 <button
                                   type="button"
-                                  onClick={() => void handleDeleteVoiceProfile(profile)}
+                                  onClick={() => setProfileToDelete(profile)}
                                   className="inline-flex items-center rounded-lg p-1.5 text-secondary hover:bg-red-500/10 hover:text-red-200 transition-colors cursor-pointer"
                                   aria-label={`删除「${profile.name}」`}
                                 >
@@ -1036,7 +1038,7 @@ export function VoiceStudioPage() {
                     type="button"
                     onClick={() => {
                       const profile = voiceProfiles.find((item) => item.voice_profile_id === editingProfileId);
-                      if (profile) void handleDeleteVoiceProfile(profile);
+                      if (profile) setProfileToDelete(profile);
                     }}
                     disabled={savingProfile}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
@@ -1073,6 +1075,28 @@ export function VoiceStudioPage() {
           </div>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={profileToDelete !== null}
+        title="删除此音色？"
+        message={
+          profileToDelete
+            ? `删除「${profileToDelete.name}」？已使用该音色的脚本会清除对应参考。`
+            : ""
+        }
+        onClose={() => setProfileToDelete(null)}
+        actions={[
+          { label: "取消", onClick: () => setProfileToDelete(null) },
+          {
+            label: "删除",
+            variant: "danger",
+            onClick: () => {
+              const target = profileToDelete;
+              if (!target) return;
+              void handleDeleteVoiceProfile(target);
+            },
+          },
+        ]}
+      />
     </motion.div>
   );
 }
