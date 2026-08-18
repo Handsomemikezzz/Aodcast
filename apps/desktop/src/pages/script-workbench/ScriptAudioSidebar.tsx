@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Mic, Pause, Play, Settings2, Share2, Trash2, Wand2 } from "lucide-react";
+import { Check, ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Loader2, Mic, Pause, Play, Settings2, Trash2, Wand2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { filterActiveVoiceProfiles, resolveProjectVoiceSettings, selectedVoiceProfileLabel } from "../../lib/voiceSettings";
 import { ProgressBar } from "../../components/ProgressBar";
@@ -258,7 +258,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         <div className="mb-4 flex items-center justify-between gap-3 border-b border-outline pb-4">
           <div>
             <p className="text-sm font-bold text-primary font-display tracking-tight">Generated Audio</p>
-            <p className="mt-1 text-[11px] text-secondary/80">Play, prepare for Xiaoyuzhou, share, or manage the final render.</p>
+            <p className="mt-1 text-[11px] text-secondary/80">Play, export MP3, or manage the final WAV take.</p>
           </div>
           <FileAudio className="h-4.5 w-4.5 text-accent-amber" />
         </div>
@@ -297,7 +297,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               </div>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => void workbench.handlePreviewAudio()}
@@ -308,19 +308,12 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               </button>
               <button
                 type="button"
-                onClick={workbench.handleDownloadAudio}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
+                disabled={workbench.exportingMp3}
+                onClick={() => void workbench.handleExportMp3()}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Download className="h-4 w-4" />
-                Publish Prep
-              </button>
-              <button
-                type="button"
-                onClick={() => void workbench.handleShareAudio()}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
-              >
-                <Share2 className="h-4 w-4" />
-                Share
+                {workbench.exportingMp3 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {workbench.exportingMp3 ? "Exporting…" : "Export MP3"}
               </button>
               <button
                 type="button"

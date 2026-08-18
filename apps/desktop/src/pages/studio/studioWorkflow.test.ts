@@ -71,6 +71,18 @@ describe("studio workflow helpers", () => {
     ).toEqual({ outOfDate: false });
   });
 
+  it("uses ready as the global CTA when current audio exists", () => {
+    expect(
+      resolveGlobalCtaKind({
+        generating: false,
+        hasScript: true,
+        hasAudio: true,
+        audioOutOfDate: false,
+        audioError: false,
+      }),
+    ).toBe("ready");
+  });
+
   it("uses update-audio as the global CTA for stale audio", () => {
     expect(
       resolveGlobalCtaKind({

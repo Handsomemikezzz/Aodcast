@@ -4,7 +4,7 @@ export type GlobalCtaKind =
   | "generate-script"
   | "generate-audio"
   | "update-audio"
-  | "export"
+  | "ready"
   | "generating";
 
 export function resolveGlobalCtaKind({
@@ -23,7 +23,7 @@ export function resolveGlobalCtaKind({
   if (generating) return "generating";
   if (!hasScript) return "generate-script";
   if (hasAudio && (audioOutOfDate || audioError)) return "update-audio";
-  if (hasAudio) return "export";
+  if (hasAudio) return "ready";
   return "generate-audio";
 }
 

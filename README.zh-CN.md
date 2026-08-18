@@ -141,15 +141,13 @@ Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
 
 正常开发不强制要求 `.env`。`.env.example` 记录了可选脚本变量，例如 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE` 和 `HF_TOKEN`。
 
-### 小宇宙发布准备
+### 导出 MP3
 
-Script Workbench 可以把当前已渲染的音频整理成适合手动上传小宇宙的发布材料。
+最终成片仍是 WAV。音频生成后，在成片旁点击 **Export MP3**。
 
-- 先生成最终音频，再在 Generated Audio 面板点击 **Publish Prep**。
-- Aodcast 会导出一份 192 kbps 的 MP3，并把转换后的文件保存在 `.local-data/exports/_converted/`。
-- 编辑并复制单集标题和简介，在 Finder 中定位 MP3，然后打开小宇宙主播后台手动上传。
-- 小宇宙继续负责音频托管和 RSS。Aodcast 不保存平台凭据、不直接上传小宇宙、不生成 RSS，也不维护远端发布状态。
-- 首次建档时，将小宇宙托管的 RSS 分别提交到 Apple Podcasts、Spotify 等目录；后续只需继续在小宇宙发布新单集。
+- Aodcast 会在 WAV 旁边写出一份 192 kbps 的 MP3，例如 `.local-data/exports/<session-id>/audio.mp3`。
+- Finder 会打开该 MP3，随后可手动上传小宇宙或其他平台。
+- Aodcast 不保存平台凭据、不直接上传、不生成 RSS，也不维护远端发布状态。
 
 ### Local MLX TTS
 
@@ -353,6 +351,7 @@ UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频�
 ### Voice Studio 与 Script Workbench
 
 - Script Workbench 负责最终播客渲染与生成音频管理。
+- 最终成片保持 WAV；MP3 是成片旁的按需导出，写在同一目录。
 - Voice Studio 负责可复用音色档案、预览与脚本音色选择。
 - 脚本 `renderAudio` 使用脚本 artifact 的 `voice_settings`，回退到 Voice Studio 默认值，而不是 Settings 里的原始 `tts_config.voice`。
 - 多脚本 session 在 `artifact.script_artifacts` 下按脚本隔离 playback/takes。

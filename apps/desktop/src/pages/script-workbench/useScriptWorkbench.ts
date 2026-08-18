@@ -70,16 +70,14 @@ export type UseScriptWorkbenchResult = {
   handlePreviewAudio: () => Promise<void>;
   handleAudioLoadError: () => void;
   handleRevealInFinder: () => Promise<void>;
-  handleDownloadAudio: () => void;
-  handleShareAudio: () => Promise<void>;
+  handleExportMp3: () => Promise<void>;
   handleDeleteAudio: () => Promise<void>;
   handleSelectVoiceProfile: (profileId: string) => Promise<void>;
   reload: () => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   closeDialog: () => void;
   runPendingAction: () => Promise<void>;
-  isExportDialogOpen: boolean;
-  closeExportDialog: () => void;
+  exportingMp3: boolean;
   scriptCheck: ScriptCheckResult;
   handleOpenCleanupPreview: () => void;
   handleApplyCleanup: () => void;
@@ -143,10 +141,6 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     editor.setDialogState(null);
   };
 
-  const handleShareAudio = async () => {
-    await audio.handleShareAudio(data.scriptName);
-  };
-
   return {
     navigate,
     loading: data.loading,
@@ -201,16 +195,14 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     handlePreviewAudio: audio.handlePreviewAudio,
     handleAudioLoadError: audio.handleAudioLoadError,
     handleRevealInFinder: audio.handleRevealInFinder,
-    handleDownloadAudio: audio.handleDownloadAudio,
+    handleExportMp3: audio.handleExportMp3,
     handleDeleteAudio: audio.handleDeleteAudio,
     handleSelectVoiceProfile: data.handleSelectVoiceProfile,
-    handleShareAudio,
     reload: data.reload,
     refreshWorkspace: data.refreshWorkspace,
     closeDialog: editor.closeDialog,
     runPendingAction: editor.runPendingAction,
-    isExportDialogOpen: audio.isExportDialogOpen,
-    closeExportDialog: audio.closeExportDialog,
+    exportingMp3: audio.exportingMp3,
     scriptCheck,
     handleOpenCleanupPreview,
     handleApplyCleanup,

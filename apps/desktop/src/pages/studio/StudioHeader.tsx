@@ -1,4 +1,4 @@
-import { Download, RefreshCw, Wand2 } from "lucide-react";
+import { RefreshCw, Wand2 } from "lucide-react";
 import { WorkflowStepper, buildWorkflowSteps, type StepId } from "./WorkflowStepper";
 import { resolveGlobalCtaKind } from "./studioWorkflow";
 import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWorkbench";
@@ -6,11 +6,9 @@ import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWork
 function GlobalCTA({
   workbench,
   audioOutOfDate,
-  onExport,
 }: {
   workbench: UseScriptWorkbenchResult;
   audioOutOfDate: boolean;
-  onExport: () => void;
 }) {
   const { generating, audioSrc, audioError, project, scriptCheck } = workbench;
   const hasScript = Boolean(project?.script && !project.script.deleted_at);
@@ -60,17 +58,11 @@ function GlobalCTA({
     );
   }
 
-  if (ctaKind === "export") {
+  if (ctaKind === "ready") {
     return (
-      <button
-        type="button"
-        onClick={onExport}
-        disabled={isDisabled}
-        className="h-9 px-5 rounded-full bg-accent-amber text-on-primary text-xs font-bold shadow-[0_4px_14px_rgba(161,123,67,0.22)] hover:bg-accent-amber/90 active:scale-[0.97] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
-      >
-        <Download className="w-3.5 h-3.5" />
-        Publish Prep
-      </button>
+      <div className="h-9 px-4 rounded-full border border-outline bg-surface-container-low text-xs font-semibold text-secondary flex items-center shrink-0">
+        Audio ready
+      </div>
     );
   }
 
@@ -109,7 +101,6 @@ export function StudioHeader({
   onScriptFocus,
   onVoiceNavigate,
   onAudioFocus,
-  onExport,
 }: {
   workbench: UseScriptWorkbenchResult;
   audioOutOfDate: boolean;
@@ -117,7 +108,6 @@ export function StudioHeader({
   onScriptFocus: () => void;
   onVoiceNavigate: () => void;
   onAudioFocus: () => void;
-  onExport: () => void;
 }) {
   const { project, generating, audioSrc, audioError } = workbench;
   const topic = project?.session.topic || "Untitled Episode";
@@ -168,7 +158,7 @@ export function StudioHeader({
       <div className="hidden lg:block w-px h-6 bg-outline shrink-0" />
 
       {/* Global CTA */}
-      <GlobalCTA workbench={workbench} audioOutOfDate={audioOutOfDate} onExport={onExport} />
+      <GlobalCTA workbench={workbench} audioOutOfDate={audioOutOfDate} />
     </header>
   );
 }

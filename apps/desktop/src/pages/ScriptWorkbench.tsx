@@ -1,8 +1,6 @@
 import { motion } from "framer-motion";
 import { useParams } from "react-router-dom";
-import { useBridge } from "../lib/BridgeContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { XiaoyuzhouPublishDialog } from "../components/XiaoyuzhouPublishDialog";
 import { ScriptCleanupPreviewDialog } from "./script-workbench/ScriptCleanupPreviewDialog";
 import { ScriptAudioSidebar } from "./script-workbench/ScriptAudioSidebar";
 import { ScriptEditorPane } from "./script-workbench/ScriptEditorPane";
@@ -53,7 +51,6 @@ export function ScriptWorkbench({
 }) {
   const { sessionId: routeSessionId, scriptId: routeScriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const workbench = useScriptWorkbench(sessionId || routeSessionId || "", scriptId || routeScriptId || "", onRefresh);
-  const bridge = useBridge();
 
   if (workbench.loading) {
     return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading script workspace...</div>;
@@ -180,15 +177,6 @@ export function ScriptWorkbench({
         preview={workbench.dialogState?.kind === "cleanup-preview" ? workbench.dialogState.preview : null}
         onClose={workbench.closeDialog}
         onApply={workbench.handleApplyCleanup}
-      />
-
-      <XiaoyuzhouPublishDialog
-        open={workbench.isExportDialogOpen}
-        audioPath={workbench.project?.artifact?.audio_path || ""}
-        episodeTitle={workbench.scriptName}
-        initialShowNotes={workbench.project?.session.creation_intent || ""}
-        bridge={bridge}
-        onClose={workbench.closeExportDialog}
       />
     </>
   );

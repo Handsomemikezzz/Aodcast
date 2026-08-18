@@ -141,15 +141,13 @@ Configure an OpenAI-compatible TTS provider:
 
 Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper-script variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, and `HF_TOKEN`.
 
-### Xiaoyuzhou publishing preparation
+### Exporting MP3
 
-Script Workbench prepares the current rendered audio for manual upload to Xiaoyuzhou.
+Final renders stay WAV. After audio exists, use **Export MP3** next to the take.
 
-- Generate final audio first, then choose **Publish Prep** in the Generated Audio panel.
-- Aodcast exports an MP3 at 192 kbps and keeps the converted file inside `.local-data/exports/_converted/`.
-- Edit and copy the episode title and show notes, reveal the MP3 in Finder, then open the Xiaoyuzhou creator dashboard to upload it manually.
-- Xiaoyuzhou remains the podcast host and RSS source. Aodcast does not store platform credentials, upload audio to Xiaoyuzhou, generate RSS, or track remote publication state.
-- Submit the Xiaoyuzhou-hosted RSS feed to Apple Podcasts, Spotify, and other directories separately when setting up the show for the first time.
+- Aodcast writes a 192 kbps MP3 beside the WAV, for example `.local-data/exports/<session-id>/audio.mp3`.
+- Finder opens on the MP3 so you can upload it to Xiaoyuzhou or any other host.
+- Aodcast does not store platform credentials, upload audio, generate RSS, or track remote publication state.
 
 ### Local MLX TTS
 
@@ -353,6 +351,7 @@ UI calls go through the desktop HTTP bridge to the local Python runtime. Long op
 ### Voice Studio and Script Workbench
 
 - Script Workbench owns final podcast rendering and generated-audio management.
+- Final takes stay WAV; MP3 is an on-demand sibling export next to the take.
 - Voice Studio owns reusable voice profiles, preview, and script voice selection.
 - Script `renderAudio` uses the script artifact’s `voice_settings`, falling back to Voice Studio defaults—not raw Settings `tts_config.voice`.
 - Multi-script sessions keep per-script playback/takes under `artifact.script_artifacts`.

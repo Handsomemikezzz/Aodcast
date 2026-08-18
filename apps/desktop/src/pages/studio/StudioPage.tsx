@@ -6,7 +6,6 @@ import { useScriptWorkbench } from "../script-workbench/useScriptWorkbench";
 import { ScriptEditorPane } from "../script-workbench/ScriptEditorPane";
 import { ScriptCleanupPreviewDialog } from "../script-workbench/ScriptCleanupPreviewDialog";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { XiaoyuzhouPublishDialog } from "../../components/XiaoyuzhouPublishDialog";
 import { ChatPage } from "../ChatPage";
 import { ConversationDrawer } from "./ConversationDrawer";
 import { VoiceAudioPanel } from "./VoiceAudioDrawer";
@@ -68,7 +67,6 @@ function StudioWorkspace({
   onRefresh: () => Promise<void>;
   initialTranscriptOpen: boolean;
 }) {
-  const bridge = useBridge();
   const navigate = useNavigate();
   const workbench = useScriptWorkbench(sessionId, scriptId, onRefresh);
 
@@ -189,7 +187,6 @@ function StudioWorkspace({
           onScriptFocus={handleScriptFocus}
           onVoiceNavigate={handleVoiceNavigate}
           onAudioFocus={handleAudioFocus}
-          onExport={workbench.handleDownloadAudio}
         />
 
         {/* Main two-column body — relative container for transcript overlay */}
@@ -360,14 +357,6 @@ function StudioWorkspace({
         }
         onClose={workbench.closeDialog}
         onApply={workbench.handleApplyCleanup}
-      />
-      <XiaoyuzhouPublishDialog
-        open={workbench.isExportDialogOpen}
-        audioPath={workbench.project?.artifact?.audio_path || ""}
-        episodeTitle={workbench.scriptName}
-        initialShowNotes={workbench.project?.session.creation_intent || ""}
-        bridge={bridge}
-        onClose={workbench.closeExportDialog}
       />
     </>
   );

@@ -1785,22 +1785,22 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 sanitized_name = "podcast-episode"
 
             output_filename = f"{sanitized_name}.{target_format}"
-
-            # target converted dir
-            converted_dir = exports_dir / "_converted"
-            converted_dir.mkdir(parents=True, exist_ok=True)
-            target_path = converted_dir / output_filename
-
-            # If target already exists, append unique suffix
-            if target_path.exists():
-                suffix_counter = 1
-                while True:
-                    candidate = converted_dir / f"{sanitized_name}-{suffix_counter}.{target_format}"
-                    if not candidate.exists():
-                        target_path = candidate
-                        output_filename = candidate.name
-                        break
-                    suffix_counter += 1
+            # Keep the delivery file next to the WAV take and overwrite on repeat export.
+            target_path = source_path.parent / output_filename
+            if target_path.resolve() == source_path:
+                audio_url = f"/api/v1/artifacts/audio?path={quote(str(source_path))}"
+                self._send_bridge_envelope(
+                    success_envelope(
+                        {
+                            "audio_url": audio_url,
+                            "file_name": source_path.name,
+                            "audio_path": str(source_path),
+                        },
+                        operation="export_podcast_audio",
+                    ),
+                    origin=origin,
+                )
+                return
 
             # Run encoding process
             if target_format == "wav":

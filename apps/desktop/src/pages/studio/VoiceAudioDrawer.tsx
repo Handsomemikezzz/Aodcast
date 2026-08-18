@@ -6,12 +6,12 @@ import {
   ExternalLink,
   FileAudio,
   FolderOpen,
+  Loader2,
   Mic,
   Pause,
   Play,
   RefreshCw,
   Settings2,
-  Share2,
   Trash2,
 } from "lucide-react";
 import {
@@ -56,7 +56,6 @@ export function VoiceAudioPanel({
   const voiceLibraryPath = workbench.project?.script
     ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}?returnTo=${encodeURIComponent(studioReturnPath)}`
     : "/voice-studio";
-
   const hasAudio = Boolean(workbench.audioSrc);
 
   return (
@@ -212,24 +211,17 @@ export function VoiceAudioPanel({
               </button>
               <button
                 type="button"
-                onClick={workbench.handleDownloadAudio}
-                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer"
+                disabled={workbench.exportingMp3}
+                onClick={() => void workbench.handleExportMp3()}
+                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Download className="h-3 w-3" />
-                Download
-              </button>
-              <button
-                type="button"
-                onClick={() => void workbench.handleShareAudio()}
-                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer"
-              >
-                <Share2 className="h-3 w-3" />
-                Share
+                {workbench.exportingMp3 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                {workbench.exportingMp3 ? "Exporting…" : "Export MP3"}
               </button>
               <button
                 type="button"
                 onClick={() => void workbench.handleDeleteAudio()}
-                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-red-500/20 bg-red-500/8 text-[11px] font-bold text-red-400 hover:bg-red-500/15 transition-all cursor-pointer"
+                className="col-span-2 inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-red-500/20 bg-red-500/8 text-[11px] font-bold text-red-400 hover:bg-red-500/15 transition-all cursor-pointer"
               >
                 <Trash2 className="h-3 w-3" />
                 Delete
@@ -273,31 +265,6 @@ export function VoiceAudioPanel({
 
         {workbench.audioMessage && (
           <p className="mt-2 text-[10px] text-accent-amber leading-relaxed">{workbench.audioMessage}</p>
-        )}
-      </div>
-
-      {/* ── Export Section ─────────────────────────────────── */}
-      <div className="voice-panel-section">
-        <SectionTitle>Export</SectionTitle>
-
-        {hasAudio ? (
-          <div className="space-y-2">
-            {audioOutOfDate && (
-              <p className="text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
-                Audio is out of date. You can still export the current version.
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={workbench.handleDownloadAudio}
-              className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer"
-            >
-              <Download className="h-3 w-3" />
-              Export Audio File
-            </button>
-          </div>
-        ) : (
-          <p className="text-[11px] text-secondary/50">Generate audio to enable export.</p>
         )}
       </div>
 

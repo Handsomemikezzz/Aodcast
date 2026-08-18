@@ -19,6 +19,8 @@ import type { RequestState, RuntimeInfo, SessionProject } from "../../types";
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_FAILURE_THRESHOLD = 3;
+const EXPORT_MP3_FORMAT = "mp3";
+const EXPORT_MP3_BITRATE = "192k";
 
 type UseScriptWorkbenchAudioArgs = {
   bridge: DesktopBridge;
@@ -46,11 +48,9 @@ type UseScriptWorkbenchAudioResult = {
   handlePreviewAudio: () => Promise<void>;
   handleAudioLoadError: () => void;
   handleRevealInFinder: () => Promise<void>;
-  handleDownloadAudio: () => void;
-  handleShareAudio: (scriptName: string) => Promise<void>;
+  handleExportMp3: () => Promise<void>;
   handleDeleteAudio: () => Promise<void>;
-  isExportDialogOpen: boolean;
-  closeExportDialog: () => void;
+  exportingMp3: boolean;
 };
 
 export function useScriptWorkbenchAudio({
@@ -78,7 +78,7 @@ export function useScriptWorkbenchAudio({
   const [pollWarning, setPollWarning] = useState<string | null>(null);
   const [audioMessage, setAudioMessage] = useState<string | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
-  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportingMp3, setExportingMp3] = useState(false);
 
   const audioSrc = useMemo(() => {
     const audioPath = project?.artifact?.audio_path;
@@ -366,30 +366,29 @@ export function useScriptWorkbenchAudio({
     }
   };
 
-  const handleDownloadAudio = () => {
-    setIsExportDialogOpen(true);
-  };
-
-  const closeExportDialog = () => {
-    setIsExportDialogOpen(false);
-  };
-
-  const handleShareAudio = async (scriptName: string) => {
-    if (!project?.artifact?.audio_path) return;
-    const payload = {
-      title: `${scriptName} audio`,
-      text: project.artifact.audio_path,
-    };
+  const handleExportMp3 = async () => {
+    const audioPath = project?.artifact?.audio_path;
+    if (!audioPath || exportingMp3) return;
+    setExportingMp3(true);
+    setAudioError(null);
+    setAudioMessage(null);
     try {
-      if (typeof navigator.share === "function") {
-        await navigator.share(payload);
-        setAudioMessage("Audio path shared.");
-        return;
+      const result = await bridge.exportPodcastAudio(
+        audioPath,
+        EXPORT_MP3_FORMAT,
+        EXPORT_MP3_BITRATE,
+        "",
+      );
+      try {
+        await revealInFinder(result.audio_path);
+        setAudioMessage(`MP3 已导出：${result.file_name}`);
+      } catch {
+        setAudioMessage(`MP3 已导出到 ${result.audio_path}`);
       }
-      await navigator.clipboard.writeText(project.artifact.audio_path);
-      setAudioMessage("Audio path copied to clipboard.");
     } catch (err: unknown) {
-      setAudioError(getErrorMessage(err, "Failed to share audio path."));
+      setAudioError(getErrorMessage(err, "Failed to export MP3."));
+    } finally {
+      setExportingMp3(false);
     }
   };
 
@@ -407,10 +406,8 @@ export function useScriptWorkbenchAudio({
     handlePreviewAudio,
     handleAudioLoadError,
     handleRevealInFinder,
-    handleDownloadAudio,
-    handleShareAudio,
+    handleExportMp3,
     handleDeleteAudio,
-    isExportDialogOpen,
-    closeExportDialog,
+    exportingMp3,
   };
 }
