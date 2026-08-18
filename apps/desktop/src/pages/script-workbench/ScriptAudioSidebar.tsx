@@ -258,7 +258,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
         <div className="mb-4 flex items-center justify-between gap-3 border-b border-outline pb-4">
           <div>
             <p className="text-sm font-bold text-primary font-display tracking-tight">Generated Audio</p>
-            <p className="mt-1 text-[11px] text-secondary/80">Play, delete, download, or reveal the final render.</p>
+            <p className="mt-1 text-[11px] text-secondary/80">Play, prepare for Xiaoyuzhou, share, or manage the final render.</p>
           </div>
           <FileAudio className="h-4.5 w-4.5 text-accent-amber" />
         </div>
@@ -312,7 +312,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
               >
                 <Download className="h-4 w-4" />
-                Download
+                Publish Prep
               </button>
               <button
                 type="button"

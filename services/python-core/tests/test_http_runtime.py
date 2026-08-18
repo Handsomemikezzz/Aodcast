@@ -1240,6 +1240,31 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["data"]["file_name"], "my-podcast-episode.wav")
         self.assertIn("/api/v1/artifacts/audio?path=", payload["data"]["audio_url"])
+        exported_path = Path(payload["data"]["audio_path"])
+        self.assertTrue(exported_path.is_file())
+        self.assertEqual(exported_path.name, "my-podcast-episode.wav")
+
+    def test_audio_export_route_prepares_192k_mp3_for_manual_upload(self) -> None:
+        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        with patch("shutil.which", return_value="/usr/local/bin/ffmpeg"), patch("subprocess.run") as run:
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/artifacts/audio/export",
+                body={
+                    "audio_path": str(audio_path),
+                    "format": "mp3",
+                    "bitrate": "192k",
+                    "filename": "xiaoyuzhou-episode",
+                },
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["file_name"], "xiaoyuzhou-episode.mp3")
+        self.assertTrue(payload["data"]["audio_path"].endswith("xiaoyuzhou-episode.mp3"))
+        command = run.call_args.args[0]
+        self.assertIn("libmp3lame", command)
+        self.assertEqual(command[command.index("-b:a") + 1], "192k")
 
     def test_audio_export_route_rejects_unsupported_format(self) -> None:
         audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")

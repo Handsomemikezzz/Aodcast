@@ -154,7 +154,7 @@ export interface DesktopBridge {
   /** Delete a standalone preview/export audio file by artifact path. */
   deleteArtifactAudio(path: string): Promise<{ path?: string; deleted?: boolean; message?: string }>;
   /** Export intermediate WAV to MP3/M4A/WAV with custom settings. */
-  exportPodcastAudio(audioPath: string, format: string, bitrate: string, filename: string): Promise<{ audio_url: string; file_name: string }>;
+  exportPodcastAudio(audioPath: string, format: string, bitrate: string, filename: string): Promise<{ audio_url: string; file_name: string; audio_path: string }>;
   /** List packaged voice and style presets for the Voice Studio MVP. */
   listVoicePresets(): Promise<VoicePresetCatalog>;
   /** Render a short preview for quick voice/style/text comparison. */

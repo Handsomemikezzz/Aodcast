@@ -141,6 +141,16 @@ Configure an OpenAI-compatible TTS provider:
 
 Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper-script variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, and `HF_TOKEN`.
 
+### Xiaoyuzhou publishing preparation
+
+Script Workbench prepares the current rendered audio for manual upload to Xiaoyuzhou.
+
+- Generate final audio first, then choose **Publish Prep** in the Generated Audio panel.
+- Aodcast exports an MP3 at 192 kbps and keeps the converted file inside `.local-data/exports/_converted/`.
+- Edit and copy the episode title and show notes, reveal the MP3 in Finder, then open the Xiaoyuzhou creator dashboard to upload it manually.
+- Xiaoyuzhou remains the podcast host and RSS source. Aodcast does not store platform credentials, upload audio to Xiaoyuzhou, generate RSS, or track remote publication state.
+- Submit the Xiaoyuzhou-hosted RSS feed to Apple Podcasts, Spotify, and other directories separately when setting up the show for the first time.
+
 ### Local MLX TTS
 
 Local MLX TTS is a primary first-release capability for local-first speech generation on supported macOS machines, preferably Apple Silicon, with enough disk space and unified memory for the selected model.

@@ -69,7 +69,7 @@ function GlobalCTA({
         className="h-9 px-5 rounded-full bg-accent-amber text-on-primary text-xs font-bold shadow-[0_4px_14px_rgba(161,123,67,0.22)] hover:bg-accent-amber/90 active:scale-[0.97] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
       >
         <Download className="w-3.5 h-3.5" />
-        Export
+        Publish Prep
       </button>
     );
   }

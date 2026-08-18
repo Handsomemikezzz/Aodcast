@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { useParams } from "react-router-dom";
 import { useBridge } from "../lib/BridgeContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ExportPodcastDialog } from "../components/ExportPodcastDialog";
+import { XiaoyuzhouPublishDialog } from "../components/XiaoyuzhouPublishDialog";
 import { ScriptCleanupPreviewDialog } from "./script-workbench/ScriptCleanupPreviewDialog";
 import { ScriptAudioSidebar } from "./script-workbench/ScriptAudioSidebar";
 import { ScriptEditorPane } from "./script-workbench/ScriptEditorPane";
@@ -182,10 +182,11 @@ export function ScriptWorkbench({
         onApply={workbench.handleApplyCleanup}
       />
 
-      <ExportPodcastDialog
+      <XiaoyuzhouPublishDialog
         open={workbench.isExportDialogOpen}
         audioPath={workbench.project?.artifact?.audio_path || ""}
-        sessionTopic={workbench.project?.session?.topic || ""}
+        episodeTitle={workbench.scriptName}
+        initialShowNotes={workbench.project?.session.creation_intent || ""}
         bridge={bridge}
         onClose={workbench.closeExportDialog}
       />

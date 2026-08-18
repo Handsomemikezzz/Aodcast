@@ -1848,7 +1848,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                         if target_format == "mp3":
                             raise RuntimeError(
                                 "FFmpeg is required to export to MP3 on this system. "
-                                "Please install FFmpeg (e.g. 'brew install ffmpeg') or select M4A format."
+                                "Please install FFmpeg (for example, 'brew install ffmpeg') and try again."
                             )
                         else:
                             raise RuntimeError(
@@ -1863,6 +1863,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                     {
                         "audio_url": audio_url,
                         "file_name": output_filename,
+                        "audio_path": str(target_path),
                     },
                     operation="export_podcast_audio",
                 ),

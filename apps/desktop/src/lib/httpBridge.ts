@@ -560,7 +560,8 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       };
     },
     async exportPodcastAudio(audioPath: string, format: string, bitrate: string, filename: string) {
-      const response = await callHttp<{ audio_url: string; file_name: string }>(
+      const runtime = await getRuntime();
+      const response = await callHttp<{ audio_url: string; file_name: string; audio_path: string }>(
         `/api/v1/artifacts/audio/export`,
         {
           method: "POST",
@@ -573,8 +574,9 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         },
       );
       return {
-        audio_url: response.audio_url,
+        audio_url: new URL(response.audio_url, `${runtime.base_url}/`).toString(),
         file_name: response.file_name,
+        audio_path: response.audio_path,
       };
     },
     async listVoicePresets() {

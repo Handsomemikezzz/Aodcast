@@ -6,7 +6,7 @@ import { useScriptWorkbench } from "../script-workbench/useScriptWorkbench";
 import { ScriptEditorPane } from "../script-workbench/ScriptEditorPane";
 import { ScriptCleanupPreviewDialog } from "../script-workbench/ScriptCleanupPreviewDialog";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { ExportPodcastDialog } from "../../components/ExportPodcastDialog";
+import { XiaoyuzhouPublishDialog } from "../../components/XiaoyuzhouPublishDialog";
 import { ChatPage } from "../ChatPage";
 import { ConversationDrawer } from "./ConversationDrawer";
 import { VoiceAudioPanel } from "./VoiceAudioDrawer";
@@ -361,10 +361,11 @@ function StudioWorkspace({
         onClose={workbench.closeDialog}
         onApply={workbench.handleApplyCleanup}
       />
-      <ExportPodcastDialog
+      <XiaoyuzhouPublishDialog
         open={workbench.isExportDialogOpen}
         audioPath={workbench.project?.artifact?.audio_path || ""}
-        sessionTopic={workbench.project?.session?.topic || ""}
+        episodeTitle={workbench.scriptName}
+        initialShowNotes={workbench.project?.session.creation_intent || ""}
         bridge={bridge}
         onClose={workbench.closeExportDialog}
       />

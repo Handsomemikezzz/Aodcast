@@ -141,6 +141,16 @@ Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
 
 正常开发不强制要求 `.env`。`.env.example` 记录了可选脚本变量，例如 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE` 和 `HF_TOKEN`。
 
+### 小宇宙发布准备
+
+Script Workbench 可以把当前已渲染的音频整理成适合手动上传小宇宙的发布材料。
+
+- 先生成最终音频，再在 Generated Audio 面板点击 **Publish Prep**。
+- Aodcast 会导出一份 192 kbps 的 MP3，并把转换后的文件保存在 `.local-data/exports/_converted/`。
+- 编辑并复制单集标题和简介，在 Finder 中定位 MP3，然后打开小宇宙主播后台手动上传。
+- 小宇宙继续负责音频托管和 RSS。Aodcast 不保存平台凭据、不直接上传小宇宙、不生成 RSS，也不维护远端发布状态。
+- 首次建档时，将小宇宙托管的 RSS 分别提交到 Apple Podcasts、Spotify 等目录；后续只需继续在小宇宙发布新单集。
+
 ### Local MLX TTS
 
 Local MLX TTS 是首发能力之一，面向支持的 macOS 机器做本地语音生成；更推荐 Apple Silicon，并预留足够磁盘和统一内存。
