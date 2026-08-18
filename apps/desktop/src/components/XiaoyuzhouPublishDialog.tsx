@@ -34,15 +34,6 @@ type XiaoyuzhouPublishDialogProps = {
   onClose: () => void;
 };
 
-function triggerDownload(result: ExportResult): void {
-  const link = document.createElement("a");
-  link.href = result.audio_url;
-  link.download = result.file_name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
 export function XiaoyuzhouPublishDialog({
   open,
   audioPath,
@@ -108,8 +99,14 @@ export function XiaoyuzhouPublishDialog({
         filename.trim() || "podcast-episode",
       );
       setExportResult(result);
-      triggerDownload(result);
-      setNotice("MP3 is ready. Copy the metadata, then upload it in Xiaoyuzhou.");
+      // Do not navigate the Tauri webview to the audio URL; that replaces the
+      // whole app. The MP3 is already written under .local-data/exports/_converted/.
+      try {
+        await revealInFinder(result.audio_path);
+        setNotice("MP3 已导出，Finder 已打开文件所在位置。复制标题和简介后即可上传小宇宙。");
+      } catch {
+        setNotice(`MP3 已导出到 ${result.audio_path}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to prepare the Xiaoyuzhou MP3.");
     } finally {
@@ -255,21 +252,22 @@ export function XiaoyuzhouPublishDialog({
 
           {exportResult ? (
             <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-primary">MP3 ready for upload</p>
-                  <p className="mt-1 truncate text-xs text-secondary">{exportResult.file_name}</p>
+                  <p className="text-sm font-semibold text-primary">MP3 已导出，可上传小宇宙</p>
+                  <p className="mt-1 text-xs font-medium text-primary">{exportResult.file_name}</p>
+                  <p className="mt-1 break-all text-xs leading-relaxed text-secondary">{exportResult.audio_path}</p>
                 </div>
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 <button
                   type="button"
-                  onClick={() => triggerDownload(exportResult)}
+                  onClick={() => void copyText("File path", exportResult.audio_path)}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 text-xs font-bold text-primary transition-colors hover:bg-surface-container-high"
                 >
-                  <Download className="h-4 w-4" />
-                  Download again
+                  <Copy className="h-4 w-4" />
+                  Copy path
                 </button>
                 <button
                   type="button"
