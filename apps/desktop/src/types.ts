@@ -15,6 +15,7 @@ export type SessionRecord = {
   session_id: string;
   topic: string;
   creation_intent: string;
+  creation_mode: "interview" | "markdown";
   state: SessionState;
   llm_provider: string;
   tts_provider: string;
@@ -64,6 +65,38 @@ export type ScriptRecord = {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  generation_metadata?: {
+    source?: {
+      source_id: string;
+      source_kind: "markdown";
+      version: number;
+      content_hash: string;
+      conversion_mode: "adapt" | "narrate";
+      target_length: "auto" | "short" | "standard" | "long";
+    };
+    [key: string]: unknown;
+  };
+};
+
+export type EpisodeSourceRecord = {
+  source_id: string;
+  session_id: string;
+  source_kind: "markdown";
+  import_kind: "file" | "paste";
+  name: string;
+  title: string;
+  raw_markdown: string;
+  normalized_text: string;
+  content_hash: string;
+  version: number;
+  word_count: number;
+  estimated_audio_minutes: number;
+  conversion_mode: "adapt" | "narrate";
+  target_length: "auto" | "short" | "standard" | "long";
+  focus_instructions: string;
+  warnings: string[];
+  created_at: string;
+  updated_at: string;
 };
 
 export type ScriptRevisionRecord = {
@@ -118,6 +151,7 @@ export type AudioTakeRecord = {
 
 export type SessionProject = {
   session: SessionRecord;
+  source: EpisodeSourceRecord | null;
   transcript: TranscriptRecord | null;
   script: ScriptRecord | null;
   artifact: ArtifactRecord | null;

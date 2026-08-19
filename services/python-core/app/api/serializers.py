@@ -10,6 +10,7 @@ from app.orchestration.script_generation import ScriptGenerationResult, build_ge
 def serialize_project(project: SessionProject) -> dict[str, object]:
     return {
         "session": project.session.to_dict(),
+        "source": project.source.to_dict() if project.source else None,
         "transcript": project.transcript.to_dict() if project.transcript else None,
         "script": project.script.to_dict() if project.script else None,
         "artifact": project.artifact.to_dict() if project.artifact else None,

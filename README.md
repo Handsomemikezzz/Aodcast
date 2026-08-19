@@ -8,7 +8,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Aodcast is an open-source, local-first macOS desktop app for turning a text idea into a solo podcast script and final audio.
+Aodcast is an open-source, local-first macOS desktop app for turning a text idea or an existing Markdown article into a solo podcast script and final audio.
 
 The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It guides the user through an interview, generates editable script snapshots, lets the user choose a reusable voice profile, and renders final audio through local or remote speech providers.
 
@@ -17,7 +17,8 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 ## What Works
 
 - Text-topic podcast creation with an interview-guided writing flow.
-- Multiple script snapshots per interview session.
+- Markdown-first creation from a local `.md` file or pasted text, with source preview, podcast adaptation or faithful narration, target-length guidance, optional source discussion, and versioned source replacement.
+- Multiple independent script snapshots per episode, regardless of whether it started from an interview or Markdown.
 - Script Workbench for editing, saving, deleting unused snapshots, choosing a voice profile, and rendering/reviewing generated audio.
 - Voice Studio for built-in and user-created voice profiles, sample upload/recording, preview rendering, and profile management.
 - Local MLX TTS on supported macOS machines, plus OpenAI-compatible remote provider adapters.
@@ -32,12 +33,6 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 Create and manage podcast episodes from the home screen.
 
 ![Episodes](images/episodes.png)
-
-### Studio
-
-Follow the interview → script → voice → audio workflow in one workspace.
-
-![Studio](images/studio.png)
 
 ### Models
 
@@ -303,7 +298,7 @@ Useful docs:
 
 ## Data And Privacy
 
-Aodcast is local-first. During development, generated sessions, scripts, transcripts, audio artifacts, provider configuration, and request-state files are stored under:
+Aodcast is local-first. During development, generated sessions, imported source snapshots, scripts, transcripts, audio artifacts, provider configuration, and request-state files are stored under:
 
 ```text
 .local-data/
@@ -313,16 +308,18 @@ This directory is ignored by Git and must not be committed.
 
 API keys are stored as local user-managed configuration. Aodcast does not currently provide macOS Keychain integration or a dedicated secrets vault. Protect local config files, shell history, logs, screenshots, backups, synced folders, generated transcripts, and generated audio.
 
+Imported Markdown is snapshotted under `.local-data/sessions/<session-id>/source.json`. Script generation sends the normalized article, generation preferences, and any supplemental source discussion to the configured LLM provider. When that provider is remote, this content leaves the device and is handled under the provider's terms. Imported source text is not converted into transcript turns and is never written into Aodcast long-term memory; only later user-authored conversation turns may be eligible for memory when memory is enabled.
+
 Long-term memory is local-only. When enabled, Aodcast saves a small set of reusable user knowledge as Markdown files under `.local-data/memory/` so interviews and scripts can stay consistent across episodes. Memory is opt-in (first-run notice), can be turned off per episode or globally, and is fully viewable and deletable. High-sensitivity secrets (passwords, API keys, payment credentials, full ID numbers, precise addresses) are never saved, even on request.
 
-Do not open public issues or pull requests containing API keys, private prompts, private generated content, local data paths, transcripts, or audio artifacts.
+Do not open public issues or pull requests containing API keys, private prompts, imported source text, private generated content, local data paths, transcripts, or audio artifacts.
 
 ## Current Scope
 
 Aodcast currently focuses on local-first solo podcast creation:
 
 - platform: macOS desktop (Tauri) + local Python orchestration core
-- input: text topic only
+- input: a text topic or one local/pasted Markdown source per episode
 - output: solo podcast script plus final audio from Script Workbench
 - LLM: user-configured API provider
 - TTS: local MLX as the primary first-release path, plus remote API providers

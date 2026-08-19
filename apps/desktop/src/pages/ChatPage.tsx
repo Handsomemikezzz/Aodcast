@@ -20,7 +20,7 @@ import {
   Target,
   Trash2,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { SafeMarkdown } from "../components/SafeMarkdown";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
 import { useBridge } from "../lib/BridgeContext";
@@ -881,8 +881,22 @@ export function ChatPage({
             <div className="pb-6 border-b border-outline">
               <h1 className="text-2xl font-headline font-bold text-primary mb-2">Chat</h1>
               <p className="text-secondary text-sm">
-                通过自然的对话打磨你的选题大纲与内容细节；脚本会依据此处的讨论自动提炼。
+                {project.source
+                  ? "围绕导入的文章补充重点、口语表达与听众目标；原文仍然是脚本的事实来源。"
+                  : "通过自然的对话打磨你的选题大纲与内容细节；脚本会依据此处的讨论自动提炼。"}
               </p>
+              {project.source ? (
+                <details className="mt-3 rounded-xl border border-accent-amber/25 bg-accent-amber/8 px-3 py-2 text-xs text-secondary">
+                  <summary className="flex min-h-7 cursor-pointer items-center font-medium text-accent-amber">
+                    已导入 Markdown：{project.source.title} · v{project.source.version}
+                  </summary>
+                  <div className="mt-2 max-h-64 overflow-y-auto border-t border-accent-amber/15 pt-3 mac-scrollbar">
+                    <div className="prose prose-sm prose-theme max-w-none text-[12px] leading-5">
+                      <SafeMarkdown>{project.source.raw_markdown}</SafeMarkdown>
+                    </div>
+                  </div>
+                </details>
+              ) : null}
             </div>
 
             {turns.length === 0 && state === "topic_defined" && !isDeletedSession && (
@@ -937,7 +951,7 @@ export function ChatPage({
                         )}
                       >
                         <div className="text-[14px] leading-relaxed text-accent-amber prose prose-sm prose-theme max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                          <ReactMarkdown>{cleanContent}</ReactMarkdown>
+                          <SafeMarkdown>{cleanContent}</SafeMarkdown>
                         </div>
                       </div>
                     </div>
@@ -956,7 +970,7 @@ export function ChatPage({
                       </div>
                       <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
                         <div className="prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                          <ReactMarkdown>{cleanContent}</ReactMarkdown>
+                          <SafeMarkdown>{cleanContent}</SafeMarkdown>
                         </div>
                       </div>
                       {insight ? (
@@ -980,7 +994,7 @@ export function ChatPage({
                     </div>
                     <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
                       <div className="prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                        <ReactMarkdown>{streamingMessage || "..."}</ReactMarkdown>
+                        <SafeMarkdown>{streamingMessage || "..."}</SafeMarkdown>
                       </div>
                     </div>
                   </div>

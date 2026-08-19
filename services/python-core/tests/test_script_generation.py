@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.config import AppConfig
 from app.domain.project import SessionProject
+from app.domain.episode_source import EpisodeSource, SourceImportKind
 from app.domain.provider_config import LLMProviderConfig
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.orchestration.script_generation import ScriptGenerationService
+from app.providers.llm.base import ScriptGenerationResponse
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 
@@ -62,6 +66,86 @@ class ScriptGenerationTests(unittest.TestCase):
         self.assertIn("Today I want to talk about", loaded.script.draft)
         self.assertEqual(loaded.session.llm_provider, "mock")
         self.assertEqual(loaded.artifact.session_id, session_id)
+
+    def test_generate_script_from_markdown_without_transcript(self) -> None:
+        store, config_store, service = self.build_environment()
+        config_store.save_llm_config(LLMProviderConfig(provider="mock"))
+        session = SessionRecord(topic="Imported ideas", creation_intent="Adapt the article")
+        session.transition(SessionState.READY_TO_GENERATE)
+        source = EpisodeSource.from_markdown(
+            session_id=session.session_id,
+            name="ideas.md",
+            import_kind=SourceImportKind.FILE,
+            raw_markdown=(
+                "# Imported ideas\n\nLocal-first creative tools make recovery easier and help authors keep control. "
+                "The most important takeaway is that ownership should remain visible."
+            ),
+        )
+        store.save_project(SessionProject(session=session, source=source))
+
+        service.generate_draft(session.session_id)
+        loaded = store.load_project(session.session_id)
+
+        self.assertEqual(loaded.session.state, SessionState.SCRIPT_GENERATED)
+        self.assertIsNone(loaded.transcript)
+        assert loaded.script is not None
+        metadata_source = loaded.script.generation_metadata["source"]
+        self.assertEqual(metadata_source["content_hash"], source.content_hash)
+        self.assertEqual(metadata_source["version"], 1)
+        self.assertIn("source material", loaded.script.draft)
+
+    def test_concurrent_source_replace_cannot_be_rolled_back_by_generation(self) -> None:
+        store, config_store, service = self.build_environment()
+        config_store.save_llm_config(LLMProviderConfig(provider="mock"))
+        session = SessionRecord(topic="Concurrent source", creation_intent="Protect latest source")
+        session.transition(SessionState.READY_TO_GENERATE)
+        first = EpisodeSource.from_markdown(
+            session_id=session.session_id,
+            name="v1.md",
+            import_kind=SourceImportKind.FILE,
+            raw_markdown="# Version one\n\nThis first article contains enough detail for generation.",
+        )
+        store.save_project(SessionProject(session=session, source=first))
+
+        started = threading.Event()
+        release = threading.Event()
+        result_holder = []
+
+        class BlockingProvider:
+            def generate_script(self, request):
+                started.set()
+                release.wait(timeout=2)
+                return ScriptGenerationResponse(
+                    draft="Generated from version one.",
+                    provider_name="blocking",
+                    model_name="blocking-model",
+                )
+
+        def run_generation() -> None:
+            result_holder.append(service.generate_draft(session.session_id))
+
+        with patch("app.orchestration.script_generation.build_llm_provider", return_value=BlockingProvider()):
+            thread = threading.Thread(target=run_generation)
+            thread.start()
+            self.assertTrue(started.wait(timeout=2))
+            second = store.replace_source(
+                session_id=session.session_id,
+                raw_markdown="# Version two\n\nThis replacement is newer and has enough readable detail.",
+                name="v2.md",
+                import_kind=SourceImportKind.FILE,
+                conversion_mode=first.conversion_mode,
+                target_length=first.target_length,
+                focus_instructions="",
+            )
+            release.set()
+            thread.join(timeout=2)
+
+        self.assertFalse(thread.is_alive())
+        loaded = store.load_project(session.session_id)
+        self.assertEqual(loaded.source.version, 2)
+        self.assertEqual(loaded.source.content_hash, second.content_hash)
+        self.assertEqual(loaded.script.generation_metadata["source"]["version"], 1)
+        self.assertEqual(result_holder[0].project.source.version, 2)
 
     def test_generate_script_failure_preserves_project_and_marks_failed(self) -> None:
         store, config_store, service = self.build_environment()

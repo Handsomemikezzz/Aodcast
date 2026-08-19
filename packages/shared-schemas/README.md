@@ -5,6 +5,7 @@ These files define the cross-boundary contracts between the desktop shell and th
 Current MVP contracts:
 
 - `session.schema.json`
+- `episode-source.schema.json`
 - `transcript.schema.json`
 - `script.schema.json`
 - `artifact.schema.json`

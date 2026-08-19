@@ -13,6 +13,7 @@ class ScriptGenerationRequest:
     topic: str
     creation_intent: str
     transcript_text: str
+    source_text: str = ""
     memory_context: str = ""
     # When present, providers must use plan.system / plan.user instead of the
     # legacy string builders. Enables PromptPlan-driven script generation.

@@ -34,6 +34,7 @@ function makeProject(overrides: Partial<SessionProject> = {}): SessionProject {
       session_id: "s1",
       topic: "Test Episode",
       creation_intent: "",
+      creation_mode: "interview",
       state: "topic_defined",
       llm_provider: "openai",
       tts_provider: "cloud",
@@ -41,6 +42,7 @@ function makeProject(overrides: Partial<SessionProject> = {}): SessionProject {
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-01T00:00:00Z",
     },
+    source: null,
     transcript: { session_id: "s1", turns: [] },
     script: null,
     artifact: null,
@@ -263,6 +265,60 @@ describe("deriveStudioState", () => {
         created_at: "2024-01-03T00:00:00Z",
       },
     });
+    expect(derive(p, { check: cleanCheck, isDirty: false })).toBe("script_changed_after_audio");
+  });
+
+  it("returns script_changed_after_audio when imported source changed after generation", () => {
+    const p = makeProject({
+      session: { ...makeProject().session, creation_mode: "markdown", state: "completed" },
+      source: {
+        source_id: "source-1",
+        session_id: "s1",
+        source_kind: "markdown",
+        import_kind: "file",
+        name: "post.md",
+        title: "Updated source",
+        raw_markdown: "# Updated source",
+        normalized_text: "Updated source content",
+        content_hash: "b".repeat(64),
+        version: 2,
+        word_count: 3,
+        estimated_audio_minutes: 0.2,
+        conversion_mode: "adapt",
+        target_length: "auto",
+        focus_instructions: "",
+        warnings: [],
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-04T00:00:00Z",
+      },
+      script: {
+        session_id: "s1",
+        script_id: "sc1",
+        name: "Draft",
+        draft: "Original spoken script",
+        final: "Original spoken script",
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+        generation_metadata: {
+          source: {
+            source_id: "source-1",
+            source_kind: "markdown",
+            content_hash: "a".repeat(64),
+            version: 1,
+            conversion_mode: "adapt",
+            target_length: "auto",
+          },
+        },
+      },
+      artifact: {
+        session_id: "s1",
+        transcript_path: "",
+        audio_path: "/audio.mp3",
+        provider: "cloud",
+        created_at: "2024-01-03T00:00:00Z",
+      },
+    });
+
     expect(derive(p, { check: cleanCheck, isDirty: false })).toBe("script_changed_after_audio");
   });
 

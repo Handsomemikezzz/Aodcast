@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from uuid import uuid4
 
 from app.domain.artifact import ArtifactRecord
 from app.domain.common import utc_now_iso
+from app.domain.episode_source import (
+    EpisodeSource,
+    SourceConversionMode,
+    SourceImportKind,
+    SourceTargetLength,
+)
 from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord
@@ -20,6 +27,7 @@ class ProjectStore:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
         self.sessions_dir = self.data_dir / "sessions"
+        self._source_lock = threading.RLock()
 
     def bootstrap(self) -> None:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -32,6 +40,15 @@ class ProjectStore:
 
     def transcript_file(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "transcript.json"
+
+    def source_file(self, session_id: str) -> Path:
+        return self.session_dir(session_id) / "source.json"
+
+    def source_versions_dir(self, session_id: str) -> Path:
+        return self.session_dir(session_id) / "sources"
+
+    def source_version_file(self, session_id: str, version: int) -> Path:
+        return self.source_versions_dir(session_id) / f"v{version:04d}.json"
 
     def legacy_script_file(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "script.json"
@@ -70,6 +87,49 @@ class ProjectStore:
 
     def load_transcript(self, session_id: str) -> TranscriptRecord:
         return TranscriptRecord.from_dict(self._read_json(self.transcript_file(session_id)))
+
+    def save_source(self, source: EpisodeSource) -> Path:
+        with self._source_lock:
+            current_path = self.source_file(source.session_id)
+            if current_path.exists():
+                current = EpisodeSource.from_dict(self._read_json(current_path))
+                if current.version >= source.version:
+                    return current_path
+            payload = source.to_dict()
+            self._write_json(self.source_version_file(source.session_id, source.version), payload)
+            return self._write_json(current_path, payload)
+
+    def replace_source(
+        self,
+        *,
+        session_id: str,
+        raw_markdown: str,
+        name: str,
+        import_kind: SourceImportKind,
+        conversion_mode: SourceConversionMode,
+        target_length: SourceTargetLength,
+        focus_instructions: str,
+    ) -> EpisodeSource:
+        """Atomically allocate the next source version and persist its immutable snapshot."""
+        with self._source_lock:
+            previous = self.load_source(session_id)
+            source = EpisodeSource.from_markdown(
+                session_id=session_id,
+                raw_markdown=raw_markdown,
+                name=name,
+                import_kind=import_kind,
+                conversion_mode=conversion_mode,
+                target_length=target_length,
+                focus_instructions=focus_instructions,
+                previous=previous,
+            )
+            payload = source.to_dict()
+            self._write_json(self.source_version_file(session_id, source.version), payload)
+            self._write_json(self.source_file(session_id), payload)
+            return source
+
+    def load_source(self, session_id: str) -> EpisodeSource:
+        return EpisodeSource.from_dict(self._read_json(self.source_file(session_id)))
 
     def save_script(self, script: ScriptRecord) -> Path:
         """Persist a script to scripts/{script_id}.json."""
@@ -137,6 +197,8 @@ class ProjectStore:
 
     def save_project(self, project: SessionProject) -> None:
         self.save_session(project.session)
+        if project.source is not None:
+            self.save_source(project.source)
         if project.transcript is not None:
             self.save_transcript(project.transcript)
         if project.script is not None:
@@ -146,12 +208,16 @@ class ProjectStore:
 
     def load_project(self, session_id: str) -> SessionProject:
         session = self.load_session(session_id)
+        source = None
         transcript = None
         artifact = None
 
         transcript_path = self.transcript_file(session_id)
+        source_path = self.source_file(session_id)
         artifact_path = self.artifact_file(session_id)
 
+        if source_path.exists():
+            source = self.load_source(session_id)
         if transcript_path.exists():
             transcript = self.load_transcript(session_id)
         script = self.load_latest_script(session_id)
@@ -162,6 +228,7 @@ class ProjectStore:
 
         return SessionProject(
             session=session,
+            source=source,
             transcript=transcript,
             script=script,
             artifact=artifact,
@@ -169,8 +236,11 @@ class ProjectStore:
 
     def load_project_for_script(self, session_id: str, script_id: str) -> SessionProject:
         session = self.load_session(session_id)
+        source = None
         transcript = None
         artifact = None
+        if self.source_file(session_id).exists():
+            source = self.load_source(session_id)
         if self.transcript_file(session_id).exists():
             transcript = self.load_transcript(session_id)
         script = self.load_script_by_id(session_id, script_id)
@@ -179,6 +249,7 @@ class ProjectStore:
             artifact = artifact.for_script(script.script_id)
         return SessionProject(
             session=session,
+            source=source,
             transcript=transcript,
             script=script,
             artifact=artifact,
@@ -212,6 +283,7 @@ class ProjectStore:
         return [
             SessionProject(
                 session=session,
+                source=None,
                 transcript=None,
                 script=None,
                 artifact=None,

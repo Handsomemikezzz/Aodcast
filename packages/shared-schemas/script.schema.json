@@ -31,7 +31,25 @@
     "generation_metadata": {
       "type": "object",
       "description": "Compact, non-sensitive metadata from the script generation PromptPlan (prompt_version, style_profile, episode_brief_stats, provider, model). Omitted for legacy scripts.",
+      "properties": {
+        "source": { "$ref": "#/$defs/sourceLineage" }
+      },
       "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "sourceLineage": {
+      "type": "object",
+      "required": ["source_id", "source_kind", "version", "content_hash", "conversion_mode", "target_length"],
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "source_kind": { "type": "string", "enum": ["markdown"] },
+        "version": { "type": "integer", "minimum": 1 },
+        "content_hash": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "conversion_mode": { "type": "string", "enum": ["adapt", "narrate"] },
+        "target_length": { "type": "string", "enum": ["auto", "short", "standard", "long"] }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

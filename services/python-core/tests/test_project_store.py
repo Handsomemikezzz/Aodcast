@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.config import AppConfig
 from app.domain.artifact import ArtifactRecord
+from app.domain.episode_source import EpisodeSource, SourceImportKind
 from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
@@ -14,6 +15,59 @@ from app.storage.project_store import ProjectStore
 
 
 class ProjectStoreTests(unittest.TestCase):
+    def test_project_store_persists_imported_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = AppConfig.from_cwd(Path(tmp_dir))
+            store = ProjectStore(config.data_dir)
+            store.bootstrap()
+            session = SessionRecord(topic="Imported", creation_intent="Adapt article")
+            source = EpisodeSource.from_markdown(
+                session_id=session.session_id,
+                name="article.md",
+                import_kind=SourceImportKind.FILE,
+                raw_markdown="# Imported article\n\nA complete paragraph that can become a podcast episode.",
+            )
+
+            store.save_project(SessionProject(session=session, source=source))
+            loaded = store.load_project(session.session_id)
+
+            self.assertIsNotNone(loaded.source)
+            assert loaded.source is not None
+            self.assertEqual(loaded.source.content_hash, source.content_hash)
+            self.assertEqual(loaded.source.raw_markdown, source.raw_markdown)
+            self.assertTrue(store.source_version_file(session.session_id, 1).exists())
+
+    def test_stale_project_save_cannot_roll_back_current_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = AppConfig.from_cwd(Path(tmp_dir))
+            store = ProjectStore(config.data_dir)
+            store.bootstrap()
+            session = SessionRecord(topic="Race", creation_intent="Protect source version")
+            first = EpisodeSource.from_markdown(
+                session_id=session.session_id,
+                name="v1.md",
+                import_kind=SourceImportKind.FILE,
+                raw_markdown="# Version one\n\nThis first source has enough readable article content.",
+            )
+            store.save_project(SessionProject(session=session, source=first))
+            second = store.replace_source(
+                session_id=session.session_id,
+                raw_markdown="# Version two\n\nThis replacement has newer and sufficiently readable content.",
+                name="v2.md",
+                import_kind=SourceImportKind.FILE,
+                conversion_mode=first.conversion_mode,
+                target_length=first.target_length,
+                focus_instructions="",
+            )
+
+            store.save_project(SessionProject(session=session, source=first))
+            current = store.load_source(session.session_id)
+
+            self.assertEqual(current.version, 2)
+            self.assertEqual(current.content_hash, second.content_hash)
+            self.assertTrue(store.source_version_file(session.session_id, 1).exists())
+            self.assertTrue(store.source_version_file(session.session_id, 2).exists())
+
     def test_project_store_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             config = AppConfig.from_cwd(Path(tmp_dir))

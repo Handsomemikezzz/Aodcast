@@ -41,6 +41,7 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
     "list_memory_superseded",
     "list_forget_candidates",
     "supersede_memory",
+    "update_episode_source",
 )
 
 
@@ -60,6 +61,7 @@ class BridgeContract:
 HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("listProjects", "list_projects", "GET", "/api/v1/projects", "list_projects", ("--list-projects",), "P1-core"),
     BridgeContract("createSession", "create_session", "POST", "/api/v1/sessions", "create_session", ("--create-session",), "P1-core"),
+    BridgeContract("updateEpisodeSource", "update_episode_source", "PUT", "/api/v1/sessions/{session_id}/source", "update_episode_source", (), "P1-source"),
     BridgeContract("showSession", "show_session", "GET", "/api/v1/sessions/{session_id}", "show_session", ("--show-session", "session-123"), "P1-core"),
     BridgeContract("renameSession", "rename_session", "PATCH", "/api/v1/sessions/{session_id}", "rename_session", ("--rename-session", "session-123", "--session-topic", "Renamed"), "P1-complete"),
     BridgeContract("deleteSession", "delete_session", "POST", "/api/v1/sessions/{session_id}:delete", "delete_session", ("--delete-session", "session-123"), "P1-complete"),

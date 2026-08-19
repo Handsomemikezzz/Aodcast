@@ -371,6 +371,48 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(listed["data"]["request_state"]["operation"], "list_projects")
         self.assertEqual(listed["data"]["projects"][0]["session"]["session_id"], session_id)
 
+    def test_markdown_source_create_replace_and_generate_flow(self) -> None:
+        source_body = {
+            "topic": "Imported",
+            "creation_intent": "Adapt an article",
+            "source": {
+                "raw_markdown": "# My imported post\n\nThis article has enough useful detail to become a spoken podcast episode.",
+                "name": "post.md",
+                "import_kind": "file",
+                "conversion_mode": "adapt",
+                "target_length": "short",
+                "focus_instructions": "Keep the central lesson.",
+            },
+        }
+        status, _, created = self.request_json("POST", "/api/v1/sessions", body=source_body)
+
+        self.assertEqual(status, 200)
+        project = created["data"]["project"]
+        session_id = project["session"]["session_id"]
+        self.assertEqual(project["session"]["creation_mode"], "markdown")
+        self.assertEqual(project["session"]["state"], "ready_to_generate")
+        self.assertIsNone(project["transcript"])
+        self.assertEqual(project["source"]["version"], 1)
+
+        replacement = dict(source_body["source"])
+        replacement["raw_markdown"] = "# Updated post\n\nThis replacement contains enough different material for a new source version."
+        status, _, updated = self.request_json(
+            "PUT",
+            f"/api/v1/sessions/{session_id}/source",
+            body=replacement,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(updated["data"]["request_state"]["operation"], "update_episode_source")
+        self.assertEqual(updated["data"]["project"]["source"]["version"], 2)
+
+        status, _, generated = self.request_json(
+            "POST",
+            f"/api/v1/sessions/{session_id}/script:generate",
+            body={},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(generated["data"]["project"]["script"]["generation_metadata"]["source"]["version"], 2)
+
     def test_delete_and_restore_session_colon_routes(self) -> None:
         status, _, created = self.request_json(
             "POST",

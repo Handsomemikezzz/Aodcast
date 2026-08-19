@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ChevronRight, PlusCircle, Trash2 } from "lucide-react";
+import { ChevronRight, FileText, MessageSquare, PlusCircle, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { SessionProject } from "../types";
 import { useBridge } from "../lib/BridgeContext";
@@ -42,7 +42,7 @@ export function EpisodesPage({
   };
 
   const handleNewEpisode = () => {
-    navigate("/chat");
+    navigate("/episodes/new");
   };
 
   const handleDeleteTarget = async (target: DeleteTarget) => {
@@ -86,7 +86,7 @@ export function EpisodesPage({
             <button
               type="button"
               onClick={handleNewEpisode}
-              className="flex items-center gap-2 rounded-xl bg-accent-amber/10 border border-accent-amber/30 px-4 py-2 text-sm font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors shrink-0"
+              className="flex h-11 items-center gap-2 rounded-xl bg-accent-amber/10 border border-accent-amber/30 px-4 text-sm font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors shrink-0"
             >
               <PlusCircle className="w-4 h-4" />
               New Episode
@@ -110,6 +110,8 @@ export function EpisodesPage({
                 const title = p.session.topic || "Untitled Episode";
                 const rowId = hasScript ? (p.script?.script_id ?? "") : p.session.session_id;
                 const statusLabel = p.session.state.replace(/_/g, " ");
+                const isMarkdown = p.session.creation_mode === "markdown";
+                const OriginIcon = isMarkdown ? FileText : MessageSquare;
                 return (
                   <div
                     key={p.session.session_id}
@@ -121,7 +123,12 @@ export function EpisodesPage({
                       className="min-w-0 flex-1 text-left"
                     >
                       <p className="font-medium text-[14px] text-primary truncate">{title}</p>
-                      <p className="text-[12px] text-secondary truncate capitalize">{statusLabel}</p>
+                      <p className="mt-1 flex items-center gap-1.5 text-[12px] text-secondary truncate capitalize">
+                        <OriginIcon className="h-3 w-3 shrink-0" />
+                        <span>{isMarkdown ? "Markdown" : "Conversation"}</span>
+                        <span className="text-outline">·</span>
+                        <span>{statusLabel}</span>
+                      </p>
                     </button>
                     <button
                       type="button"

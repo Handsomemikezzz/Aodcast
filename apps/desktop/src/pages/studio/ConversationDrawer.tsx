@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Brain, Check, Loader2, MessageSquare, Send, Sparkles, Trash2, RotateCcw, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { SafeMarkdown } from "../../components/SafeMarkdown";
 import { useBridge } from "../../lib/BridgeContext";
 import { cn } from "../../lib/utils";
 import { getErrorMessage } from "../../lib/requestState";
@@ -35,7 +35,7 @@ function TranscriptView({ turns }: { turns: TranscriptTurn[] }) {
                 : "bg-primary/4 border border-outline text-secondary",
             )}
           >
-            <ReactMarkdown>{turn.content}</ReactMarkdown>
+            <SafeMarkdown>{turn.content}</SafeMarkdown>
           </div>
         </div>
       ))}
@@ -71,6 +71,7 @@ export function ConversationDrawer({
 
   const sessionId = project?.session.session_id ?? "";
   const turns = project?.transcript?.turns ?? [];
+  const isSourceDiscussion = project?.session.creation_mode === "markdown";
   const memoryDisabled = project?.session.memory_mode === "disabled";
   const usageEvents = project?.session.memory_usage_events ?? [];
   const lastReferencedCount =
@@ -220,14 +221,14 @@ export function ConversationDrawer({
       {/* Overlay panel */}
       <div
         className={cn("transcript-overlay", "transcript-overlay-open")}
-        aria-label="Interview transcript"
+        aria-label={isSourceDiscussion ? "Source discussion" : "Interview transcript"}
         role="complementary"
       >
         {/* Header */}
         <div className="px-4 py-3 border-b border-outline shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-secondary/70">
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>Interview Transcript</span>
+            <span>{isSourceDiscussion ? "Source Discussion" : "Interview Transcript"}</span>
             <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-surface-container-high/60 text-secondary">
               {turns.length} turns
             </span>
@@ -268,7 +269,7 @@ export function ConversationDrawer({
         <div className="flex-1 overflow-y-auto min-h-0 mac-scrollbar">
           {turns.length === 0 ? (
             <div className="flex items-center justify-center h-full text-secondary text-xs px-4 text-center">
-              No conversation yet.
+              {isSourceDiscussion ? "No source discussion yet." : "No conversation yet."}
             </div>
           ) : (
             <TranscriptView turns={turns} />

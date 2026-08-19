@@ -1,7 +1,7 @@
 import { Check, Mic, Music2, FileText, MessageSquare } from "lucide-react";
 import { cn } from "../../lib/utils";
 
-export type StepId = "interview" | "script" | "voice" | "audio";
+export type StepId = "material" | "script" | "voice" | "audio";
 
 export type StepStatus =
   | "complete"
@@ -81,6 +81,8 @@ export function WorkflowStepper({
 
 /** Derive step definitions from workbench state */
 export function buildWorkflowSteps({
+  materialKind,
+  hasSource,
   hasTranscript,
   hasScript,
   scriptDirty,
@@ -90,6 +92,8 @@ export function buildWorkflowSteps({
   audioFailed,
   voiceConfigured,
 }: {
+  materialKind: "interview" | "markdown";
+  hasSource: boolean;
   hasTranscript: boolean;
   hasScript: boolean;
   scriptDirty: boolean;
@@ -99,14 +103,14 @@ export function buildWorkflowSteps({
   audioFailed: boolean;
   voiceConfigured: boolean;
 }): StepDef[] {
-  // Interview step
-  const interviewStep: StepDef = {
-    id: "interview",
-    label: "Interview",
-    icon: MessageSquare,
-    state: hasTranscript ? "done" : "active",
-    badge: hasTranscript
-      ? { text: "Complete", variant: "done" }
+  const hasMaterial = materialKind === "markdown" ? hasSource : hasTranscript;
+  const materialStep: StepDef = {
+    id: "material",
+    label: materialKind === "markdown" ? "Source" : "Conversation",
+    icon: materialKind === "markdown" ? FileText : MessageSquare,
+    state: hasMaterial ? "done" : "active",
+    badge: hasMaterial
+      ? { text: materialKind === "markdown" ? "Imported" : "Complete", variant: "done" }
       : { text: "Pending", variant: "active" },
   };
 
@@ -120,7 +124,7 @@ export function buildWorkflowSteps({
       ? scriptDirty
         ? { text: "Unsaved", variant: "warning" }
         : { text: "Saved", variant: "done" }
-      : hasTranscript
+      : hasMaterial
         ? { text: "Generate", variant: "active" }
         : { text: "Pending", variant: "none" },
   };
@@ -167,5 +171,5 @@ export function buildWorkflowSteps({
     badge: audioBadge,
   };
 
-  return [interviewStep, scriptStep, voiceStep, audioStep];
+  return [materialStep, scriptStep, voiceStep, audioStep];
 }

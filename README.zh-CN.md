@@ -8,7 +8,7 @@
 
 [English](README.md) | 简体中文
 
-Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个文本想法转成单人播客脚本和最终音频。
+Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个文本想法或现有 Markdown 文章转成单人播客脚本和最终音频。
 
 应用由 Tauri 桌面壳和本地 Python HTTP runtime 组成。它会引导用户完成访谈、生成可编辑的脚本快照、选择可复用的音色档案，并通过本地或远程语音 provider 渲染最终音频。
 
@@ -17,7 +17,8 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 ## 当前可用能力
 
 - 基于文本主题的访谈式播客创作流程。
-- 一个访谈 session 可以生成多个独立脚本快照。
+- 支持导入本地 `.md` 文件或粘贴 Markdown，通过来源预览、播客化改写或忠实朗读、目标时长、可选来源讨论和版本化替换来创建播客。
+- 每个 episode 都可以生成多个独立脚本快照，无论它来自访谈还是 Markdown。
 - Script Workbench 支持编辑、保存、删除未使用快照、选择音色档案、渲染和回听生成音频。
 - Voice Studio 支持内置和用户创建的音色档案、样本上传/录音、预览渲染和档案管理。
 - 支持本地 MLX TTS，也支持 OpenAI-compatible 远程 provider。
@@ -32,12 +33,6 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 从首页创建和管理播客 episode。
 
 ![Episodes 列表](images/episodes.png)
-
-### Studio
-
-在同一工作区完成 interview → script → voice → audio 全流程。
-
-![Studio 工作区](images/studio.png)
 
 ### Models
 
@@ -303,7 +298,7 @@ cd services/python-core
 
 ## 数据与隐私
 
-Aodcast 是本地优先应用。开发期间，生成的 session、脚本、transcript、音频 artifact、provider 配置和 request-state 文件存储在：
+Aodcast 是本地优先应用。开发期间，生成的 session、导入来源快照、脚本、transcript、音频 artifact、provider 配置和 request-state 文件存储在：
 
 ```text
 .local-data/
@@ -313,16 +308,18 @@ Aodcast 是本地优先应用。开发期间，生成的 session、脚本、tran
 
 API key 作为本地用户配置保存。Aodcast 目前没有 macOS Keychain 或专用密钥保险库。请保护本地配置文件、shell history、日志、截图、备份、同步目录、生成 transcript 和生成音频。
 
+导入的 Markdown 快照保存在 `.local-data/sessions/<session-id>/source.json`。生成脚本时，规范化文章、生成偏好以及后续来源讨论会发送给用户配置的 LLM provider；如果使用远程 provider，这些内容会离开本机并受相应 provider 条款约束。导入来源不会被转换成 transcript turn，也不会写入 Aodcast 长期记忆；只有用户后续主动输入的对话 turn 在启用记忆时可能成为记忆候选。
+
 长期记忆仅保存在本地。启用后，Aodcast 会把少量可复用的用户知识以 Markdown 文件形式保存在 `.local-data/memory/`，以便采访和脚本在不同 Episode 之间保持一致。记忆是可选的（首次使用会提示），可以按 Episode 或全局关闭，并且可以完整查看和删除。高敏感秘密（密码、API key、支付凭据、完整证件号、精确住址）即使用户要求也永不保存。
 
-不要在公开 issue 或 PR 中提交 API key、私人 prompt、私人生成内容、本地数据路径、transcript 或音频 artifact。
+不要在公开 issue 或 PR 中提交 API key、私人 prompt、导入来源正文、私人生成内容、本地数据路径、transcript 或音频 artifact。
 
 ## 当前范围
 
 Aodcast 当前聚焦本地优先的单人播客创作：
 
 - 平台：macOS 桌面（Tauri）+ 本地 Python orchestration core
-- 输入：仅文本主题
+- 输入：文本主题，或每个 episode 一个本地/粘贴的 Markdown 来源
 - 输出：单人播客脚本 + Script Workbench 渲染的最终音频
 - LLM：用户配置的 API provider
 - TTS：本地 MLX 为首发主路径，同时支持远程 API provider

@@ -44,6 +44,16 @@ export type ShowSessionOptions = {
 export type CreateSessionInput = {
   topic: string;
   creationIntent: string;
+  source?: EpisodeSourceInput;
+};
+
+export type EpisodeSourceInput = {
+  rawMarkdown: string;
+  name: string;
+  importKind: "file" | "paste";
+  conversionMode: "adapt" | "narrate";
+  targetLength: "auto" | "short" | "standard" | "long";
+  focusInstructions: string;
 };
 
 export type RenderAudioOptions = {
@@ -125,6 +135,8 @@ export interface DesktopBridge {
   listProjects(options?: ListProjectsOptions): Promise<SessionProject[]>;
   /** Create a new interview session from the landing topic and creation intent. */
   createSession(input: CreateSessionInput): Promise<SessionProject>;
+  /** Replace the imported Markdown snapshot and increment its source version. */
+  updateEpisodeSource(sessionId: string, input: EpisodeSourceInput): Promise<SessionProject>;
   /** Load a full session project, optionally including soft-deleted data. */
   showSession(sessionId: string, options?: ShowSessionOptions): Promise<SessionProject>;
   /** Rename a session topic without changing its transcript or script snapshots. */

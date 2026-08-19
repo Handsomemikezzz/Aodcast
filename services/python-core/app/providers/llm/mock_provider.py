@@ -38,18 +38,19 @@ class MockLLMProvider:
     model_name = "mock-solo-writer"
 
     def generate_script(self, request: ScriptGenerationRequest) -> ScriptGenerationResponse:
+        material = request.source_text if request.source_text.strip() else request.transcript_text
         transcript_lines = [
             line.strip()
-            for line in request.transcript_text.splitlines()
+            for line in material.splitlines()
             if line.strip()
         ]
-        supporting_detail = transcript_lines[-1] if transcript_lines else "The interview transcript is still sparse."
+        supporting_detail = transcript_lines[-1] if transcript_lines else "The source material is still sparse."
         opening = (
             f"Today I want to talk about {request.topic.lower()} and why it matters right now."
         )
         body = (
             f"My core intent for this episode is: {request.creation_intent}. "
-            f"One useful detail from the interview is: {supporting_detail}"
+            f"One useful detail from the source material is: {supporting_detail}"
         )
         closing = (
             "If there is one takeaway from this conversation, it is that good tools "

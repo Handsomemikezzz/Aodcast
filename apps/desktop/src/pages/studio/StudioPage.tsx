@@ -11,7 +11,9 @@ import { ConversationDrawer } from "./ConversationDrawer";
 import { VoiceAudioPanel } from "./VoiceAudioDrawer";
 import { StudioHeader } from "./StudioHeader";
 import { TranscriptBar } from "./TranscriptBar";
+import { SourceBar, SourceDrawer } from "./SourceDrawer";
 import { buildVoiceFreshnessKey, deriveAudioFreshness } from "./studioWorkflow";
+import { isProjectSourceOutOfDate } from "../../lib/deriveStudioState";
 
 // Resolves /studio/:sessionId (no scriptId) to the latest script, then redirects
 function StudioSessionResolve({
@@ -61,17 +63,21 @@ function StudioWorkspace({
   scriptId,
   onRefresh,
   initialTranscriptOpen,
+  initialSourceOpen,
 }: {
   sessionId: string;
   scriptId: string;
   onRefresh: () => Promise<void>;
   initialTranscriptOpen: boolean;
+  initialSourceOpen: boolean;
 }) {
+  const bridge = useBridge();
   const navigate = useNavigate();
   const workbench = useScriptWorkbench(sessionId, scriptId, onRefresh);
 
   // Transcript overlay state
   const [transcriptOpen, setTranscriptOpen] = useState(initialTranscriptOpen);
+  const [sourceOpen, setSourceOpen] = useState(initialSourceOpen);
 
   // Ref to scroll the audio section into view when the Audio stepper step is clicked
   const audioSectionRef = useRef<HTMLDivElement>(null);
@@ -86,6 +92,7 @@ function StudioWorkspace({
 
   const serverScript = workbench.project?.script?.final ?? workbench.project?.script?.draft ?? "";
   const voiceFreshnessKey = buildVoiceFreshnessKey(workbench.project, scriptId);
+  const sourceOutOfDate = isProjectSourceOutOfDate(workbench.project);
 
   useEffect(() => {
     const hasAudio = Boolean(workbench.audioSrc);
@@ -94,6 +101,11 @@ function StudioWorkspace({
       setAudioOutOfDateReason(undefined);
       prevScriptRef.current = serverScript;
       prevVoiceKeyRef.current = voiceFreshnessKey;
+      return;
+    }
+    if (sourceOutOfDate) {
+      setAudioOutOfDate(true);
+      setAudioOutOfDateReason("The imported source changed after this script and audio were generated.");
       return;
     }
 
@@ -120,6 +132,7 @@ function StudioWorkspace({
   }, [
     serverScript,
     scriptId,
+    sourceOutOfDate,
     voiceFreshnessKey,
     workbench.audioSrc,
     workbench.generating,
@@ -130,13 +143,15 @@ function StudioWorkspace({
   // Clear out-of-date state when a new audio render completes
   useEffect(() => {
     if (workbench.audioSrc && workbench.audioSrc !== prevAudioSrcRef.current) {
-      setAudioOutOfDate(false);
-      setAudioOutOfDateReason(undefined);
+      setAudioOutOfDate(sourceOutOfDate);
+      setAudioOutOfDateReason(
+        sourceOutOfDate ? "The imported source changed after this script and audio were generated." : undefined,
+      );
       prevScriptRef.current = serverScript;
       prevVoiceKeyRef.current = voiceFreshnessKey;
     }
     prevAudioSrcRef.current = workbench.audioSrc;
-  }, [serverScript, voiceFreshnessKey, workbench.audioSrc]);
+  }, [serverScript, sourceOutOfDate, voiceFreshnessKey, workbench.audioSrc]);
 
   // Navigate to Voice Studio with return context
   const handleVoiceNavigate = () => {
@@ -183,7 +198,11 @@ function StudioWorkspace({
         <StudioHeader
           workbench={workbench}
           audioOutOfDate={audioOutOfDate}
-          onTranscriptOpen={() => setTranscriptOpen(true)}
+          sourceOutOfDate={sourceOutOfDate}
+          onMaterialOpen={() => {
+            if (workbench.project?.source) setSourceOpen(true);
+            else setTranscriptOpen(true);
+          }}
           onScriptFocus={handleScriptFocus}
           onVoiceNavigate={handleVoiceNavigate}
           onAudioFocus={handleAudioFocus}
@@ -202,15 +221,37 @@ function StudioWorkspace({
               navigate(`/studio/${sid}/${newScriptId}`)
             }
           />
+          <SourceDrawer
+            project={workbench.project}
+            isOpen={sourceOpen}
+            onClose={() => setSourceOpen(false)}
+            onDiscuss={() => {
+              setSourceOpen(false);
+              setTranscriptOpen(true);
+            }}
+            onUpdated={async () => {
+              await Promise.all([workbench.reload(), onRefresh()]);
+            }}
+            onGenerateScript={async () => {
+              const result = await bridge.generateScript(sessionId);
+              const nextScriptId = result.script_id ?? result.project.script?.script_id;
+              await onRefresh();
+              if (nextScriptId) navigate(`/studio/${sessionId}/${nextScriptId}`);
+            }}
+          />
 
           {/* ── Left column: transcript bar + script editor ── */}
           <div className="flex flex-col w-full lg:flex-1 min-w-0 min-h-[560px] lg:min-h-0 overflow-hidden">
 
             {/* Transcript collapsed bar */}
-            <TranscriptBar
-              turnCount={turns.length}
-              onOpen={() => setTranscriptOpen(true)}
-            />
+            {workbench.project.source ? (
+              <SourceBar project={workbench.project} onOpen={() => setSourceOpen(true)} />
+            ) : (
+              <TranscriptBar
+                turnCount={turns.length}
+                onOpen={() => setTranscriptOpen(true)}
+              />
+            )}
 
             {/* Deleted session / script warnings */}
             {(workbench.isSessionDeleted || workbench.isScriptDeleted) && (
@@ -369,6 +410,7 @@ export function StudioPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   const panelParam = searchParams.get("panel");
   const initialTranscriptOpen = panelParam === "conversation";
+  const initialSourceOpen = panelParam === "source";
 
   if (!sessionId) {
     return (
@@ -389,6 +431,7 @@ export function StudioPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
       scriptId={scriptId}
       onRefresh={onRefresh}
       initialTranscriptOpen={initialTranscriptOpen}
+      initialSourceOpen={initialSourceOpen}
     />
   );
 }

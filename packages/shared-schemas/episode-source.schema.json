@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/episode-source.schema.json",
+  "title": "EpisodeSource",
+  "type": "object",
+  "required": [
+    "source_id",
+    "session_id",
+    "source_kind",
+    "import_kind",
+    "name",
+    "title",
+    "raw_markdown",
+    "normalized_text",
+    "content_hash",
+    "version",
+    "word_count",
+    "estimated_audio_minutes",
+    "conversion_mode",
+    "target_length",
+    "focus_instructions",
+    "warnings",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "source_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "source_kind": { "type": "string", "enum": ["markdown"] },
+    "import_kind": { "type": "string", "enum": ["file", "paste"] },
+    "name": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "raw_markdown": { "type": "string", "minLength": 1 },
+    "normalized_text": { "type": "string", "minLength": 1 },
+    "content_hash": { "type": "string", "minLength": 64, "maxLength": 64 },
+    "version": { "type": "integer", "minimum": 1 },
+    "word_count": { "type": "integer", "minimum": 1 },
+    "estimated_audio_minutes": { "type": "number", "minimum": 0.1 },
+    "conversion_mode": { "type": "string", "enum": ["adapt", "narrate"] },
+    "target_length": { "type": "string", "enum": ["auto", "short", "standard", "long"] },
+    "focus_instructions": { "type": "string" },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

@@ -34,8 +34,14 @@ from app.api.serializers import (
 )
 from app.config import AppConfig
 from app.domain.artifact import ArtifactRecord
+from app.domain.episode_source import (
+    EpisodeSource,
+    SourceConversionMode,
+    SourceImportKind,
+    SourceTargetLength,
+)
 from app.domain.project import SessionProject
-from app.domain.session import SessionRecord, SessionState
+from app.domain.session import CreationMode, SessionRecord, SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, STYLE_PRESETS, VOICE_PRESETS
 from app.models_catalog import (
@@ -119,6 +125,41 @@ def create_project(topic: str, intent: str) -> SessionProject:
         transcript=transcript,
         script=None,
         artifact=artifact,
+    )
+
+
+def create_markdown_project(
+    *,
+    raw_markdown: str,
+    name: str,
+    import_kind: str,
+    conversion_mode: str,
+    target_length: str,
+    focus_instructions: str,
+) -> SessionProject:
+    session = SessionRecord(
+        topic="Imported Markdown",
+        creation_intent="Turn an imported Markdown article into a solo podcast.",
+        creation_mode=CreationMode.MARKDOWN,
+        memory_mode="disabled",
+    )
+    source = EpisodeSource.from_markdown(
+        session_id=session.session_id,
+        raw_markdown=raw_markdown,
+        name=name,
+        import_kind=SourceImportKind(import_kind),
+        conversion_mode=SourceConversionMode(conversion_mode),
+        target_length=SourceTargetLength(target_length),
+        focus_instructions=focus_instructions,
+    )
+    session.rename_topic(source.title)
+    session.transition(SessionState.READY_TO_GENERATE)
+    return SessionProject(
+        session=session,
+        source=source,
+        transcript=None,
+        script=None,
+        artifact=ArtifactRecord(session_id=session.session_id),
     )
 
 
@@ -912,10 +953,44 @@ class RuntimeContext:
         )
         return success_envelope({"projects": [serialize_project(project) for project in projects]}, operation="list_projects")
 
-    def create_session_payload(self, *, topic: str, creation_intent: str) -> dict[str, object]:
-        project = create_project(topic, creation_intent)
+    def create_session_payload(
+        self,
+        *,
+        topic: str,
+        creation_intent: str,
+        source_input: dict[str, Any] | None = None,
+    ) -> dict[str, object]:
+        if source_input is None:
+            project = create_project(topic, creation_intent)
+        else:
+            project = create_markdown_project(
+                raw_markdown=str(source_input.get("raw_markdown") or ""),
+                name=str(source_input.get("name") or "Pasted Markdown"),
+                import_kind=str(source_input.get("import_kind") or "paste"),
+                conversion_mode=str(source_input.get("conversion_mode") or "adapt"),
+                target_length=str(source_input.get("target_length") or "auto"),
+                focus_instructions=str(source_input.get("focus_instructions") or ""),
+            )
         self.store.save_project(project)
         return success_envelope({"project": serialize_project(project)}, operation="create_session")
+
+    def update_source_payload(self, session_id: str, source_input: dict[str, Any]) -> dict[str, object]:
+        project = self.store.load_project(session_id)
+        ensure_session_is_active(project)
+        if project.session.creation_mode != CreationMode.MARKDOWN or project.source is None:
+            raise ValueError("This episode does not have a Markdown source.")
+        project.source = self.store.replace_source(
+            session_id=session_id,
+            raw_markdown=str(source_input.get("raw_markdown") or ""),
+            name=str(source_input.get("name") or project.source.name),
+            import_kind=SourceImportKind(str(source_input.get("import_kind") or project.source.import_kind.value)),
+            conversion_mode=SourceConversionMode(str(source_input.get("conversion_mode") or project.source.conversion_mode.value)),
+            target_length=SourceTargetLength(str(source_input.get("target_length") or project.source.target_length.value)),
+            focus_instructions=str(source_input.get("focus_instructions") or ""),
+        )
+        project.session.updated_at = project.source.updated_at
+        self.store.save_project(project)
+        return success_envelope({"project": serialize_project(project)}, operation="update_episode_source")
 
 
 def _query_flag(query: dict[str, list[str]], key: str) -> bool:
@@ -1285,8 +1360,15 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 raise ValueError("Field 'topic' is required.")
             if not creation_intent:
                 raise ValueError("Field 'creation_intent' is required.")
+            source_payload = body.get("source")
+            if source_payload is not None and not isinstance(source_payload, dict):
+                raise ValueError("Field 'source' must be an object.")
             self._send_bridge_envelope(
-                self.context.create_session_payload(topic=topic, creation_intent=creation_intent),
+                self.context.create_session_payload(
+                    topic=topic,
+                    creation_intent=creation_intent,
+                    source_input=source_payload,
+                ),
                 origin=origin,
             )
             return
@@ -1899,6 +1981,12 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             self.context.store.save_project(project)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rename_session"), origin=origin)
             return
+        if self.command == "PUT" and suffix == "/source":
+            self._send_bridge_envelope(
+                self.context.update_source_payload(session_id, body),
+                origin=origin,
+            )
+            return
         if self.command == "POST" and suffix == ":delete":
             project = self.context.store.load_project(session_id)
             if project.session.is_deleted():
@@ -2346,6 +2434,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "request_finish"
         if "/script:generate" in path:
             return "generate_script"
+        if path.endswith("/source"):
+            return "update_episode_source"
         if "/audio:render" in path:
             return "render_audio"
         if path == "/api/v1/voice-studio/presets":

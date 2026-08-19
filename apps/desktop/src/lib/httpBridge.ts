@@ -457,6 +457,30 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({
           topic: input.topic,
           creation_intent: input.creationIntent,
+          source: input.source
+            ? {
+                raw_markdown: input.source.rawMarkdown,
+                name: input.source.name,
+                import_kind: input.source.importKind,
+                conversion_mode: input.source.conversionMode,
+                target_length: input.source.targetLength,
+                focus_instructions: input.source.focusInstructions,
+              }
+            : undefined,
+        }),
+      });
+      return response.project!;
+    },
+    async updateEpisodeSource(sessionId, input) {
+      const response = await callHttp<{}>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/source`, {
+        method: "PUT",
+        body: JSON.stringify({
+          raw_markdown: input.rawMarkdown,
+          name: input.name,
+          import_kind: input.importKind,
+          conversion_mode: input.conversionMode,
+          target_length: input.targetLength,
+          focus_instructions: input.focusInstructions,
         }),
       });
       return response.project!;

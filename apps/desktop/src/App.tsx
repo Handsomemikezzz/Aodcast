@@ -17,6 +17,7 @@ const VoiceStudioPage = lazy(() => import("./pages/VoiceStudioPage").then((modul
 const EpisodesPage = lazy(() => import("./pages/EpisodesPage").then((module) => ({ default: module.EpisodesPage })));
 const StudioPage = lazy(() => import("./pages/studio/StudioPage").then((module) => ({ default: module.StudioPage })));
 const MemoryPage = lazy(() => import("./pages/MemoryPage").then((module) => ({ default: module.MemoryPage })));
+const NewEpisodePage = lazy(() => import("./pages/NewEpisodePage").then((module) => ({ default: module.NewEpisodePage })));
 
 function RouteFallback() {
   return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading workspace…</div>;
@@ -106,30 +107,32 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full bg-background text-on-surface overflow-hidden selection:bg-accent-amber/30 font-body mac-scrollbar">
-      <aside className="w-[240px] flex-shrink-0 flex flex-col bg-surface-container-low/95 border-r border-outline backdrop-blur-2xl shadow-lg relative">
+      <aside className="flex w-[72px] lg:w-[240px] flex-shrink-0 flex-col bg-surface-container-low/95 border-r border-outline backdrop-blur-2xl shadow-lg relative transition-[width] duration-200">
         {/* Brand spacing accommodating macOS traffic lights */}
         <div className="h-[74px] flex items-end pb-3 px-5 drag-region select-none">
           <div className="flex items-center gap-2.5 text-accent-amber">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg theme-accent-gradient shadow-md shadow-accent-amber/15">
               <Mic className="w-4.5 h-4.5 text-on-primary fill-on-primary" />
             </div>
-            <span className="font-headline font-bold text-[16px] tracking-[0.05em] text-primary">Aodcast</span>
+            <span className="hidden lg:inline font-headline font-bold text-[16px] tracking-[0.05em] text-primary">Aodcast</span>
           </div>
         </div>
 
         <nav className="px-3.5 py-2.5 space-y-1.5 mt-2">
           <NavLink
             to="/episodes"
+            title="Episodes"
             className={({ isActive }) => navItemClass(isActive)}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <List className="w-4 h-4" />
             </div>
-            Episodes
+            <span className="hidden lg:inline">Episodes</span>
           </NavLink>
 
           <NavLink
             to="/studio"
+            title="Studio"
             className={({ isActive }) =>
               navItemClass(isActive || location.pathname.startsWith("/studio/"))
             }
@@ -137,11 +140,12 @@ export default function App() {
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Layers className="w-4 h-4" />
             </div>
-            Studio
+            <span className="hidden lg:inline">Studio</span>
           </NavLink>
 
           <NavLink
             to="/voice-studio"
+            title="Voice"
             className={({ isActive }) =>
               navItemClass(isActive || location.pathname.startsWith("/voice-studio"))
             }
@@ -149,42 +153,45 @@ export default function App() {
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <AudioLines className="w-4 h-4" />
             </div>
-            Voice
+            <span className="hidden lg:inline">Voice</span>
           </NavLink>
 
           <NavLink
             to="/models"
+            title="Models"
             className={({ isActive }) => navItemClass(isActive)}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Package className="w-4 h-4" />
             </div>
-            Models
+            <span className="hidden lg:inline">Models</span>
           </NavLink>
 
           <NavLink
             to="/memory"
+            title="Memory"
             className={({ isActive }) => navItemClass(isActive)}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Brain className="w-4 h-4" />
             </div>
-            Memory
+            <span className="hidden lg:inline">Memory</span>
           </NavLink>
         </nav>
 
         <div className="flex-1 min-h-0" aria-hidden />
 
-        <div className="p-3.5 border-t border-outline shrink-0 flex items-center gap-2">
+        <div className="p-3.5 border-t border-outline shrink-0 flex flex-col lg:flex-row items-center gap-2">
           <button
             type="button"
             onClick={() => navigate("/settings")}
-            className={cn(navItemClass(pathSegment === "settings"), "flex-1")}
+            className={cn(navItemClass(pathSegment === "settings"), "lg:flex-1")}
+            title="Settings"
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <Settings className="w-4 h-4" />
             </div>
-            Settings
+            <span className="hidden lg:inline">Settings</span>
           </button>
 
           <button
@@ -222,6 +229,8 @@ export default function App() {
               {/* Primary destinations */}
               <Route path="/" element={<Navigate to="/episodes" replace />} />
               <Route path="/episodes" element={<EpisodesPage projects={projects} onRefresh={fetchProjects} />} />
+              <Route path="/episodes/new" element={<NewEpisodePage mode="choose" onRefresh={fetchProjects} />} />
+              <Route path="/episodes/new/markdown" element={<NewEpisodePage mode="markdown" onRefresh={fetchProjects} />} />
               <Route path="/studio" element={<Navigate to="/episodes" replace />} />
               <Route path="/studio/:sessionId" element={<StudioPage onRefresh={fetchProjects} />} />
               <Route path="/studio/:sessionId/:scriptId" element={<StudioPage onRefresh={fetchProjects} />} />

@@ -17,6 +17,10 @@ from app.orchestration.prompts.script import (
     build_script_prompt_plan,
     build_script_style_profile,
 )
+from app.orchestration.prompts.source_script import (
+    build_source_script_generation_metadata,
+    build_source_script_prompt_plan,
+)
 from app.orchestration.readiness import evaluate_readiness
 from app.providers.llm.base import ScriptGenerationRequest
 from app.providers.llm.factory import build_llm_provider
@@ -53,8 +57,9 @@ class ScriptGenerationService:
     ) -> ScriptGenerationResult:
         project = self.store.load_project(session_id)
         transcript = project.transcript
-        if transcript is None:
-            raise ValueError("Cannot generate a script without a transcript.")
+        source = project.source
+        if transcript is None and source is None:
+            raise ValueError("Cannot generate a script without an interview or imported source.")
         if project.session.state == SessionState.AUDIO_RENDERING:
             raise ValueError("Cannot generate a script while audio rendering is in progress.")
 
@@ -67,7 +72,7 @@ class ScriptGenerationService:
         # is persisted by save_project below.
         memory_context = ""
         memory_ids_used: list[str] = []
-        if self.memory_service is not None:
+        if self.memory_service is not None and project.session.memory_enabled():
             try:
                 ctx = self.memory_service.build_script_context(project.session)
                 memory_context = ctx.prompt_block
@@ -75,30 +80,43 @@ class ScriptGenerationService:
             except Exception:
                 memory_context = ""
 
-        # Build EpisodeBrief and ScriptStyleProfile for the PromptPlan.
-        brief = build_episode_brief(
-            project.session.topic,
-            project.session.creation_intent,
-            transcript,
-        )
-        style_profile = build_script_style_profile(project.session, transcript)
-
-        prompt_plan = build_script_prompt_plan(
-            topic=project.session.topic,
-            creation_intent=project.session.creation_intent,
-            transcript=transcript,
-            style_profile=style_profile,
-            brief=brief,
-            memory_context=memory_context,
-            memory_ids_used=memory_ids_used,
-        )
+        brief = None
+        style_profile = None
+        conversation_text = _transcript_text(transcript) if transcript is not None else ""
+        if source is not None:
+            prompt_plan = build_source_script_prompt_plan(
+                topic=project.session.topic,
+                creation_intent=project.session.creation_intent,
+                source=source,
+                conversation_text=conversation_text,
+                memory_context=memory_context,
+                memory_ids_used=memory_ids_used,
+            )
+        else:
+            assert transcript is not None
+            brief = build_episode_brief(
+                project.session.topic,
+                project.session.creation_intent,
+                transcript,
+            )
+            style_profile = build_script_style_profile(project.session, transcript)
+            prompt_plan = build_script_prompt_plan(
+                topic=project.session.topic,
+                creation_intent=project.session.creation_intent,
+                transcript=transcript,
+                style_profile=style_profile,
+                brief=brief,
+                memory_context=memory_context,
+                memory_ids_used=memory_ids_used,
+            )
 
         provider = build_llm_provider(llm_config)
         request = ScriptGenerationRequest(
             session_id=session_id,
             topic=project.session.topic,
             creation_intent=project.session.creation_intent,
-            transcript_text=_transcript_text(transcript),
+            transcript_text=conversation_text,
+            source_text=source.normalized_text if source is not None else "",
             memory_context=memory_context,
             prompt_plan=prompt_plan,
         )
@@ -122,25 +140,37 @@ class ScriptGenerationService:
 
         # Persist compact generation metadata (§9.2) — no full prompt text,
         # transcript text, memory bodies, or sensitive content.
-        script.generation_metadata = build_script_generation_metadata(
-            plan=prompt_plan,
-            style_profile=style_profile,
-            brief=brief,
-            provider=response.provider_name,
-            model=response.model_name,
-            memory_ids_used=memory_ids_used,
-        )
+        if source is not None:
+            script.generation_metadata = build_source_script_generation_metadata(
+                plan=prompt_plan,
+                source=source,
+                provider=response.provider_name,
+                model=response.model_name,
+                memory_ids_used=memory_ids_used,
+            )
+        else:
+            assert style_profile is not None and brief is not None
+            script.generation_metadata = build_script_generation_metadata(
+                plan=prompt_plan,
+                style_profile=style_profile,
+                brief=brief,
+                provider=response.provider_name,
+                model=response.model_name,
+                memory_ids_used=memory_ids_used,
+            )
 
         project.script = script
         if project.artifact is None:
             project.artifact = ArtifactRecord(
                 session_id=session_id,
-                transcript_path=f"sessions/{session_id}/transcript.json",
+                transcript_path=f"sessions/{session_id}/transcript.json" if transcript is not None else "",
             )
 
         project.session.llm_provider = response.provider_name
         project.session.transition(SessionState.SCRIPT_GENERATED)
         self.store.save_project(project)
+        if self.store.source_file(session_id).exists():
+            project.source = self.store.load_source(session_id)
         return ScriptGenerationResult(
             project=project,
             provider=response.provider_name,
@@ -149,6 +179,18 @@ class ScriptGenerationService:
 
 
 def build_generation_context(project: SessionProject) -> dict[str, object]:
+    if project.source is not None:
+        return {
+            "source": {
+                "source_id": project.source.source_id,
+                "source_kind": project.source.source_kind,
+                "version": project.source.version,
+                "content_hash": project.source.content_hash,
+                "conversion_mode": project.source.conversion_mode.value,
+                "target_length": project.source.target_length.value,
+            },
+            "conversation_turn_count": len(project.transcript.turns) if project.transcript else 0,
+        }
     if project.transcript is None:
         raise ValueError("Project transcript is required.")
     readiness = evaluate_readiness(project.transcript)

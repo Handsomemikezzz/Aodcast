@@ -20,10 +20,16 @@ class SessionState(StrEnum):
     FAILED = "failed"
 
 
+class CreationMode(StrEnum):
+    INTERVIEW = "interview"
+    MARKDOWN = "markdown"
+
+
 @dataclass(slots=True)
 class SessionRecord:
     topic: str
     creation_intent: str
+    creation_mode: CreationMode = CreationMode.INTERVIEW
     session_id: str = field(default_factory=lambda: str(uuid4()))
     state: SessionState = SessionState.TOPIC_DEFINED
     llm_provider: str = ""
@@ -115,6 +121,7 @@ class SessionRecord:
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["state"] = self.state.value
+        payload["creation_mode"] = self.creation_mode.value
         return payload
 
     @classmethod
@@ -123,6 +130,7 @@ class SessionRecord:
             session_id=payload["session_id"],
             topic=payload["topic"],
             creation_intent=payload["creation_intent"],
+            creation_mode=CreationMode(payload.get("creation_mode", CreationMode.INTERVIEW.value)),
             state=SessionState(payload["state"]),
             llm_provider=payload.get("llm_provider", ""),
             tts_provider=payload.get("tts_provider", ""),

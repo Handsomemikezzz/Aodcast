@@ -6,6 +6,28 @@ from pathlib import Path
 
 
 class BridgeRequestStateSchemaTests(unittest.TestCase):
+    def test_episode_source_schema_covers_markdown_lineage(self) -> None:
+        schema_path = Path(__file__).resolve().parents[3] / "packages/shared-schemas/episode-source.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+        for property_name in ["raw_markdown", "normalized_text", "content_hash", "version", "conversion_mode", "target_length"]:
+            self.assertIn(property_name, schema["properties"])
+            self.assertIn(property_name, schema["required"])
+        self.assertEqual(schema["properties"]["conversion_mode"]["enum"], ["adapt", "narrate"])
+        self.assertFalse(schema["additionalProperties"])
+
+    def test_script_schema_constrains_optional_source_lineage(self) -> None:
+        schema_path = Path(__file__).resolve().parents[3] / "packages/shared-schemas/script.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        lineage = schema["$defs"]["sourceLineage"]
+
+        self.assertEqual(
+            set(lineage["required"]),
+            {"source_id", "source_kind", "version", "content_hash", "conversion_mode", "target_length"},
+        )
+        self.assertEqual(schema["properties"]["generation_metadata"]["properties"]["source"]["$ref"], "#/$defs/sourceLineage")
+        self.assertFalse(lineage["additionalProperties"])
+
     def test_bridge_request_state_schema_includes_run_token(self) -> None:
         schema_path = Path(__file__).resolve().parents[3] / "packages/shared-schemas/bridge-request-state.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))

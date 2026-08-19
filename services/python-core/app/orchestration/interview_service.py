@@ -44,6 +44,15 @@ def _get_preceding_agent_focus(transcript: TranscriptRecord) -> str:
     return "unknown"
 
 
+def _source_context(project: SessionProject, *, character_budget: int = 12_000) -> str:
+    if project.source is None:
+        return ""
+    text = project.source.normalized_text.strip()
+    if len(text) <= character_budget:
+        return text
+    return text[:character_budget].rstrip() + "\n[Source excerpt truncated for this discussion turn.]"
+
+
 def _agent_turn_metadata(plan_out: list) -> dict:
     """Extract compact turn metadata from a plan_out list populated by _stream_next_question."""
     if not plan_out:
@@ -320,6 +329,7 @@ class InterviewOrchestrator:
                 readiness=effective_readiness,
                 script_exists=(project.script is not None),
                 memory_context=memory_context,
+                source_context=_source_context(project),
                 transcript_text=_transcript_text(transcript),
             )
         except Exception:

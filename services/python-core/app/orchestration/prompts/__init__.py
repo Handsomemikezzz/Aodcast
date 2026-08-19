@@ -43,6 +43,10 @@ from app.orchestration.prompts.script import (
     build_script_prompt_plan,
     build_script_style_profile,
 )
+from app.orchestration.prompts.source_script import (
+    build_source_script_generation_metadata,
+    build_source_script_prompt_plan,
+)
 
 # Memory profiles (Phase 3)
 from app.orchestration.prompts.memory import (
@@ -85,6 +89,8 @@ __all__ = [
     "build_script_generation_user_prompt",
     "build_script_prompt_plan",
     "build_script_style_profile",
+    "build_source_script_generation_metadata",
+    "build_source_script_prompt_plan",
     # Memory (Phase 3)
     "MEMORY_EXTRACTION_SYSTEM_PROMPT",
     "MEMORY_MAINTENANCE_SYSTEM_PROMPT",

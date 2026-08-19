@@ -2,9 +2,17 @@ import type { SessionProject, StudioProgressState } from "../types";
 import type { ScriptCheckResult } from "../pages/script-workbench/spokenScriptTypes";
 
 function hasVoiceSelected(project: SessionProject, scriptId?: string): boolean {
-  if (project.artifact?.voice_reference) return true;
-  if (scriptId && project.artifact?.script_artifacts?.[scriptId]?.voice_reference) return true;
+  if (project.artifact?.voice_reference && Object.keys(project.artifact.voice_reference).length > 0) return true;
+  const scriptReference = scriptId ? project.artifact?.script_artifacts?.[scriptId]?.voice_reference : undefined;
+  if (scriptReference && Object.keys(scriptReference).length > 0) return true;
   return false;
+}
+
+export function isProjectSourceOutOfDate(project: SessionProject | null): boolean {
+  const source = project?.source;
+  const generatedSource = project?.script?.generation_metadata?.source;
+  if (!source || !generatedSource) return false;
+  return generatedSource.version !== source.version || generatedSource.content_hash !== source.content_hash;
 }
 
 function hasAudio(project: SessionProject, scriptId?: string): boolean {
@@ -61,6 +69,10 @@ export function deriveStudioState(
 
   if (!scriptCheck.canRender) {
     return "script_blocked_for_tts";
+  }
+
+  if (isProjectSourceOutOfDate(project)) {
+    return hasAudio(project, scriptId) ? "script_changed_after_audio" : "script_ready_needs_review";
   }
 
   if (isScriptChangedAfterAudio(project, scriptId, isDirty)) {
