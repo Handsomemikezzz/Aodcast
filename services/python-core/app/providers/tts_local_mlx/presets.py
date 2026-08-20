@@ -1,8 +1,19 @@
 from __future__ import annotations
 
-DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit"
-SUPPORTED_MODEL_PREFIX = "mlx-community/Qwen3-TTS"
+DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-8bit"
 
-
-def is_supported_qwen3_model(model: str) -> bool:
-    return model.strip().startswith(SUPPORTED_MODEL_PREFIX)
+# Remote repository ids accepted by the local runtime. Local directories are
+# identified from their config.json instead, so copied or relocated models do
+# not depend on directory naming conventions.
+SUPPORTED_LOCAL_TTS_MODELS: tuple[str, ...] = (
+    "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+    "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
+    "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+    "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+    "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+    "mlx-community/VoxCPM2-4bit",
+    "mlx-community/VoxCPM2-8bit",
+    "mlx-community/VoxCPM2-bf16",
+    "OpenMOSS-Team/MOSS-TTS-v1.5",
+    "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5",
+)

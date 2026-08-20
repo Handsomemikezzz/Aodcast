@@ -97,7 +97,8 @@ export function keepCancellationProgress(
   previous: RequestState | null | undefined,
   next: RequestState,
 ): RequestState {
-  if ((previous?.phase === "cancelling" || previous?.phase === "cancelled") && next.phase === "running") {
+  const sameRun = !previous?.run_token || !next.run_token || previous.run_token === next.run_token;
+  if (sameRun && (previous?.phase === "cancelling" || previous?.phase === "cancelled") && next.phase === "running") {
     return previous;
   }
   return next;
@@ -110,16 +111,6 @@ export function requestStateRunToken(state: RequestState | null | undefined): st
 export function ensureRequestStateRunToken(state: RequestState, runToken: string | null | undefined): RequestState {
   if (!runToken || state.run_token) return state;
   return { ...state, run_token: runToken };
-}
-
-export function copyRequestStateRunToken<T extends { run_token?: string; request_state?: RequestState | null }>(
-  response: T,
-): T {
-  if (typeof response.run_token !== "string") {
-    const runToken = requestStateRunToken(response.request_state);
-    if (runToken) response.run_token = runToken;
-  }
-  return response;
 }
 
 export function isActiveRequestState(state: RequestState | null | undefined): boolean {

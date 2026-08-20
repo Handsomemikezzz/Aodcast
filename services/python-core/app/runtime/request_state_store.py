@@ -44,6 +44,27 @@ class RequestStateStore:
 
     def save(self, task_id: str, request_state: dict[str, object]) -> Path:
         with self._task_guard(task_id):
+            path = self._path(task_id)
+            current = self._load_request_state(path)
+            current_token = _request_state_run_token(current)
+            incoming_token = _request_state_run_token(request_state)
+            if current_token and incoming_token != current_token:
+                return path
+            payload = {
+                "task_id": task_id,
+                "request_state": request_state,
+                "updated_at": _now_iso(),
+            }
+            self._atomic_write_json(path, payload)
+            return path
+
+    def start_run(self, task_id: str, request_state: dict[str, object]) -> Path:
+        """Atomically establish a new tokenized run and discard an older cancel marker."""
+
+        run_token = _request_state_run_token(request_state)
+        if not run_token:
+            raise ValueError("Tokenized task runs require a non-empty run_token.")
+        with self._task_guard(task_id):
             payload = {
                 "task_id": task_id,
                 "request_state": request_state,
@@ -51,7 +72,38 @@ class RequestStateStore:
             }
             path = self._path(task_id)
             self._atomic_write_json(path, payload)
+            self._cancel_path(task_id).unlink(missing_ok=True)
             return path
+
+    def save_if_current_run(
+        self,
+        task_id: str,
+        request_state: dict[str, object],
+        *,
+        expected_run_token: str,
+        clear_cancel_request: bool = False,
+    ) -> bool:
+        """Persist only while ``expected_run_token`` still owns the task id."""
+
+        expected = expected_run_token.strip()
+        if not expected:
+            raise ValueError("expected_run_token must be non-empty.")
+        incoming_token = _request_state_run_token(request_state)
+        if incoming_token != expected:
+            raise ValueError("Request state run_token does not match expected_run_token.")
+        with self._task_guard(task_id):
+            current = self._load_request_state(self._path(task_id))
+            if _request_state_run_token(current) != expected:
+                return False
+            payload = {
+                "task_id": task_id,
+                "request_state": request_state,
+                "updated_at": _now_iso(),
+            }
+            self._atomic_write_json(self._path(task_id), payload)
+            if clear_cancel_request:
+                self._clear_cancel_request_for_run_unlocked(task_id, expected)
+            return True
 
     def save_if_current_phase(
         self,
@@ -59,8 +111,18 @@ class RequestStateStore:
         request_state: dict[str, object],
         *,
         allowed_phases: set[str],
+        expected_run_token: str | None = None,
+        clear_cancel_request: bool = False,
     ) -> bool:
         normalized_allowed = {phase.strip().lower() for phase in allowed_phases}
+        incoming_token = _request_state_run_token(request_state)
+        expected_token = (
+            expected_run_token.strip()
+            if expected_run_token is not None
+            else incoming_token
+        )
+        if expected_run_token is not None and incoming_token != expected_token:
+            raise ValueError("Request state run_token does not match expected_run_token.")
         with self._task_guard(task_id):
             current = self._load_request_state(self._path(task_id))
             current_phase = ""
@@ -68,6 +130,12 @@ class RequestStateStore:
                 value = current.get("phase")
                 if isinstance(value, str):
                     current_phase = value.strip().lower()
+            current_token = _request_state_run_token(current)
+            if expected_token:
+                if current_token != expected_token:
+                    return False
+            elif current_token:
+                return False
             if current_phase not in normalized_allowed:
                 return False
             payload = {
@@ -76,6 +144,8 @@ class RequestStateStore:
                 "updated_at": _now_iso(),
             }
             self._atomic_write_json(self._path(task_id), payload)
+            if clear_cancel_request and expected_token:
+                self._clear_cancel_request_for_run_unlocked(task_id, expected_token)
             return True
 
     def load(self, task_id: str) -> dict[str, object] | None:
@@ -130,25 +200,44 @@ class RequestStateStore:
     def _path(self, task_id: str) -> Path:
         return self._dir / f"{_safe_task_file_name(task_id)}.json"
 
-    def request_cancel(self, task_id: str) -> Path:
+    def request_cancel(self, task_id: str, *, run_token: str = "") -> Path:
         with self._task_guard(task_id):
+            current = self._load_request_state(self._path(task_id))
+            current_token = _request_state_run_token(current)
+            requested_token = run_token.strip()
+            if requested_token != current_token:
+                raise ValueError("stale_task_run")
             path = self._cancel_path(task_id)
             payload = {
                 "task_id": task_id,
+                "run_token": current_token,
                 "cancel_requested": True,
                 "updated_at": _now_iso(),
             }
             self._atomic_write_json(path, payload)
             return path
 
-    def clear_cancel_request(self, task_id: str) -> None:
+    def clear_cancel_request(self, task_id: str, *, run_token: str = "") -> bool:
         with self._task_guard(task_id):
-            try:
-                self._cancel_path(task_id).unlink()
-            except FileNotFoundError:
-                return
+            path = self._cancel_path(task_id)
+            payload = self._load_payload(path)
+            if payload is None:
+                if path.is_file() and not run_token.strip():
+                    current = self._load_request_state(self._path(task_id))
+                    if not _request_state_run_token(current):
+                        path.unlink(missing_ok=True)
+                        return True
+                return False
+            marker_token = str(payload.get("run_token") or "").strip()
+            requested_token = run_token.strip()
+            if marker_token and requested_token != marker_token:
+                return False
+            if requested_token and requested_token != marker_token:
+                return False
+            path.unlink(missing_ok=True)
+            return True
 
-    def is_cancel_requested(self, task_id: str) -> bool:
+    def is_cancel_requested(self, task_id: str, *, run_token: str = "") -> bool:
         with self._task_guard(task_id, mode="read"):
             path = self._cancel_path(task_id)
             if not path.is_file():
@@ -157,10 +246,20 @@ class RequestStateStore:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except Exception:
                 return True
+            if run_token and str(payload.get("run_token") or "") != run_token:
+                return False
             return bool(payload.get("cancel_requested"))
 
     def _cancel_path(self, task_id: str) -> Path:
         return self._cancel_dir / f"{_safe_task_file_name(task_id)}.json"
+
+    def _clear_cancel_request_for_run_unlocked(self, task_id: str, run_token: str) -> bool:
+        path = self._cancel_path(task_id)
+        payload = self._load_payload(path)
+        if payload is None or str(payload.get("run_token") or "") != run_token:
+            return False
+        path.unlink(missing_ok=True)
+        return True
 
     def _lock_path(self, task_id: str) -> Path:
         return self._lock_dir / f"{_safe_task_file_name(task_id)}.lock"
@@ -243,3 +342,9 @@ def _parse_iso_datetime(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _request_state_run_token(request_state: dict[str, object] | None) -> str:
+    if not isinstance(request_state, dict):
+        return ""
+    return str(request_state.get("run_token") or "").strip()

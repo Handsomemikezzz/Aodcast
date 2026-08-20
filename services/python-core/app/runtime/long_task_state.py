@@ -16,18 +16,21 @@ class LongTaskStateManager:
     should_cancel: Callable[[], bool] | None = None
     _progress_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _current_progress: float = field(default=0.0, init=False, repr=False)
+    _run_token: str = field(default="", init=False, repr=False)
 
     def start(self, *, progress_percent: float, message: str) -> None:
         self._set_current_progress(progress_percent)
-        self.request_state_store.save(
-            self.task_id,
-            self.build_request_state(
-                operation=self.operation,
-                phase="running",
-                progress_percent=progress_percent,
-                message=message,
-            ),
+        state = self.build_request_state(
+            operation=self.operation,
+            phase="running",
+            progress_percent=progress_percent,
+            message=message,
         )
+        self._run_token = str(state.get("run_token") or "").strip()
+        if self._run_token:
+            self.request_state_store.start_run(self.task_id, state)
+        else:
+            self.request_state_store.save(self.task_id, state)
 
     def update_running(self, next_percent: float, message: str, *, max_percent: float = 95.0) -> None:
         if self.should_cancel is not None and self.should_cancel():
@@ -47,6 +50,7 @@ class LongTaskStateManager:
                 message=message,
             ),
             allowed_phases={"running"},
+            expected_run_token=self._run_token or None,
         )
 
     def set_progress(
@@ -80,6 +84,7 @@ class LongTaskStateManager:
                 message=message,
             ),
             allowed_phases={"running"},
+            expected_run_token=self._run_token or None,
         )
 
     def start_heartbeat(
@@ -112,27 +117,23 @@ class LongTaskStateManager:
         stop_event.set()
         thread.join(timeout=timeout_seconds)
 
-    def save_cancelled(self, *, progress_percent: float, message: str) -> None:
-        self.request_state_store.save(
-            self.task_id,
-            self.build_request_state(
-                operation=self.operation,
-                phase="cancelled",
-                progress_percent=progress_percent,
-                message=message,
-            ),
+    def save_cancelled(self, *, progress_percent: float, message: str) -> bool:
+        state = self.build_request_state(
+            operation=self.operation,
+            phase="cancelled",
+            progress_percent=progress_percent,
+            message=message,
         )
+        return self._save_terminal_state(state, clear_cancel_request=True)
 
-    def save_failed(self, *, message: str) -> None:
-        self.request_state_store.save(
-            self.task_id,
-            self.build_request_state(
-                operation=self.operation,
-                phase="failed",
-                progress_percent=0.0,
-                message=message,
-            ),
+    def save_failed(self, *, message: str) -> bool:
+        state = self.build_request_state(
+            operation=self.operation,
+            phase="failed",
+            progress_percent=0.0,
+            message=message,
         )
+        return self._save_terminal_state(state)
 
     def save_finalizing(self, *, progress_percent: float, message: str) -> bool:
         self._set_current_progress(progress_percent)
@@ -145,6 +146,7 @@ class LongTaskStateManager:
                 message=message,
             ),
             allowed_phases={"running"},
+            expected_run_token=self._run_token or None,
         )
 
     def save_succeeded(self, *, message: str) -> bool:
@@ -156,7 +158,11 @@ class LongTaskStateManager:
                 progress_percent=100.0,
                 message=message,
             ),
-            allowed_phases={"running"},
+            # A cancellation that arrives after the operation has committed is
+            # too late to roll back. Report the completed side effect honestly.
+            allowed_phases={"running", "cancelling"},
+            expected_run_token=self._run_token or None,
+            clear_cancel_request=bool(self._run_token),
         )
 
     def current_phase(self) -> str:
@@ -182,3 +188,21 @@ class LongTaskStateManager:
     def _heartbeat_progress_snapshot(self) -> float:
         with self._progress_lock:
             return self._current_progress
+
+    def _save_terminal_state(
+        self,
+        state: dict[str, object],
+        *,
+        clear_cancel_request: bool = False,
+    ) -> bool:
+        if self._run_token:
+            return self.request_state_store.save_if_current_run(
+                self.task_id,
+                state,
+                expected_run_token=self._run_token,
+                clear_cancel_request=clear_cancel_request,
+            )
+        self.request_state_store.save(self.task_id, state)
+        if clear_cancel_request:
+            self.request_state_store.clear_cancel_request(self.task_id)
+        return True

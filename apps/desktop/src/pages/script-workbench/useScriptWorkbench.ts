@@ -1,8 +1,8 @@
 import type { RefObject } from "react";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { useBridge } from "../../lib/BridgeContext";
-import type { RequestState, SessionProject, TTSCapability, TTSProviderConfig, VoiceProfileRecord } from "../../types";
-import type { EditorTransform } from "./workbenchUtils";
+import type { ModelStatus, RequestState, SessionProject, SpeakerReference, TTSCapability, TTSProviderConfig } from "../../types";
+import { contextWindowSegmentIds, type EditorTransform } from "./workbenchUtils";
 import { useScriptWorkbenchAudio } from "./useScriptWorkbenchAudio";
 import { useScriptWorkbenchData } from "./useScriptWorkbenchData";
 import { useScriptWorkbenchEditor } from "./useScriptWorkbenchEditor";
@@ -22,7 +22,10 @@ export type UseScriptWorkbenchResult = {
   setScript: (value: string) => void;
   capability: TTSCapability | null;
   ttsConfig: TTSProviderConfig | null;
-  voiceProfiles: VoiceProfileRecord[];
+  speakerReferences: SpeakerReference[];
+  models: ModelStatus[];
+  selectedModelId: string;
+  setSelectedModelId: (value: string) => void;
   voiceSelectionError: string | null;
   selectedEngine: "local_mlx" | "cloud";
   setSelectedEngine: (value: "local_mlx" | "cloud") => void;
@@ -36,6 +39,7 @@ export type UseScriptWorkbenchResult = {
   audioRequestState: RequestState | null;
   pollWarning: string | null;
   audioMessage: string | null;
+  affectedSegmentIds: string[];
   dialogState: PendingDialogState;
   setDialogState: (state: PendingDialogState) => void;
   isAudioPlaying: boolean;
@@ -72,7 +76,9 @@ export type UseScriptWorkbenchResult = {
   handleRevealInFinder: () => Promise<void>;
   handleExportMp3: () => Promise<void>;
   handleDeleteAudio: () => Promise<void>;
-  handleSelectVoiceProfile: (profileId: string) => Promise<void>;
+  handleSelectSpeakerReference: (referenceId: string) => Promise<void>;
+  requestSegmentRegeneration: (segmentId: string) => void;
+  handleRegenerateAudioWindow: (segmentId: string) => Promise<void>;
   reload: () => Promise<void>;
   refreshWorkspace: () => Promise<void>;
   closeDialog: () => void;
@@ -81,6 +87,7 @@ export type UseScriptWorkbenchResult = {
   scriptCheck: ScriptCheckResult;
   handleOpenCleanupPreview: () => void;
   handleApplyCleanup: () => void;
+  speechPlanStale: boolean;
 };
 
 export function useScriptWorkbench(sessionId: string, scriptId: string, onRefresh: () => Promise<void>): UseScriptWorkbenchResult {
@@ -107,11 +114,12 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     sessionId,
     scriptId,
     onRefresh,
-    reload: data.reload,
+    refreshProject: data.refreshProject,
     project: data.project,
     setProject: data.setProject,
     selectedEngine: data.selectedEngine,
     cloudProvider: data.cloudProvider,
+    selectedModelId: data.selectedModelId,
   });
 
   const scriptCheck = useSpokenScriptChecks(data.script);
@@ -141,6 +149,29 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     editor.setDialogState(null);
   };
 
+  const speechPlanStale = (() => {
+    const plan = data.project?.speech_plan;
+    const manifest = data.project?.render_manifest;
+    if (!plan) return false;
+    if (data.isDirty) return true;
+    if (manifest && (manifest.speech_plan.plan_id !== plan.plan_id || manifest.speech_plan.plan_hash !== plan.plan_hash)) return true;
+    const scriptUpdatedAt = Date.parse(data.project?.script?.updated_at || "");
+    const planCreatedAt = Date.parse(plan.created_at);
+    return Number.isFinite(scriptUpdatedAt) && Number.isFinite(planCreatedAt) && scriptUpdatedAt > planCreatedAt;
+  })();
+
+  const requestSegmentRegeneration = (segmentId: string) => {
+    const segments = data.project?.speech_plan?.segments ?? [];
+    const windowSegmentIds = contextWindowSegmentIds(segments, segmentId);
+    if (!windowSegmentIds.length) return;
+    editor.setDialogState({ kind: "regenerate-window", targetSegmentId: segmentId, windowSegmentIds });
+  };
+
+  const handleRegenerateAudioWindow = async (segmentId: string) => {
+    if (data.isDirty || speechPlanStale || audio.generating) return;
+    await audio.triggerRegenerateAudioWindow(segmentId);
+  };
+
   return {
     navigate,
     loading: data.loading,
@@ -149,7 +180,10 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     setScript: data.setScript,
     capability: data.capability,
     ttsConfig: data.ttsConfig,
-    voiceProfiles: data.voiceProfiles,
+    speakerReferences: data.speakerReferences,
+    models: data.models,
+    selectedModelId: data.selectedModelId,
+    setSelectedModelId: data.setSelectedModelId,
     voiceSelectionError: data.voiceSelectionError,
     selectedEngine: data.selectedEngine,
     setSelectedEngine: data.setSelectedEngine,
@@ -163,6 +197,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     audioRequestState: audio.audioRequestState,
     pollWarning: audio.pollWarning,
     audioMessage: audio.audioMessage,
+    affectedSegmentIds: audio.affectedSegmentIds,
     dialogState: editor.dialogState,
     setDialogState: editor.setDialogState,
     isAudioPlaying: audio.isAudioPlaying,
@@ -197,7 +232,9 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     handleRevealInFinder: audio.handleRevealInFinder,
     handleExportMp3: audio.handleExportMp3,
     handleDeleteAudio: audio.handleDeleteAudio,
-    handleSelectVoiceProfile: data.handleSelectVoiceProfile,
+    handleSelectSpeakerReference: data.handleSelectSpeakerReference,
+    requestSegmentRegeneration,
+    handleRegenerateAudioWindow,
     reload: data.reload,
     refreshWorkspace: data.refreshWorkspace,
     closeDialog: editor.closeDialog,
@@ -206,5 +243,6 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     scriptCheck,
     handleOpenCleanupPreview,
     handleApplyCleanup,
+    speechPlanStale,
   };
 }

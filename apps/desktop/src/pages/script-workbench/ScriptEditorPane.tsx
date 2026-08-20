@@ -3,6 +3,7 @@ import { CheckCircle2, ChevronDown, Loader2, RefreshCw, Sparkles, Trash2, Wand2,
 import { cn } from "../../lib/utils";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 import type { EditorDisplayMode, ScriptIssue } from "./spokenScriptTypes";
+import { SpeechPlanPane } from "./SpeechPlanPane";
 
 function issueTone(level: ScriptIssue["level"]): string {
   if (level === "blocking") return "text-red-300";
@@ -93,7 +94,7 @@ export function ScriptEditorPane({
               type="button"
               onClick={() => setEditorMode("script")}
               className={cn(
-                "rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer",
+                "min-h-11 rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
                 editorMode === "script"
                   ? "bg-accent-amber/15 text-accent-amber shadow-[0_0_12px_rgba(161,123,67,0.08)]"
                   : "text-secondary hover:text-primary",
@@ -105,7 +106,7 @@ export function ScriptEditorPane({
               type="button"
               onClick={() => setEditorMode("plain")}
               className={cn(
-                "rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer",
+                "min-h-11 rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
                 editorMode === "plain"
                   ? "bg-primary/8 text-primary"
                   : "text-secondary hover:text-primary",
@@ -113,33 +114,58 @@ export function ScriptEditorPane({
             >
               Plain text
             </button>
+            <button
+              type="button"
+              onClick={() => setEditorMode("speech_plan")}
+              className={cn(
+                "min-h-11 rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
+                editorMode === "speech_plan"
+                  ? "bg-accent-amber/15 text-accent-amber shadow-[0_0_12px_rgba(161,123,67,0.08)]"
+                  : "text-secondary hover:text-primary",
+              )}
+            >
+              Speech Plan
+            </button>
           </div>
           <div className="flex items-center gap-2 text-xs text-secondary/80 font-medium select-none">
             <Sparkles className="h-3.5 w-3.5 text-accent-amber" />
-            Every visible character will be spoken by TTS
+            {editorMode === "speech_plan" ? "Read-only delivery and pause plan" : "Every visible character will be spoken by TTS"}
           </div>
         </div>
 
-        {/* Textarea */}
-        <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4 mac-scrollbar">
-          <textarea
-            ref={ref}
-            value={workbench.script}
-            onChange={(event) => workbench.setScript(event.target.value)}
-            disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
-            spellCheck={false}
-            placeholder="Write the exact narration you want spoken in the final audio."
-            className={cn(
-              "min-h-[480px] w-full resize-none rounded-[20px] border border-outline bg-surface-container-low px-6 py-6 text-primary outline-none transition-all placeholder:text-secondary/30 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40",
-              editorMode === "script"
-                ? "text-[16px] leading-[2.1rem] tracking-[0.01em]"
-                : "text-[14px] leading-[2rem] font-mono",
-            )}
-          />
-        </div>
+        {editorMode === "speech_plan" ? (
+          <div className="min-h-[520px] flex-1 p-4">
+            <SpeechPlanPane
+              plan={workbench.project?.speech_plan ?? null}
+              manifest={workbench.project?.render_manifest ?? null}
+              activeRequestState={workbench.audioRequestState}
+              affectedSegmentIds={workbench.affectedSegmentIds}
+              disabled={workbench.isScriptDeleted || workbench.isSessionDeleted || workbench.isDirty || workbench.generating}
+              stale={workbench.speechPlanStale}
+              onRequestRegeneration={workbench.requestSegmentRegeneration}
+            />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4 mac-scrollbar">
+            <textarea
+              ref={ref}
+              value={workbench.script}
+              onChange={(event) => workbench.setScript(event.target.value)}
+              disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
+              spellCheck={false}
+              placeholder="Write the exact narration you want spoken in the final audio."
+              className={cn(
+                "min-h-[480px] w-full resize-none rounded-[20px] border border-outline bg-surface-container-low px-6 py-6 text-primary outline-none transition-all placeholder:text-secondary/30 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40",
+                editorMode === "script"
+                  ? "text-[16px] leading-[2.1rem] tracking-[0.01em]"
+                  : "text-[14px] leading-[2rem] font-mono",
+              )}
+            />
+          </div>
+        )}
 
         {/* Status bar */}
-        <div className="border-t border-outline px-5 py-3 shrink-0">
+        {editorMode !== "speech_plan" ? <div className="border-t border-outline px-5 py-3 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-secondary/80 font-medium">
             {/* Left: checks + stats + autosave */}
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
@@ -147,7 +173,7 @@ export function ScriptEditorPane({
                 type="button"
                 onClick={() => setIssuesExpanded((expanded) => !expanded)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-bold transition-all cursor-pointer text-[11px]",
+                  "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-1 font-bold transition-all cursor-pointer text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
                   workbench.scriptCheck.blockingCount > 0
                     ? "border-red-500/20 bg-red-500/10 text-red-200 hover:bg-red-500/15"
                     : workbench.scriptCheck.warningCount > 0
@@ -177,7 +203,7 @@ export function ScriptEditorPane({
                   type="button"
                   onClick={workbench.handleOpenCleanupPreview}
                   disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
-                  className="inline-flex items-center gap-1 rounded-xl border border-accent-amber/20 bg-accent-amber/10 px-2.5 py-1 text-[11px] font-bold text-accent-amber hover:bg-accent-amber/15 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-accent-amber/20 bg-accent-amber/10 px-3 py-1 text-[11px] font-bold text-accent-amber hover:bg-accent-amber/15 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <Wand2 className="h-3 w-3" />
                   Clean all
@@ -195,7 +221,7 @@ export function ScriptEditorPane({
                     await workbench.reload();
                   })
                 }
-                className="inline-flex items-center gap-1 rounded-xl border border-outline bg-surface-container-low px-2.5 py-1 text-[11px] font-bold text-secondary hover:text-primary hover:bg-primary/8 hover:border-accent-amber/20 active:scale-[0.98] transition-all cursor-pointer"
+                className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-outline bg-surface-container-low px-3 py-1 text-[11px] font-bold text-secondary hover:text-primary hover:bg-primary/8 hover:border-accent-amber/20 active:scale-[0.98] transition-all cursor-pointer"
               >
                 <RefreshCw className="h-3 w-3" />
                 Refresh
@@ -208,7 +234,7 @@ export function ScriptEditorPane({
                   workbench.isSessionDeleted ||
                   workbench.busyAction === "delete-script"
                 }
-                className="inline-flex items-center gap-1 rounded-xl border border-red-500/10 bg-red-500/5 px-2.5 py-1 text-[11px] font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10 hover:border-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-red-500/10 bg-red-500/5 px-3 py-1 text-[11px] font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10 hover:border-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <Trash2 className="h-3 w-3" />
                 Trash
@@ -241,7 +267,7 @@ export function ScriptEditorPane({
               ) : null}
             </div>
           ) : null}
-        </div>
+        </div> : null}
       </div>
     </section>
   );

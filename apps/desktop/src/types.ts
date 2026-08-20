@@ -117,7 +117,7 @@ export type ArtifactRecord = {
   takes?: AudioTakeRecord[];
   final_take_id?: string;
   voice_settings?: VoiceRenderSettings;
-  voice_reference?: VoiceReferenceLock;
+  speaker_reference?: SpeakerReference | null;
   script_artifacts?: Record<string, ScriptArtifactRecord>;
 };
 
@@ -128,13 +128,15 @@ export type ScriptArtifactRecord = {
   takes?: AudioTakeRecord[];
   final_take_id?: string;
   voice_settings?: VoiceRenderSettings;
-  voice_reference?: VoiceReferenceLock;
+  speaker_reference?: SpeakerReference | null;
 };
 
 export type AudioTakeRecord = {
   take_id: string;
   session_id: string;
   script_id: string;
+  speech_plan_id: string;
+  render_id: string;
   audio_path: string;
   transcript_path: string;
   provider: string;
@@ -155,6 +157,137 @@ export type SessionProject = {
   transcript: TranscriptRecord | null;
   script: ScriptRecord | null;
   artifact: ArtifactRecord | null;
+  speech_plan: SpeechPlan | null;
+  render_manifest: RenderManifest | null;
+};
+
+export type SpeechSourceSpan = {
+  start: number;
+  end: number;
+};
+
+export type SpeechDelivery = {
+  intent: string;
+  emotion: string;
+  energy: number;
+  pace: number;
+};
+
+export type SpeechBreak = {
+  offset: number;
+  duration_ms: number;
+};
+
+export type SpeechEmphasis = {
+  start: number;
+  end: number;
+  level: "light" | "medium" | "strong";
+};
+
+export type SpeechPronunciation = {
+  start: number;
+  end: number;
+  spoken_as: string;
+};
+
+export type SpeechSegment = {
+  segment_id: string;
+  position: number;
+  text: string;
+  text_hash: string;
+  source_span: SpeechSourceSpan;
+  delivery: SpeechDelivery;
+  breaks: SpeechBreak[];
+  emphasis: SpeechEmphasis[];
+  pronunciations: SpeechPronunciation[];
+  pause_after_ms: number;
+  segment_hash: string;
+};
+
+export type SpeechPlan = {
+  schema_version: 1;
+  plan_id: string;
+  version: number;
+  session_id: string;
+  script_id: string;
+  script_hash: string;
+  plan_hash: string;
+  language: string;
+  segments: SpeechSegment[];
+  director_metadata: {
+    prompt_version: string;
+    provider: string;
+    model: string;
+  };
+  created_at: string;
+};
+
+export type RenderPipelineStage = {
+  stage: "speech_synthesis" | "voice_conversion";
+  provider: string;
+  model: string;
+  adapter_version: string;
+};
+
+export type RenderSpeakerReferenceSnapshot = {
+  speaker_reference_id: string;
+  reference_hash: string;
+  audio_path: string;
+  audio_hash: string;
+  reference_text: string;
+  language: string;
+};
+
+export type RenderedSegment = {
+  segment_artifact_id: string;
+  segment_id: string;
+  position: number;
+  text_hash: string;
+  segment_hash: string;
+  audio_path: string;
+  audio_hash: string;
+  duration_ms: number;
+  generated_by_render_id: string;
+  seed: number | null;
+};
+
+export type RenderManifest = {
+  schema_version: 1;
+  render_id: string;
+  session_id: string;
+  script_id: string;
+  script_hash: string;
+  speech_plan: {
+    plan_id: string;
+    version: number;
+    plan_hash: string;
+  };
+  speaker_reference: RenderSpeakerReferenceSnapshot | null;
+  pipeline: RenderPipelineStage[];
+  pipeline_hash: string;
+  parent_render_id: string | null;
+  regeneration: {
+    mode: "context_window";
+    target_segment_id: string;
+    window_segment_ids: string[];
+  } | null;
+  segments: RenderedSegment[];
+  assembly: {
+    audio_format: "wav";
+    sample_rate_hz: number;
+    channels: 1 | 2;
+    sample_width_bits: 16 | 24 | 32;
+    target_rms_dbfs: number;
+    peak_ceiling_dbfs: number;
+    edge_fade_ms: number;
+  };
+  output: {
+    audio_path: string;
+    audio_hash: string;
+    transcript_path: string;
+    duration_ms: number;
+  };
+  created_at: string;
 };
 
 export type Readiness = {
@@ -240,8 +373,9 @@ export type AudioRenderResult = BridgeResultMeta & {
   model: string;
   audio_path: string;
   transcript_path: string;
-  task_id?: string;
-  run_token?: string;
+  task_id: string;
+  run_token: string;
+  affected_segment_ids: string[];
 };
 
 export type VoicePreset = {
@@ -270,47 +404,22 @@ export type VoiceRenderSettings = {
   preview_text?: string;
 };
 
-export type VoiceReferenceLock = {
-  source?: "preview_lock" | "voice_profile";
-  voice_profile_id?: string;
-  name?: string;
-  profile_source?: "built_in" | "user_saved";
-  lock_id: string;
-  audio_path: string;
-  preview_text: string;
-  reference_text?: string;
-  provider: string;
-  model: string;
-  voice_id: string;
-  voice_name?: string;
-  style_id: string;
-  style_name?: string;
-  speed: number;
-  language: string;
-  audio_format: string;
-  created_at: string;
-};
-
-export type VoiceProfileRecord = {
-  voice_profile_id: string;
+export type SpeakerReference = {
+  schema_version: 1;
+  speaker_reference_id: string;
   name: string;
   source: "built_in" | "user_saved";
   audio_path: string;
-  preview_text: string;
-  reference_text: string;
-  provider: string;
-  model: string;
-  voice_id: string;
-  voice_name?: string;
-  style_id: string;
-  style_name?: string;
-  speed: number;
-  language: string;
+  audio_hash: string;
   audio_format: string;
+  duration_ms: number;
+  reference_text: string;
+  language: string;
+  reference_hash: string;
   description?: string;
   created_at: string;
   updated_at: string;
-  last_used_at?: string;
+  last_used_at: string | null;
 };
 
 export type VoicePresetCatalog = BridgeResultMeta & {
@@ -326,14 +435,11 @@ export type VoicePreviewResult = BridgeResultMeta & {
   settings: VoiceRenderSettings;
 };
 
-export type VoiceTakeRenderResult = AudioRenderResult & {
-  take?: AudioTakeRecord;
-};
-
 export type TTSCapability = {
   provider: string;
   runtime: string;
   platform: string;
+  architecture: string;
   mlx_installed: boolean;
   mlx_audio_installed: boolean;
   model_path_configured: boolean;
@@ -343,6 +449,9 @@ export type TTSCapability = {
   model_path: string;
   model_source: string;
   resolved_model: string;
+  model_family: string;
+  model_variant: string;
+  model_type: string;
   fallback_provider: string;
 };
 
@@ -373,16 +482,56 @@ export type TTSProviderConfig = {
   local_ref_audio_path: string;
 };
 
-/** Voicebox-aligned model row from python-core `--list-models-status`. */
+export type TTSModelSupportLevel = "native" | "approximated" | "unsupported";
+
+export type TTSModelCapability = {
+  schema_version: 1;
+  provider: string;
+  model: string;
+  runtime: string;
+  adapter_version: string;
+  platforms: Array<"macos_apple_silicon" | "nvidia_cuda" | "remote_api">;
+  languages: string[];
+  reference_audio_formats: string[];
+  output_audio_formats: string[];
+  capabilities: {
+    speaker_cloning: TTSModelSupportLevel;
+    style_instruction: TTSModelSupportLevel;
+    emotion: TTSModelSupportLevel;
+    energy: TTSModelSupportLevel;
+    pace: TTSModelSupportLevel;
+    emphasis: TTSModelSupportLevel;
+    explicit_breaks: TTSModelSupportLevel;
+    pronunciation: TTSModelSupportLevel;
+    deterministic_seed: TTSModelSupportLevel;
+    text_context: TTSModelSupportLevel;
+    audio_context: TTSModelSupportLevel;
+    voice_conversion: TTSModelSupportLevel;
+  };
+  limits: {
+    max_reference_duration_ms: number | null;
+    max_segment_characters: number | null;
+  };
+};
+
+/** Voice-generation model row from python-core `--list-models-status`. */
 export type ModelStatus = {
   model_name: string;
   display_name: string;
   category: "voice";
   hf_repo_id?: string;
+  family?: string;
+  variant?: string;
+  recommendation?: string;
   downloaded: boolean;
   downloading: boolean;
   size_mb?: number;
   loaded: boolean;
+  active?: boolean;
+  resident?: boolean;
+  available?: boolean;
+  unavailable_reason?: string;
+  capability?: TTSModelCapability;
 };
 
 export type ModelStorageStatus = {

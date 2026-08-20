@@ -1,4 +1,4 @@
-const DEFAULT_HTTP_RUNTIME_BASE_URL = "http://127.0.0.1:8765";
+const DEFAULT_HTTP_RUNTIME_BASE_URL = import.meta.env.VITE_AODCAST_RUNTIME_URL ?? "http://127.0.0.1:8765";
 
 export function resolveAudioFileUrl(path: string): string {
   if (!path) return "";

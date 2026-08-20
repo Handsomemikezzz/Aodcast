@@ -20,11 +20,12 @@ from app.storage.config_store import ConfigStore
 
 
 class ModelsCatalogTests(unittest.TestCase):
-    def test_catalog_voicebox_ids(self) -> None:
+    def test_catalog_contains_default_and_benchmark_model_families(self) -> None:
         names = [e.model_name for e in CATALOG]
+        self.assertIn("voxcpm2-8bit", names)
+        self.assertIn("moss-tts-local-v1.5", names)
         self.assertIn("qwen-tts-1.7B", names)
         self.assertIn("qwen-tts-0.6B", names)
-        self.assertTrue(all(name.startswith("qwen-tts-") for name in names))
 
     def test_list_models_status_returns_all_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -33,9 +34,12 @@ class ModelsCatalogTests(unittest.TestCase):
             config_dir.mkdir()
             store = ConfigStore(config_dir)
             store.bootstrap()
+            save_custom_model_storage_base(store, cwd / "isolated-models")
             rows = build_models_status(store, cwd)
             self.assertEqual(len(rows), len(CATALOG))
             self.assertTrue(all("model_name" in r and "downloaded" in r for r in rows))
+            self.assertTrue(all("capability" in row for row in rows))
+            self.assertTrue(all(row["downloaded"] is False for row in rows))
 
     def test_expected_voice_dir_naming(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,7 +50,7 @@ class ModelsCatalogTests(unittest.TestCase):
     def test_download_voice_model_disables_xet_for_subprocess(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
-            script = cwd / "scripts" / "model-download" / "download_qwen3_tts_mlx.py"
+            script = cwd / "scripts" / "model-download" / "download_tts_model.py"
             script.parent.mkdir(parents=True)
             script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
             captured_env: dict[str, str] = {}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check, ChevronDown, Clock3, Cloud, Cpu, Download, FileAudio, FolderOpen, History, Loader2, Mic, Pause, Play, Settings2, Trash2, Wand2 } from "lucide-react";
 import { cn } from "../../lib/utils";
-import { filterActiveVoiceProfiles, resolveProjectVoiceSettings, selectedVoiceProfileLabel } from "../../lib/voiceSettings";
+import { filterActiveSpeakerReferences, resolveProjectVoiceSettings, selectedSpeakerReferenceLabel } from "../../lib/voiceSettings";
 import { ProgressBar } from "../../components/ProgressBar";
 import { isActiveRequestState } from "../../lib/requestState";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
@@ -10,18 +10,24 @@ import { AudioPlayer } from "../../components/AudioPlayer";
 export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenchResult }) {
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const voiceSettings = resolveProjectVoiceSettings(workbench.project);
-  const selectedProfileLabel = selectedVoiceProfileLabel(workbench.project);
-  const selectedProfileId = workbench.project?.artifact?.voice_reference?.voice_profile_id || "";
-  const profileSource = workbench.project?.artifact?.voice_reference?.profile_source;
-  const profileSourceLabel = profileSource === "built_in" ? "默认音色" : profileSource === "user_saved" ? "我的音色" : "";
-  const activeVoiceProfiles = filterActiveVoiceProfiles(workbench.voiceProfiles);
+  const selectedReferenceLabel = selectedSpeakerReferenceLabel(workbench.project);
+  const selectedReference = workbench.project?.artifact?.speaker_reference;
+  const selectedReferenceId = selectedReference?.speaker_reference_id || "";
+  const referenceSourceLabel = selectedReference?.source === "built_in" ? "默认音色" : selectedReference?.source === "user_saved" ? "我的音色" : "";
+  const activeSpeakerReferences = filterActiveSpeakerReferences(workbench.speakerReferences);
   const activeAudioRequestState = isActiveRequestState(workbench.audioRequestState) ? workbench.audioRequestState : null;
-  const needsVoiceProfile = workbench.selectedEngine === "local_mlx" && (!selectedProfileId || workbench.project?.artifact?.voice_reference?.source !== "voice_profile");
+  const needsSpeakerReference = workbench.selectedEngine === "local_mlx" && !selectedReferenceId;
+  const readyLocalModels = workbench.models.filter((model) => model.downloaded && model.available !== false);
+  const selectedModel = workbench.models.find(
+    (model) => model.hf_repo_id === workbench.selectedModelId || model.model_name === workbench.selectedModelId,
+  );
+  const manifestModel = workbench.project?.render_manifest?.pipeline.find((stage) => stage.stage === "speech_synthesis")?.model || "";
+  const localEngineUnavailable = workbench.generating || readyLocalModels.length === 0 || workbench.isScriptDeleted || workbench.isSessionDeleted;
   const generationDisabled =
     workbench.generating ||
     !workbench.scriptCheck.canRender ||
-    needsVoiceProfile ||
-    (workbench.selectedEngine === "local_mlx" ? workbench.localEngineDisabled : workbench.cloudEngineDisabled);
+    needsSpeakerReference ||
+    (workbench.selectedEngine === "local_mlx" ? localEngineUnavailable || !workbench.selectedModelId : workbench.cloudEngineDisabled);
   const scriptVoiceStudioPath = workbench.project?.script
     ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}`
     : "/voice-studio";
@@ -63,11 +69,11 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-primary truncate">
-                    {selectedProfileLabel || "未选择音色"}
+                    {selectedReferenceLabel || "未选择音色"}
                   </p>
                   <p className="mt-1 text-xs text-secondary/70 truncate">
-                    {selectedProfileLabel
-                      ? `${profileSourceLabel ? `${profileSourceLabel} · ` : ""}${voiceSettings.language || "zh"} · ${workbench.selectedEngine === "local_mlx" ? "Local MLX" : workbench.cloudProvider}`
+                    {selectedReferenceLabel
+                      ? `${referenceSourceLabel ? `${referenceSourceLabel} · ` : ""}${selectedReference?.language || voiceSettings.language || "zh"}`
                       : "选择音色以生成完整音频"}
                   </p>
                 </div>
@@ -76,18 +82,18 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             </button>
             {voiceMenuOpen ? (
               <div className="mt-3 max-h-[260px] overflow-y-auto rounded-2xl border border-outline bg-surface-container-highest backdrop-blur-xl p-2 shadow-lg">
-                {activeVoiceProfiles.length ? (
+                {activeSpeakerReferences.length ? (
                   <div className="space-y-1">
-                    {activeVoiceProfiles.map((profile) => {
-                      const selected = profile.voice_profile_id === selectedProfileId;
-                      const sourceLabel = profile.source === "built_in" ? "默认音色" : "我的音色";
+                    {activeSpeakerReferences.map((reference) => {
+                      const selected = reference.speaker_reference_id === selectedReferenceId;
+                      const sourceLabel = reference.source === "built_in" ? "默认音色" : "我的音色";
                       return (
                         <button
-                          key={profile.voice_profile_id}
+                          key={reference.speaker_reference_id}
                           type="button"
                           onClick={() => {
                             setVoiceMenuOpen(false);
-                            void workbench.handleSelectVoiceProfile(profile.voice_profile_id);
+                            void workbench.handleSelectSpeakerReference(reference.speaker_reference_id);
                           }}
                           className={cn(
                             "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors cursor-pointer",
@@ -95,9 +101,9 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                           )}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-sm">{profile.name}</span>
+                            <span className="block truncate text-sm">{reference.name}</span>
                             <span className="mt-1 block truncate text-[11px] text-secondary/60">
-                              {sourceLabel} · {profile.language || "zh"} · {profile.provider === "local_mlx" ? "Local MLX" : profile.provider}
+                              {sourceLabel} · {reference.language || "zh"} · {Math.max(1, Math.round(reference.duration_ms / 1000))} 秒参考
                             </span>
                           </span>
                           {selected ? <Check className="h-4 w-4 shrink-0 text-accent-amber" /> : null}
@@ -118,13 +124,13 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               <button
                 type="button"
                 onClick={() => workbench.setSelectedEngine("local_mlx")}
-                disabled={workbench.localEngineDisabled}
+                disabled={localEngineUnavailable}
                 className={cn(
                   "rounded-2xl border p-4 text-left transition-all cursor-pointer relative overflow-hidden",
                   workbench.selectedEngine === "local_mlx"
                     ? "border-accent-amber/30 bg-accent-amber/10 shadow-[0_0_16px_rgba(242,191,87,0.06)]"
                     : "border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-outline",
-                  workbench.localEngineDisabled && "cursor-not-allowed opacity-40",
+                  localEngineUnavailable && "cursor-not-allowed opacity-40",
                 )}
               >
                 <div className="flex items-center gap-3">
@@ -136,11 +142,44 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-primary">Local MLX</p>
                     <p className="mt-1 text-xs text-secondary/70 truncate">
-                      {workbench.capability?.available ? "Apple Silicon 专属优化" : "当前设备不可用"}
+                      {readyLocalModels.length ? `${readyLocalModels.length} 个本地模型可用` : "请先下载本地模型"}
                     </p>
                   </div>
                 </div>
               </button>
+
+              {workbench.selectedEngine === "local_mlx" ? (
+                <div className="rounded-2xl border border-outline bg-surface-container-high/45 p-3">
+                  <label htmlFor="script-render-model" className="text-[10px] font-bold uppercase tracking-wider text-secondary/80">
+                    本次完整生成模型
+                  </label>
+                  <select
+                    id="script-render-model"
+                    value={workbench.selectedModelId}
+                    onChange={(event) => workbench.setSelectedModelId(event.target.value)}
+                    disabled={workbench.generating || readyLocalModels.length === 0}
+                    className="mt-2 h-11 w-full rounded-xl border border-outline bg-surface-container px-3 text-sm font-semibold text-primary outline-none focus:border-accent-amber/40 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {!readyLocalModels.length ? <option value="">没有已安装模型</option> : null}
+                    {readyLocalModels.map((model) => {
+                      const modelId = model.hf_repo_id || model.model_name;
+                      return <option key={model.model_name} value={modelId}>{model.display_name}</option>;
+                    })}
+                  </select>
+                  {selectedModel?.capability ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-secondary/75">
+                      <span className="rounded-full border border-outline px-2 py-0.5">克隆 {selectedModel.capability.capabilities.speaker_cloning}</span>
+                      <span className="rounded-full border border-outline px-2 py-0.5">情绪 {selectedModel.capability.capabilities.emotion}</span>
+                      <span className="rounded-full border border-outline px-2 py-0.5">停顿 {selectedModel.capability.capabilities.explicit_breaks}</span>
+                    </div>
+                  ) : null}
+                  {manifestModel ? (
+                    <p className="mt-2 text-[11px] leading-5 text-secondary/70">
+                      当前成品：<span className="font-semibold text-primary">{manifestModel}</span>。模型切换只影响下一次完整生成。
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <button
                 type="button"
@@ -174,7 +213,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
               type="button"
               onClick={workbench.handleGenerateAudio}
               disabled={generationDisabled}
-              title={needsVoiceProfile ? "Choose a voice before generating local MLX audio." : undefined}
+              title={needsSpeakerReference ? "Choose a speaker reference before generating local MLX audio." : undefined}
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent-amber hover:bg-accent-amber/95 active:scale-[0.98] transition-all px-5 text-sm font-bold text-on-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_16px_rgba(242,191,87,0.2)]"
             >
               {workbench.generating ? (
@@ -187,8 +226,8 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             {workbench.scriptCheck.blockingSummary ? (
               <p className="mt-2 text-xs leading-5 text-red-200/90 font-medium pl-1">{workbench.scriptCheck.blockingSummary}</p>
             ) : null}
-            {needsVoiceProfile ? (
-              <p className="mt-2 text-xs leading-5 text-amber-200/80 font-medium pl-1">请先在上方为 Local MLX 选择一个音色。</p>
+            {needsSpeakerReference ? (
+              <p className="mt-2 text-xs leading-5 text-amber-200/80 font-medium pl-1">请先在上方为 Local MLX 选择一个音色参考。</p>
             ) : null}
           </div>
 
@@ -270,18 +309,15 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-primary">{workbench.outputFilename}</p>
                   <p className="mt-1 text-xs text-secondary/70">
-                    {workbench.project?.artifact?.final_take_id && workbench.project.artifact.takes?.length
-                      ? (() => {
-                          const take = workbench.project?.artifact?.takes?.find((item) => item.take_id === workbench.project?.artifact?.final_take_id);
-                          return take ? `${take.voice_name} / ${take.style_name} / ${take.speed.toFixed(1)}x` : "Final Voice Studio take";
-                        })()
+                    {manifestModel
+                      ? `${manifestModel}${selectedReferenceLabel ? ` · ${selectedReferenceLabel}` : ""}`
                       : workbench.selectedEngine === "local_mlx" ? "Local MLX render" : `Cloud render via ${workbench.cloudProvider}`}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => void workbench.handleRevealInFinder()}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.95] transition-all cursor-pointer"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.95] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
                   title="Reveal in Finder"
                 >
                   <FolderOpen className="h-4 w-4" />
@@ -330,7 +366,7 @@ export function ScriptAudioSidebar({ workbench }: { workbench: UseScriptWorkbenc
             <Wand2 className="mb-3 h-8 w-8 text-accent-amber animate-pulse" />
             <p className="text-sm font-semibold text-primary">No audio file yet</p>
             <p className="mt-2 max-w-[280px] text-xs leading-relaxed text-secondary/60">
-              Choose a voice profile, save your latest edits, then generate the final audio from this Script page.
+              Choose a speaker reference and local model, save your latest edits, then generate the final audio.
             </p>
           </div>
         )}

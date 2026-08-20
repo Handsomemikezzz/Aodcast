@@ -13,13 +13,12 @@ import {
   ScriptRecord,
   ScriptRevisionRecord,
   SessionProject,
+  SpeakerReference,
   TTSProviderConfig,
   TTSCapability,
   VoicePresetCatalog,
-  VoiceProfileRecord,
   VoicePreviewResult,
   VoiceRenderSettings,
-  VoiceTakeRenderResult,
 } from "../types";
 
 export type MemorySettingsInput = {
@@ -59,8 +58,19 @@ export type EpisodeSourceInput = {
 export type RenderAudioOptions = {
   providerOverride?: string;
   scriptId?: string;
+  modelId?: string;
   voiceSettings?: VoiceRenderSettings;
-  requireVoiceProfile?: boolean;
+  requireSpeakerReference?: boolean;
+};
+
+export type RegenerateAudioWindowInput = {
+  speechPlanId: string;
+  renderManifestId: string;
+};
+
+export type LongTaskHandle = {
+  taskId: string;
+  runToken: string;
 };
 
 export type DeleteGeneratedAudioOptions = {
@@ -69,40 +79,28 @@ export type DeleteGeneratedAudioOptions = {
 
 export type RenderVoicePreviewOptions = {
   onState?: (state: RequestState) => void;
+  onTaskStarted?: (handle: LongTaskHandle) => void;
   sessionId?: string;
   scriptId?: string;
   providerOverride?: string;
-  voiceProfileId?: string;
+  modelId?: string;
+  speakerReferenceId?: string;
 };
 
-export type LockVoicePreviewInput = {
-  audioPath: string;
-  provider: string;
-  model: string;
-  settings: VoiceRenderSettings;
-};
-
-export type CreateVoiceProfileInput = {
+export type CreateSpeakerReferenceInput = {
   name: string;
-  referenceAudioPath?: string;
-  referenceAudioFile?: Blob;
-  referenceAudioFileName?: string;
-  referenceText?: string;
-  audioPath?: string;
-  provider: string;
-  model: string;
-  language?: string;
-  audioFormat?: string;
-  /** Legacy preview-derived settings kept for compatibility with existing Voice Studio save flow. */
-  settings?: VoiceRenderSettings;
+  referenceText: string;
+  language: string;
+  audioFile: Blob;
+  audioFileName: string;
 };
 
-export type UpdateVoiceProfileInput = {
+export type UpdateSpeakerReferenceInput = {
   name?: string;
   referenceText?: string;
-  referenceAudioFile?: Blob;
-  referenceAudioFileName?: string;
-  audioFormat?: string;
+  language?: string;
+  audioFile?: Blob;
+  audioFileName?: string;
 };
 
 export type DesktopBridgeError = {
@@ -161,6 +159,13 @@ export interface DesktopBridge {
   generateScript(sessionId: string): Promise<GenerationResult>;
   /** Render audio once, optionally overriding the configured TTS provider or targeting a specific script snapshot. */
   renderAudio(sessionId: string, options?: RenderAudioOptions): Promise<AudioRenderResult>;
+  /** Regenerate the target speech segment together with its immediate context window. */
+  regenerateAudioWindow(
+    sessionId: string,
+    scriptId: string,
+    targetSegmentId: string,
+    input: RegenerateAudioWindowInput,
+  ): Promise<AudioRenderResult>;
   /** Delete the generated audio artifact for a session, optionally scoped to a script snapshot. */
   deleteGeneratedAudio(sessionId: string, options?: DeleteGeneratedAudioOptions): Promise<SessionProject>;
   /** Delete a standalone preview/export audio file by artifact path. */
@@ -171,24 +176,16 @@ export interface DesktopBridge {
   listVoicePresets(): Promise<VoicePresetCatalog>;
   /** Render a short preview for quick voice/style/text comparison. */
   renderVoicePreview(settings: VoiceRenderSettings, options?: RenderVoicePreviewOptions): Promise<VoicePreviewResult>;
-  /** List built-in and user-saved reusable voice profiles. */
-  listVoiceProfiles(): Promise<VoiceProfileRecord[]>;
-  /** Save an accepted preview into the reusable voice profile library. */
-  createVoiceProfile(input: CreateVoiceProfileInput): Promise<VoiceProfileRecord>;
-  /** Update a user-saved voice profile name, reference text, and/or sample audio. */
-  updateVoiceProfile(profileId: string, input: UpdateVoiceProfileInput): Promise<VoiceProfileRecord>;
-  /** Delete a user-saved voice profile. */
-  deleteVoiceProfile(profileId: string): Promise<{ voice_profile_id?: string; deleted?: boolean; cleared_voice_references?: number }>;
-  /** Select a reusable profile as the current script's reference voice. */
-  selectVoiceProfile(sessionId: string, scriptId: string, profileId: string): Promise<SessionProject>;
-  /** Legacy: lock an accepted preview as the reference voice for older local MLX/Qwen flows. */
-  lockVoicePreview(sessionId: string, scriptId: string, input: LockVoicePreviewInput): Promise<SessionProject>;
-  /** Legacy: render a candidate take for one script snapshot. Profile-first UI should prefer renderAudio. */
-  renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions): Promise<VoiceTakeRenderResult>;
-  /** Legacy: mark a generated take as the final script audio. */
-  setFinalVoiceTake(sessionId: string, takeId: string): Promise<SessionProject>;
-  /** Legacy: delete a generated Voice Studio take and clear final audio if it was selected. */
-  deleteVoiceTake(sessionId: string, takeId: string): Promise<SessionProject>;
+  /** List built-in and user-saved provider-neutral speaker references. */
+  listSpeakerReferences(): Promise<SpeakerReference[]>;
+  /** Create one reusable speaker reference with its audio sample in a single upload. */
+  createSpeakerReference(input: CreateSpeakerReferenceInput): Promise<SpeakerReference>;
+  /** Update a user-saved speaker reference and optionally replace its sample. */
+  updateSpeakerReference(referenceId: string, input: UpdateSpeakerReferenceInput): Promise<SpeakerReference>;
+  /** Delete a user-saved speaker reference. */
+  deleteSpeakerReference(referenceId: string): Promise<{ speaker_reference_id?: string; deleted?: boolean }>;
+  /** Select a reusable speaker reference for the current script. */
+  selectSpeakerReference(sessionId: string, scriptId: string, referenceId: string): Promise<SessionProject>;
   /** Resolve the most recent script snapshot for a session-level navigation entry point. */
   showLatestScript(sessionId: string): Promise<SessionProject>;
   /** Load a specific script snapshot workspace. */
@@ -224,7 +221,7 @@ export interface DesktopBridge {
   /** Poll the latest persisted request state for a long-running task. */
   showTaskState(taskId: string): Promise<RequestState | null>;
   /** Request cooperative cancellation for a long-running task. */
-  cancelTask(taskId: string): Promise<RequestState | null>;
+  cancelTask(taskId: string, runToken: string): Promise<RequestState | null>;
   /** Read long-term memory settings plus background worker status. */
   getMemoryOverview(): Promise<MemoryOverview>;
   /** Toggle global memory writing and/or usage. */

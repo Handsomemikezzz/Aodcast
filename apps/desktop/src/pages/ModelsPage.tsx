@@ -56,30 +56,42 @@ type Notice = {
   actionModelName?: string;
 };
 
-const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
+const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-8bit";
 
 function resolvedTtsModel(config: TTSProviderConfig | null): string {
   const raw = config?.model?.trim() ?? "";
-  if (!raw || raw === "mock-voice") return DEFAULT_QWEN3_TTS_MODEL;
+  if (!raw || raw === "mock-voice") return DEFAULT_LOCAL_TTS_MODEL;
   return raw;
 }
 
-function modelRecommendation(modelName: string): { badge: string; description: string } {
-  if (modelName === "qwen-tts-0.6B") {
+function modelRecommendation(model: ModelStatus): { badge: string; description: string } {
+  if (model.family === "voxcpm2") {
     return {
-      badge: "Recommended default",
-      description: "Faster previews and lower memory use; best first local voice model.",
+      badge: "Clone + expression",
+      description: model.recommendation || "Recommended for controllable cloned-voice podcasts.",
     };
   }
-  if (modelName === "qwen-tts-1.7B") {
+  if (model.family === "moss_tts") {
     return {
-      badge: "Higher quality",
-      description: "Better for final exports; expect slower generation and higher memory use.",
+      badge: "Long-form benchmark",
+      description: model.recommendation || "Long-form model with explicit pause support.",
+    };
+  }
+  if (model.model_name === "qwen-tts-0.6B") {
+    return {
+      badge: "Fast baseline",
+      description: model.recommendation || "Lower-memory voice-cloning baseline without style instruction.",
+    };
+  }
+  if (model.model_name === "qwen-tts-1.7B") {
+    return {
+      badge: "Quality baseline",
+      description: model.recommendation || "Higher-quality voice-cloning baseline without style instruction.",
     };
   }
   return {
     badge: "Voice model",
-    description: "Local TTS model for voice preview and final audio generation.",
+    description: model.recommendation || "Local TTS model for voice preview and final audio generation.",
   };
 }
 
@@ -205,8 +217,13 @@ export function ModelsPage() {
   const handleCancelDownload = async () => {
     if (!busyDownloadName) return;
     const taskId = `download_model:${busyDownloadName}`;
+    const runToken = requestState?.run_token;
+    if (!runToken) {
+      setError("The active download is missing its run token. Refresh Models before cancelling.");
+      return;
+    }
     try {
-      const state = await bridge.cancelTask(taskId);
+      const state = await bridge.cancelTask(taskId, runToken);
       setRequestState(state ?? buildRequestState("download_model", "cancelling", "Cancellation requested."));
     } catch (e) {
       const message = getErrorMessage(e, "Failed to request cancellation");
@@ -450,7 +467,7 @@ export function ModelsPage() {
                           && resolvedTtsModel(ttsConfig) === m.hf_repo_id,
                       );
                     const rowState = busyDownloadName === m.model_name ? activeDownloadState : null;
-                    const recommendation = modelRecommendation(m.model_name);
+                    const recommendation = modelRecommendation(m);
                     return (
                       <div key={m.model_name} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-container-high/40 transition-colors group">
                         <div className="shrink-0">

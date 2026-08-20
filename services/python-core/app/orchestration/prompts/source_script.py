@@ -33,7 +33,9 @@ _SOURCE_OUTPUT_CONTRACT = PromptSection(
     content=(
         "Every character you output will be sent directly to text-to-speech. Return only the spoken narration. "
         "Do not include a title, headings, bullets, Markdown, speaker labels, stage directions, sound cues, emojis, "
-        "preambles, or production notes. Use natural paragraphs separated by a blank line."
+        "preambles, or production notes. Use natural paragraphs separated by a blank line. Vary sentence length and "
+        "place punctuation where a skilled podcast host should breathe. Keep the narration clean and organized: do not "
+        "manufacture filler words, hesitation, repetition, or stutters to simulate naturalness."
     ),
     cache_policy=CachePolicy.STABLE,
     required=True,

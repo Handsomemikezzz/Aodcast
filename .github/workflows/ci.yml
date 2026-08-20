@@ -57,6 +57,10 @@ jobs:
         working-directory: apps/desktop
         run: pnpm check
 
+      - name: Desktop tests
+        working-directory: apps/desktop
+        run: pnpm test
+
       - name: Desktop web build
         working-directory: apps/desktop
         run: pnpm build:web

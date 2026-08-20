@@ -647,7 +647,7 @@ export function SettingsPage() {
                     <div className="absolute top-0 right-0 w-32 h-32 bg-accent-amber/5 blur-2xl rounded-full" />
                     <p className="text-xs font-semibold text-accent-amber">Local Voice Model Engine</p>
                     <p className="text-xs leading-relaxed text-secondary">
-                      Download Qwen TTS models, manage storage capacity, and configure voice profile takes via the dedicated Models Center.
+                      Download VoxCPM2, MOSS, or Qwen baseline models and manage local model storage in the dedicated Models Center.
                     </p>
                     <button
                       type="button"

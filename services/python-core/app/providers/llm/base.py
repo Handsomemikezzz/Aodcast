@@ -28,6 +28,22 @@ class ScriptGenerationResponse:
 
 
 @dataclass(frozen=True, slots=True)
+class SpeechPlanGenerationRequest:
+    session_id: str
+    script_id: str
+    script_text: str
+    segments: list[dict[str, Any]]
+    prompt_plan: "PromptPlan"
+
+
+@dataclass(frozen=True, slots=True)
+class SpeechPlanGenerationResponse:
+    directives: list[dict[str, Any]]
+    provider_name: str
+    model_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class InterviewQuestionRequest:
     session_id: str
     topic: str
@@ -150,6 +166,9 @@ class MemoryActionResponse:
 class LLMProvider(Protocol):
     def generate_script(self, request: ScriptGenerationRequest) -> ScriptGenerationResponse:
         """Generate a script draft from interview transcript text."""
+
+    def generate_speech_plan(self, request: SpeechPlanGenerationRequest) -> SpeechPlanGenerationResponse:
+        """Plan delivery controls without changing the supplied script text."""
 
     def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:
         """Produce the next interview follow-up question transcript context as a stream of chunks."""

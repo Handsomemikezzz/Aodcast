@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/render-manifest.schema.json",
+  "title": "RenderManifest",
+  "description": "The complete provider-neutral lineage of one assembled podcast render.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "render_id",
+    "session_id",
+    "script_id",
+    "script_hash",
+    "speech_plan",
+    "speaker_reference",
+    "pipeline",
+    "pipeline_hash",
+    "parent_render_id",
+    "regeneration",
+    "segments",
+    "assembly",
+    "output",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "render_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "script_id": { "type": "string", "minLength": 1 },
+    "script_hash": { "$ref": "#/$defs/sha256" },
+    "speech_plan": { "$ref": "#/$defs/speechPlanReference" },
+    "speaker_reference": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/speakerReferenceSnapshot" }
+      ]
+    },
+    "pipeline": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/pipelineStage" }
+    },
+    "pipeline_hash": { "$ref": "#/$defs/sha256" },
+    "parent_render_id": { "type": ["string", "null"] },
+    "regeneration": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/regeneration" }
+      ]
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/segmentArtifact" }
+    },
+    "assembly": { "$ref": "#/$defs/assembly" },
+    "output": { "$ref": "#/$defs/output" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "speechPlanReference": {
+      "type": "object",
+      "required": ["plan_id", "version", "plan_hash"],
+      "properties": {
+        "plan_id": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 },
+        "plan_hash": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "speakerReferenceSnapshot": {
+      "type": "object",
+      "required": [
+        "speaker_reference_id",
+        "reference_hash",
+        "audio_path",
+        "audio_hash",
+        "reference_text",
+        "language"
+      ],
+      "properties": {
+        "speaker_reference_id": { "type": "string", "minLength": 1 },
+        "reference_hash": { "$ref": "#/$defs/sha256" },
+        "audio_path": { "type": "string", "minLength": 1 },
+        "audio_hash": { "$ref": "#/$defs/sha256" },
+        "reference_text": { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "pipelineStage": {
+      "type": "object",
+      "required": ["stage", "provider", "model", "adapter_version"],
+      "properties": {
+        "stage": { "type": "string", "enum": ["speech_synthesis", "voice_conversion"] },
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "adapter_version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "regeneration": {
+      "type": "object",
+      "required": ["mode", "target_segment_id", "window_segment_ids"],
+      "properties": {
+        "mode": { "const": "context_window" },
+        "target_segment_id": { "type": "string", "minLength": 1 },
+        "window_segment_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "segmentArtifact": {
+      "type": "object",
+      "required": [
+        "segment_artifact_id",
+        "segment_id",
+        "position",
+        "text_hash",
+        "segment_hash",
+        "audio_path",
+        "audio_hash",
+        "duration_ms",
+        "generated_by_render_id",
+        "seed"
+      ],
+      "properties": {
+        "segment_artifact_id": { "type": "string", "minLength": 1 },
+        "segment_id": { "type": "string", "minLength": 1 },
+        "position": { "type": "integer", "minimum": 0 },
+        "text_hash": { "$ref": "#/$defs/sha256" },
+        "segment_hash": { "$ref": "#/$defs/sha256" },
+        "audio_path": { "type": "string", "minLength": 1 },
+        "audio_hash": { "$ref": "#/$defs/sha256" },
+        "duration_ms": { "type": "integer", "minimum": 1 },
+        "generated_by_render_id": { "type": "string", "minLength": 1 },
+        "seed": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "assembly": {
+      "type": "object",
+      "required": [
+        "audio_format",
+        "sample_rate_hz",
+        "channels",
+        "sample_width_bits",
+        "target_rms_dbfs",
+        "peak_ceiling_dbfs",
+        "edge_fade_ms"
+      ],
+      "properties": {
+        "audio_format": { "const": "wav" },
+        "sample_rate_hz": { "type": "integer", "minimum": 8000 },
+        "channels": { "type": "integer", "enum": [1, 2] },
+        "sample_width_bits": { "type": "integer", "enum": [16, 24, 32] },
+        "target_rms_dbfs": {
+          "description": "Target program RMS level in dBFS, measured from audible segment samples before planned silence is inserted.",
+          "type": "number",
+          "minimum": -70,
+          "maximum": 0
+        },
+        "peak_ceiling_dbfs": {
+          "description": "Sample-peak ceiling in dBFS applied to the assembled master.",
+          "type": "number",
+          "minimum": -20,
+          "maximum": 0
+        },
+        "edge_fade_ms": {
+          "description": "Fade-in and fade-out duration applied once to each rendered speech segment.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["audio_path", "audio_hash", "transcript_path", "duration_ms"],
+      "properties": {
+        "audio_path": { "type": "string", "minLength": 1 },
+        "audio_hash": { "$ref": "#/$defs/sha256" },
+        "transcript_path": { "type": "string", "minLength": 1 },
+        "duration_ms": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

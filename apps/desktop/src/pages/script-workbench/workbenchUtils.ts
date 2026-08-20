@@ -1,8 +1,21 @@
+import type { SpeechSegment } from "../../types";
+
 export type EditorTransform = {
   nextValue: string;
   selectionStart: number;
   selectionEnd: number;
 };
+
+export function contextWindowSegmentIds(
+  segments: Pick<SpeechSegment, "segment_id">[],
+  targetSegmentId: string,
+): string[] {
+  const targetIndex = segments.findIndex((segment) => segment.segment_id === targetSegmentId);
+  if (targetIndex < 0) return [];
+  return segments
+    .slice(Math.max(0, targetIndex - 1), Math.min(segments.length, targetIndex + 2))
+    .map((segment) => segment.segment_id);
+}
 
 export function estimateWordCount(text: string): number {
   const normalized = text.trim();

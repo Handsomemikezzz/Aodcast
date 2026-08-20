@@ -17,7 +17,7 @@ Design references: §7 of the dynamic prompt design document.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from app.orchestration.prompts.registry import (
@@ -150,6 +150,19 @@ _SECTION_REASONING_SHAPE = PromptSection(
         "3. What concrete example or detail makes it real.\n"
         "4. What tension, conflict, or tradeoff gives this topic depth.\n"
         "5. What should the listener ultimately take away."
+    ),
+    cache_policy=CachePolicy.STABLE,
+    required=True,
+)
+
+_SECTION_SPOKEN_RHYTHM = PromptSection(
+    section_id="script.spoken_rhythm",
+    content=(
+        "Spoken rhythm: write like a skilled solo podcast host, not like casual chat and not like formal prose. "
+        "Vary sentence length, place punctuation where a human should breathe, and use blank-line paragraph changes "
+        "for larger semantic pauses. Keep language clean and organized. Do not manufacture filler words, hesitation, "
+        "repetition, stutters, or stage directions to simulate naturalness. The later Speech Director controls delivery; "
+        "this script must remain plain spoken text."
     ),
     cache_policy=CachePolicy.STABLE,
     required=True,
@@ -417,7 +430,7 @@ def build_script_prompt_plan(
     - Long transcript: send EpisodeBrief + recent user turns.
 
     Section ordering (cache-friendly stable prefix):
-    System: core_task → output_contract → reasoning_shape → tone.*
+    System: core_task → output_contract → reasoning_shape → spoken_rhythm → tone.*
     User:   episode_context → [memory_context] → [brief | transcript] → final_request
     """
     omitted: list[dict[str, str]] = []
@@ -427,6 +440,7 @@ def build_script_prompt_plan(
         _SECTION_CORE_TASK,
         _SECTION_OUTPUT_CONTRACT,
         _SECTION_REASONING_SHAPE,
+        _SECTION_SPOKEN_RHYTHM,
     ]
 
     # Tone section — derived per session, stable during a script generation session.

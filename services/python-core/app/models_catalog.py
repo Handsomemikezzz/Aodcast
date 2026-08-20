@@ -15,7 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.providers.tts_local_mlx.capabilities import capability_contract_for_model
+from app.providers.tts_local_mlx.model_spec import resolve_model_spec
 from app.runtime.task_cancellation import TaskCancellationRequested
+from app.domain.tts_config import TTSProviderConfig
 from app.storage.config_store import ConfigStore
 
 
@@ -26,27 +29,86 @@ class CatalogEntry:
     category: str  # "voice"
     size_mb: float
     hf_repo_id: str | None
+    family: str
+    variant: str
+    recommendation: str
 
 
 CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
+        "voxcpm2-8bit",
+        "VoxCPM2 8-bit",
+        "voice",
+        3.23 * 1024,
+        "mlx-community/VoxCPM2-8bit",
+        "voxcpm2",
+        "voxcpm2",
+        "Recommended default for controllable cloned-voice podcasts.",
+    ),
+    CatalogEntry(
+        "voxcpm2-4bit",
+        "VoxCPM2 4-bit",
+        "voice",
+        2.30 * 1024,
+        "mlx-community/VoxCPM2-4bit",
+        "voxcpm2",
+        "voxcpm2",
+        "Lower-memory VoxCPM2 option; compare quality before final export.",
+    ),
+    CatalogEntry(
+        "moss-tts-local-v1.5",
+        "MOSS-TTS Local Transformer v1.5",
+        "voice",
+        8.0 * 1024,
+        "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5",
+        "moss_tts",
+        "local",
+        "Long-form and explicit-pause benchmark for high-memory Macs.",
+    ),
+    CatalogEntry(
         "qwen-tts-1.7B",
         "Qwen TTS 1.7B",
         "voice",
-        4.23 * 1024,
+        4.5 * 1024,
         "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
+        "qwen3_tts",
+        "base",
+        "Higher-quality voice-cloning baseline without style instruction.",
     ),
     CatalogEntry(
         "qwen-tts-0.6B",
         "Qwen TTS 0.6B",
         "voice",
-        4.23 * 1024,
+        1.5 * 1024,
         "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+        "qwen3_tts",
+        "base",
+        "Fast, lower-memory voice-cloning baseline.",
     ),
 )
 
 _BY_NAME: dict[str, CatalogEntry] = {e.model_name: e for e in CATALOG}
 DOWNLOAD_STALL_TIMEOUT_SECONDS = 180.0
+
+
+def resolve_voice_model_id(model_id: str) -> str:
+    cleaned = model_id.strip()
+    entry = _BY_NAME.get(cleaned)
+    if entry is not None and entry.hf_repo_id:
+        return entry.hf_repo_id
+    if any(entry.hf_repo_id == cleaned for entry in CATALOG):
+        return cleaned
+    raise ValueError(f"Unknown local TTS model '{model_id}'.")
+
+
+def voice_model_is_downloaded(cwd: Path, model_id: str, config_store: ConfigStore) -> bool:
+    repo_id = resolve_voice_model_id(model_id)
+    model_dir = expected_voice_model_dir(cwd, repo_id, config_store)
+    return (
+        model_dir.is_dir()
+        and (model_dir / "config.json").is_file()
+        and any(model_dir.glob("*.safetensors"))
+    )
 
 
 def _storage_config_file(config_store: ConfigStore) -> Path:
@@ -151,15 +213,6 @@ def expected_voice_model_dir(cwd: Path, hf_repo_id: str, config_store: ConfigSto
     return _default_download_base(cwd, config_store) / tail
 
 
-def _path_matches_qwen_variant(model_name: str, path_str: str) -> bool:
-    low = path_str.lower()
-    if model_name == "qwen-tts-0.6B":
-        return "0.6" in low or "0_6" in low
-    if model_name == "qwen-tts-1.7B":
-        return "1.7" in low or "1_7" in low
-    return False
-
-
 def _voice_active(entry: CatalogEntry, cap_d: dict[str, object]) -> bool:
     if not entry.hf_repo_id:
         return False
@@ -169,35 +222,47 @@ def _voice_active(entry: CatalogEntry, cap_d: dict[str, object]) -> bool:
     if cap_d.get("model_source") == "huggingface_repo" and resolved == repo:
         return True
     if cap_d.get("model_source") == "local_path" and model_path and bool(cap_d.get("model_path_exists")):
-        return _path_matches_qwen_variant(entry.model_name, model_path) or (
-            entry.hf_repo_id.split("/")[-1] in model_path.replace("\\", "/")
-        )
+        try:
+            configured = resolve_model_spec(model_path)
+            expected = resolve_model_spec(entry.hf_repo_id)
+        except ValueError:
+            return False
+        return configured.family == expected.family and configured.variant == expected.variant
     return False
+
+
+def _model_capability(entry: CatalogEntry) -> dict[str, object]:
+    assert entry.hf_repo_id is not None
+    spec = resolve_model_spec(entry.hf_repo_id)
+    return capability_contract_for_model(entry.hf_repo_id, spec).to_dict()
 
 
 def build_models_status(config_store: ConfigStore, cwd: Path) -> list[dict[str, object]]:
     tts_config = config_store.load_tts_config()
     cap = detect_local_mlx_capability(tts_config)
     cap_d = cap.to_dict()
-    resolved = str(cap_d.get("resolved_model") or "").rstrip("/")
-    model_path = str(cap_d.get("model_path") or "")
-    path_exists = bool(cap_d.get("model_path_exists"))
-    available = bool(cap_d.get("available"))
-
     out: list[dict[str, object]] = []
     for entry in CATALOG:
         downloaded = False
         loaded = False
+        active = False
+        available = False
+        unavailable_reason = ""
         if entry.category == "voice" and entry.hf_repo_id:
+            entry_config = TTSProviderConfig.from_dict(tts_config.to_dict())
+            entry_config.provider = "local_mlx"
+            entry_config.model = entry.hf_repo_id
+            entry_config.local_model_path = ""
+            entry_capability = detect_local_mlx_capability(entry_config).to_dict()
+            available = bool(entry_capability.get("available"))
+            unavailable_reason = " ".join(str(item) for item in entry_capability.get("reasons", []))
             expected_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
-            on_disk = expected_dir.is_dir() and any(expected_dir.glob("*.safetensors"))
-            repo = entry.hf_repo_id.rstrip("/")
-            hf_resolved = resolved == repo
-            path_match = path_exists and model_path and (
-                _path_matches_qwen_variant(entry.model_name, model_path)
-                or (entry.hf_repo_id.split("/")[-1] in model_path.replace("\\", "/"))
+            on_disk = (
+                expected_dir.is_dir()
+                and (expected_dir / "config.json").is_file()
+                and any(expected_dir.glob("*.safetensors"))
             )
-            downloaded = on_disk or hf_resolved or path_match
+            downloaded = bool(on_disk)
             active = _voice_active(entry, cap_d)
             loaded = bool(downloaded and available and active)
         out.append(
@@ -206,10 +271,18 @@ def build_models_status(config_store: ConfigStore, cwd: Path) -> list[dict[str, 
                 "display_name": entry.display_name,
                 "category": entry.category,
                 "hf_repo_id": entry.hf_repo_id,
+                "family": entry.family,
+                "variant": entry.variant,
+                "recommendation": entry.recommendation,
                 "downloaded": downloaded,
                 "downloading": False,
                 "size_mb": entry.size_mb,
                 "loaded": loaded,
+                "active": active,
+                "resident": False,
+                "available": available,
+                "unavailable_reason": unavailable_reason,
+                "capability": _model_capability(entry),
             }
         )
     return out
@@ -226,7 +299,7 @@ def download_voice_model(
     entry = _BY_NAME.get(model_name)
     if entry is None or entry.category != "voice" or not entry.hf_repo_id:
         raise ValueError(f"Unknown or non-downloadable model: {model_name}")
-    script = cwd / "scripts" / "model-download" / "download_qwen3_tts_mlx.py"
+    script = cwd / "scripts" / "model-download" / "download_tts_model.py"
     if not script.is_file():
         raise FileNotFoundError(f"Download script not found: {script}")
     base = _default_download_base(cwd, config_store)

@@ -85,6 +85,60 @@ class RequestStateStoreTests(unittest.TestCase):
         self.assertEqual([], failures)
         self.assertIsNotNone(self.store.load(task_id))
 
+    def test_stale_tokenized_state_and_cancel_marker_mutations_are_rejected(self) -> None:
+        task_id = "render_audio:token-race"
+        self.store.start_run(
+            task_id,
+            {
+                "operation": "render_audio",
+                "phase": "running",
+                "progress_percent": 5.0,
+                "message": "old",
+                "run_token": "run-old",
+            },
+        )
+        self.store.start_run(
+            task_id,
+            {
+                "operation": "render_audio",
+                "phase": "running",
+                "progress_percent": 7.0,
+                "message": "new",
+                "run_token": "run-new",
+            },
+        )
+
+        self.store.save(
+            task_id,
+            {
+                "operation": "render_audio",
+                "phase": "cancelling",
+                "progress_percent": 80.0,
+                "message": "late old cancel",
+                "run_token": "run-old",
+            },
+        )
+        state = self.store.load(task_id)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["run_token"], "run-new")
+        self.assertEqual(state["phase"], "running")
+
+        with self.assertRaisesRegex(ValueError, "stale_task_run"):
+            self.store.request_cancel(task_id, run_token="run-old")
+        with self.assertRaisesRegex(ValueError, "stale_task_run"):
+            self.store.request_cancel(task_id)
+
+        self.store.request_cancel(task_id, run_token="run-new")
+        self.assertFalse(self.store.clear_cancel_request(task_id))
+        self.assertFalse(
+            self.store.clear_cancel_request(task_id, run_token="run-old")
+        )
+        self.assertTrue(self.store.is_cancel_requested(task_id, run_token="run-new"))
+        self.assertTrue(
+            self.store.clear_cancel_request(task_id, run_token="run-new")
+        )
+        self.assertFalse(self.store.is_cancel_requested(task_id, run_token="run-new"))
+
     def test_safe_task_file_name_keeps_similarly_normalized_tasks_separate(self) -> None:
         task_id_one = "render_audio:" + ("a" * 260) + "-one"
         task_id_two = "render_audio:" + ("a" * 260) + "-two"

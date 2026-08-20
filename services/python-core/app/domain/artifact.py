@@ -12,6 +12,8 @@ class AudioTakeRecord:
     take_id: str
     session_id: str
     script_id: str = ""
+    speech_plan_id: str = ""
+    render_id: str = ""
     audio_path: str = ""
     transcript_path: str = ""
     provider: str = ""
@@ -30,6 +32,8 @@ class AudioTakeRecord:
             "take_id": self.take_id,
             "session_id": self.session_id,
             "script_id": self.script_id,
+            "speech_plan_id": self.speech_plan_id,
+            "render_id": self.render_id,
             "audio_path": self.audio_path,
             "transcript_path": self.transcript_path,
             "provider": self.provider,
@@ -50,6 +54,8 @@ class AudioTakeRecord:
             take_id=str(payload["take_id"]),
             session_id=str(payload["session_id"]),
             script_id=str(payload.get("script_id", "")),
+            speech_plan_id=str(payload["speech_plan_id"]),
+            render_id=str(payload["render_id"]),
             audio_path=str(payload.get("audio_path", "")),
             transcript_path=str(payload.get("transcript_path", "")),
             provider=str(payload.get("provider", "")),
@@ -75,7 +81,7 @@ class ArtifactRecord:
     takes: list[AudioTakeRecord] = field(default_factory=list)
     final_take_id: str = ""
     voice_settings: dict[str, Any] = field(default_factory=dict)
-    voice_reference: dict[str, Any] = field(default_factory=dict)
+    speaker_reference: dict[str, Any] | None = None
     script_artifacts: dict[str, dict[str, Any]] = field(default_factory=dict)
     active_script_id: str = field(default="", repr=False, compare=False)
 
@@ -92,7 +98,7 @@ class ArtifactRecord:
             "takes": [take.to_dict() for take in self.takes],
             "final_take_id": self.final_take_id,
             "voice_settings": dict(self.voice_settings),
-            "voice_reference": dict(self.voice_reference),
+            "speaker_reference": dict(self.speaker_reference) if self.speaker_reference else None,
             "script_artifacts": script_artifacts,
         }
 
@@ -118,7 +124,11 @@ class ArtifactRecord:
             takes=takes,
             final_take_id=str(payload.get("final_take_id", "")),
             voice_settings=dict(payload.get("voice_settings", {}) if isinstance(payload.get("voice_settings"), dict) else {}),
-            voice_reference=dict(payload.get("voice_reference", {}) if isinstance(payload.get("voice_reference"), dict) else {}),
+            speaker_reference=(
+                dict(payload["speaker_reference"])
+                if isinstance(payload.get("speaker_reference"), dict) and payload.get("speaker_reference")
+                else None
+            ),
             script_artifacts=script_artifacts,
         )
 
@@ -154,7 +164,7 @@ class ArtifactRecord:
             "takes": [take.to_dict() for take in self.takes],
             "final_take_id": self.final_take_id,
             "voice_settings": dict(self.voice_settings),
-            "voice_reference": dict(self.voice_reference),
+            "speaker_reference": dict(self.speaker_reference) if self.speaker_reference else None,
         }
 
     def _apply_script_payload(self, payload: dict[str, Any]) -> None:
@@ -169,10 +179,10 @@ class ArtifactRecord:
             if isinstance(normalized.get("voice_settings"), dict)
             else {}
         )
-        self.voice_reference = dict(
-            normalized.get("voice_reference", {})
-            if isinstance(normalized.get("voice_reference"), dict)
-            else {}
+        self.speaker_reference = (
+            dict(normalized["speaker_reference"])
+            if isinstance(normalized.get("speaker_reference"), dict) and normalized.get("speaker_reference")
+            else None
         )
 
 
@@ -195,5 +205,9 @@ def _normalize_script_artifact_payload(payload: dict[str, Any]) -> dict[str, Any
         ],
         "final_take_id": str(payload.get("final_take_id", "")),
         "voice_settings": dict(payload.get("voice_settings", {}) if isinstance(payload.get("voice_settings"), dict) else {}),
-        "voice_reference": dict(payload.get("voice_reference", {}) if isinstance(payload.get("voice_reference"), dict) else {}),
+        "speaker_reference": (
+            dict(payload["speaker_reference"])
+            if isinstance(payload.get("speaker_reference"), dict) and payload.get("speaker_reference")
+            else None
+        ),
     }

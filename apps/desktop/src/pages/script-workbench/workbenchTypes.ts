@@ -5,4 +5,5 @@ export type PendingDialogState =
   | { kind: "rollback"; revisionId: string }
   | { kind: "unsaved" }
   | { kind: "cleanup-preview"; preview: CleanupPreview }
+  | { kind: "regenerate-window"; targetSegmentId: string; windowSegmentIds: string[] }
   | null;

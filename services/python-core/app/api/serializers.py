@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.domain.memory import MemoryEntry
 from app.domain.project import SessionProject
-from app.orchestration.audio_rendering import AudioRenderResult, VoiceRenderSettings, VoiceTakeRenderResult
+from app.orchestration.audio_rendering import AudioRenderResult, VoiceRenderSettings
 from app.orchestration.interview_service import InterviewTurnResult
 from app.orchestration.script_generation import ScriptGenerationResult, build_generation_context
 
@@ -14,6 +14,8 @@ def serialize_project(project: SessionProject) -> dict[str, object]:
         "transcript": project.transcript.to_dict() if project.transcript else None,
         "script": project.script.to_dict() if project.script else None,
         "artifact": project.artifact.to_dict() if project.artifact else None,
+        "speech_plan": project.speech_plan.to_dict() if project.speech_plan else None,
+        "render_manifest": project.render_manifest.to_dict() if project.render_manifest else None,
     }
 
 
@@ -82,17 +84,6 @@ def serialize_generation_result(result: ScriptGenerationResult) -> dict[str, obj
     return payload
 
 
-def serialize_voice_take_result(result: VoiceTakeRenderResult) -> dict[str, object]:
-    return {
-        "project": serialize_project(result.project),
-        "provider": result.provider,
-        "model": result.model,
-        "audio_path": result.audio_path,
-        "transcript_path": result.transcript_path,
-        "take": result.take.to_dict(),
-    }
-
-
 def serialize_audio_result(result: AudioRenderResult) -> dict[str, object]:
     return {
         "project": serialize_project(result.project),
@@ -100,6 +91,7 @@ def serialize_audio_result(result: AudioRenderResult) -> dict[str, object]:
         "model": result.model,
         "audio_path": result.audio_path,
         "transcript_path": result.transcript_path,
+        "affected_segment_ids": list(result.affected_segment_ids),
     }
 
 

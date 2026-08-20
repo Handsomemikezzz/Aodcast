@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import {
   resolveProjectVoiceSettings,
-  selectedVoiceProfileLabel,
+  selectedSpeakerReferenceLabel,
 } from "../../lib/voiceSettings";
 import { ProgressBar } from "../../components/ProgressBar";
 import { AudioPlayer } from "../../components/AudioPlayer";
@@ -39,16 +39,15 @@ export function VoiceAudioPanel({
   audioSectionRef?: React.RefObject<HTMLDivElement>;
 }) {
   const voiceSettings = resolveProjectVoiceSettings(workbench.project);
-  const selectedProfileLabel = selectedVoiceProfileLabel(workbench.project);
-  const selectedProfileId = workbench.project?.artifact?.voice_reference?.voice_profile_id || "";
+  const selectedReferenceLabel = selectedSpeakerReferenceLabel(workbench.project);
+  const selectedReferenceId = workbench.project?.artifact?.speaker_reference?.speaker_reference_id || "";
   const activeAudioRequestState = isActiveRequestState(workbench.audioRequestState)
     ? workbench.audioRequestState
     : null;
 
-  const needsVoiceProfile =
+  const needsSpeakerReference =
     workbench.selectedEngine === "local_mlx" &&
-    (!selectedProfileId ||
-      workbench.project?.artifact?.voice_reference?.source !== "voice_profile");
+    !selectedReferenceId;
 
   const studioReturnPath = workbench.project?.script
     ? `/studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}`
@@ -57,6 +56,13 @@ export function VoiceAudioPanel({
     ? `/voice-studio/${workbench.project.session.session_id}/${workbench.project.script.script_id}?returnTo=${encodeURIComponent(studioReturnPath)}`
     : "/voice-studio";
   const hasAudio = Boolean(workbench.audioSrc);
+  const readyLocalModels = workbench.models.filter((model) => model.downloaded && model.available !== false);
+  const selectedModel = workbench.models.find(
+    (model) => model.hf_repo_id === workbench.selectedModelId || model.model_name === workbench.selectedModelId,
+  );
+  const manifestModel = workbench.project?.render_manifest?.pipeline.find(
+    (stage) => stage.stage === "speech_synthesis",
+  )?.model;
 
   return (
     <div className="flex flex-col h-full w-full overflow-y-auto mac-scrollbar">
@@ -77,7 +83,7 @@ export function VoiceAudioPanel({
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-primary truncate">
-                {selectedProfileLabel || "No voice selected"}
+                {selectedReferenceLabel || "No voice selected"}
               </p>
               <p className="text-[11px] text-secondary/70 truncate mt-0.5">
                 {workbench.selectedEngine === "local_mlx"
@@ -88,7 +94,7 @@ export function VoiceAudioPanel({
             <button
               type="button"
               onClick={() => workbench.navigate(voiceLibraryPath)}
-              className="inline-flex items-center gap-1 text-[11px] font-bold text-accent-amber hover:text-primary transition-colors cursor-pointer shrink-0"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-[11px] font-bold text-accent-amber hover:text-primary transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
               title="Configure voice in Voice Studio"
             >
               <Settings2 className="h-3.5 w-3.5" />
@@ -96,12 +102,45 @@ export function VoiceAudioPanel({
             </button>
           </div>
 
-          {needsVoiceProfile && (
+          {needsSpeakerReference && (
             <p className="mt-2 text-[10px] text-amber-600/80 dark:text-amber-400/80 font-medium">
-              Select a voice profile for Local MLX rendering.
+              Select a speaker reference for Local MLX rendering.
             </p>
           )}
         </div>
+
+        {workbench.selectedEngine === "local_mlx" ? (
+          <div className="rounded-xl border border-outline bg-surface-container-low p-3">
+            <label htmlFor="studio-render-model" className="text-[10px] font-bold uppercase tracking-wider text-secondary/75">
+              本次完整生成模型
+            </label>
+            <select
+              id="studio-render-model"
+              value={workbench.selectedModelId}
+              onChange={(event) => workbench.setSelectedModelId(event.target.value)}
+              disabled={workbench.generating || readyLocalModels.length === 0}
+              className="mt-2 h-11 w-full rounded-xl border border-outline bg-surface-container px-3 text-xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {!readyLocalModels.length ? <option value="">没有已安装模型</option> : null}
+              {readyLocalModels.map((model) => {
+                const modelId = model.hf_repo_id || model.model_name;
+                return <option key={model.model_name} value={modelId}>{model.display_name}</option>;
+              })}
+            </select>
+            {selectedModel?.capability ? (
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-secondary/75">
+                <span className="rounded-full border border-outline px-2 py-0.5">克隆 {selectedModel.capability.capabilities.speaker_cloning}</span>
+                <span className="rounded-full border border-outline px-2 py-0.5">情绪 {selectedModel.capability.capabilities.emotion}</span>
+                <span className="rounded-full border border-outline px-2 py-0.5">停顿 {selectedModel.capability.capabilities.explicit_breaks}</span>
+              </div>
+            ) : null}
+            {manifestModel ? (
+              <p className="mt-2 text-[10px] leading-4 text-secondary/70">
+                当前成品：<span className="font-semibold text-primary">{manifestModel}</span>。切换只影响下一次完整生成。
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {workbench.voiceSelectionError && (
           <p className="mt-2 text-[10px] text-red-400 font-medium">{workbench.voiceSelectionError}</p>
@@ -117,7 +156,7 @@ export function VoiceAudioPanel({
         <button
           type="button"
           onClick={() => workbench.navigate(voiceLibraryPath)}
-          className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer"
+          className="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
         >
           <Mic className="h-3 w-3" />
           Preview in Voice Studio
@@ -147,7 +186,7 @@ export function VoiceAudioPanel({
                 <button
                   type="button"
                   onClick={() => void workbench.handleCancelAudio()}
-                  className="rounded-lg border border-outline bg-surface-container-low px-2 py-0.5 text-[10px] font-bold text-primary hover:bg-primary/5 transition-all cursor-pointer shrink-0"
+                  className="min-h-11 rounded-lg border border-outline bg-surface-container-low px-3 text-[10px] font-bold text-primary hover:bg-primary/5 transition-all cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
                 >
                   Cancel
                 </button>
@@ -166,7 +205,7 @@ export function VoiceAudioPanel({
 
         {/* Audio error */}
         {workbench.audioError && (
-          <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/6 px-3 py-2.5 text-xs text-red-400 leading-relaxed">
+          <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/6 px-3 py-2.5 text-xs text-red-400 leading-relaxed" role="alert">
             {workbench.audioError}
           </div>
         )}
@@ -186,7 +225,7 @@ export function VoiceAudioPanel({
                 <button
                   type="button"
                   onClick={() => void workbench.handleRevealInFinder()}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-outline bg-surface-container-low text-secondary hover:text-primary hover:bg-primary/8 transition-all shrink-0 cursor-pointer"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-outline bg-surface-container-low text-secondary hover:text-primary hover:bg-primary/8 transition-all shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
                   title="Reveal in Finder"
                 >
                   <FolderOpen className="h-3 w-3" />
@@ -204,7 +243,7 @@ export function VoiceAudioPanel({
               <button
                 type="button"
                 onClick={() => void workbench.handlePreviewAudio()}
-                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer"
+                className="inline-flex h-11 items-center justify-center gap-1 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
               >
                 {workbench.isAudioPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                 {workbench.isAudioPlaying ? "Pause" : "Play"}
@@ -213,7 +252,7 @@ export function VoiceAudioPanel({
                 type="button"
                 disabled={workbench.exportingMp3}
                 onClick={() => void workbench.handleExportMp3()}
-                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-11 items-center justify-center gap-1 rounded-lg border border-outline bg-surface-container-low text-[11px] font-bold text-primary hover:bg-primary/8 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {workbench.exportingMp3 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                 {workbench.exportingMp3 ? "Exporting…" : "Export MP3"}
@@ -221,7 +260,7 @@ export function VoiceAudioPanel({
               <button
                 type="button"
                 onClick={() => void workbench.handleDeleteAudio()}
-                className="col-span-2 inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-red-500/20 bg-red-500/8 text-[11px] font-bold text-red-400 hover:bg-red-500/15 transition-all cursor-pointer"
+                className="col-span-2 inline-flex h-11 items-center justify-center gap-1 rounded-lg border border-red-500/20 bg-red-500/8 text-[11px] font-bold text-red-400 hover:bg-red-500/15 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
               >
                 <Trash2 className="h-3 w-3" />
                 Delete
@@ -234,7 +273,7 @@ export function VoiceAudioPanel({
                 type="button"
                 onClick={workbench.handleGenerateAudio}
                 disabled={workbench.generating || !workbench.scriptCheck.canRender}
-                className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-accent-amber/25 bg-accent-amber/8 text-[11px] font-bold text-accent-amber hover:bg-accent-amber/15 transition-all cursor-pointer disabled:opacity-40"
+                className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-accent-amber/25 bg-accent-amber/8 text-[11px] font-bold text-accent-amber hover:bg-accent-amber/15 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-40"
               >
                 <RefreshCw className="h-3 w-3" />
                 Update Audio
@@ -273,7 +312,7 @@ export function VoiceAudioPanel({
         <button
           type="button"
           onClick={() => workbench.navigate("/voice-studio")}
-          className="flex w-full items-center justify-between gap-2 rounded-lg border border-outline px-3 py-2.5 text-xs font-medium text-secondary hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer"
+          className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-outline px-3 py-2.5 text-xs font-medium text-secondary hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
         >
           <span className="flex items-center gap-2">
             <Mic className="h-3.5 w-3.5 text-accent-amber" />

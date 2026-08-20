@@ -136,7 +136,7 @@ export function StudioHeader({
   const hasScript = Boolean(project?.script && !project.script.deleted_at);
   const hasAudio = Boolean(audioSrc);
   const voiceConfigured = Boolean(
-    project?.artifact?.voice_reference && Object.keys(project.artifact.voice_reference).length > 0,
+    project?.artifact?.speaker_reference && Object.keys(project.artifact.speaker_reference).length > 0,
   );
 
   const steps = buildWorkflowSteps({

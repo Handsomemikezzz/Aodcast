@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from app.domain.tts_config import TTSProviderConfig
 from app.providers.tts_api.base import TTSGenerationRequest, TTSGenerationResponse
-from app.providers.tts_local_mlx.runner import MLXAudioQwenRunner
+from app.providers.tts_local_mlx.runner import MLXAudioRunner
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.providers.tts_local_mlx.version import LOCAL_MLX_ADAPTER_VERSION
 
 
 class LocalMLXTTSProvider:
@@ -11,7 +12,7 @@ class LocalMLXTTSProvider:
 
     def __init__(self, config: TTSProviderConfig) -> None:
         self.config = config
-        self.runner = MLXAudioQwenRunner(config)
+        self.runner = MLXAudioRunner(config)
 
     def synthesize(self, request: TTSGenerationRequest) -> TTSGenerationResponse:
         capability = detect_local_mlx_capability(self.config)
@@ -30,6 +31,8 @@ class LocalMLXTTSProvider:
             language=request.language,
             reference_audio_path=request.reference_audio_path,
             reference_text=request.reference_text,
+            breaks=request.breaks,
+            clone_mode=request.clone_mode,
             should_cancel=request.should_cancel,
             on_progress=request.on_progress,
         )
@@ -38,4 +41,7 @@ class LocalMLXTTSProvider:
             file_extension=result.file_extension,
             provider_name=self.provider_name,
             model_name=result.model_name,
+            adapter_version=LOCAL_MLX_ADAPTER_VERSION,
+            sample_rate_hz=result.sample_rate_hz,
+            channels=result.channels,
         )

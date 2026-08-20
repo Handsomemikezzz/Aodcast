@@ -45,4 +45,5 @@ class OpenAICompatibleTTSProvider:
             file_extension=self.config.audio_format or request.audio_format,
             provider_name=self.config.provider,
             model_name=self.config.model,
+            adapter_version="openai-compatible-v1",
         )

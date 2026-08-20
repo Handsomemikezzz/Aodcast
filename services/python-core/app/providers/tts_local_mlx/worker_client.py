@@ -19,15 +19,16 @@ from __future__ import annotations
 
 import json
 import os
-import queue
 import subprocess
 import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from app.providers.tts_local_mlx.adapters.base import PreparedSegment
 
 __all__ = [
     "WorkerEvent",
@@ -40,7 +41,10 @@ __all__ = [
 
 _READY_TIMEOUT_SECONDS = 300.0
 _SHUTDOWN_TIMEOUT_SECONDS = 5.0
-_CANCEL_GRACE_SECONDS = 3.0
+# Cooperative cancellation finishes at the next model-result or text-chunk
+# boundary. A normal chunk can take materially longer than a few seconds on
+# local hardware, so process termination is deliberately a last-resort guard.
+_CANCEL_GRACE_SECONDS = 120.0
 _TERMINAL_EVENT_TIMEOUT_SECONDS = 60.0
 
 
@@ -80,6 +84,7 @@ class _JobContext:
     error: BaseException | None = None
     completed_chunks: int = 0
     last_event_at: float = field(default_factory=time.monotonic)
+    cancel_requested: bool = False
 
 
 def build_worker_command(python_executable: str | None = None) -> list[str]:
@@ -110,6 +115,7 @@ class WorkerClient:
         command_factory: Callable[[], list[str]] | None = None,
         popen_factory: Callable[..., subprocess.Popen[str]] | None = None,
         niceness: int = 10,
+        cancel_grace_seconds: float = _CANCEL_GRACE_SECONDS,
         terminal_event_timeout_seconds: float = _TERMINAL_EVENT_TIMEOUT_SECONDS,
     ) -> None:
         self._python_executable = python_executable or sys.executable
@@ -118,16 +124,18 @@ class WorkerClient:
         )
         self._popen_factory = popen_factory or subprocess.Popen
         self._niceness = niceness
+        if cancel_grace_seconds <= 0:
+            raise ValueError("cancel_grace_seconds must be positive.")
+        self._cancel_grace_seconds = float(cancel_grace_seconds)
         self._terminal_event_timeout_seconds = terminal_event_timeout_seconds
         self._current_model: str | None = None
         self._process: subprocess.Popen[str] | None = None
         self._reader_thread: threading.Thread | None = None
-        self._event_queue: queue.Queue[WorkerEvent | None] = queue.Queue()
         self._submit_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._current_job: _JobContext | None = None
         self._ready_event = threading.Event()
-        self._shutdown = False
+        self._startup_error: MLXWorkerError | None = None
 
     # Public API ---------------------------------------------------------
 
@@ -139,22 +147,25 @@ class WorkerClient:
         self,
         *,
         model: str,
-        chunks: Iterable[str],
-        voice: str,
-        audio_format: str,
-        speed: float = 1.0,
-        style_prompt: str = "",
-        language: str = "zh",
+        segments: Iterable[PreparedSegment | Mapping[str, object]],
+        options: Mapping[str, object],
+        leading_silence_ms: int = 0,
         output_dir: Path,
-        ref_audio: str | None = None,
-        ref_text: str | None = None,
         should_cancel: Callable[[], bool] | None = None,
         on_event: Callable[[WorkerEvent], None] | None = None,
     ) -> dict[str, object]:
-        chunk_list = [str(item) for item in chunks if str(item).strip()]
-        if not chunk_list:
-            raise ValueError("synthesize requires at least one non-empty chunk.")
-        total = len(chunk_list)
+        segment_list: list[dict[str, object]] = []
+        for item in segments:
+            segment = (
+                item
+                if isinstance(item, PreparedSegment)
+                else PreparedSegment.from_payload(item)
+            )
+            if segment.text.strip():
+                segment_list.append(segment.to_payload())
+        if not segment_list:
+            raise ValueError("synthesize requires at least one non-empty segment.")
+        total = len(segment_list)
 
         with self._submit_lock:
             self._ensure_worker(model)
@@ -166,14 +177,9 @@ class WorkerClient:
             request = {
                 "type": "synthesize",
                 "job_id": job_id,
-                "chunks": chunk_list,
-                "voice": voice,
-                "audio_format": audio_format,
-                "speed": speed,
-                "style_prompt": style_prompt,
-                "language": language,
-                "ref_audio": ref_audio,
-                "ref_text": ref_text,
+                "segments": segment_list,
+                "options": dict(options),
+                "leading_silence_ms": max(0, int(leading_silence_ms)),
                 "model": model,
                 "output_dir": str(output_dir),
             }
@@ -195,7 +201,6 @@ class WorkerClient:
     def shutdown(self) -> None:
         with self._submit_lock:
             with self._state_lock:
-                self._shutdown = True
                 process = self._process
                 reader_thread = self._reader_thread
             if process is None:
@@ -212,7 +217,7 @@ class WorkerClient:
                 self._reader_thread = None
                 self._ready_event.clear()
                 self._current_model = None
-                self._shutdown = False
+                self._startup_error = None
 
     # Worker lifecycle ---------------------------------------------------
 
@@ -254,6 +259,7 @@ class WorkerClient:
             self._reader_thread = reader_thread
             self._current_model = model
             self._ready_event = threading.Event()
+            self._startup_error = None
         reader_thread.start()
         if not self._ready_event.wait(timeout=_READY_TIMEOUT_SECONDS):
             self._terminate_process(process, grace_seconds=_SHUTDOWN_TIMEOUT_SECONDS)
@@ -264,6 +270,15 @@ class WorkerClient:
             raise MLXWorkerError(
                 "MLX worker did not become ready before the model-load timeout."
             )
+        with self._state_lock:
+            startup_error = self._startup_error
+            process_exited = process.poll() is not None
+        if startup_error is not None:
+            self._stop_worker_locked()
+            raise startup_error
+        if process_exited:
+            self._stop_worker_locked()
+            raise MLXWorkerError("MLX worker exited before becoming ready.")
 
     def _stop_worker_locked(self) -> None:
         with self._state_lock:
@@ -273,6 +288,7 @@ class WorkerClient:
             self._reader_thread = None
             self._ready_event.clear()
             self._current_model = None
+            self._startup_error = None
         if process is not None:
             self._terminate_process(process, grace_seconds=_SHUTDOWN_TIMEOUT_SECONDS)
         if reader_thread is not None:
@@ -294,6 +310,10 @@ class WorkerClient:
                     process.wait(timeout=grace_seconds)
                 except Exception:
                     pass
+        self._close_process_streams(process)
+
+    @staticmethod
+    def _close_process_streams(process: subprocess.Popen[str]) -> None:
         for stream in (process.stdin, process.stdout, process.stderr):
             if stream is None:
                 continue
@@ -314,12 +334,13 @@ class WorkerClient:
         cancel_deadline: float | None = None
         while True:
             if should_cancel is not None and not cancel_sent and should_cancel():
+                ctx.cancel_requested = True
                 try:
                     self._send({"type": "cancel", "job_id": ctx.job_id})
                 except Exception:
                     pass
                 cancel_sent = True
-                cancel_deadline = time.monotonic() + _CANCEL_GRACE_SECONDS
+                cancel_deadline = time.monotonic() + self._cancel_grace_seconds
 
             completed = ctx.done_event.wait(timeout=0.2)
             if completed:
@@ -358,6 +379,7 @@ class WorkerClient:
             self._reader_thread = None
             self._ready_event.clear()
             self._current_model = None
+            self._startup_error = None
         if process is not None:
             self._terminate_process(process, grace_seconds=grace_seconds)
         if reader_thread is not None:
@@ -407,6 +429,16 @@ class WorkerClient:
             self._ready_event.set()
             return
 
+        if event.type == "error" and not event.get_str("job_id"):
+            with self._state_lock:
+                has_active_job = self._current_job is not None
+                worker_starting = not self._ready_event.is_set()
+                if worker_starting and not has_active_job:
+                    message = event.get_str("message") or "MLX worker failed during model load."
+                    self._startup_error = MLXWorkerError(message)
+                    self._ready_event.set()
+                    return
+
         job_id = event.get_str("job_id")
         with self._state_lock:
             if self._current_job and self._current_job.job_id == job_id:
@@ -432,7 +464,10 @@ class WorkerClient:
                 ctx.completed_chunks = max(ctx.completed_chunks, event.get_int("index") + 1)
 
         if event.type == "done" and ctx is not None:
-            ctx.outcome = dict(event.payload)
+            if ctx.cancel_requested:
+                ctx.error = MLXWorkerCancelled("Local MLX synthesis cancelled.")
+            else:
+                ctx.outcome = dict(event.payload)
             ctx.done_event.set()
         elif event.type == "cancelled" and ctx is not None:
             ctx.error = MLXWorkerCancelled("Local MLX synthesis cancelled.")
@@ -456,19 +491,31 @@ class WorkerClient:
 
         with self._state_lock:
             ctx = self._current_job
+            worker_was_starting = (
+                self._process is process and not self._ready_event.is_set()
+            )
             if self._process is process:
                 self._process = None
                 self._reader_thread = None
                 self._ready_event.clear()
                 self._current_model = None
 
+            if worker_was_starting and self._startup_error is None:
+                message = stderr_tail.strip().splitlines()[-1] if stderr_tail.strip() else (
+                    f"MLX worker exited during model load (code {returncode})."
+                )
+                self._startup_error = MLXWorkerError(message)
+                self._ready_event.set()
+
         if ctx is None or ctx.done_event.is_set():
+            self._close_process_streams(process)
             return
         message = stderr_tail.strip().splitlines()[-1] if stderr_tail.strip() else (
             f"MLX worker exited unexpectedly (code {returncode})."
         )
         ctx.error = MLXWorkerError(message)
         ctx.done_event.set()
+        self._close_process_streams(process)
 
 
 def _build_preexec(niceness: int) -> Callable[[], None] | None:

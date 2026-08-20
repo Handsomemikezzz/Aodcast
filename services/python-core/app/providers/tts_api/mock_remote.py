@@ -16,4 +16,7 @@ class MockRemoteTTSProvider:
             file_extension="wav",
             provider_name=self.provider_name,
             model_name=self.model_name,
+            adapter_version="mock-v1",
+            sample_rate_hz=22_050,
+            channels=1,
         )

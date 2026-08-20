@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import sys
+import uuid
 from pathlib import Path
 
 from app.config import AppConfig
@@ -15,7 +16,6 @@ from app.api.serializers import (
     serialize_project,
     serialize_script_revisions,
     serialize_turn_result,
-    serialize_voice_take_result,
 )
 from app.api.http_runtime import serve_http
 from app.domain.artifact import ArtifactRecord
@@ -40,13 +40,13 @@ from app.providers.llm.preflight import check_llm_config
 from app.providers.tts_api.factory import validate_tts_provider
 from app.runtime.long_task_state import LongTaskStateManager
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
-from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
+from app.providers.tts_local_mlx.presets import DEFAULT_LOCAL_TTS_MODEL
 from app.runtime.request_state_store import RequestStateStore
 from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
-from app.storage.voice_profile_store import VoiceProfileStore
+from app.storage.speaker_reference_store import SpeakerReferenceStore
 
 DOWNLOAD_PROGRESS_MARKER = "AODCAST_PROGRESS"
 
@@ -149,22 +149,8 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "list_voice_presets"
     if args.render_voice_preview:
         return "render_voice_preview"
-    if args.list_voice_profiles:
-        return "list_voice_profiles"
-    if args.create_voice_profile:
-        return "create_voice_profile"
-    if args.update_voice_profile:
-        return "update_voice_profile"
-    if args.delete_voice_profile:
-        return "delete_voice_profile"
-    if args.select_voice_profile:
-        return "select_voice_profile"
-    if args.lock_voice_preview:
-        return "lock_voice_preview"
-    if args.render_voice_take:
-        return "render_voice_take"
-    if args.set_final_voice_take:
-        return "set_final_voice_take"
+    if args.list_speaker_references:
+        return "list_speaker_references"
     if args.show_tts_config:
         return "show_tts_config"
     if args.configure_tts_provider:
@@ -243,7 +229,7 @@ def run(argv: list[str] | None = None) -> int:
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
     artifact_store = ArtifactStore(config.data_dir)
-    voice_profile_store = VoiceProfileStore(config.data_dir, artifact_store)
+    speaker_reference_store = SpeakerReferenceStore(config.data_dir, artifact_store)
     request_state_store = RequestStateStore(config.data_dir)
     orchestrator = InterviewOrchestrator(store, config_store)
     script_generation = ScriptGenerationService(store, config_store)
@@ -251,7 +237,7 @@ def run(argv: list[str] | None = None) -> int:
     store.bootstrap()
     config_store.bootstrap()
     artifact_store.bootstrap()
-    voice_profile_store.bootstrap()
+    speaker_reference_store.bootstrap()
     request_state_store.bootstrap()
 
     if args.serve_http:
@@ -293,7 +279,7 @@ def run(argv: list[str] | None = None) -> int:
             project = store.load_project(args.rename_session)
             ensure_session_is_active(project)
             project.session.rename_topic(new_topic)
-            store.save_project(project)
+            store.save_session(project.session)
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.delete_session:
@@ -301,7 +287,7 @@ def run(argv: list[str] | None = None) -> int:
             if project.session.is_deleted():
                 raise ValueError("Session is already deleted.")
             project.session.soft_delete()
-            store.save_project(project)
+            store.save_session(project.session)
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.restore_session:
@@ -309,7 +295,7 @@ def run(argv: list[str] | None = None) -> int:
             if not project.session.is_deleted():
                 raise ValueError("Session is not deleted.")
             project.session.restore()
-            store.save_project(project)
+            store.save_session(project.session)
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.save_script:
@@ -321,7 +307,7 @@ def run(argv: list[str] | None = None) -> int:
             ensure_script_is_active(project)
             project.script.save_final(final_text)
             project.session.transition(SessionState.SCRIPT_EDITED)
-            store.save_project(project)
+            store.save_script_and_session(project.session, project.script)
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.delete_script:
@@ -333,7 +319,7 @@ def run(argv: list[str] | None = None) -> int:
             if project.script.is_deleted():
                 raise ValueError("Script is already deleted.")
             project.script.soft_delete()
-            store.save_project(project)
+            store.save_script_and_session(project.session, project.script)
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.restore_script:
@@ -344,7 +330,7 @@ def run(argv: list[str] | None = None) -> int:
             if not project.script.is_deleted():
                 raise ValueError("Script is not deleted.")
             project.script.restore()
-            store.save_project(project)
+            store.save_script_and_session(project.session, project.script)
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.list_script_revisions:
@@ -363,7 +349,7 @@ def run(argv: list[str] | None = None) -> int:
             ensure_script_is_active(project)
             project.script.rollback_to_revision(args.revision_id.strip())
             project.session.transition(SessionState.SCRIPT_EDITED)
-            store.save_project(project)
+            store.save_script_and_session(project.session, project.script)
             return output_payload(args, {"project": serialize_project(project)})
 
         if args.configure_llm_provider:
@@ -385,11 +371,11 @@ def run(argv: list[str] | None = None) -> int:
             tts_config.provider = args.configure_tts_provider
             if args.tts_model is not None:
                 if args.configure_tts_provider == "local_mlx" and args.tts_model.strip() == "":
-                    tts_config.model = DEFAULT_QWEN3_TTS_MODEL
+                    tts_config.model = DEFAULT_LOCAL_TTS_MODEL
                 else:
                     tts_config.model = args.tts_model
             elif args.configure_tts_provider == "local_mlx" and tts_config.model in {"", "mock-voice"}:
-                tts_config.model = DEFAULT_QWEN3_TTS_MODEL
+                tts_config.model = DEFAULT_LOCAL_TTS_MODEL
             if args.tts_base_url is not None:
                 tts_config.base_url = args.tts_base_url
             if args.tts_api_key is not None:
@@ -620,7 +606,7 @@ def run(argv: list[str] | None = None) -> int:
             operation = str(task_state.get("operation") or "task")
             progress_percent = progress_from_request_state(task_state)
             run_token = str(task_state.get("run_token") or "").strip() or None
-            request_state_store.request_cancel(task_id)
+            request_state_store.request_cancel(task_id, run_token=run_token or "")
             cancelling_state = build_request_state(
                 operation=operation,
                 phase="cancelling",
@@ -650,10 +636,15 @@ def run(argv: list[str] | None = None) -> int:
                 },
             )
 
-        if args.list_voice_profiles:
+        if args.list_speaker_references:
             return output_payload(
                 args,
-                {"profiles": [profile.to_dict() for profile in voice_profile_store.list_profiles()]},
+                {
+                    "speaker_references": [
+                        reference.to_dict()
+                        for reference in speaker_reference_store.list_references()
+                    ]
+                },
             )
 
         if args.render_voice_preview:
@@ -676,43 +667,6 @@ def run(argv: list[str] | None = None) -> int:
                     },
                 },
             )
-
-        if args.lock_voice_preview:
-            if not args.preview_audio_path.strip():
-                raise ValueError("--preview-audio-path is required when using --lock-voice-preview")
-            project = store.load_project(args.lock_voice_preview)
-            ensure_script_is_active(project)
-            if project.script is None:
-                raise ValueError("Cannot lock voice preview because no script record exists.")
-            tts_config = config_store.load_tts_config()
-            updated = audio_rendering.lock_voice_preview(
-                args.lock_voice_preview,
-                script_id=project.script.script_id,
-                preview_audio_path=args.preview_audio_path.strip(),
-                settings=VoiceRenderSettings(),
-                provider=tts_config.provider,
-                model=tts_config.model,
-            )
-            return output_payload(args, {"project": serialize_project(updated)})
-
-        if args.render_voice_take:
-            project = store.load_project(args.render_voice_take)
-            ensure_script_is_active(project)
-            if project.script is None:
-                raise ValueError("Cannot render voice take because no script record exists.")
-            result = audio_rendering.render_voice_take(
-                args.render_voice_take,
-                script_id=project.script.script_id,
-                override_provider=args.tts_provider_override,
-                settings=VoiceRenderSettings(),
-            )
-            return output_payload(args, serialize_voice_take_result(result))
-
-        if args.set_final_voice_take:
-            if not args.take_id.strip():
-                raise ValueError("--take-id is required when using --set-final-voice-take")
-            project = audio_rendering.set_final_voice_take(args.set_final_voice_take, args.take_id.strip())
-            return output_payload(args, {"project": serialize_project(project)})
 
         if args.start_interview:
             project = store.load_project(args.start_interview)
@@ -767,13 +721,19 @@ def run(argv: list[str] | None = None) -> int:
             project = store.load_project(session_id)
             ensure_session_is_active(project)
             ensure_script_is_active(project)
-            task_id = f"render_audio:{session_id}"
+            assert project.script is not None
+            task_id = f"render_audio:{session_id}:{project.script.script_id}"
+            run_token = uuid.uuid4().hex
+
+            def tagged_build_request_state(**kwargs):
+                return build_request_state(run_token=run_token, **kwargs)
+
             progress = LongTaskStateManager(
                 request_state_store=request_state_store,
                 task_id=task_id,
                 operation="render_audio",
-                build_request_state=build_request_state,
-                should_cancel=lambda: request_state_store.is_cancel_requested(task_id),
+                build_request_state=tagged_build_request_state,
+                should_cancel=lambda: request_state_store.is_cancel_requested(task_id, run_token=run_token),
             )
             request_state_store.clear_cancel_request(task_id)
 
@@ -826,7 +786,7 @@ def run(argv: list[str] | None = None) -> int:
             except Exception as exc:
                 progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
                 current_phase = progress.current_phase()
-                if request_state_store.is_cancel_requested(task_id) or current_phase == "cancelling":
+                if request_state_store.is_cancel_requested(task_id, run_token=run_token) or current_phase == "cancelling":
                     raise_render_cancelled(
                         f"Audio rendering cancelled for session {session_id}.",
                         default_progress=10.0,
@@ -844,7 +804,7 @@ def run(argv: list[str] | None = None) -> int:
             )
             if not saved_succeeded:
                 current_phase = progress.current_phase()
-                if current_phase == "cancelling" or request_state_store.is_cancel_requested(task_id):
+                if current_phase == "cancelling" or request_state_store.is_cancel_requested(task_id, run_token=run_token):
                     raise_render_cancelled(
                         f"Audio rendering cancelled for session {session_id}.",
                         default_progress=96.0,
@@ -854,6 +814,7 @@ def run(argv: list[str] | None = None) -> int:
             request_state_store.clear_cancel_request(task_id)
             payload = serialize_audio_result(result)
             payload["task_id"] = task_id
+            payload["run_token"] = run_token
             return output_payload(args, payload)
 
         if args.show_session:

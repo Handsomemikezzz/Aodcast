@@ -3,20 +3,19 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ConfigureLLMInput,
   ConfigureTTSInput,
-  CreateVoiceProfileInput,
-  UpdateVoiceProfileInput,
+  CreateSpeakerReferenceInput,
+  UpdateSpeakerReferenceInput,
   CreateSessionInput,
   DesktopBridge,
   DesktopBridgeError,
   ListMemoriesOptions,
   ListProjectsOptions,
-  LockVoicePreviewInput,
   MemorySettingsInput,
   RenderAudioOptions,
   RenderVoicePreviewOptions,
   ShowSessionOptions,
 } from "./desktopBridge";
-import { asRequestState, copyRequestStateRunToken } from "./requestState";
+import { asRequestState } from "./requestState";
 import type {
   AudioRenderResult,
   GenerationResult,
@@ -33,15 +32,14 @@ import type {
   ScriptRecord,
   ScriptRevisionRecord,
   SessionProject,
+  SpeakerReference,
   TTSCapability,
   TTSProviderConfig,
   VoicePreset,
   VoicePresetCatalog,
-  VoiceProfileRecord,
   VoicePreviewResult,
   VoiceRenderSettings,
   VoiceStylePreset,
-  VoiceTakeRenderResult,
 } from "../types";
 
 export const HTTP_BACKEND_UNAVAILABLE =
@@ -77,19 +75,20 @@ type BridgeShape<T> = {
   tts_capability?: TTSCapability;
   tts_config?: TTSProviderConfig;
   models?: ModelStatus[];
-  profiles?: VoiceProfileRecord[];
-  profile?: VoiceProfileRecord;
+  speaker_references?: SpeakerReference[];
+  speaker_reference?: SpeakerReference;
   model_storage?: ModelStorageStatus;
   request_state?: RequestState;
   task_state?: RequestState | null;
   task_id?: string;
+  run_token?: string;
+  affected_segment_ids?: string[];
   message?: string;
   path?: string;
   runtime?: RuntimeInfo;
   voices?: VoicePreset[];
   styles?: VoiceStylePreset[];
   standard_preview_text?: string;
-  take?: VoiceTakeRenderResult["take"];
   settings?: VoiceRenderSettings;
   memory?: MemoryOverview;
   items?: MemoryEntry[];
@@ -256,10 +255,39 @@ function serializeVoiceSettings(settings: VoiceRenderSettings): Record<string, s
   return payload;
 }
 
+function normalizeAudioTaskStart(response: BridgeShape<Partial<AudioRenderResult>>): AudioRenderResult {
+  const requestState = asRequestState(response.request_state) ?? undefined;
+  const taskId = typeof response.task_id === "string" && response.task_id.length > 0
+    ? response.task_id
+    : requestState?.task_id;
+  const runToken = typeof response.run_token === "string" && response.run_token.length > 0
+    ? response.run_token
+    : requestState?.run_token;
+  if (!taskId || !runToken) {
+    throw new Error("Audio task response was missing its task_id or run_token.");
+  }
+  return {
+    project: response.project!,
+    provider: String(response.provider ?? ""),
+    model: String(response.model ?? ""),
+    audio_path: String(response.audio_path ?? ""),
+    transcript_path: String(response.transcript_path ?? ""),
+    task_id: taskId,
+    run_token: runToken,
+    affected_segment_ids: Array.isArray(response.affected_segment_ids)
+      ? response.affected_segment_ids.filter((item): item is string => typeof item === "string")
+      : [],
+    request_state: requestState,
+    runtime: response.runtime,
+  };
+}
+
 export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
   let runtimePromise: Promise<RuntimeContext> | null = null;
   let runtimeTokenPromise: Promise<string | null> | null = null;
-  const fallbackBaseUrl = options?.baseUrl ?? "http://127.0.0.1:8765";
+  const fallbackBaseUrl = options?.baseUrl
+    ?? import.meta.env.VITE_AODCAST_RUNTIME_URL
+    ?? "http://127.0.0.1:8765";
 
   async function getRuntime(): Promise<RuntimeContext> {
     if (!runtimePromise) {
@@ -550,19 +578,33 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       return (response.scripts as ScriptRecord[]) ?? [];
     },
     async renderAudio(sessionId: string, options?: RenderAudioOptions) {
-      const response = await callHttp<AudioRenderResult>(
+      const response = await callHttp<Partial<AudioRenderResult>>(
         `/api/v1/sessions/${encodeURIComponent(sessionId)}/audio:render`,
         {
           method: "POST",
           body: JSON.stringify({
             provider_override: options?.providerOverride ?? "",
             script_id: options?.scriptId ?? "",
+            model_id: options?.modelId ?? "",
             voice_settings: options?.voiceSettings ? serializeVoiceSettings(options.voiceSettings) : undefined,
-            require_voice_profile: options?.requireVoiceProfile === true,
+            require_speaker_reference: options?.requireSpeakerReference === true,
           }),
         },
       );
-      return copyRequestStateRunToken(response);
+      return normalizeAudioTaskStart(response);
+    },
+    async regenerateAudioWindow(sessionId, scriptId, targetSegmentId, input) {
+      const response = await callHttp<Partial<AudioRenderResult>>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/audio/segments/${encodeURIComponent(targetSegmentId)}:regenerate`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            speech_plan_id: input.speechPlanId,
+            render_manifest_id: input.renderManifestId,
+          }),
+        },
+      );
+      return normalizeAudioTaskStart(response);
     },
     async deleteGeneratedAudio(sessionId: string, options?: { scriptId?: string }) {
       const query = options?.scriptId ? `?script_id=${encodeURIComponent(options.scriptId)}` : "";
@@ -621,7 +663,8 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           session_id: options?.sessionId ?? "",
           script_id: options?.scriptId ?? "",
           provider_override: options?.providerOverride ?? "",
-          voice_profile_id: options?.voiceProfileId ?? "",
+          model_id: options?.modelId ?? "",
+          speaker_reference_id: options?.speakerReferenceId ?? "",
         }),
       });
       const initialState = asRequestState(response.request_state);
@@ -630,149 +673,55 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         return response;
       }
       const taskId = response.task_id ?? initialState?.task_id ?? "render_voice_preview";
+      const runToken = response.run_token ?? initialState?.run_token ?? "";
+      if (runToken) options?.onTaskStarted?.({ taskId, runToken });
       return waitForVoicePreview(this.showTaskState, taskId, options);
     },
-    async listVoiceProfiles() {
-      const response = await callHttp<{ profiles?: VoiceProfileRecord[] }>("/api/v1/voice-profiles");
-      return response.profiles ?? [];
+    async listSpeakerReferences() {
+      const response = await callHttp<{ speaker_references?: SpeakerReference[] }>("/api/v1/speaker-references");
+      return response.speaker_references ?? [];
     },
-    async createVoiceProfile(input: CreateVoiceProfileInput) {
-      const response = await callHttp<{ profile?: VoiceProfileRecord }>("/api/v1/voice-profiles", {
-        method: "POST",
-        body: JSON.stringify({
-          name: input.name,
-          reference_audio_path: input.referenceAudioPath ?? input.audioPath ?? "",
-          reference_text: input.referenceText,
-          audio_path: input.audioPath ?? input.referenceAudioPath ?? "",
-          provider: input.provider,
-          model: input.model,
-          language: input.language ?? input.settings?.language ?? "zh",
-          audio_format: input.audioFormat ?? input.settings?.audio_format ?? "wav",
-          voice_settings: input.settings ? serializeVoiceSettings(input.settings) : undefined,
-        }),
-      });
-      const profile = response.profile!;
-      if (!input.referenceAudioFile) return profile;
-
+    async createSpeakerReference(input: CreateSpeakerReferenceInput) {
       const formData = new FormData();
-      formData.set("reference_text", input.referenceText ?? "");
-      formData.set("audio_format", input.audioFormat ?? input.settings?.audio_format ?? "wav");
-      formData.set("audio", input.referenceAudioFile, input.referenceAudioFileName ?? "reference.wav");
-      try {
-        const uploadResponse = await callHttp<{ profile?: VoiceProfileRecord }>(
-          `/api/v1/voice-profiles/${encodeURIComponent(profile.voice_profile_id)}/sample`,
-          {
-            method: "POST",
-            body: formData,
-          },
-        );
-        return uploadResponse.profile!;
-      } catch (error) {
-        await callHttp<{ voice_profile_id?: string; deleted?: boolean }>(
-          `/api/v1/voice-profiles/${encodeURIComponent(profile.voice_profile_id)}`,
-          { method: "DELETE" },
-        ).catch(() => undefined);
-        throw error;
-      }
+      formData.set("name", input.name);
+      formData.set("reference_text", input.referenceText);
+      formData.set("language", input.language);
+      formData.set("audio", input.audioFile, input.audioFileName || "reference.wav");
+      const response = await callHttp<{ speaker_reference?: SpeakerReference }>("/api/v1/speaker-references", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.speaker_reference) throw new Error("Create speaker reference response was missing the reference.");
+      return response.speaker_reference;
     },
-    async updateVoiceProfile(profileId: string, input: UpdateVoiceProfileInput) {
-      const patchBody: Record<string, string> = {};
-      if (input.name !== undefined) patchBody.name = input.name;
-      if (input.referenceText !== undefined) patchBody.reference_text = input.referenceText;
-
-      let profile: VoiceProfileRecord | undefined;
-      if (Object.keys(patchBody).length > 0) {
-        const response = await callHttp<{ profile?: VoiceProfileRecord }>(
-          `/api/v1/voice-profiles/${encodeURIComponent(profileId)}`,
-          {
-            method: "PATCH",
-            body: JSON.stringify(patchBody),
-          },
-        );
-        profile = response.profile!;
+    async updateSpeakerReference(referenceId: string, input: UpdateSpeakerReferenceInput) {
+      const formData = new FormData();
+      if (input.name !== undefined) formData.set("name", input.name);
+      if (input.referenceText !== undefined) formData.set("reference_text", input.referenceText);
+      if (input.language !== undefined) formData.set("language", input.language);
+      if (input.audioFile) {
+        formData.set("audio", input.audioFile, input.audioFileName || "reference.wav");
       }
-
-      if (input.referenceAudioFile) {
-        const formData = new FormData();
-        formData.set("reference_text", input.referenceText ?? "");
-        formData.set("audio_format", input.audioFormat ?? "wav");
-        formData.set("audio", input.referenceAudioFile, input.referenceAudioFileName ?? "reference.wav");
-        const uploadResponse = await callHttp<{ profile?: VoiceProfileRecord }>(
-          `/api/v1/voice-profiles/${encodeURIComponent(profileId)}/sample`,
-          {
-            method: "POST",
-            body: formData,
-          },
-        );
-        profile = uploadResponse.profile!;
-      }
-
-      if (!profile) {
-        const profiles = await this.listVoiceProfiles();
-        profile = profiles.find((item) => item.voice_profile_id === profileId);
-        if (!profile) throw new Error(`Voice profile '${profileId}' was not found.`);
-      }
-      return profile;
+      const response = await callHttp<{ speaker_reference?: SpeakerReference }>(
+        `/api/v1/speaker-references/${encodeURIComponent(referenceId)}`,
+        { method: "PATCH", body: formData },
+      );
+      if (!response.speaker_reference) throw new Error("Update speaker reference response was missing the reference.");
+      return response.speaker_reference;
     },
-    async deleteVoiceProfile(profileId: string) {
-      return callHttp<{ voice_profile_id?: string; deleted?: boolean; cleared_voice_references?: number }>(
-        `/api/v1/voice-profiles/${encodeURIComponent(profileId)}`,
+    async deleteSpeakerReference(referenceId: string) {
+      return callHttp<{ speaker_reference_id?: string; deleted?: boolean }>(
+        `/api/v1/speaker-references/${encodeURIComponent(referenceId)}`,
         { method: "DELETE" },
       );
     },
-    async selectVoiceProfile(sessionId: string, scriptId: string, profileId: string) {
+    async selectSpeakerReference(sessionId: string, scriptId: string, referenceId: string) {
       const response = await callHttp<{ project?: SessionProject }>(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/voice-profile:select`,
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/speaker-reference:select`,
         {
           method: "POST",
-          body: JSON.stringify({ voice_profile_id: profileId }),
+          body: JSON.stringify({ speaker_reference_id: referenceId }),
         },
-      );
-      return response.project!;
-    },
-    async lockVoicePreview(sessionId: string, scriptId: string, input: LockVoicePreviewInput) {
-      const response = await callHttp<{ project?: SessionProject }>(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/voice-preview:lock`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            audio_path: input.audioPath,
-            provider: input.provider,
-            model: input.model,
-            voice_settings: serializeVoiceSettings(input.settings),
-          }),
-        },
-      );
-      return response.project!;
-    },
-    async renderVoiceTake(sessionId: string, scriptId: string, settings: VoiceRenderSettings, options?: RenderAudioOptions) {
-      const response = await callHttp<VoiceTakeRenderResult>(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}/scripts/${encodeURIComponent(scriptId)}/voice-takes:render`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            ...serializeVoiceSettings(settings),
-            provider_override: options?.providerOverride ?? "",
-            require_voice_profile: options?.requireVoiceProfile === true,
-          }),
-        },
-      );
-      return copyRequestStateRunToken(response);
-    },
-    async setFinalVoiceTake(sessionId: string, takeId: string) {
-      const response = await callHttp<{}>(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}/voice-takes/${encodeURIComponent(takeId)}:final`,
-        {
-          method: "POST",
-          body: JSON.stringify({}),
-        },
-      );
-      return response.project!;
-    },
-    async deleteVoiceTake(sessionId: string, takeId: string) {
-      const response = await callHttp<{}>(
-        `/api/v1/sessions/${encodeURIComponent(sessionId)}/voice-takes/${encodeURIComponent(takeId)}`,
-        { method: "DELETE" },
       );
       return response.project!;
     },
@@ -954,10 +903,10 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       const response = await callHttp<{}>(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
       return asRequestState(response.task_state);
     },
-    async cancelTask(taskId: string) {
+    async cancelTask(taskId: string, runToken: string) {
       const response = await callHttp<{}>(`/api/v1/tasks/${encodeURIComponent(taskId)}:cancel`, {
         method: "POST",
-        body: JSON.stringify({}),
+        body: JSON.stringify({ run_token: runToken }),
       });
       return asRequestState(response.task_state) ?? asRequestState(response.request_state);
     },

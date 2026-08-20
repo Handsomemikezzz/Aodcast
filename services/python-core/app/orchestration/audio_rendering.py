@@ -3,19 +3,24 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
-import subprocess
 from typing import Any
-from uuid import uuid4
 
-from app.domain.artifact import ArtifactRecord, AudioTakeRecord
-from app.domain.common import utc_now_iso
+from app.domain.artifact import ArtifactRecord
+from app.domain.common import sha256_text
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
-from app.domain.voice_profile import VoiceProfileRecord
+from app.domain.speaker_reference import SpeakerReference
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, clamp_speed, resolve_style_preset, resolve_voice_preset
+from app.orchestration.podcast_rendering import (
+    PodcastRenderProgress,
+    PodcastRenderResult,
+    PodcastRenderSettings,
+    PodcastRenderingPipeline,
+)
 from app.providers.tts_api.base import TTSGenerationRequest
 from app.providers.tts_api.factory import build_tts_provider
+from app.providers.tts_local_mlx.capabilities import SupportLevel, capabilities_for_model
+from app.providers.tts_local_mlx.model_spec import resolve_model_spec
 from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
@@ -29,6 +34,7 @@ class AudioRenderResult:
     model: str
     audio_path: str
     transcript_path: str
+    affected_segment_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,11 +55,6 @@ class VoicePreviewResult:
     model: str
     audio_path: str
     settings: VoiceRenderSettings
-
-
-@dataclass(frozen=True, slots=True)
-class VoiceTakeRenderResult(AudioRenderResult):
-    take: AudioTakeRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,7 @@ class AudioRenderingService:
         self.store = store
         self.config_store = config_store
         self.artifact_store = artifact_store
+        self.podcast_pipeline = PodcastRenderingPipeline(config_store, artifact_store)
 
     def render_audio(
         self,
@@ -88,15 +90,17 @@ class AudioRenderingService:
         *,
         script_id: str = "",
         override_provider: str = "",
+        override_model: str = "",
         settings: VoiceRenderSettings | None = None,
-        require_voice_profile: bool = False,
+        require_speaker_reference: bool = False,
     ) -> AudioRenderResult:
         return self.render_audio_with_cancellation(
             session_id,
             script_id=script_id,
             override_provider=override_provider,
+            override_model=override_model,
             settings=settings,
-            require_voice_profile=require_voice_profile,
+            require_speaker_reference=require_speaker_reference,
         )
 
     def render_audio_with_cancellation(
@@ -105,122 +109,163 @@ class AudioRenderingService:
         *,
         script_id: str = "",
         override_provider: str = "",
+        override_model: str = "",
         settings: VoiceRenderSettings | None = None,
-        require_voice_profile: bool = False,
+        require_speaker_reference: bool = False,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
-        script = project.script
-        artifact = project.artifact
-        if script is None:
+        if project.script is None:
             raise ValueError("Cannot render audio without a script record.")
-        if artifact is None:
-            artifact = ArtifactRecord(
-                session_id=session_id,
-                transcript_path=f"sessions/{session_id}/transcript.json",
-                active_script_id=script.script_id,
-            )
-            project.artifact = artifact
-            self.store.save_project(project)
-        if project.session.state == SessionState.AUDIO_RENDERING:
-            raise ValueError("Cannot render audio while another audio render is already in progress.")
-
-        final_text = script.final.strip() or script.draft.strip()
-        if not final_text:
-            raise ValueError("Cannot render audio without script content.")
-
-        render_settings = self._resolve_render_settings(artifact, settings)
-        tts_config = self.config_store.load_tts_config()
-        if override_provider:
-            tts_config.provider = override_provider
-        tts_config.voice = self._provider_voice_for(render_settings, tts_config.provider)
-        tts_config.audio_format = render_settings.audio_format or tts_config.audio_format
-        provider = build_tts_provider(tts_config)
-        voice_reference = self._voice_reference_for(artifact, tts_config.provider)
-        if require_voice_profile and tts_config.provider == "local_mlx":
-            if voice_reference.get("source") != "voice_profile" or not voice_reference.get("voice_profile_id"):
-                raise ValueError("Select a voice profile before generating podcast audio.")
-        previous_state = project.session.state
-
-        project.session.transition(SessionState.AUDIO_RENDERING)
-        self.store.save_project(project)
-
-        def raise_if_cancelled() -> None:
-            if should_cancel is None or not should_cancel():
-                return
-            project.session.transition(previous_state)
-            self.store.save_project(project)
-            raise TaskCancellationRequested(f"Audio rendering cancelled for session {session_id}.")
-
-        def forward_provider_event(event: Any) -> None:
-            if on_progress is None:
-                return
-            snapshot = _translate_provider_event(event)
-            if snapshot is None:
-                return
-            on_progress(snapshot)
-
-        style = resolve_style_preset(render_settings.style_id)
-        request = TTSGenerationRequest(
+        artifact = project.artifact or ArtifactRecord(
             session_id=session_id,
-            script_text=final_text,
-            voice=tts_config.voice,
-            audio_format=tts_config.audio_format,
-            speed=render_settings.speed,
-            style_id=render_settings.style_id,
-            style_prompt=style.prompt,
-            language=render_settings.language,
-            reference_audio_path=str(voice_reference.get("audio_path") or ""),
-            reference_text=str(voice_reference.get("reference_text") or voice_reference.get("preview_text") or ""),
-            voice_lock_id=str(voice_reference.get("lock_id") or ""),
-            should_cancel=should_cancel,
-            on_progress=forward_provider_event,
+            transcript_path=f"sessions/{session_id}/transcript.json",
+            active_script_id=project.script.script_id,
         )
+        project.artifact = artifact
+        render_settings = self._resolve_render_settings(artifact, settings)
+        script_text = project.script.final.strip() or project.script.draft.strip()
+        expected_script_hash = sha256_text(script_text)
+        expected_active_render_id = project.render_manifest.render_id if project.render_manifest else ""
+        previous_state = self.store.begin_audio_render(session_id)
+        project.session.transition(SessionState.AUDIO_RENDERING)
         try:
-            raise_if_cancelled()
-            if on_progress is not None:
-                on_progress(AudioRenderProgress(percent=7.0, message="Loading voice model..."))
-            response = provider.synthesize(request)
-            raise_if_cancelled()
-            if on_progress is not None:
-                on_progress(
-                    AudioRenderProgress(percent=95.0, message="Writing transcript and audio artifacts...")
-                )
-            transcript_path = self.artifact_store.write_transcript(session_id, final_text)
-            audio_path = self.artifact_store.write_audio(
-                session_id,
-                response.audio_bytes,
-                response.file_extension,
+            pipeline_result = self.podcast_pipeline.render_full(
+                project,
+                settings=self._podcast_settings(render_settings, override_provider),
+                override_provider=override_provider,
+                override_model=override_model,
+                require_speaker_reference=require_speaker_reference,
+                should_cancel=should_cancel,
+                on_progress=(
+                    (lambda progress: on_progress(_audio_progress(progress)))
+                    if on_progress is not None
+                    else None
+                ),
             )
         except TaskCancellationRequested:
-            project.session.transition(previous_state)
-            self.store.save_project(project)
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+            )
             raise
         except Exception as exc:
-            if _should_preserve_session_state(previous_state):
-                project.session.transition(previous_state)
-                project.session.record_error(str(exc))
-            else:
-                project.session.set_error(str(exc))
-            self.store.save_project(project)
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+                error_message=str(exc),
+            )
             raise
-
-        artifact.transcript_path = str(transcript_path)
-        artifact.audio_path = str(audio_path)
-        artifact.provider = response.provider_name
-        artifact.voice_settings = self._settings_to_dict(render_settings)
-        artifact.final_take_id = ""
-        project.session.tts_provider = response.provider_name
-        project.session.transition(_resolve_post_render_state(previous_state))
-        self.store.save_project(project)
-
+        try:
+            project = self._publish_render_result(
+                pipeline_result,
+                expected_script_hash=expected_script_hash,
+                expected_active_render_id=expected_active_render_id,
+                previous_state=previous_state,
+                should_cancel=should_cancel,
+            )
+        except TaskCancellationRequested:
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+            )
+            raise
+        except Exception as exc:
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+                error_message=str(exc),
+            )
+            raise
         return AudioRenderResult(
             project=project,
-            provider=response.provider_name,
-            model=response.model_name,
-            audio_path=str(audio_path),
-            transcript_path=str(transcript_path),
+            provider=pipeline_result.provider,
+            model=pipeline_result.model,
+            audio_path=pipeline_result.audio_path,
+            transcript_path=pipeline_result.transcript_path,
+            affected_segment_ids=pipeline_result.affected_segment_ids,
+        )
+
+    def regenerate_audio_window_with_cancellation(
+        self,
+        session_id: str,
+        *,
+        script_id: str,
+        target_segment_id: str,
+        expected_plan_id: str,
+        expected_render_id: str,
+        should_cancel: Callable[[], bool] | None = None,
+        on_progress: Callable[[AudioRenderProgress], None] | None = None,
+    ) -> AudioRenderResult:
+        project = self.store.load_project_for_script(session_id, script_id)
+        if project.artifact is None:
+            raise ValueError("Cannot regenerate podcast audio without a rendered artifact.")
+        assert project.script is not None
+        script_text = project.script.final.strip() or project.script.draft.strip()
+        expected_script_hash = sha256_text(script_text)
+        expected_active_render_id = project.render_manifest.render_id if project.render_manifest else ""
+        settings = self._resolve_render_settings(project.artifact, None)
+        previous_state = self.store.begin_audio_render(session_id)
+        project.session.transition(SessionState.AUDIO_RENDERING)
+        try:
+            pipeline_result = self.podcast_pipeline.regenerate_window(
+                project,
+                target_segment_id=target_segment_id,
+                expected_plan_id=expected_plan_id,
+                expected_render_id=expected_render_id,
+                settings=self._podcast_settings(
+                    settings,
+                    project.render_manifest.pipeline[0].provider if project.render_manifest else "",
+                ),
+                should_cancel=should_cancel,
+                on_progress=(
+                    (lambda progress: on_progress(_audio_progress(progress)))
+                    if on_progress is not None
+                    else None
+                ),
+            )
+        except TaskCancellationRequested:
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+            )
+            raise
+        except Exception as exc:
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+                error_message=str(exc),
+            )
+            raise
+        try:
+            project = self._publish_render_result(
+                pipeline_result,
+                expected_script_hash=expected_script_hash,
+                expected_active_render_id=expected_active_render_id,
+                previous_state=previous_state,
+                should_cancel=should_cancel,
+            )
+        except TaskCancellationRequested:
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+            )
+            raise
+        except Exception as exc:
+            self.store.restore_after_audio_render(
+                session_id,
+                previous_state=previous_state,
+                error_message=str(exc),
+            )
+            raise
+        return AudioRenderResult(
+            project=project,
+            provider=pipeline_result.provider,
+            model=pipeline_result.model,
+            audio_path=pipeline_result.audio_path,
+            transcript_path=pipeline_result.transcript_path,
+            affected_segment_ids=pipeline_result.affected_segment_ids,
         )
 
     def render_voice_preview(
@@ -228,8 +273,13 @@ class AudioRenderingService:
         settings: VoiceRenderSettings,
         *,
         override_provider: str = "",
+        override_model: str = "",
     ) -> VoicePreviewResult:
-        return self.render_voice_preview_with_cancellation(settings, override_provider=override_provider)
+        return self.render_voice_preview_with_cancellation(
+            settings,
+            override_provider=override_provider,
+            override_model=override_model,
+        )
 
     def save_voice_settings(
         self,
@@ -239,111 +289,31 @@ class AudioRenderingService:
         script_id: str = "",
     ) -> SessionProject:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
-        artifact = project.artifact
-        if artifact is None:
-            artifact = ArtifactRecord(
-                session_id=session_id,
-                transcript_path=f"sessions/{session_id}/transcript.json",
-                active_script_id=project.script.script_id if project.script is not None else "",
-            )
-            project.artifact = artifact
         normalized = self._normalize_settings(settings)
-        artifact.voice_settings = self._settings_to_dict(normalized)
-        self.store.save_project(project)
-        return project
-
-    def lock_voice_preview(
-        self,
-        session_id: str,
-        *,
-        script_id: str = "",
-        preview_audio_path: str,
-        settings: VoiceRenderSettings,
-        provider: str,
-        model: str,
-    ) -> SessionProject:
-        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
-        artifact = project.artifact
-        if artifact is None:
-            artifact = ArtifactRecord(
-                session_id=session_id,
-                transcript_path=f"sessions/{session_id}/transcript.json",
-                active_script_id=project.script.script_id if project.script is not None else "",
-            )
-            project.artifact = artifact
-
-        normalized = self._normalize_settings(settings)
-        reference_audio = self._validate_reference_audio_path(preview_audio_path)
-        preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
-        artifact.voice_settings = self._settings_to_dict(normalized)
-        artifact.voice_reference = {
-            "lock_id": uuid4().hex,
-            "audio_path": str(reference_audio),
-            "preview_text": preview_text,
-            "provider": provider.strip(),
-            "model": model.strip(),
-            "voice_id": normalized.voice_id,
-            "voice_name": normalized.voice_name,
-            "style_id": normalized.style_id,
-            "style_name": normalized.style_name,
-            "speed": normalized.speed,
-            "language": normalized.language,
-            "audio_format": normalized.audio_format,
-            "created_at": utc_now_iso(),
-        }
-        self.store.save_project(project)
-        return project
-
-    def select_voice_profile(
-        self,
-        session_id: str,
-        *,
-        script_id: str = "",
-        profile: VoiceProfileRecord,
-    ) -> SessionProject:
-        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
-        artifact = project.artifact
-        if artifact is None:
-            artifact = ArtifactRecord(
-                session_id=session_id,
-                transcript_path=f"sessions/{session_id}/transcript.json",
-                active_script_id=project.script.script_id if project.script is not None else "",
-            )
-            project.artifact = artifact
-        reference_audio = self._prepare_voice_profile_reference_audio(profile)
-        settings = VoiceRenderSettings(
-            voice_id=profile.voice_id,
-            voice_name=profile.voice_name,
-            style_id=profile.style_id,
-            style_name=profile.style_name,
-            speed=profile.speed,
-            language=profile.language,
-            audio_format="wav" if profile.provider == "local_mlx" else profile.audio_format,
-            preview_text=profile.preview_text,
+        artifact = self.store.update_script_audio_preferences(
+            session_id,
+            project.script.script_id if project.script is not None else "",
+            voice_settings=self._settings_to_dict(normalized),
         )
-        normalized = self._normalize_settings(settings)
-        artifact.voice_settings = self._settings_to_dict(normalized)
-        artifact.voice_reference = {
-            "source": "voice_profile",
-            "voice_profile_id": profile.voice_profile_id,
-            "name": profile.name,
-            "profile_source": profile.source,
-            "lock_id": uuid4().hex,
-            "audio_path": str(reference_audio),
-            "preview_text": profile.preview_text,
-            "reference_text": profile.preview_text,
-            "provider": profile.provider,
-            "model": profile.model,
-            "voice_id": normalized.voice_id,
-            "voice_name": normalized.voice_name,
-            "style_id": normalized.style_id,
-            "style_name": normalized.style_name,
-            "speed": normalized.speed,
-            "language": normalized.language,
-            "audio_format": normalized.audio_format,
-            "created_at": utc_now_iso(),
-        }
-        self.store.save_project(project)
+        project.artifact = artifact
+        return project
+
+    def select_speaker_reference(
+        self,
+        session_id: str,
+        *,
+        script_id: str = "",
+        reference: SpeakerReference,
+    ) -> SessionProject:
+        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
+        self._validate_reference_audio_path(reference.audio_path)
+        artifact = self.store.update_script_audio_preferences(
+            session_id,
+            project.script.script_id if project.script is not None else "",
+            speaker_reference=reference.to_dict(),
+            replace_speaker_reference=True,
+        )
+        project.artifact = artifact
         return project
 
     def render_voice_preview_with_cancellation(
@@ -351,7 +321,8 @@ class AudioRenderingService:
         settings: VoiceRenderSettings,
         *,
         override_provider: str = "",
-        voice_reference: dict[str, object] | None = None,
+        override_model: str = "",
+        speaker_reference: dict[str, object] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[AudioRenderProgress], None] | None = None,
     ) -> VoicePreviewResult:
@@ -359,17 +330,29 @@ class AudioRenderingService:
         tts_config = self.config_store.load_tts_config()
         if override_provider:
             tts_config.provider = override_provider
+        if override_model:
+            tts_config.model = override_model
+            tts_config.local_model_path = ""
         tts_config.voice = self._provider_voice_for(normalized, tts_config.provider)
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         style = resolve_style_preset(normalized.style_id)
+        request_speed = normalized.speed
+        style_prompt = style.prompt
+        if tts_config.provider == "local_mlx":
+            spec = resolve_model_spec(tts_config.local_model_path or tts_config.model)
+            capabilities = capabilities_for_model(spec)
+            if capabilities.speed_control == SupportLevel.UNSUPPORTED:
+                request_speed = 1.0
+            if capabilities.style_instruction == SupportLevel.UNSUPPORTED:
+                style_prompt = ""
         preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
         resolved_reference: dict[str, object] = {}
-        if tts_config.provider == "local_mlx" and voice_reference:
-            audio_path = str(voice_reference.get("audio_path") or "")
+        if tts_config.provider == "local_mlx" and speaker_reference:
+            audio_path = str(speaker_reference.get("audio_path") or "")
             if audio_path:
                 self._validate_reference_audio_path(audio_path)
-                resolved_reference = dict(voice_reference)
+                resolved_reference = dict(speaker_reference)
 
         def raise_if_cancelled() -> None:
             if should_cancel is not None and should_cancel():
@@ -387,15 +370,15 @@ class AudioRenderingService:
             script_text=preview_text,
             voice=tts_config.voice,
             audio_format=tts_config.audio_format,
-            speed=normalized.speed,
+            speed=request_speed,
             style_id=normalized.style_id,
-            style_prompt=style.prompt,
+            style_prompt=style_prompt,
             language=normalized.language,
             reference_audio_path=str(resolved_reference.get("audio_path") or ""),
             reference_text=str(
-                resolved_reference.get("reference_text") or resolved_reference.get("preview_text") or ""
+                resolved_reference.get("reference_text") or ""
             ),
-            voice_lock_id=str(resolved_reference.get("lock_id") or resolved_reference.get("voice_profile_id") or ""),
+            voice_lock_id=str(resolved_reference.get("speaker_reference_id") or ""),
             should_cancel=should_cancel,
             on_progress=forward_provider_event,
         )
@@ -414,245 +397,41 @@ class AudioRenderingService:
             settings=normalized,
         )
 
-    def render_voice_take(
-        self,
-        session_id: str,
-        *,
-        script_id: str = "",
-        override_provider: str = "",
-        settings: VoiceRenderSettings,
-        require_voice_profile: bool = False,
-    ) -> VoiceTakeRenderResult:
-        return self.render_voice_take_with_cancellation(
-            session_id,
-            script_id=script_id,
-            override_provider=override_provider,
-            settings=settings,
-            require_voice_profile=require_voice_profile,
-        )
-
-    def render_voice_take_with_cancellation(
-        self,
-        session_id: str,
-        *,
-        script_id: str = "",
-        override_provider: str = "",
-        settings: VoiceRenderSettings,
-        require_voice_profile: bool = False,
-        should_cancel: Callable[[], bool] | None = None,
-        on_progress: Callable[[AudioRenderProgress], None] | None = None,
-    ) -> VoiceTakeRenderResult:
-        normalized = self._normalize_settings(settings)
-        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
-        script = project.script
-        artifact = project.artifact
-        if script is None or artifact is None:
-            raise ValueError("Cannot render audio without script and artifact records.")
-        if project.session.state == SessionState.AUDIO_RENDERING:
-            raise ValueError("Cannot render audio while another audio render is already in progress.")
-
-        final_text = script.final.strip() or script.draft.strip()
-        if not final_text:
-            raise ValueError("Cannot render audio without script content.")
-
-        tts_config = self.config_store.load_tts_config()
-        if override_provider:
-            tts_config.provider = override_provider
-        tts_config.voice = self._provider_voice_for(normalized, tts_config.provider)
-        tts_config.audio_format = normalized.audio_format or tts_config.audio_format
-        provider = build_tts_provider(tts_config)
-        voice_reference = self._voice_reference_for(artifact, tts_config.provider)
-        if require_voice_profile and tts_config.provider == "local_mlx":
-            if voice_reference.get("source") != "voice_profile" or not voice_reference.get("voice_profile_id"):
-                raise ValueError("Select a voice profile before generating podcast audio.")
-        previous_state = project.session.state
-
-        project.session.transition(SessionState.AUDIO_RENDERING)
-        self.store.save_project(project)
-
-        def raise_if_cancelled() -> None:
-            if should_cancel is None or not should_cancel():
-                return
-            project.session.transition(previous_state)
-            self.store.save_project(project)
-            raise TaskCancellationRequested(f"Audio rendering cancelled for session {session_id}.")
-
-        def forward_provider_event(event: Any) -> None:
-            if on_progress is None:
-                return
-            snapshot = _translate_provider_event(event)
-            if snapshot is not None:
-                on_progress(snapshot)
-
-        style = resolve_style_preset(normalized.style_id)
-        request = TTSGenerationRequest(
-            session_id=session_id,
-            script_text=final_text,
-            voice=tts_config.voice,
-            audio_format=tts_config.audio_format,
-            speed=normalized.speed,
-            style_id=normalized.style_id,
-            style_prompt=style.prompt,
-            language=normalized.language,
-            reference_audio_path=str(voice_reference.get("audio_path") or ""),
-            reference_text=str(voice_reference.get("reference_text") or voice_reference.get("preview_text") or ""),
-            voice_lock_id=str(voice_reference.get("lock_id") or ""),
-            should_cancel=should_cancel,
-            on_progress=forward_provider_event,
-        )
-        take_id = uuid4().hex
-        try:
-            raise_if_cancelled()
-            if on_progress is not None:
-                on_progress(AudioRenderProgress(percent=7.0, message="Loading voice model..."))
-            response = provider.synthesize(request)
-            raise_if_cancelled()
-            if on_progress is not None:
-                on_progress(AudioRenderProgress(percent=95.0, message="Writing take artifacts..."))
-            transcript_path = self.artifact_store.write_named_transcript(session_id, final_text, f"transcript-{take_id}")
-            audio_path = self.artifact_store.write_named_audio(session_id, response.audio_bytes, response.file_extension, f"audio-{take_id}")
-        except TaskCancellationRequested:
-            project.session.transition(previous_state)
-            self.store.save_project(project)
-            raise
-        except Exception as exc:
-            if _should_preserve_session_state(previous_state):
-                project.session.transition(previous_state)
-                project.session.record_error(str(exc))
-            else:
-                project.session.set_error(str(exc))
-            self.store.save_project(project)
-            raise
-
-        take = AudioTakeRecord(
-            take_id=take_id,
-            session_id=session_id,
-            script_id=script.script_id,
-            audio_path=str(audio_path),
-            transcript_path=str(transcript_path),
-            provider=response.provider_name,
-            model=response.model_name,
-            voice_id=normalized.voice_id,
-            voice_name=normalized.voice_name,
-            style_id=normalized.style_id,
-            style_name=normalized.style_name,
-            speed=normalized.speed,
-            language=normalized.language,
-            audio_format=response.file_extension,
-        )
-        artifact.takes = self._append_take_with_retention(artifact.takes, artifact.final_take_id, take)
-        artifact.final_take_id = take.take_id
-        artifact.audio_path = take.audio_path
-        artifact.transcript_path = take.transcript_path
-        artifact.provider = take.provider
-        artifact.voice_settings = self._settings_to_dict(normalized)
-        project.session.tts_provider = response.provider_name
-        project.session.transition(_resolve_post_render_state(previous_state))
-        self.store.save_project(project)
-
-        return VoiceTakeRenderResult(
-            project=project,
-            provider=response.provider_name,
-            model=response.model_name,
-            audio_path=str(audio_path),
-            transcript_path=str(transcript_path),
-            take=take,
-        )
-
-    def set_final_voice_take(self, session_id: str, take_id: str) -> SessionProject:
-        project = self.store.load_project(session_id)
-        artifact = project.artifact
-        if artifact is None:
-            raise ValueError("Cannot set final audio without an artifact record.")
-        take_script_id = artifact.script_id_for_take(take_id)
-        if take_script_id and project.script is not None and take_script_id != project.script.script_id:
-            project = self.store.load_project_for_script(session_id, take_script_id)
-            artifact = project.artifact
-            if artifact is None:
-                raise ValueError("Cannot set final audio without an artifact record.")
-        selected = next((take for take in artifact.takes if take.take_id == take_id), None)
-        if selected is None:
-            raise ValueError(f"Unknown take_id '{take_id}' for session {session_id}.")
-        artifact.final_take_id = selected.take_id
-        artifact.audio_path = selected.audio_path
-        artifact.transcript_path = selected.transcript_path
-        artifact.provider = selected.provider
-        artifact.voice_settings = self._settings_to_dict(self._settings_from_take(selected))
-        project.session.tts_provider = selected.provider
-        self.store.save_project(project)
-        return project
-
     def delete_generated_audio(self, session_id: str, *, script_id: str = "") -> SessionProject:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         artifact = project.artifact
         if artifact is None:
             raise ValueError("Cannot delete audio without an artifact record.")
 
+        if project.script is not None:
+            manifests = self.store.list_render_manifests(session_id, project.script.script_id)
+            paths = {
+                path
+                for manifest in manifests
+                for path in (
+                    *(segment.audio_path for segment in manifest.segments),
+                    manifest.output.audio_path,
+                    manifest.output.transcript_path,
+                )
+            }
+            for path in paths:
+                self._delete_artifact_file(path)
+            self.store.delete_render_manifest(session_id, project.script.script_id)
+            project.render_manifest = None
+
         self._delete_artifact_file(artifact.audio_path)
         self._delete_artifact_file(artifact.transcript_path)
-        if artifact.final_take_id:
-            selected = next((take for take in artifact.takes if take.take_id == artifact.final_take_id), None)
-            if selected is not None:
-                self._delete_artifact_file(selected.audio_path)
-                self._delete_artifact_file(selected.transcript_path)
-            artifact.takes = [take for take in artifact.takes if take.take_id != artifact.final_take_id]
+        for take in artifact.takes:
+            self._delete_artifact_file(take.audio_path)
+            self._delete_artifact_file(take.transcript_path)
+        artifact.takes = []
 
         artifact.audio_path = ""
         artifact.transcript_path = ""
         artifact.provider = ""
         artifact.final_take_id = ""
-        self.store.save_project(project)
+        self.store.save_artifact(artifact)
         return project
-
-    def delete_voice_take(self, session_id: str, take_id: str) -> SessionProject:
-        project = self.store.load_project(session_id)
-        artifact = project.artifact
-        if artifact is None:
-            raise ValueError("Cannot delete take without an artifact record.")
-        take_script_id = artifact.script_id_for_take(take_id)
-        if take_script_id and project.script is not None and take_script_id != project.script.script_id:
-            project = self.store.load_project_for_script(session_id, take_script_id)
-            artifact = project.artifact
-            if artifact is None:
-                raise ValueError("Cannot delete take without an artifact record.")
-        selected = next((take for take in artifact.takes if take.take_id == take_id), None)
-        if selected is None:
-            raise ValueError(f"Unknown take_id '{take_id}' for session {session_id}.")
-
-        self._delete_artifact_file(selected.audio_path)
-        self._delete_artifact_file(selected.transcript_path)
-        artifact.takes = [take for take in artifact.takes if take.take_id != take_id]
-        if artifact.final_take_id == take_id:
-            artifact.final_take_id = ""
-            artifact.audio_path = ""
-            artifact.transcript_path = ""
-            artifact.provider = ""
-        self.store.save_project(project)
-        return project
-
-    def clear_voice_reference_for_audio(self, audio_path: str) -> int:
-        if not audio_path.strip():
-            return 0
-        target = Path(audio_path).expanduser().resolve()
-        cleared = 0
-        for session in self.store.list_sessions(include_deleted=True):
-            try:
-                artifact = self.store.load_artifact(session.session_id)
-            except OSError:
-                continue
-            changed = False
-            if _voice_reference_matches_path(artifact.voice_reference, target):
-                artifact.voice_reference = {}
-                cleared += 1
-                changed = True
-            for payload in artifact.script_artifacts.values():
-                if _voice_reference_matches_path(payload.get("voice_reference"), target):
-                    payload["voice_reference"] = {}
-                    cleared += 1
-                    changed = True
-            if changed:
-                self.store.save_artifact(artifact)
-        return cleared
 
     def _resolve_render_settings(
         self,
@@ -677,6 +456,23 @@ class AudioRenderingService:
             language=settings.language.strip() or "zh",
             audio_format=(settings.audio_format.strip() or "wav").lstrip("."),
             preview_text=settings.preview_text.strip(),
+        )
+
+    def _podcast_settings(
+        self,
+        settings: VoiceRenderSettings,
+        provider_override: str = "",
+    ) -> PodcastRenderSettings:
+        provider = provider_override.strip() or self.config_store.load_tts_config().provider
+        style = resolve_style_preset(settings.style_id)
+        return PodcastRenderSettings(
+            voice_id=settings.voice_id,
+            provider_voice=self._provider_voice_for(settings, provider),
+            voice_name=settings.voice_name,
+            style_id=settings.style_id,
+            style_name=settings.style_name,
+            style_prompt=style.prompt,
+            language=settings.language,
         )
 
     def _provider_voice_for(self, settings: VoiceRenderSettings, provider: str = "") -> str:
@@ -707,29 +503,6 @@ class AudioRenderingService:
             preview_text=str(payload.get("preview_text") or ""),
         )
 
-    def _settings_from_take(self, take: AudioTakeRecord) -> VoiceRenderSettings:
-        return VoiceRenderSettings(
-            voice_id=take.voice_id,
-            voice_name=take.voice_name,
-            style_id=take.style_id,
-            style_name=take.style_name,
-            speed=take.speed,
-            language=take.language,
-            audio_format=take.audio_format,
-        )
-
-    def _voice_reference_for(self, artifact: ArtifactRecord, provider: str) -> dict[str, object]:
-        if provider != "local_mlx":
-            return {}
-        reference = artifact.voice_reference if isinstance(artifact.voice_reference, dict) else {}
-        if not reference:
-            return {}
-        audio_path = str(reference.get("audio_path") or "")
-        if not audio_path:
-            return {}
-        self._validate_reference_audio_path(audio_path)
-        return dict(reference)
-
     def _validate_reference_audio_path(self, path: str) -> Path:
         if not path.strip():
             raise ValueError("Cannot lock voice preview without a preview audio path.")
@@ -739,70 +512,54 @@ class AudioRenderingService:
             raise ValueError("Locked voice preview audio is missing. Re-render and lock a new preview.")
         if not target.is_file():
             raise ValueError("Locked voice preview path must point to an audio file.")
-        if not _is_allowed_voice_reference_path(target, data_dir):
-            raise ValueError("Voice reference audio must be inside the app data directory or packaged voice profile assets.")
+        if not _is_allowed_speaker_reference_path(target, data_dir):
+            raise ValueError("Speaker reference audio must be inside the app data directory or packaged reference assets.")
         return target
-
-    def _prepare_voice_profile_reference_audio(self, profile: VoiceProfileRecord) -> Path:
-        reference_audio = self._validate_reference_audio_path(profile.audio_path)
-        if reference_audio.suffix.lower() == ".wav":
-            return reference_audio
-
-        target_dir = self.artifact_store.exports_dir / "_voice_profiles"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"{profile.voice_profile_id}.wav"
-        if target.exists() and target.stat().st_mtime >= reference_audio.stat().st_mtime:
-            return target
-
-        ffmpeg = shutil.which("ffmpeg")
-        if ffmpeg:
-            command = [
-                ffmpeg,
-                "-y",
-                "-i",
-                str(reference_audio),
-                "-ac",
-                "1",
-                "-ar",
-                "24000",
-                str(target),
-            ]
-        else:
-            afconvert = shutil.which("afconvert")
-            if not afconvert:
-                raise ValueError("Voice profile reference audio must be WAV for local MLX rendering.")
-            command = [
-                afconvert,
-                "-f",
-                "WAVE",
-                "-d",
-                "LEI16@24000",
-                str(reference_audio),
-                str(target),
-            ]
-        try:
-            subprocess.run(command, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as exc:
-            detail = (exc.stderr or exc.stdout or "").strip()
-            message = "Failed to prepare voice profile reference audio for local MLX rendering."
-            raise ValueError(f"{message} {detail}".strip()) from exc
-        return self._validate_reference_audio_path(str(target))
 
     def _delete_artifact_file(self, path: str) -> None:
         if not path.strip():
             return
         self.artifact_store.delete_export_file(Path(path))
 
-    def _append_take_with_retention(
+    def _publish_render_result(
         self,
-        takes: list[AudioTakeRecord],
-        final_take_id: str,
-        new_take: AudioTakeRecord,
-    ) -> list[AudioTakeRecord]:
-        retained = [take for take in takes if final_take_id and take.take_id == final_take_id]
-        retained.append(new_take)
-        return retained[-2:]
+        result: PodcastRenderResult,
+        *,
+        expected_script_hash: str,
+        expected_active_render_id: str,
+        previous_state: SessionState,
+        should_cancel: Callable[[], bool] | None,
+    ) -> SessionProject:
+        if should_cancel is not None and should_cancel():
+            self._delete_unpublished_render(result)
+            raise TaskCancellationRequested("Podcast audio rendering was cancelled before publication.")
+        try:
+            return self.store.publish_render(
+                result.project,
+                expected_script_hash=expected_script_hash,
+                expected_active_render_id=expected_active_render_id,
+                tts_provider=result.provider,
+                next_session_state=_resolve_post_render_state(previous_state),
+            )
+        except Exception:
+            self._delete_unpublished_render(result)
+            raise
 
+    def _delete_unpublished_render(self, result: PodcastRenderResult) -> None:
+        manifest = result.project.render_manifest
+        if manifest is None:
+            return
+        paths = [
+            segment.audio_path
+            for segment in manifest.segments
+            if segment.generated_by_render_id == manifest.render_id
+        ]
+        paths.extend((manifest.output.audio_path, manifest.output.transcript_path))
+        for path in paths:
+            try:
+                self._delete_artifact_file(path)
+            except (OSError, ValueError):
+                continue
 
 _PROVIDER_RENDER_WINDOW = (10.0, 90.0)
 
@@ -863,6 +620,15 @@ def _translate_provider_event(event: Any) -> AudioRenderProgress | None:
     )
 
 
+def _audio_progress(progress: PodcastRenderProgress) -> AudioRenderProgress:
+    return AudioRenderProgress(
+        percent=progress.percent,
+        message=progress.message,
+        chunk_index=progress.segment_index,
+        chunks_total=progress.segments_total,
+    )
+
+
 _LOCAL_MLX_CHINESE_VOICES = {
     "warm_narrator": "Vivian",
     "news_anchor": "Serena",
@@ -887,22 +653,13 @@ def _local_mlx_voice_for(voice_id: str, language: str) -> str:
     return _LOCAL_MLX_CHINESE_VOICES.get(voice_id, "Vivian")
 
 
-def _voice_reference_matches_path(reference: Any, target: Path) -> bool:
-    if not isinstance(reference, dict):
-        return False
-    raw = str(reference.get("audio_path") or "")
-    if not raw.strip():
-        return False
-    return Path(raw).expanduser().resolve() == target
-
-
-def _is_allowed_voice_reference_path(target: Path, data_dir: Path) -> bool:
+def _is_allowed_speaker_reference_path(target: Path, data_dir: Path) -> bool:
     try:
         target.relative_to(data_dir)
         return True
     except ValueError:
         pass
-    assets_dir = Path(__file__).resolve().parents[1] / "assets" / "voice-profiles"
+    assets_dir = Path(__file__).resolve().parents[1] / "assets" / "speaker-references"
     try:
         target.relative_to(assets_dir)
         return True

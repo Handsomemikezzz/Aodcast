@@ -4,8 +4,10 @@ from dataclasses import dataclass
 
 from app.domain.artifact import ArtifactRecord
 from app.domain.episode_source import EpisodeSource
+from app.domain.render_manifest import RenderManifest
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord
+from app.domain.speech_plan import SpeechPlan
 from app.domain.transcript import TranscriptRecord
 
 
@@ -16,3 +18,5 @@ class SessionProject:
     transcript: TranscriptRecord | None = None
     script: ScriptRecord | None = None
     artifact: ArtifactRecord | None = None
+    speech_plan: SpeechPlan | None = None
+    render_manifest: RenderManifest | None = None

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Download mlx-community Qwen3-TTS weights from Hugging Face (standalone).
+"""Download a registered local TTS model from Hugging Face (standalone).
 
 This script is not imported by Aodcast. After download, point TTS
 ``local_model_path`` at the output directory (it must contain .safetensors).
 
 Examples:
-  uv run --with huggingface_hub scripts/model-download/download_qwen3_tts_mlx.py
+  uv run --with huggingface_hub scripts/model-download/download_tts_model.py
 
   AODCAST_HF_MODEL_BASE=/path/to/models \\
-    uv run --with huggingface_hub scripts/model-download/download_qwen3_tts_mlx.py
+    uv run --with huggingface_hub scripts/model-download/download_tts_model.py
 
   HF_TOKEN=hf_... uv run --with huggingface_hub ...  # if the repo requires auth
 """
@@ -43,7 +43,7 @@ def _default_base_dir() -> Path:
 
 
 DEFAULT_BASE = _default_base_dir()
-DEFAULT_REPO = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+DEFAULT_REPO = "mlx-community/VoxCPM2-8bit"
 PROGRESS_MARKER = "AODCAST_PROGRESS"
 
 

@@ -1,4 +1,4 @@
-import type { SessionProject, VoiceReferenceLock, VoiceRenderSettings } from "../../types";
+import type { SessionProject, SpeakerReference, VoiceRenderSettings } from "../../types";
 
 export type GlobalCtaKind =
   | "generate-script"
@@ -62,16 +62,12 @@ export function deriveAudioFreshness({
   return { outOfDate: false };
 }
 
-function normalizeVoiceReference(reference?: VoiceReferenceLock) {
+function normalizeSpeakerReference(reference?: SpeakerReference | null) {
   if (!reference) return null;
   return {
-    source: reference.source ?? "",
-    voice_profile_id: reference.voice_profile_id ?? "",
-    provider: reference.provider ?? "",
-    model: reference.model ?? "",
-    voice_id: reference.voice_id ?? "",
-    style_id: reference.style_id ?? "",
-    speed: reference.speed ?? null,
+    speaker_reference_id: reference.speaker_reference_id,
+    reference_hash: reference.reference_hash,
+    audio_hash: reference.audio_hash,
     language: reference.language ?? "",
     audio_format: reference.audio_format ?? "",
     audio_path: reference.audio_path ?? "",
@@ -94,7 +90,7 @@ function normalizeVoiceSettings(settings?: VoiceRenderSettings) {
 export function buildVoiceFreshnessKey(project: SessionProject | null, scriptId?: string): string {
   const scriptArtifact = scriptId ? project?.artifact?.script_artifacts?.[scriptId] : undefined;
   return JSON.stringify({
-    reference: normalizeVoiceReference(scriptArtifact?.voice_reference ?? project?.artifact?.voice_reference),
+    reference: normalizeSpeakerReference(scriptArtifact?.speaker_reference ?? project?.artifact?.speaker_reference),
     settings: normalizeVoiceSettings(scriptArtifact?.voice_settings ?? project?.artifact?.voice_settings),
   });
 }

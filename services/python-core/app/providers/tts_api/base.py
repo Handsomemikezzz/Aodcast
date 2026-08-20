@@ -6,6 +6,14 @@ from typing import Any, Protocol
 
 
 @dataclass(frozen=True, slots=True)
+class SpeechBreak:
+    """A model-neutral pause anchored to a Unicode text offset."""
+
+    offset: int
+    duration_ms: int
+
+
+@dataclass(frozen=True, slots=True)
 class TTSGenerationRequest:
     session_id: str
     script_text: str
@@ -18,6 +26,8 @@ class TTSGenerationRequest:
     reference_audio_path: str = ""
     reference_text: str = ""
     voice_lock_id: str = ""
+    breaks: tuple[SpeechBreak, ...] = ()
+    clone_mode: str = "auto"
     should_cancel: Callable[[], bool] | None = None
     # Optional callback that providers may invoke whenever they have new
     # chunk-level progress information. The ``event`` payload is provider
@@ -31,6 +41,9 @@ class TTSGenerationResponse:
     file_extension: str
     provider_name: str
     model_name: str
+    adapter_version: str = "tts-api-v1"
+    sample_rate_hz: int = 0
+    channels: int = 0
 
 
 class TTSProvider(Protocol):

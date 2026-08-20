@@ -10,7 +10,7 @@
 
 Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个文本想法或现有 Markdown 文章转成单人播客脚本和最终音频。
 
-应用由 Tauri 桌面壳和本地 Python HTTP runtime 组成。它会引导用户完成访谈、生成可编辑的脚本快照、选择可复用的音色档案，并通过本地或远程语音 provider 渲染最终音频。
+应用由 Tauri 桌面壳和本地 Python HTTP runtime 组成。它会引导用户完成访谈、生成可编辑的脚本快照、选择可复用的 Speaker Reference 和语音模型，并通过本地或远程语音 provider 渲染最终音频。
 
 > 当前状态：源码级 alpha。Aodcast 可用于本地开发和验证，但还不是经过完整加固的桌面发行版。Provider key 和生成内容存储在本机；目前没有 macOS Keychain 或专用密钥保险库集成。
 
@@ -19,9 +19,12 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - 基于文本主题的访谈式播客创作流程。
 - 支持导入本地 `.md` 文件或粘贴 Markdown，通过来源预览、播客化改写或忠实朗读、目标时长、可选来源讨论和版本化替换来创建播客。
 - 每个 episode 都可以生成多个独立脚本快照，无论它来自访谈还是 Markdown。
-- Script Workbench 支持编辑、保存、删除未使用快照、选择音色档案、渲染和回听生成音频。
-- Voice Studio 支持内置和用户创建的音色档案、样本上传/录音、预览渲染和档案管理。
-- 支持本地 MLX TTS，也支持 OpenAI-compatible 远程 provider。
+- Podcast Editor 阶段负责生成干净、适合听觉理解的口播稿，通过句子长短、标点和段落节奏安排呼吸，不人为制造 filler 或舞台指令。
+- Speech Director 为精确的脚本 hash 生成版本化、provider-neutral 的 Speech Plan，包含稳定分段、结构化停顿、重音、发音和表达指导。
+- Script Workbench 支持编辑、保存和删除未使用快照；选择 Speaker Reference 与模型；检查 Speech Plan；生成分段资产；并对目标段及其相邻段做局部重生成。
+- Voice Studio 支持内置和用户创建的 Speaker Reference、最长 10 分钟的样本上传/录音、预览渲染和 reference 管理。
+- 支持本地 MLX TTS 模型 Adapter，也支持 OpenAI-compatible 远程 provider。本地默认 VoxCPM2 8-bit，同时保留 MOSS-TTS Local v1.5 与 Qwen3-TTS Base 作为对比路径。
+- 通过 Render Manifest 装配 WAV，显式处理停顿、格式/响度一致性、渲染血缘和可复用分段音频资产。
 - Models 页面支持本地模型存储、下载、迁移、重置和默认本地语音模型选择。
 - Mock LLM/TTS provider 可用于无付费 API、无本地模型权重的 smoke test。
 - 开发期本地数据默认存储在 `.local-data/`。
@@ -134,13 +137,13 @@ Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
 
 ### 环境变量
 
-正常开发不强制要求 `.env`。`.env.example` 记录了可选脚本变量，例如 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE` 和 `HF_TOKEN`。
+正常开发不强制要求 `.env`。`.env.example` 记录了 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE`、`HF_TOKEN`，以及用于让并行 worktree 的 Vite shell 指向独立本地 runtime 的 `VITE_AODCAST_RUNTIME_URL` 等可选变量。
 
 ### 导出 MP3
 
 最终成片仍是 WAV。音频生成后，在成片旁点击 **Export MP3**。
 
-- Aodcast 会在 WAV 旁边写出一份 192 kbps 的 MP3，例如 `.local-data/exports/<session-id>/audio.mp3`。
+- Aodcast 会在 WAV 旁边写出一份 192 kbps 的 MP3，例如 `.local-data/exports/<session-id>/renders/<render-id>/podcast.mp3`。
 - Finder 会打开该 MP3，随后可手动上传小宇宙或其他平台。
 - Aodcast 不保存平台凭据、不直接上传、不生成 RSS，也不维护远端发布状态。
 
@@ -157,17 +160,28 @@ uv pip install --python .venv/bin/python -e '.[local-mlx]'
 cd ../..
 ```
 
+该依赖组将 `mlx-audio[tts]` 固定为 `0.4.6`，保证模型 Adapter 与 worker 使用经过验证的 TTS API。
+
 默认模型目标：
 
 ```text
-mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit
+mlx-community/VoxCPM2-8bit
 ```
 
 下载模型权重到用户自有目录：
 
 ```bash
 uv run --with huggingface_hub --with tqdm \
-  scripts/model-download/download_qwen3_tts_mlx.py \
+  scripts/model-download/download_tts_model.py \
+  --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
+```
+
+通用下载脚本默认下载 VoxCPM2 8-bit。下载对比模型时显式传入已登记的仓库，例如：
+
+```bash
+uv run --with huggingface_hub --with tqdm \
+  scripts/model-download/download_tts_model.py \
+  --repo-id OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5 \
   --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
@@ -179,7 +193,16 @@ Local MLX 路径受 runtime 能力门控。选择它之前务必先检查：
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
 
-能力报告是 source of truth，会检查平台、Python 环境、MLX import、模型路径和 bootstrap 行为。
+能力报告是 source of truth，会检查平台、Python 环境、MLX import、模型路径和 bootstrap 行为。每个 Adapter 还会把功能标记为 `native`、`approximated` 或 `unsupported`；Script Workbench 会展示克隆、情绪和显式停顿能力。
+
+当前对比集合：
+
+| 模型 | 定位 |
+| --- | --- |
+| `mlx-community/VoxCPM2-8bit` | 推荐默认；同时支持 Speaker Reference 克隆与风格/韵律 instruction。 |
+| `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5` | 面向高内存 Mac 的长篇与显式停顿对比。 |
+| `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit` | 不带 style instruction 的高质量克隆 baseline。 |
+| `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` | 不带 style instruction、速度更快且内存更低的克隆 baseline。 |
 
 配置 repo-id 模式的 Local MLX：
 
@@ -194,7 +217,7 @@ Local MLX 路径受 runtime 能力门控。选择它之前务必先检查：
 ```bash
 ./scripts/dev/run-python-core.sh \
   --configure-tts-provider local_mlx \
-  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/VoxCPM2-8bit"
 ```
 
 本地模型目录必须包含真实 MLX 导出和 `.safetensors` 权重。占位目录可用于测试，但不能作为可执行模型包。
@@ -234,10 +257,12 @@ CLI 等价命令：
 
 #### Local MLX 说明与限制
 
+- 本次 alpha redesign 不迁移已移除的 voice-profile / preview-lock metadata。更新后请重新创建 Speaker Reference；如果旧 fixture 阻止启动，可重置开发环境的 `.local-data/`。
 - 首次渲染可能较慢，因为 worker 需要加载模型。
-- 长脚本会由项目 runner 分块并拼接。
-- Voice Studio 预览渲染是 pollable long task。
-- Aodcast 当前不提供 voice cloning。
+- 完整渲染会先创建 Speech Plan，为每个分段生成 WAV 资产，再根据 Render Manifest 装配最终 `podcast.wav`。
+- Voice Studio 预览渲染是 pollable long task。预览是临时资产；脚本的克隆来源由所选的持久化 Speaker Reference 决定。
+- 当所选模型声明原生支持 Speaker Reference 时可进行音色克隆。用户上传或录制的音频最长 10 分钟，并且必须提供匹配的参考文本。
+- MOSS 的 pause marker 只由 Adapter 根据 Speech Plan 的结构化 break 临时生成，绝不会写入脚本正文。
 - `.mp4` 支持的是音频容器能力；Aodcast 当前不会把 WAV 转成视频 MP4。
 
 ## 开发命令
@@ -258,6 +283,7 @@ CLI 等价命令：
 
 ```bash
 pnpm --dir apps/desktop check
+pnpm --dir apps/desktop test
 pnpm --dir apps/desktop build:web
 ```
 
@@ -298,7 +324,7 @@ cd services/python-core
 
 ## 数据与隐私
 
-Aodcast 是本地优先应用。开发期间，生成的 session、导入来源快照、脚本、transcript、音频 artifact、provider 配置和 request-state 文件存储在：
+Aodcast 是本地优先应用。开发期间，生成的 session、导入来源快照、脚本、Speech Plan、Render Manifest、Speaker Reference、transcript、音频 artifact、provider 配置和 request-state 文件存储在：
 
 ```text
 .local-data/
@@ -322,12 +348,13 @@ Aodcast 当前聚焦本地优先的单人播客创作：
 - 输入：文本主题，或每个 episode 一个本地/粘贴的 Markdown 来源
 - 输出：单人播客脚本 + Script Workbench 渲染的最终音频
 - LLM：用户配置的 API provider
-- TTS：本地 MLX 为首发主路径，同时支持远程 API provider
+- 说话者身份：每个脚本选择一个 provider-neutral Speaker Reference
+- TTS：本地 MLX 多模型 Adapter 为首发主路径，同时支持远程 API provider
 - 记忆：文件原生、仅本地的跨 Episode 长期用户记忆
 
-当前不包含：语音转文本输入、多主持人格式、云端后端依赖、voice cloning。
+当前不包含：语音转文本输入、多主持人格式、强制云端后端依赖。
 
-应用可以服务常见音频后缀，并且在 `ffmpeg` 或 `afconvert` 可用时，把部分上传的 profile 样本准备成 Local MLX 兼容的 WAV reference。压缩音频导出依赖本机转换工具。真正的视频 MP4 输出不在当前范围内。
+应用可以服务常见音频后缀，并通过本地解码器或 `ffprobe` 校验上传的 Speaker Reference 时长。压缩音频导出依赖本机转换工具。真正的视频 MP4 输出不在当前范围内。
 
 ## 架构与行为说明
 
@@ -341,25 +368,28 @@ Aodcast 当前聚焦本地优先的单人播客创作：
 
 长期记忆以文件形式保存在 `.local-data/memory/`。`entries/*.md` 是唯一 source of truth；`catalog.json` 与 `MEMORY.md` 可重建。只有用户发言可成为记忆。访谈/脚本主流程只做只读检索，且不得阻塞于后台记忆工作。
 
+### Podcast Editor 与 Speech Director
+
+Podcast Editor 保持脚本为纯口播正文，同时优化听觉结构、句子长度、标点和段落呼吸；不会加入 provider tag、舞台指令或人为 filler。每次完整渲染开始时，Speech Director 都会为精确的脚本 hash 创建版本化 Speech Plan。脚本一旦编辑，旧 plan 与 render 就会过期，必须先重新完整生成，才能再次局部重生成。
+
 ### Desktop bridge 与长任务
 
-UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频渲染、音色预览、模型迁移/下载等）会持久化可轮询的 `request_state`，暴露进度，支持取消，并用 `run_token` 避免重入后的陈旧 UI 状态。有状态的长任务操作应串行执行，除非明确在测并发。
+UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频渲染、音色预览、模型迁移/下载等）会持久化可轮询的 `request_state`，暴露进度，支持取消，并用 `run_token` 避免重入后的陈旧 UI 状态。完整渲染与上下文窗口重生成共享脚本级 task id `render_audio:<session_id>:<script_id>`；取消请求必须携带本次 run token，因此不同脚本不会互相冲突。有状态的其他长任务应串行执行，除非明确在测并发。
 
 ### Voice Studio 与 Script Workbench
 
-- Script Workbench 负责最终播客渲染与生成音频管理。
-- 最终成片保持 WAV；MP3 是成片旁的按需导出，写在同一目录。
-- Voice Studio 负责可复用音色档案、预览与脚本音色选择。
-- 脚本 `renderAudio` 使用脚本 artifact 的 `voice_settings`，回退到 Voice Studio 默认值，而不是 Settings 里的原始 `tts_config.voice`。
-- 多脚本 session 在 `artifact.script_artifacts` 下按脚本隔离 playback/takes。
-- 预览锁定写入脚本级 `artifact.voice_reference`；本地 MLX/Qwen 全量渲染与 take 渲染在存在时把它作为 `ref_audio`。锁定提升连续性，不保证比特级一致输出。
-- 内置档案音频位于 `services/python-core/app/assets/voice-profiles/`（纳入版本控制）。用户档案复制到 `.local-data/exports/_voice_profiles`。用户建档通过上传或麦克风录音走 HTTP，不要求用户手填本地音频路径。系统音频捕获尚不可用。
+- Script Workbench 负责最终播客渲染、每次完整渲染的模型选择、生成音频管理和只读 Speech Plan 视图。
+- 完整渲染会保存不可变的分段 WAV 与 Render Manifest，再装配 manifest 指向的最终 WAV；MP3 是该最终成片旁的按需导出。
+- 每个 Speech Plan 分段都可独立试听。局部重生成采用 `A | B | C | D | E` 中的 B/C/D 窗口：选择 C 会依次重新生成 B、C、D，每一段都以前一段的音频和文本作为条件，复用 A、E，并且只有整个替换窗口成功后才发布新的 manifest 与成片。
+- Voice Studio 负责可复用 Speaker Reference、预览与脚本 reference 选择。Speaker Reference 只定义“谁在说”，表达和模型设置保持分离。
+- 内置 reference 音频当前位于 `services/python-core/app/assets/speaker-references/`（纳入版本控制）。用户 metadata 位于 `.local-data/speaker-references/`，复制的音频位于 `.local-data/exports/_speaker_references/`。创建流程通过 HTTP 上传或麦克风录音，并要求匹配的参考文本；系统音频捕获尚不可用。
+- Script Workbench 可以为下一次完整渲染选择任意已下载且可用的本地模型；生成的 manifest 会冻结该模型和 Adapter pipeline，供后续 B/C/D 重生成沿用。
 - Artifact 音频播放在 Web 与 Tauri 中都走 localhost HTTP 路由 `/api/v1/artifacts/audio`。
 - Reveal in Finder 等 Tauri-only 助手不在 HTTP `DesktopBridge` 接口中。
 
 ### Local MLX runtime
 
-Local MLX TTS 运行在持久 worker 子进程中；模型在 worker 生命周期内只加载一次，不要把一次性 CLI 生成当作生产路径。长文本会分块拼接；worker 读 PCM 时必须匹配模型声道/采样率元数据，否则会出现拉长或浑浊。以 `./scripts/dev/run-python-core.sh` 与 `--show-local-tts-capability` 为能力门控依据（部分环境即使 import 看似正常，原生 MLX bootstrap 仍可能失败）。应用内 Hugging Face 下载禁用 Xet（`HF_HUB_DISABLE_XET=1`）。
+Local MLX TTS 运行在持久 worker 子进程中；模型在 worker 生命周期内只加载一次，不要把一次性 CLI 生成当作生产路径。VoxCPM2、MOSS 与 Qwen 请求分别经过 family-specific Adapter，provider-neutral orchestration 不持久化任何模型标记。装配阶段把所有分段解码为统一 WAV 格式，每段只做一次边缘淡化；插入计划静音之前，仅根据可听样本匹配 RMS 电平，并对 master 施加 sample-peak 上限，最后写出 `podcast.wav`。以 `./scripts/dev/run-python-core.sh` 与 `--show-local-tts-capability` 为能力门控依据（部分环境即使 import 看似正常，原生 MLX bootstrap 仍可能失败）。应用内 Hugging Face 下载禁用 Xet（`HF_HUB_DISABLE_XET=1`）。
 
 ### 开发运维
 

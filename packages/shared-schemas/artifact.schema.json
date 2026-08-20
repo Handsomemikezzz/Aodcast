@@ -12,7 +12,12 @@
     "created_at": { "type": "string", "format": "date-time" },
     "final_take_id": { "type": "string" },
     "voice_settings": { "$ref": "#/$defs/voiceSettings" },
-    "voice_reference": { "$ref": "#/$defs/voiceReference" },
+    "speaker_reference": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "https://aodcast.dev/schemas/speaker-reference.schema.json" }
+      ]
+    },
     "takes": {
       "type": "array",
       "items": { "$ref": "#/$defs/audioTake" }
@@ -37,37 +42,15 @@
       },
       "additionalProperties": false
     },
-    "voiceReference": {
-      "type": "object",
-      "properties": {
-        "source": { "type": "string", "enum": ["preview_lock", "voice_profile"] },
-        "voice_profile_id": { "type": "string" },
-        "name": { "type": "string" },
-        "profile_source": { "type": "string", "enum": ["built_in", "user_saved"] },
-        "lock_id": { "type": "string" },
-        "audio_path": { "type": "string" },
-        "preview_text": { "type": "string" },
-        "reference_text": { "type": "string" },
-        "provider": { "type": "string" },
-        "model": { "type": "string" },
-        "voice_id": { "type": "string" },
-        "voice_name": { "type": "string" },
-        "style_id": { "type": "string" },
-        "style_name": { "type": "string" },
-        "speed": { "type": "number" },
-        "language": { "type": "string" },
-        "audio_format": { "type": "string" },
-        "created_at": { "type": "string", "format": "date-time" }
-      },
-      "additionalProperties": false
-    },
     "audioTake": {
       "type": "object",
-      "required": ["take_id", "session_id", "script_id", "audio_path", "transcript_path", "provider", "model", "voice_id", "voice_name", "style_id", "style_name", "speed", "language", "audio_format", "created_at"],
+      "required": ["take_id", "session_id", "script_id", "speech_plan_id", "render_id", "audio_path", "transcript_path", "provider", "model", "voice_id", "voice_name", "style_id", "style_name", "speed", "language", "audio_format", "created_at"],
       "properties": {
         "take_id": { "type": "string" },
         "session_id": { "type": "string" },
         "script_id": { "type": "string" },
+        "speech_plan_id": { "type": "string" },
+        "render_id": { "type": "string" },
         "audio_path": { "type": "string" },
         "transcript_path": { "type": "string" },
         "provider": { "type": "string" },
@@ -91,7 +74,12 @@
         "provider": { "type": "string" },
         "final_take_id": { "type": "string" },
         "voice_settings": { "$ref": "#/$defs/voiceSettings" },
-        "voice_reference": { "$ref": "#/$defs/voiceReference" },
+        "speaker_reference": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "https://aodcast.dev/schemas/speaker-reference.schema.json" }
+          ]
+        },
         "takes": {
           "type": "array",
           "items": { "$ref": "#/$defs/audioTake" }

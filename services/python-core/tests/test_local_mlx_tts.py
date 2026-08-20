@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 import wave
@@ -14,10 +15,10 @@ except ImportError:
 
 from app.domain.tts_config import TTSProviderConfig
 from app.providers.tts_api.base import TTSGenerationRequest
-from app.providers.tts_local_mlx.provider import LocalMLXTTSProvider
-from app.providers.tts_local_mlx.runner import LocalMLXRunResult, MLXAudioQwenRunner
-from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.providers.tts_local_mlx.mlx_worker import MlxTtsWorker
+from app.providers.tts_local_mlx.provider import LocalMLXTTSProvider
+from app.providers.tts_local_mlx.runner import LocalMLXRunResult, MLXAudioRunner
+from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.providers.tts_local_mlx.worker_client import (
     MLXWorkerCancelled,
     WorkerEvent,
@@ -29,12 +30,18 @@ class LocalMLXRuntimeTests(unittest.TestCase):
     def test_capability_reports_available_when_runtime_and_model_path_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             Path(tmp_dir, "model.safetensors").write_bytes(b"test")
+            Path(tmp_dir, "config.json").write_text(
+                json.dumps({"model_type": "qwen3_tts", "tts_model_type": "base"}),
+                encoding="utf-8",
+            )
             config = TTSProviderConfig(
                 provider="local_mlx",
                 model="mlx-voice",
                 local_model_path=tmp_dir,
             )
-            with patch("app.providers.tts_local_mlx.runtime.platform.system", return_value="Darwin"):
+            with patch("app.providers.tts_local_mlx.runtime.platform.system", return_value="Darwin"), patch(
+                "app.providers.tts_local_mlx.runtime.platform.machine", return_value="arm64"
+            ):
                 with patch("app.providers.tts_local_mlx.runtime.importlib.util.find_spec", return_value=object()):
                     with patch(
                         "app.providers.tts_local_mlx.runtime._probe_mlx_runtime_bootstrap",
@@ -64,12 +71,18 @@ class LocalMLXRuntimeTests(unittest.TestCase):
     def test_capability_reports_runtime_bootstrap_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             Path(tmp_dir, "model.safetensors").write_bytes(b"test")
+            Path(tmp_dir, "config.json").write_text(
+                json.dumps({"model_type": "qwen3_tts", "tts_model_type": "base"}),
+                encoding="utf-8",
+            )
             config = TTSProviderConfig(
                 provider="local_mlx",
                 model="mlx-voice",
                 local_model_path=tmp_dir,
             )
-            with patch("app.providers.tts_local_mlx.runtime.platform.system", return_value="Darwin"):
+            with patch("app.providers.tts_local_mlx.runtime.platform.system", return_value="Darwin"), patch(
+                "app.providers.tts_local_mlx.runtime.platform.machine", return_value="arm64"
+            ):
                 with patch("app.providers.tts_local_mlx.runtime.importlib.util.find_spec", return_value=object()):
                     with patch(
                         "app.providers.tts_local_mlx.runtime._probe_mlx_runtime_bootstrap",
@@ -96,6 +109,25 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             decoded = worker._read_pcm(path, np=np)
 
         self.assertEqual(decoded.shape, (2_400,))
+        self.assertEqual(decoded.dtype, np.int16)
+
+    def test_worker_preserves_stereo_pcm_shape(self) -> None:
+        worker = MlxTtsWorker("stub-model")
+        worker._sample_rate = 48_000
+        worker._channels = 2
+        samples = np.zeros((4_800, 2), dtype=np.int16)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "stereo.wav"
+            with wave.open(str(path), "wb") as handle:
+                handle.setnchannels(2)
+                handle.setsampwidth(2)
+                handle.setframerate(48_000)
+                handle.writeframes(samples.tobytes())
+
+            decoded = worker._read_pcm(path, np=np)
+
+        self.assertEqual(decoded.shape, (4_800, 2))
         self.assertEqual(decoded.dtype, np.int16)
 
     def test_local_provider_requires_available_runtime(self) -> None:
@@ -143,6 +175,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             )
 
         self.assertEqual(response.provider_name, "local_mlx")
+        self.assertEqual(response.adapter_version, "speech-plan-v1")
         self.assertEqual(response.file_extension, "wav")
         self.assertEqual(response.audio_bytes, b"runner-bytes")
 
@@ -208,28 +241,18 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                 self,
                 *,
                 model: str,
-                chunks,
-                voice: str,
-                audio_format: str,
-                speed: float,
-                style_prompt: str,
-                language: str,
+                segments,
+                options,
+                leading_silence_ms: int,
                 output_dir: Path,
-                ref_audio,
-                ref_text,
                 should_cancel,
                 on_event: Callable[[WorkerEvent], None] | None,
             ) -> dict[str, object]:
                 self.last_kwargs = {
                     "model": model,
-                    "chunks": list(chunks),
-                    "voice": voice,
-                    "audio_format": audio_format,
-                    "speed": speed,
-                    "style_prompt": style_prompt,
-                    "language": language,
-                    "ref_audio": ref_audio,
-                    "ref_text": ref_text,
+                    "segments": list(segments),
+                    "options": dict(options),
+                    "leading_silence_ms": leading_silence_ms,
                 }
                 if on_event is not None:
                     on_event(
@@ -244,17 +267,18 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                             payload={"index": 0, "total": 1, "job_id": "job", "duration_seconds": 0.5},
                         )
                     )
-                audio_path = Path(output_dir) / f"final.{audio_format}"
+                audio_path = Path(output_dir) / "final.wav"
                 audio_path.write_bytes(b"worker-wav")
                 return {
                     "audio_path": str(audio_path),
-                    "file_extension": audio_format,
+                    "file_extension": "wav",
                     "chunks_total": 1,
                     "sample_rate": 24000,
+                    "channels": 1,
                 }
 
         fake = FakeWorkerClient()
-        runner = MLXAudioQwenRunner(config, worker_client=fake)
+        runner = MLXAudioRunner(config, worker_client=fake)
 
         events: list[object] = []
         result = runner.synthesize(
@@ -266,15 +290,54 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(result.audio_bytes, b"worker-wav")
         self.assertEqual(result.file_extension, "wav")
         self.assertEqual(result.model_name, config.model)
-        self.assertEqual(fake.last_kwargs["audio_format"], "wav")
-        self.assertEqual(fake.last_kwargs["speed"], 1.0)
-        self.assertEqual(fake.last_kwargs["style_prompt"], "")
-        self.assertEqual(fake.last_kwargs["language"], "zh")
-        self.assertEqual(fake.last_kwargs["ref_audio"], config.local_ref_audio_path)
-        self.assertIsNone(fake.last_kwargs["ref_text"])
+        options = fake.last_kwargs["options"]
+        self.assertEqual(options["speed"], 1.0)
+        self.assertEqual(options["style_prompt"], "")
+        self.assertEqual(options["language"], "zh")
+        self.assertEqual(options["reference_audio_path"], config.local_ref_audio_path)
+        self.assertEqual(options["reference_text"], "")
         self.assertEqual(len(events), 2)
         self.assertEqual(getattr(events[0], "phase"), "chunk_started")
         self.assertEqual(getattr(events[1], "phase"), "chunk_done")
+
+    def test_runner_reports_the_actual_local_model_target_for_manifest_freezing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_dir = Path(tmp_dir) / "custom-vox"
+            model_dir.mkdir()
+            (model_dir / "config.json").write_text(
+                json.dumps({"model_type": "voxcpm2"}),
+                encoding="utf-8",
+            )
+            (model_dir / "model.safetensors").write_bytes(b"weights")
+            config = TTSProviderConfig(
+                provider="local_mlx",
+                model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+                local_model_path=str(model_dir),
+            )
+
+            class FakeWorkerClient:
+                def __init__(self) -> None:
+                    self.model = ""
+
+                def synthesize(self, **kwargs: object) -> dict[str, object]:
+                    self.model = str(kwargs["model"])
+                    output_dir = Path(kwargs["output_dir"])
+                    audio_path = output_dir / "final.wav"
+                    audio_path.write_bytes(b"worker-wav")
+                    return {
+                        "audio_path": str(audio_path),
+                        "sample_rate": 48_000,
+                        "channels": 1,
+                    }
+
+            fake = FakeWorkerClient()
+            result = MLXAudioRunner(config, worker_client=fake).synthesize(
+                "本地自定义模型路径。",
+                audio_format="wav",
+            )
+
+            self.assertEqual(fake.model, str(model_dir))
+            self.assertEqual(result.model_name, str(model_dir))
 
     def test_runner_prefers_request_reference_audio_over_config_reference(self) -> None:
         config = TTSProviderConfig(
@@ -290,18 +353,18 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             def synthesize(self, **kwargs: object) -> dict[str, object]:
                 self.last_kwargs = dict(kwargs)
                 output_dir = Path(kwargs["output_dir"])
-                audio_format = str(kwargs["audio_format"])
-                audio_path = output_dir / f"final.{audio_format}"
+                audio_path = output_dir / "final.wav"
                 audio_path.write_bytes(b"worker-wav")
                 return {
                     "audio_path": str(audio_path),
-                    "file_extension": audio_format,
+                    "file_extension": "wav",
                     "chunks_total": 1,
                     "sample_rate": 24000,
+                    "channels": 1,
                 }
 
         fake = FakeWorkerClient()
-        runner = MLXAudioQwenRunner(config, worker_client=fake)
+        runner = MLXAudioRunner(config, worker_client=fake)
 
         runner.synthesize(
             "Short runner test sentence.",
@@ -310,8 +373,9 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             reference_text="Locked preview text.",
         )
 
-        self.assertEqual(fake.last_kwargs["ref_audio"], "/tmp/locked-preview.wav")
-        self.assertEqual(fake.last_kwargs["ref_text"], "Locked preview text.")
+        options = fake.last_kwargs["options"]
+        self.assertEqual(options["reference_audio_path"], "/tmp/locked-preview.wav")
+        self.assertEqual(options["reference_text"], "Locked preview text.")
 
     def test_runner_translates_worker_cancellation_into_task_cancellation(self) -> None:
         config = TTSProviderConfig(
@@ -323,7 +387,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             def synthesize(self, **_: object) -> dict[str, object]:
                 raise MLXWorkerCancelled("worker cancelled")
 
-        runner = MLXAudioQwenRunner(config, worker_client=CancellingWorker())
+        runner = MLXAudioRunner(config, worker_client=CancellingWorker())
 
         with self.assertRaises(TaskCancellationRequested):
             runner.synthesize(

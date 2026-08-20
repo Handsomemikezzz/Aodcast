@@ -132,9 +132,9 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
             type="button"
             onClick={togglePlay}
             disabled={hasError || !src}
+            aria-label={hasError ? "Audio unavailable" : isPlaying ? "Pause audio" : "Play audio"}
             className={cn(
-              "flex shrink-0 items-center justify-center rounded-full text-on-primary shadow-md transition-all duration-200 focus:outline-none",
-              variant === "minimal" ? "h-9 w-9" : "h-10 w-10",
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-on-primary shadow-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-container",
               hasError
                 ? "bg-red-500/20 text-red-400 cursor-not-allowed border border-red-500/20"
                 : !src
@@ -180,6 +180,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
                   value={currentTime}
                   onChange={handleSeekChange}
                   disabled={hasError || !src || duration === 0}
+                  aria-label="Seek audio"
                   className="premium-slider w-full h-1"
                   style={{ background: accentRangeBackground(seekPercent) }}
                 />
@@ -193,7 +194,8 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
                 type="button"
                 onClick={toggleMute}
                 disabled={hasError}
-                className="p-1.5 rounded-lg text-secondary hover:text-primary transition-colors focus:outline-none"
+                aria-label={isMuted ? "Unmute audio" : "Mute audio"}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-secondary hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/60"
               >
                 {isMuted || volume === 0 ? (
                   <VolumeX className="h-4 w-4" />
@@ -210,6 +212,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
                 disabled={hasError}
+                aria-label="Audio volume"
                 className="premium-slider w-16 h-1 opacity-60 group-hover/volume:opacity-100 transition-opacity"
                 style={{ background: accentRangeBackground(volumePercent) }}
               />

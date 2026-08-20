@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/speaker-reference.schema.json",
+  "title": "SpeakerReference",
+  "description": "Provider-neutral source material that defines who is speaking. Delivery and model settings do not belong in this contract.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "speaker_reference_id",
+    "name",
+    "source",
+    "audio_path",
+    "audio_hash",
+    "audio_format",
+    "duration_ms",
+    "reference_text",
+    "language",
+    "reference_hash",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "speaker_reference_id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "enum": ["built_in", "user_saved"] },
+    "audio_path": { "type": "string", "minLength": 1 },
+    "audio_hash": { "$ref": "#/$defs/sha256" },
+    "audio_format": { "type": "string", "minLength": 1 },
+    "duration_ms": { "type": "integer", "minimum": 1 },
+    "reference_text": { "type": "string", "minLength": 1 },
+    "language": { "type": "string", "minLength": 1 },
+    "reference_hash": { "$ref": "#/$defs/sha256" },
+    "description": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "last_used_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

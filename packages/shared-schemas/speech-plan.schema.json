@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/speech-plan.schema.json",
+  "title": "SpeechPlan",
+  "description": "Versioned, provider-neutral delivery plan for one exact script hash. All text offsets count Unicode code points.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plan_id",
+    "version",
+    "session_id",
+    "script_id",
+    "script_hash",
+    "plan_hash",
+    "language",
+    "segments",
+    "director_metadata",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "plan_id": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "script_id": { "type": "string", "minLength": 1 },
+    "script_hash": { "$ref": "#/$defs/sha256" },
+    "plan_hash": { "$ref": "#/$defs/sha256" },
+    "language": { "type": "string", "minLength": 1 },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/segment" }
+    },
+    "director_metadata": { "$ref": "#/$defs/directorMetadata" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "directorMetadata": {
+      "type": "object",
+      "required": ["prompt_version", "provider", "model"],
+      "properties": {
+        "prompt_version": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "sourceSpan": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "delivery": {
+      "type": "object",
+      "required": ["intent", "emotion", "energy", "pace"],
+      "properties": {
+        "intent": { "type": "string", "minLength": 1 },
+        "emotion": { "type": "string", "minLength": 1 },
+        "energy": { "type": "number", "minimum": 0, "maximum": 1 },
+        "pace": { "type": "number", "minimum": 0.5, "maximum": 2 }
+      },
+      "additionalProperties": false
+    },
+    "break": {
+      "type": "object",
+      "required": ["offset", "duration_ms"],
+      "properties": {
+        "offset": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 1, "maximum": 10000 }
+      },
+      "additionalProperties": false
+    },
+    "emphasis": {
+      "type": "object",
+      "required": ["start", "end", "level"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 },
+        "level": { "type": "string", "enum": ["light", "medium", "strong"] }
+      },
+      "additionalProperties": false
+    },
+    "pronunciation": {
+      "type": "object",
+      "required": ["start", "end", "spoken_as"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 },
+        "spoken_as": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "segment": {
+      "type": "object",
+      "required": [
+        "segment_id",
+        "position",
+        "text",
+        "text_hash",
+        "source_span",
+        "delivery",
+        "breaks",
+        "emphasis",
+        "pronunciations",
+        "pause_after_ms",
+        "segment_hash"
+      ],
+      "properties": {
+        "segment_id": { "type": "string", "minLength": 1 },
+        "position": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string", "minLength": 1 },
+        "text_hash": { "$ref": "#/$defs/sha256" },
+        "source_span": { "$ref": "#/$defs/sourceSpan" },
+        "delivery": { "$ref": "#/$defs/delivery" },
+        "breaks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/break" }
+        },
+        "emphasis": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/emphasis" }
+        },
+        "pronunciations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pronunciation" }
+        },
+        "pause_after_ms": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "segment_hash": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

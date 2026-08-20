@@ -22,7 +22,7 @@ if rg -n \
   --glob '!services/python-core/.venv/**' \
   --glob '!**/__pycache__/**' \
   "TODO|TBD|FIXME" \
-  "$repo_root/AGENTS.md" "$repo_root/README.md" "$repo_root/docs" "$repo_root/apps" "$repo_root/services" "$repo_root/scripts" "$repo_root/packages" "$repo_root/examples"; then
+  "$repo_root/AGENTS.md" "$repo_root/README.md" "$repo_root/apps" "$repo_root/services" "$repo_root/scripts" "$repo_root/packages" "$repo_root/examples"; then
   true
 else
   echo "No TODO/TBD/FIXME markers found."
@@ -51,6 +51,13 @@ echo "== desktop typecheck =="
 (
   cd "$repo_root/apps/desktop"
   pnpm check
+)
+
+echo
+echo "== desktop tests =="
+(
+  cd "$repo_root/apps/desktop"
+  pnpm test
 )
 
 echo

@@ -4,31 +4,31 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { resolveAudioFileUrl } from "../lib/audioFile";
 import { useBridge } from "../lib/BridgeContext";
+import type { LongTaskHandle } from "../lib/desktopBridge";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { getErrorMessage } from "../lib/requestState";
 import { cn } from "../lib/utils";
-import { filterActiveVoiceProfiles, resolveProjectVoiceSettings } from "../lib/voiceSettings";
 import type {
   ModelStatus,
   RequestState,
   SessionProject,
+  SpeakerReference,
   TTSCapability,
   TTSProviderConfig,
   VoicePreset,
-  VoiceProfileRecord,
   VoiceRenderSettings,
   VoiceStylePreset,
 } from "../types";
 
-const DEFAULT_QWEN3_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit";
+const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-8bit";
 type PreviewTextMode = "standard" | "script_opening" | "custom";
-type ProfileAudioSource = "upload" | "microphone" | "system";
-type ProfileDialogMode = "create" | "edit";
+type ReferenceAudioSource = "upload" | "microphone" | "system";
+type ReferenceDialogMode = "create" | "edit";
 
 function resolvedTtsModel(config: TTSProviderConfig | null): string {
   const raw = config?.model?.trim() ?? "";
-  if (!raw || raw === "mock-voice") return DEFAULT_QWEN3_TTS_MODEL;
+  if (!raw || raw === "mock-voice") return DEFAULT_LOCAL_TTS_MODEL;
   return raw;
 }
 
@@ -40,14 +40,9 @@ function scriptOpeningText(script: string): string {
   return script.trim().replace(/\s+/g, " ").slice(0, 180);
 }
 
-function profileSampleAudioFormat(fileName: string, file: File | Blob | null): string {
-  const extension = fileName.split(".").pop()?.trim().toLowerCase();
-  if (extension) return extension;
-  if (file?.type.includes("webm")) return "webm";
-  if (file?.type.includes("mp4")) return "mp4";
-  if (file?.type.includes("mpeg")) return "mp3";
-  if (file?.type.includes("ogg")) return "ogg";
-  return "wav";
+function formatReferenceDuration(durationMs: number): string {
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  return `${seconds} 秒`;
 }
 
 export function VoiceStudioPage() {
@@ -56,12 +51,12 @@ export function VoiceStudioPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const previewAudioRef = useRef<HTMLAudioElement>(null);
-  const profileFileInputRef = useRef<HTMLInputElement>(null);
-  const profileRecorderRef = useRef<MediaRecorder | null>(null);
-  const profileRecordingChunksRef = useRef<Blob[]>([]);
-  const profileRecordingStreamRef = useRef<MediaStream | null>(null);
+  const referenceFileInputRef = useRef<HTMLInputElement>(null);
+  const referenceRecorderRef = useRef<MediaRecorder | null>(null);
+  const referenceRecordingChunksRef = useRef<Blob[]>([]);
+  const referenceRecordingStreamRef = useRef<MediaStream | null>(null);
   const previewRequestTokenRef = useRef(0);
-  const previewContextRef = useRef({ previewKey: "", profileId: "", scriptId: "", sessionId: "" });
+  const previewContextRef = useRef({ previewKey: "", speakerReferenceId: "", scriptId: "", sessionId: "" });
   const projectLoadTokenRef = useRef(0);
   const projectLoadContextRef = useRef({ scriptBoundMode: false, scriptId: "", sessionId: "" });
   const lastCurrentPreviewKeyRef = useRef("");
@@ -69,7 +64,7 @@ export function VoiceStudioPage() {
   const [projects, setProjects] = useState<SessionProject[]>([]);
   const [project, setProject] = useState<SessionProject | null>(null);
   const [voices, setVoices] = useState<VoicePreset[]>([]);
-  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfileRecord[]>([]);
+  const [speakerReferences, setSpeakerReferences] = useState<SpeakerReference[]>([]);
   const [styles, setStyles] = useState<VoiceStylePreset[]>([]);
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
@@ -92,25 +87,27 @@ export function VoiceStudioPage() {
   const [previewKey, setPreviewKey] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
-  const [profileDialogMode, setProfileDialogMode] = useState<ProfileDialogMode | null>(null);
-  const [editingProfileId, setEditingProfileId] = useState("");
-  const [existingProfileAudioUrl, setExistingProfileAudioUrl] = useState("");
-  const [profileAudioSource, setProfileAudioSource] = useState<ProfileAudioSource>("upload");
-  const [newProfileName, setNewProfileName] = useState("");
-  const [newProfileAudioFile, setNewProfileAudioFile] = useState<File | Blob | null>(null);
-  const [newProfileAudioFileName, setNewProfileAudioFileName] = useState("");
-  const [newProfileAudioPreviewUrl, setNewProfileAudioPreviewUrl] = useState("");
-  const [newProfileReferenceText, setNewProfileReferenceText] = useState("");
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [recordingProfileSample, setRecordingProfileSample] = useState(false);
+  const [previewTask, setPreviewTask] = useState<LongTaskHandle | null>(null);
+  const [referenceDialogMode, setReferenceDialogMode] = useState<ReferenceDialogMode | null>(null);
+  const [editingReferenceId, setEditingReferenceId] = useState("");
+  const [existingReferenceAudioUrl, setExistingReferenceAudioUrl] = useState("");
+  const [referenceAudioSource, setReferenceAudioSource] = useState<ReferenceAudioSource>("upload");
+  const [newReferenceName, setNewReferenceName] = useState("");
+  const [newReferenceAudioFile, setNewReferenceAudioFile] = useState<File | Blob | null>(null);
+  const [newReferenceAudioFileName, setNewReferenceAudioFileName] = useState("");
+  const [newReferenceAudioPreviewUrl, setNewReferenceAudioPreviewUrl] = useState("");
+  const [newReferenceText, setNewReferenceText] = useState("");
+  const [newReferenceLanguage, setNewReferenceLanguage] = useState("zh");
+  const [savingReference, setSavingReference] = useState(false);
+  const [recordingReferenceSample, setRecordingReferenceSample] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [profileAudioErrors, setProfileAudioErrors] = useState<Record<string, string>>({});
+  const [referenceAudioErrors, setReferenceAudioErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
-  const [profileToDelete, setProfileToDelete] = useState<VoiceProfileRecord | null>(null);
+  const [referenceToDelete, setReferenceToDelete] = useState<SpeakerReference | null>(null);
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
   const scriptBoundMode = Boolean(routeSessionId && routeScriptId);
-  const canApplyProfileToScript = Boolean(selectedSessionId && selectedScriptId);
+  const canApplyReferenceToScript = Boolean(selectedSessionId && selectedScriptId);
   const scriptTitle = (project?.script as { title?: string } | undefined)?.title || selectedSession?.session.topic || "当前脚本";
   const scriptText = scriptBoundMode ? project?.script?.final?.trim() || project?.script?.draft?.trim() || "" : "";
   const scriptOpening = scriptOpeningText(scriptText);
@@ -120,12 +117,11 @@ export function VoiceStudioPage() {
       : previewTextMode === "standard"
         ? standardPreviewText
         : previewText;
-  const voiceReference = scriptBoundMode ? project?.artifact?.voice_reference : undefined;
-  const activeVoiceProfiles = useMemo(() => filterActiveVoiceProfiles(voiceProfiles), [voiceProfiles]);
-  const selectedProfile = voiceReference?.voice_profile_id
-    ? activeVoiceProfiles.find((profile) => profile.voice_profile_id === voiceReference.voice_profile_id)
+  const speakerReference = scriptBoundMode ? project?.artifact?.speaker_reference : undefined;
+  const selectedReference = speakerReference?.speaker_reference_id
+    ? speakerReferences.find((reference) => reference.speaker_reference_id === speakerReference.speaker_reference_id) ?? speakerReference
     : undefined;
-  const selectedProfileId = selectedProfile?.voice_profile_id ?? "";
+  const selectedReferenceId = selectedReference?.speaker_reference_id ?? "";
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
   const selectedStyle = styles.find((style) => style.style_id === selectedStyleId) ?? styles[0];
   const resolvedModel = resolvedTtsModel(ttsConfig);
@@ -170,7 +166,7 @@ export function VoiceStudioPage() {
 
   const currentPreviewKey = useMemo(
     () => JSON.stringify({
-      profile: selectedProfileId,
+      speakerReference: selectedReferenceId,
       voiceId: selectedVoiceId,
       voiceName: selectedVoice?.name ?? "",
       text: effectivePreviewText,
@@ -180,11 +176,11 @@ export function VoiceStudioPage() {
       audioFormat,
       providerOverride,
     }),
-    [audioFormat, effectivePreviewText, language, providerOverride, selectedProfileId, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
+    [audioFormat, effectivePreviewText, language, providerOverride, selectedReferenceId, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
   );
   previewContextRef.current = {
     previewKey: currentPreviewKey,
-    profileId: selectedProfileId,
+    speakerReferenceId: selectedReferenceId,
     scriptId: selectedScriptId,
     sessionId: selectedSessionId,
   };
@@ -201,54 +197,57 @@ export function VoiceStudioPage() {
     setPreviewPath("");
     setPreviewKey("");
     setPreviewRequestState(null);
+    setPreviewTask(null);
   }, []);
 
-  const stopProfileRecordingStream = useCallback(() => {
-    profileRecordingStreamRef.current?.getTracks().forEach((track) => track.stop());
-    profileRecordingStreamRef.current = null;
+  const stopReferenceRecordingStream = useCallback(() => {
+    referenceRecordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    referenceRecordingStreamRef.current = null;
   }, []);
 
-  const setProfileAudioSample = useCallback((file: File | Blob, fileName: string) => {
-    setNewProfileAudioFile(file);
-    setNewProfileAudioFileName(fileName);
-    setNewProfileAudioPreviewUrl((current) => {
+  const setReferenceAudioSample = useCallback((file: File | Blob, fileName: string) => {
+    setNewReferenceAudioFile(file);
+    setNewReferenceAudioFileName(fileName);
+    setNewReferenceAudioPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return URL.createObjectURL(file);
     });
   }, []);
 
-  const resetProfileDialog = useCallback(() => {
-    setProfileDialogMode(null);
-    setEditingProfileId("");
-    setProfileAudioSource("upload");
-    setNewProfileName("");
-    setNewProfileAudioFile(null);
-    setNewProfileAudioFileName("");
-    setNewProfileAudioPreviewUrl((current) => {
+  const resetReferenceDialog = useCallback(() => {
+    setReferenceDialogMode(null);
+    setEditingReferenceId("");
+    setReferenceAudioSource("upload");
+    setNewReferenceName("");
+    setNewReferenceAudioFile(null);
+    setNewReferenceAudioFileName("");
+    setNewReferenceAudioPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return "";
     });
-    setExistingProfileAudioUrl("");
-    setNewProfileReferenceText("");
-    setRecordingProfileSample(false);
-    profileRecordingChunksRef.current = [];
-    profileRecorderRef.current = null;
-    stopProfileRecordingStream();
-  }, [stopProfileRecordingStream]);
+    setExistingReferenceAudioUrl("");
+    setNewReferenceText("");
+    setNewReferenceLanguage("zh");
+    setRecordingReferenceSample(false);
+    referenceRecordingChunksRef.current = [];
+    referenceRecorderRef.current = null;
+    stopReferenceRecordingStream();
+  }, [stopReferenceRecordingStream]);
 
-  const openCreateProfileDialog = useCallback(() => {
-    resetProfileDialog();
-    setProfileDialogMode("create");
-  }, [resetProfileDialog]);
+  const openCreateReferenceDialog = useCallback(() => {
+    resetReferenceDialog();
+    setReferenceDialogMode("create");
+  }, [resetReferenceDialog]);
 
-  const openEditProfileDialog = useCallback((profile: VoiceProfileRecord) => {
-    resetProfileDialog();
-    setProfileDialogMode("edit");
-    setEditingProfileId(profile.voice_profile_id);
-    setNewProfileName(profile.name);
-    setNewProfileReferenceText(profile.preview_text || profile.reference_text || "");
-    setExistingProfileAudioUrl(resolveAudioFileUrl(profile.audio_path));
-  }, [resetProfileDialog]);
+  const openEditReferenceDialog = useCallback((reference: SpeakerReference) => {
+    resetReferenceDialog();
+    setReferenceDialogMode("edit");
+    setEditingReferenceId(reference.speaker_reference_id);
+    setNewReferenceName(reference.name);
+    setNewReferenceText(reference.reference_text);
+    setNewReferenceLanguage(reference.language);
+    setExistingReferenceAudioUrl(resolveAudioFileUrl(reference.audio_path));
+  }, [resetReferenceDialog]);
 
   const loadProject = async (sessionId: string, scriptId: string) => {
     if (!sessionId || !scriptId) return;
@@ -264,33 +263,27 @@ export function VoiceStudioPage() {
     ) {
       return;
     }
-    const savedSettings = resolveProjectVoiceSettings(loaded);
-    setSelectedVoiceId(savedSettings.voice_id);
-    setSelectedStyleId(savedSettings.style_id);
-    setSpeed(savedSettings.speed);
-    setLanguage(savedSettings.language ?? "zh");
-    setAudioFormat(savedSettings.audio_format ?? "wav");
     setProject(loaded);
   };
 
-  const refreshVoiceProfiles = async () => {
-    setProfileAudioErrors({});
-    setVoiceProfiles(await bridge.listVoiceProfiles());
+  const refreshSpeakerReferences = async () => {
+    setReferenceAudioErrors({});
+    setSpeakerReferences(await bridge.listSpeakerReferences());
   };
 
   useEffect(() => {
     void (async () => {
       try {
-        const [catalog, loadedProjects, tts, modelStatus, capability, profiles] = await Promise.all([
+        const [catalog, loadedProjects, tts, modelStatus, capability, references] = await Promise.all([
           bridge.listVoicePresets(),
           bridge.listProjects(),
           bridge.showTTSConfig(),
           bridge.listModelsStatus(),
           bridge.getLocalTTSCapability(),
-          bridge.listVoiceProfiles(),
+          bridge.listSpeakerReferences(),
         ]);
         setVoices(catalog.voices);
-        setVoiceProfiles(profiles);
+        setSpeakerReferences(references);
         setStyles(catalog.styles);
         setStandardPreviewText(catalog.standard_preview_text);
         setPreviewText(catalog.standard_preview_text);
@@ -307,10 +300,10 @@ export function VoiceStudioPage() {
 
   useEffect(
     () => () => {
-      if (newProfileAudioPreviewUrl) URL.revokeObjectURL(newProfileAudioPreviewUrl);
-      stopProfileRecordingStream();
+      if (newReferenceAudioPreviewUrl) URL.revokeObjectURL(newReferenceAudioPreviewUrl);
+      stopReferenceRecordingStream();
     },
-    [newProfileAudioPreviewUrl, stopProfileRecordingStream],
+    [newReferenceAudioPreviewUrl, stopReferenceRecordingStream],
   );
 
   useEffect(() => {
@@ -342,7 +335,7 @@ export function VoiceStudioPage() {
   }, [clearPreviewState, currentPreviewKey, previewKey, previewPath, previewRequestState, previewSrc]);
 
   const handlePreview = async () => {
-    if (!selectedProfileId) {
+    if (!selectedReferenceId) {
       setError("请先从音色库选择一个音色，再生成试听。");
       return;
     }
@@ -350,7 +343,7 @@ export function VoiceStudioPage() {
     previewRequestTokenRef.current = requestToken;
     const requestSessionId = selectedSessionId;
     const requestScriptId = selectedScriptId;
-    const requestProfileId = selectedProfileId;
+    const requestReferenceId = selectedReferenceId;
     const requestPreviewKey = currentPreviewKey;
     const requestSettings = settings;
     const isCurrentPreviewRequest = () => {
@@ -359,7 +352,7 @@ export function VoiceStudioPage() {
         previewRequestTokenRef.current === requestToken &&
         context.sessionId === requestSessionId &&
         context.scriptId === requestScriptId &&
-        context.profileId === requestProfileId &&
+        context.speakerReferenceId === requestReferenceId &&
         context.previewKey === requestPreviewKey
       );
     };
@@ -376,10 +369,13 @@ export function VoiceStudioPage() {
         onState: (state) => {
           if (isCurrentPreviewRequest()) setPreviewRequestState(state);
         },
+        onTaskStarted: (task) => {
+          if (isCurrentPreviewRequest()) setPreviewTask(task);
+        },
         sessionId: requestSessionId,
         scriptId: requestScriptId,
         providerOverride,
-        voiceProfileId: requestProfileId,
+        speakerReferenceId: requestReferenceId,
       });
       if (!isCurrentPreviewRequest()) return;
       setPreviewRequestState(result.request_state ?? null);
@@ -392,24 +388,43 @@ export function VoiceStudioPage() {
       }, 100);
     } catch (err) {
       if (!isCurrentPreviewRequest()) return;
-      setError(getErrorMessage(err, "Failed to render preview."));
+      const errorMessage = getErrorMessage(err, "Failed to render preview.");
+      if (/cancel/i.test(errorMessage)) {
+        setError(null);
+        setMessage("试听已取消。");
+      } else {
+        setError(errorMessage);
+      }
       setPreviewRequestState(null);
     } finally {
-      if (previewRequestTokenRef.current === requestToken) setPreviewing(false);
+      if (previewRequestTokenRef.current === requestToken) {
+        setPreviewing(false);
+        setPreviewTask(null);
+      }
     }
   };
 
-  const handleProfileFileSelected = (file: File | null) => {
+  const handleCancelPreview = async () => {
+    if (!previewTask) return;
+    try {
+      const state = await bridge.cancelTask(previewTask.taskId, previewTask.runToken);
+      if (state) setPreviewRequestState(state);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to cancel voice preview."));
+    }
+  };
+
+  const handleReferenceFileSelected = (file: File | null) => {
     if (!file) return;
     if (!file.type.startsWith("audio/") && !/\.(wav|mp3|m4a|mp4|aac|flac|webm|ogg)$/i.test(file.name)) {
       setError("请选择 wav、mp3、m4a、mp4、aac、flac、webm 或 ogg 音频文件。");
       return;
     }
     setError(null);
-    setProfileAudioSample(file, file.name);
+    setReferenceAudioSample(file, file.name);
   };
 
-  const handleStartProfileRecording = async () => {
+  const handleStartReferenceRecording = async () => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError("当前环境不支持麦克风录音，请改用上传音频。");
       return;
@@ -417,172 +432,165 @@ export function VoiceStudioPage() {
     try {
       setError(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      profileRecordingStreamRef.current = stream;
-      profileRecordingChunksRef.current = [];
+      referenceRecordingStreamRef.current = stream;
+      referenceRecordingChunksRef.current = [];
       const recorder = new MediaRecorder(stream);
-      profileRecorderRef.current = recorder;
+      referenceRecorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) profileRecordingChunksRef.current.push(event.data);
+        if (event.data.size > 0) referenceRecordingChunksRef.current.push(event.data);
       };
       recorder.onstop = () => {
-        const blob = new Blob(profileRecordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        profileRecordingChunksRef.current = [];
-        stopProfileRecordingStream();
-        setRecordingProfileSample(false);
+        const blob = new Blob(referenceRecordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        referenceRecordingChunksRef.current = [];
+        stopReferenceRecordingStream();
+        setRecordingReferenceSample(false);
         if (blob.size > 0) {
           const extension = recorder.mimeType.includes("mp4") ? "mp4" : recorder.mimeType.includes("wav") ? "wav" : "webm";
-          setProfileAudioSample(blob, `microphone-reference.${extension}`);
+          setReferenceAudioSample(blob, `microphone-reference.${extension}`);
         }
       };
       recorder.start();
-      setRecordingProfileSample(true);
+      setRecordingReferenceSample(true);
     } catch (err) {
-      stopProfileRecordingStream();
-      setRecordingProfileSample(false);
+      stopReferenceRecordingStream();
+      setRecordingReferenceSample(false);
       setError(getErrorMessage(err, "无法开始麦克风录音。"));
     }
   };
 
-  const handleStopProfileRecording = () => {
-    const recorder = profileRecorderRef.current;
+  const handleStopReferenceRecording = () => {
+    const recorder = referenceRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       recorder.stop();
       return;
     }
-    stopProfileRecordingStream();
-    setRecordingProfileSample(false);
+    stopReferenceRecordingStream();
+    setRecordingReferenceSample(false);
   };
 
-  const handleSaveVoiceProfile = async () => {
-    const name = newProfileName.trim() || "我的音色";
-    const referenceText = newProfileReferenceText.trim();
+  const handleSaveSpeakerReference = async () => {
+    const name = newReferenceName.trim() || "我的音色";
+    const referenceText = newReferenceText.trim();
+    const referenceLanguage = newReferenceLanguage.trim();
     if (!referenceText) {
       setError("请填写参考音频中实际朗读的文本。");
       return;
     }
+    if (!referenceLanguage) {
+      setError("请填写参考音频的语言。");
+      return;
+    }
 
-    if (profileDialogMode === "create") {
-      if (!newProfileAudioFile) {
+    if (referenceDialogMode === "create") {
+      if (!newReferenceAudioFile) {
         setError("请先上传或录制一段参考音频。");
         return;
       }
       try {
-        setSavingProfile(true);
+        setSavingReference(true);
         setError(null);
-        const profile = await bridge.createVoiceProfile({
+        const reference = await bridge.createSpeakerReference({
           name,
-          referenceAudioFile: newProfileAudioFile,
-          referenceAudioFileName: newProfileAudioFileName,
           referenceText,
-          provider: ttsConfig?.provider || "local_mlx",
-          model: resolvedModel,
-          language,
-          audioFormat: profileSampleAudioFormat(newProfileAudioFileName, newProfileAudioFile),
-          settings: { ...settings, preview_text: referenceText },
+          language: referenceLanguage,
+          audioFile: newReferenceAudioFile,
+          audioFileName: newReferenceAudioFileName,
         });
-        await refreshVoiceProfiles();
-        resetProfileDialog();
-        if (canApplyProfileToScript) {
-          const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
+        await refreshSpeakerReferences();
+        resetReferenceDialog();
+        if (canApplyReferenceToScript) {
+          const updated = await bridge.selectSpeakerReference(selectedSessionId, selectedScriptId, reference.speaker_reference_id);
           setProject(updated);
-          setSelectedVoiceId(profile.voice_id);
-          setSelectedStyleId(profile.style_id);
-          setSpeed(profile.speed);
-          setLanguage(profile.language);
-          setAudioFormat(profile.audio_format);
-          setMessage(`已创建「${profile.name}」并用于当前脚本。返回 Studio 后可以生成完整音频。`);
+          setMessage(`已创建「${reference.name}」并用于当前脚本。返回 Studio 后可以生成完整音频。`);
           if (returnTo) {
             navigate(returnTo);
           }
         } else {
-          setMessage(`已创建「${profile.name}」。打开脚本后可以选用这个音色。`);
+          setMessage(`已创建「${reference.name}」。打开脚本后可以选用这个音色。`);
         }
       } catch (err) {
-        setError(getErrorMessage(err, "Failed to create voice profile."));
+        setError(getErrorMessage(err, "Failed to create speaker reference."));
       } finally {
-        setSavingProfile(false);
+        setSavingReference(false);
       }
       return;
     }
 
-    const editingProfile = voiceProfiles.find((profile) => profile.voice_profile_id === editingProfileId);
-    if (!editingProfile || editingProfile.source !== "user_saved") {
+    const editingReference = speakerReferences.find((reference) => reference.speaker_reference_id === editingReferenceId);
+    if (!editingReference || editingReference.source !== "user_saved") {
       setError("找不到要编辑的音色。");
       return;
     }
 
-    const nameChanged = name !== editingProfile.name;
-    const textChanged = referenceText !== (editingProfile.preview_text || editingProfile.reference_text || "");
-    const hasNewAudio = Boolean(newProfileAudioFile);
-    if (!nameChanged && !textChanged && !hasNewAudio) {
-      resetProfileDialog();
+    const nameChanged = name !== editingReference.name;
+    const textChanged = referenceText !== editingReference.reference_text;
+    const languageChanged = referenceLanguage !== editingReference.language;
+    const hasNewAudio = Boolean(newReferenceAudioFile);
+    if (!nameChanged && !textChanged && !languageChanged && !hasNewAudio) {
+      resetReferenceDialog();
       return;
     }
 
     try {
-      setSavingProfile(true);
+      setSavingReference(true);
       setError(null);
-      const patch: { name?: string; referenceText?: string; referenceAudioFile?: Blob; referenceAudioFileName?: string; audioFormat?: string } = {};
+      const patch: { name?: string; referenceText?: string; language?: string; audioFile?: Blob; audioFileName?: string } = {};
       if (nameChanged) patch.name = name;
       if (textChanged || hasNewAudio) patch.referenceText = referenceText;
-      if (hasNewAudio && newProfileAudioFile) {
-        patch.referenceAudioFile = newProfileAudioFile;
-        patch.referenceAudioFileName = newProfileAudioFileName;
-        patch.audioFormat = profileSampleAudioFormat(newProfileAudioFileName, newProfileAudioFile);
+      if (languageChanged) patch.language = referenceLanguage;
+      if (hasNewAudio && newReferenceAudioFile) {
+        patch.audioFile = newReferenceAudioFile;
+        patch.audioFileName = newReferenceAudioFileName;
       }
-      const profile = await bridge.updateVoiceProfile(editingProfileId, patch);
-      await refreshVoiceProfiles();
-      if (selectedSessionId && selectedScriptId && voiceReference?.voice_profile_id === profile.voice_profile_id) {
-        await loadProject(selectedSessionId, selectedScriptId);
+      const reference = await bridge.updateSpeakerReference(editingReferenceId, patch);
+      await refreshSpeakerReferences();
+      if (selectedSessionId && selectedScriptId && speakerReference?.speaker_reference_id === reference.speaker_reference_id) {
+        const updated = await bridge.selectSpeakerReference(selectedSessionId, selectedScriptId, reference.speaker_reference_id);
+        setProject(updated);
       }
-      resetProfileDialog();
-      setMessage(`已更新「${profile.name}」。`);
+      resetReferenceDialog();
+      setMessage(`已更新「${reference.name}」。`);
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to update voice profile."));
+      setError(getErrorMessage(err, "Failed to update speaker reference."));
     } finally {
-      setSavingProfile(false);
+      setSavingReference(false);
     }
   };
 
-  const handleSelectVoiceProfile = async (profile: VoiceProfileRecord) => {
-    if (!canApplyProfileToScript) {
+  const handleSelectSpeakerReference = async (reference: SpeakerReference) => {
+    if (!canApplyReferenceToScript) {
       setError("请先从 Studio 打开 Voice Studio，再把音色应用到具体脚本。");
       return;
     }
     try {
       setError(null);
       clearPreviewState();
-      const updated = await bridge.selectVoiceProfile(selectedSessionId, selectedScriptId, profile.voice_profile_id);
+      const updated = await bridge.selectSpeakerReference(selectedSessionId, selectedScriptId, reference.speaker_reference_id);
       setProject(updated);
-      setSelectedVoiceId(profile.voice_id);
-      setSelectedStyleId(profile.style_id);
-      setSpeed(profile.speed);
-      setLanguage(profile.language);
-      setAudioFormat(profile.audio_format);
-      await refreshVoiceProfiles();
-      setMessage(`已为当前脚本选用「${profile.name}」。返回 Studio 后可以生成完整音频。`);
+      await refreshSpeakerReferences();
+      setMessage(`已为当前脚本选用「${reference.name}」。返回 Studio 后可以生成完整音频。`);
       if (returnTo) {
         navigate(returnTo);
       }
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to select voice profile."));
+      setError(getErrorMessage(err, "Failed to select speaker reference."));
     }
   };
 
-  const handleDeleteVoiceProfile = async (profile: VoiceProfileRecord) => {
-    if (profile.source === "built_in") return;
+  const handleDeleteSpeakerReference = async (reference: SpeakerReference) => {
+    if (reference.source === "built_in") return;
     try {
       setError(null);
-      await bridge.deleteVoiceProfile(profile.voice_profile_id);
-      await refreshVoiceProfiles();
+      await bridge.deleteSpeakerReference(reference.speaker_reference_id);
+      await refreshSpeakerReferences();
       if (selectedSessionId && selectedScriptId) {
         await loadProject(selectedSessionId, selectedScriptId);
       }
-      resetProfileDialog();
-      setProfileToDelete(null);
+      resetReferenceDialog();
+      setReferenceToDelete(null);
       setMessage("音色已删除。");
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to delete voice profile."));
+      setError(getErrorMessage(err, "Failed to delete speaker reference."));
     }
   };
 
@@ -601,10 +609,10 @@ export function VoiceStudioPage() {
     }
   };
 
-  const handleProfileAudioLoadError = (profileId: string) => {
-    setProfileAudioErrors((current) => ({
+  const handleReferenceAudioLoadError = (referenceId: string) => {
+    setReferenceAudioErrors((current) => ({
       ...current,
-      [profileId]: "无法加载参考音频。文件可能已移动或删除。",
+      [referenceId]: "无法加载参考音频。文件可能已移动或删除。",
     }));
   };
 
@@ -645,8 +653,8 @@ export function VoiceStudioPage() {
           </div>
         </section>
 
-        {error ? <p className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
-        {message ? <p className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
+        {error ? <p role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
+        {message ? <p aria-live="polite" className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
 
         <div className="flex flex-col gap-5">
           <div className="mx-auto w-full max-w-[960px] space-y-5">
@@ -656,27 +664,27 @@ export function VoiceStudioPage() {
                   <h2 className="text-base font-bold font-headline text-primary tracking-wide">音色库</h2>
                   <p className="mt-1.5 text-xs leading-relaxed text-secondary/80">
                     {scriptBoundMode
-                      ? "当前脚本的试听会使用所选音色的参考音频与参考文本；Studio 生成音频时也会使用该 profile。"
+                      ? "当前脚本的试听会使用所选音色的参考音频与参考文本；Studio 生成音频时也会使用这份音色参考。"
                       : "这里是可复用音色资产库。可以播放参考音频、删除我的音色；打开某个脚本后才能把音色应用到具体播客。"}
                   </p>
-                  {scriptBoundMode && selectedProfile ? (
+                  {scriptBoundMode && selectedReference ? (
                     <p className="mt-3 text-xs font-semibold text-accent-amber flex items-center gap-1">
                       <span className="h-1.5 w-1.5 rounded-full bg-accent-amber pulse-amber" />
-                      当前选用：{selectedProfile.name}
+                      当前选用：{selectedReference.name}
                     </p>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2 shrink-0">
                   <button 
                     type="button" 
-                    onClick={openCreateProfileDialog} 
+                    onClick={openCreateReferenceDialog}
                     className="inline-flex items-center gap-2 rounded-2xl theme-accent-gradient hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-on-primary transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
                   >
                     <Mic className="h-3.5 w-3.5" /> 创建音色
                   </button>
                   <button 
                     type="button" 
-                    onClick={() => void refreshVoiceProfiles()} 
+                    onClick={() => void refreshSpeakerReferences()}
                     className="inline-flex items-center gap-2 rounded-2xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-semibold text-secondary hover:text-primary transition-all duration-200 hover:bg-surface-container-high cursor-pointer"
                   >
                     <RefreshCw className="h-3.5 w-3.5" /> 刷新音色库
@@ -684,12 +692,12 @@ export function VoiceStudioPage() {
                 </div>
               </div>
               <div className="mt-6 grid gap-4 grid-cols-1 sm:grid-cols-2">
-                {activeVoiceProfiles.map((profile) => {
-                  const isSelected = voiceReference?.voice_profile_id === profile.voice_profile_id;
-                  const profileAudioError = profileAudioErrors[profile.voice_profile_id];
+                {speakerReferences.map((reference) => {
+                  const isSelected = speakerReference?.speaker_reference_id === reference.speaker_reference_id;
+                  const referenceAudioError = referenceAudioErrors[reference.speaker_reference_id];
                   return (
                     <div 
-                      key={profile.voice_profile_id} 
+                      key={reference.speaker_reference_id}
                       className={cn(
                         "rounded-[24px] p-5 transition-all duration-200 relative flex flex-col justify-between min-h-[240px]", 
                         isSelected ? "glass-card-selected" : "glass-card"
@@ -698,28 +706,28 @@ export function VoiceStudioPage() {
                       <div>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-primary tracking-wide truncate">{profile.name}</p>
+                            <p className="text-sm font-bold text-primary tracking-wide truncate">{reference.name}</p>
                             <p className="mt-1 text-[10px] uppercase tracking-wider text-secondary/80 font-headline font-semibold">
-                              {profile.source === "built_in" ? "默认音色" : "我的音色"} · {profile.voice_name || profile.voice_id} / {profile.style_name || profile.style_id}
+                              {reference.source === "built_in" ? "默认音色" : "我的音色"} · {reference.language} · {formatReferenceDuration(reference.duration_ms)}
                             </p>
                           </div>
                           <div className="flex shrink-0 items-center gap-0.5 relative z-10">
-                            {profile.source === "user_saved" ? (
+                            {reference.source === "user_saved" ? (
                               <div className="flex items-center rounded-xl border border-outline theme-panel-elevated p-0.5">
                                 <button
                                   type="button"
-                                  onClick={() => openEditProfileDialog(profile)}
-                                  className="inline-flex items-center rounded-lg p-1.5 text-secondary hover:bg-surface-container-high/60 hover:text-primary transition-colors cursor-pointer"
-                                  aria-label={`编辑「${profile.name}」`}
+                                  onClick={() => openEditReferenceDialog(reference)}
+                                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-secondary hover:bg-surface-container-high/60 hover:text-primary transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
+                                  aria-label={`编辑「${reference.name}」`}
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </button>
                                 <span className="h-4 w-px bg-surface-container-high/60" aria-hidden />
                                 <button
                                   type="button"
-                                  onClick={() => setProfileToDelete(profile)}
-                                  className="inline-flex items-center rounded-lg p-1.5 text-secondary hover:bg-red-500/10 hover:text-red-200 transition-colors cursor-pointer"
-                                  aria-label={`删除「${profile.name}」`}
+                                  onClick={() => setReferenceToDelete(reference)}
+                                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-secondary hover:bg-red-500/10 hover:text-red-200 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                                  aria-label={`删除「${reference.name}」`}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
@@ -728,22 +736,22 @@ export function VoiceStudioPage() {
                             {isSelected ? <CheckCircle2 className="ml-1 h-5 w-5 shrink-0 text-accent-amber" /> : null}
                           </div>
                         </div>
-                        <p className="mt-3.5 line-clamp-2 text-xs leading-relaxed text-secondary/80">{profile.description || profile.preview_text}</p>
+                        <p className="mt-3.5 line-clamp-2 text-xs leading-relaxed text-secondary/80">{reference.description || reference.reference_text}</p>
                       </div>
                       
                       <div className="mt-4">
                         <AudioPlayer
-                          src={resolveAudioFileUrl(profile.audio_path)}
-                          onError={() => handleProfileAudioLoadError(profile.voice_profile_id)}
+                          src={resolveAudioFileUrl(reference.audio_path)}
+                          onError={() => handleReferenceAudioLoadError(reference.speaker_reference_id)}
                           className="bg-surface-container"
                           variant="minimal"
                         />
-                        {profileAudioError ? <p className="mt-2 text-xs text-red-400">{profileAudioError}</p> : null}
+                        {referenceAudioError ? <p className="mt-2 text-xs text-red-400">{referenceAudioError}</p> : null}
                         <div className="mt-4 flex flex-wrap gap-2">
                           {scriptBoundMode ? (
                             <button
                               type="button"
-                              onClick={() => void handleSelectVoiceProfile(profile)}
+                              onClick={() => void handleSelectSpeakerReference(reference)}
                               disabled={isSelected}
                               className={cn(
                                 "rounded-xl border px-3 py-2 text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer",
@@ -764,6 +772,12 @@ export function VoiceStudioPage() {
                     </div>
                   );
                 })}
+                {speakerReferences.length === 0 ? (
+                  <div className="sm:col-span-2 rounded-[24px] border border-dashed border-outline bg-surface-container/50 p-8 text-center">
+                    <p className="text-sm font-semibold text-primary">音色库还是空的</p>
+                    <p className="mt-1.5 text-xs text-secondary/80">上传或录制一段参考音频，创建第一份音色参考。</p>
+                  </div>
+                ) : null}
               </div>
             </section>
 
@@ -774,10 +788,10 @@ export function VoiceStudioPage() {
                     <div>
                       <h2 className="text-xs font-semibold uppercase tracking-wider text-secondary/80">试听设置</h2>
                       <p className="mt-2 text-xl font-bold font-headline text-primary tracking-tight">
-                        {selectedProfile?.name ?? "未选择音色"} <span className="mx-1 text-primary/20 font-light">·</span> {selectedStyle?.name ?? "默认风格"} <span className="mx-1 text-primary/20 font-light">·</span> <span className="text-accent-amber">{speed.toFixed(1)}x</span>
+                        {selectedReference?.name ?? "未选择音色"} <span className="mx-1 text-primary/20 font-light">·</span> {selectedStyle?.name ?? "默认风格"} <span className="mx-1 text-primary/20 font-light">·</span> <span className="text-accent-amber">{speed.toFixed(1)}x</span>
                       </p>
                       <p className="mt-1.5 text-xs text-secondary/70">
-                        {selectedProfile ? "将使用该音色的参考音频生成试听。" : "请先为当前脚本选用一个音色。"}
+                        {selectedReference ? "风格和语速仅用于本次试听，不会写入音色参考。" : "请先为当前脚本选用一个音色。"}
                       </p>
                     </div>
                   </div>
@@ -798,7 +812,7 @@ export function VoiceStudioPage() {
                         previewing ||
                         !selectedVoice ||
                         !selectedStyle ||
-                        !selectedProfileId ||
+                        !selectedReferenceId ||
                         !previewEngineReady
                       }
                       className="inline-flex items-center justify-center gap-2 rounded-2xl theme-accent-gradient hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-on-primary transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 cursor-pointer shrink-0"
@@ -843,13 +857,22 @@ export function VoiceStudioPage() {
                     <span className="font-semibold text-accent-amber/90">当前试音文本：</span>
                     {effectivePreviewText ? `${effectivePreviewText.slice(0, 80)}${effectivePreviewText.length > 80 ? "…" : ""}` : "系统标准试音句"}
                   </p>
-                  {!selectedProfileId ? (
+                  {!selectedReferenceId ? (
                     <p className="mt-3 text-[11px] text-amber-300 font-medium pl-1">请先为当前脚本选用一个音色。</p>
                   ) : null}
                   {previewRequestState && previewRequestState.phase !== "succeeded" ? (
-                    <div className="mt-4 rounded-2xl border border-outline bg-background/30 px-4 py-3.5 text-sm text-secondary/90 flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-accent-amber" />
-                      <span>{Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}</span>
+                    <div className="mt-4 rounded-2xl border border-outline bg-background/30 px-4 py-3.5 text-sm text-secondary/90 flex items-center gap-3" aria-live="polite">
+                      <Loader2 className="h-4 w-4 animate-spin text-accent-amber shrink-0" />
+                      <span className="min-w-0 flex-1">{Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}</span>
+                      {previewTask && previewRequestState.phase === "running" ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleCancelPreview()}
+                          className="min-h-10 shrink-0 rounded-xl border border-outline bg-surface-container-high px-3 text-xs font-bold text-primary hover:bg-surface-container-highest"
+                        >
+                          取消
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                   {previewSrc && previewMatchesCurrentSelection ? (
@@ -866,11 +889,11 @@ export function VoiceStudioPage() {
                       </div>
                     </div>
                   ) : null}
-                  {selectedProfile ? (
+                  {selectedReference ? (
                     <div className="mt-4 rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4 text-xs text-emerald-100/90 leading-relaxed">
                       <div className="flex items-start gap-2.5">
                         <CheckCircle2 className="mt-0.5 h-4.5 w-4.5 shrink-0 text-emerald-400" />
-                        <p>已选择「{selectedProfile.name}」。试听会使用这个音色 profile，Studio 生成音频时也会引用它。</p>
+                        <p>已选择「{selectedReference.name}」。试听和 Studio 音频生成都会使用这份音色参考。</p>
                       </div>
                     </div>
                   ) : null}
@@ -900,22 +923,22 @@ export function VoiceStudioPage() {
           </section>
         </div>
       </div>
-      {profileDialogMode ? (
+      {referenceDialogMode ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center theme-modal-overlay backdrop-blur-md px-4 py-6">
-          <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-[32px] border border-outline theme-modal-surface backdrop-blur-2xl p-8 shadow-[0_24px_60px_rgba(0,0,0,0.5)]">
+          <div role="dialog" aria-modal="true" aria-labelledby="speaker-reference-dialog-title" className="max-h-full w-full max-w-2xl overflow-y-auto rounded-[32px] border border-outline theme-modal-surface backdrop-blur-2xl p-8 shadow-[0_24px_60px_rgba(0,0,0,0.5)]">
             <div className="flex items-start justify-between gap-4 border-b border-outline pb-5">
               <div>
-                <h2 className="text-lg font-bold font-display text-primary tracking-tight">{profileDialogMode === "create" ? "创建我的音色" : "编辑我的音色"}</h2>
+                <h2 id="speaker-reference-dialog-title" className="text-lg font-bold font-display text-primary tracking-tight">{referenceDialogMode === "create" ? "创建我的音色" : "编辑我的音色"}</h2>
                 <p className="mt-1.5 text-xs leading-relaxed text-secondary/80">
-                  {profileDialogMode === "create"
+                  {referenceDialogMode === "create"
                     ? "添加 10-30 秒参考音频，并逐字填写音频里实际朗读的文本。"
-                    : "可修改名称与参考文本；如需更换参考音频，请重新上传或录制。"}
+                    : "可修改名称、语言与参考文本；如需更换参考音频，请重新上传或录制。"}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={resetProfileDialog}
-                className="rounded-xl border border-outline bg-surface-container-high/60 p-2 text-secondary hover:text-primary hover:bg-surface-container-high transition-colors cursor-pointer"
+                onClick={resetReferenceDialog}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
                 aria-label="关闭"
               >
                 <X className="h-4 w-4" />
@@ -926,11 +949,22 @@ export function VoiceStudioPage() {
               <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
                 音色名称
                 <input
-                  value={newProfileName}
-                  onChange={(event) => setNewProfileName(event.target.value)}
+                  value={newReferenceName}
+                  onChange={(event) => setNewReferenceName(event.target.value)}
                   className="w-full rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
                   placeholder="例如：我的知识讲述音色"
                 />
+              </label>
+
+              <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
+                参考音频语言
+                <input
+                  value={newReferenceLanguage}
+                  onChange={(event) => setNewReferenceLanguage(event.target.value)}
+                  className="w-full rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
+                  placeholder="例如：zh、en 或 yue"
+                />
+                <span className="font-normal text-secondary/60">使用简短语言标签，帮助引擎正确理解参考内容。</span>
               </label>
 
               <div>
@@ -943,15 +977,15 @@ export function VoiceStudioPage() {
                   ].map((item) => {
                     const Icon = item.icon;
                     const isSystem = item.id === "system";
-                    const selected = profileAudioSource === item.id;
+                    const selected = referenceAudioSource === item.id;
                     return (
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => !isSystem && setProfileAudioSource(item.id as ProfileAudioSource)}
+                        onClick={() => !isSystem && setReferenceAudioSource(item.id as ReferenceAudioSource)}
                         disabled={isSystem}
                         className={cn(
-                          "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-xs font-semibold disabled:opacity-40 transition-all cursor-pointer",
+                          "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 transition-all cursor-pointer",
                           selected 
                             ? "border-accent-amber/30 bg-accent-amber/10 text-accent-amber shadow-[0_0_12px_rgba(242,191,87,0.1)]" 
                             : "border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-outline",
@@ -963,18 +997,18 @@ export function VoiceStudioPage() {
                     );
                   })}
                 </div>
-                {profileAudioSource === "upload" ? (
+                {referenceAudioSource === "upload" ? (
                   <div className="mt-3 rounded-2xl border border-dashed border-outline bg-surface-container p-6 text-center hover:border-accent-amber/20 transition-colors">
                     <input
-                      ref={profileFileInputRef}
+                      ref={referenceFileInputRef}
                       type="file"
                       accept="audio/*,.wav,.mp3,.m4a,.mp4,.aac,.flac,.webm,.ogg"
                       className="hidden"
-                      onChange={(event) => handleProfileFileSelected(event.target.files?.[0] ?? null)}
+                      onChange={(event) => handleReferenceFileSelected(event.target.files?.[0] ?? null)}
                     />
                     <button
                       type="button"
-                      onClick={() => profileFileInputRef.current?.click()}
+                      onClick={() => referenceFileInputRef.current?.click()}
                       className="inline-flex items-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-semibold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
                     >
                       <Upload className="h-4 w-4" />
@@ -983,39 +1017,39 @@ export function VoiceStudioPage() {
                     <p className="mt-2.5 text-[11px] text-secondary/60 leading-normal">支持 wav、mp3、m4a、mp4、aac、flac、webm、ogg；WAV 会校验 30 秒上限。</p>
                   </div>
                 ) : null}
-                {profileAudioSource === "microphone" ? (
+                {referenceAudioSource === "microphone" ? (
                   <div className="mt-3 rounded-2xl border border-outline bg-surface-container p-6 flex flex-col items-center justify-center gap-3">
                     <button
                       type="button"
-                      onClick={() => (recordingProfileSample ? handleStopProfileRecording() : void handleStartProfileRecording())}
+                      onClick={() => (recordingReferenceSample ? handleStopReferenceRecording() : void handleStartReferenceRecording())}
                       className={cn(
                         "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer",
-                        recordingProfileSample 
+                        recordingReferenceSample
                           ? "bg-red-500/10 border border-red-500/20 text-red-400 animate-pulse" 
                           : "bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] text-on-primary shadow-[0_4px_16px_rgba(242,191,87,0.2)]",
                       )}
                     >
-                      {recordingProfileSample ? <Square className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-                      {recordingProfileSample ? "停止录音" : "开始录音"}
+                      {recordingReferenceSample ? <Square className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+                      {recordingReferenceSample ? "停止录音" : "开始录音"}
                     </button>
                     <p className="text-[11px] text-secondary/60">录音完成后会自动作为参考音频。请控制在 30 秒以内。</p>
                   </div>
                 ) : null}
-                {profileAudioSource === "system" ? (
+                {referenceAudioSource === "system" ? (
                   <div className="mt-3 rounded-2xl border border-outline bg-surface-container p-4 text-xs text-secondary/60">
                     系统内录需要新增 macOS 桌面采集能力；当前版本请使用上传或麦克风录音。
                   </div>
                 ) : null}
-                {profileDialogMode === "edit" && existingProfileAudioUrl && !newProfileAudioPreviewUrl ? (
+                {referenceDialogMode === "edit" && existingReferenceAudioUrl && !newReferenceAudioPreviewUrl ? (
                   <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high p-4">
                     <p className="mb-2.5 text-xs font-semibold text-primary">当前参考音频</p>
-                    <audio controls src={existingProfileAudioUrl} className="w-full rounded-lg" />
+                    <audio controls src={existingReferenceAudioUrl} className="w-full rounded-lg" />
                   </div>
                 ) : null}
-                {newProfileAudioPreviewUrl ? (
+                {newReferenceAudioPreviewUrl ? (
                   <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high p-4">
-                    <p className="mb-2.5 text-xs font-semibold text-primary">{newProfileAudioFileName || "新参考音频"}</p>
-                    <audio controls src={newProfileAudioPreviewUrl} className="w-full rounded-lg" />
+                    <p className="mb-2.5 text-xs font-semibold text-primary">{newReferenceAudioFileName || "新参考音频"}</p>
+                    <audio controls src={newReferenceAudioPreviewUrl} className="w-full rounded-lg" />
                   </div>
                 ) : null}
               </div>
@@ -1023,24 +1057,24 @@ export function VoiceStudioPage() {
               <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
                 参考音频文本
                 <textarea
-                  value={newProfileReferenceText}
-                  onChange={(event) => setNewProfileReferenceText(event.target.value)}
+                  value={newReferenceText}
+                  onChange={(event) => setNewReferenceText(event.target.value)}
                   rows={5}
                   className="w-full resize-none rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans leading-relaxed placeholder:text-secondary/40 focus:bg-background"
                   placeholder="逐字填写参考音频里实际说出的内容"
                 />
               </label>
 
-              {profileDialogMode === "edit" ? (
+              {referenceDialogMode === "edit" ? (
                 <div className="rounded-2xl border border-red-500/10 bg-red-500/5 p-4 flex items-center justify-between gap-4">
                   <p className="text-xs text-secondary/80">删除后无法恢复；已使用该音色的脚本会清除对应参考。</p>
                   <button
                     type="button"
                     onClick={() => {
-                      const profile = voiceProfiles.find((item) => item.voice_profile_id === editingProfileId);
-                      if (profile) setProfileToDelete(profile);
+                      const reference = speakerReferences.find((item) => item.speaker_reference_id === editingReferenceId);
+                      if (reference) setReferenceToDelete(reference);
                     }}
-                    disabled={savingProfile}
+                    disabled={savingReference}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1052,19 +1086,19 @@ export function VoiceStudioPage() {
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end border-t border-outline pt-5">
                 <button
                   type="button"
-                  onClick={resetProfileDialog}
+                  onClick={resetReferenceDialog}
                   className="rounded-xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-bold text-secondary hover:text-primary hover:bg-surface-container-high active:scale-[0.98] transition-all cursor-pointer"
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleSaveVoiceProfile()}
-                  disabled={savingProfile || recordingProfileSample}
+                  onClick={() => void handleSaveSpeakerReference()}
+                  disabled={savingReference || recordingReferenceSample}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] transition-all px-5 py-2.5 text-xs font-bold text-on-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_16px_rgba(242,191,87,0.2)]"
                 >
-                  {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : profileDialogMode === "create" ? <Mic className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                  {profileDialogMode === "create"
+                  {savingReference ? <Loader2 className="h-4 w-4 animate-spin" /> : referenceDialogMode === "create" ? <Mic className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                  {referenceDialogMode === "create"
                     ? scriptBoundMode
                       ? "创建并用于当前脚本"
                       : "创建音色"
@@ -1076,23 +1110,23 @@ export function VoiceStudioPage() {
         </div>
       ) : null}
       <ConfirmDialog
-        open={profileToDelete !== null}
+        open={referenceToDelete !== null}
         title="删除此音色？"
         message={
-          profileToDelete
-            ? `删除「${profileToDelete.name}」？已使用该音色的脚本会清除对应参考。`
+          referenceToDelete
+            ? `删除「${referenceToDelete.name}」？已使用该音色的脚本会清除对应参考。`
             : ""
         }
-        onClose={() => setProfileToDelete(null)}
+        onClose={() => setReferenceToDelete(null)}
         actions={[
-          { label: "取消", onClick: () => setProfileToDelete(null) },
+          { label: "取消", onClick: () => setReferenceToDelete(null) },
           {
             label: "删除",
             variant: "danger",
             onClick: () => {
-              const target = profileToDelete;
+              const target = referenceToDelete;
               if (!target) return;
-              void handleDeleteVoiceProfile(target);
+              void handleDeleteSpeakerReference(target);
             },
           },
         ]}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DesktopBridge } from "../../lib/desktopBridge";
 import { getErrorMessage } from "../../lib/requestState";
-import type { SessionProject, TTSCapability, TTSProviderConfig, VoiceProfileRecord } from "../../types";
+import type { ModelStatus, SessionProject, SpeakerReference, TTSCapability, TTSProviderConfig } from "../../types";
 import { estimateWordCount, formatEstimateMinutes, formatSessionState } from "./workbenchUtils";
 
 type UseScriptWorkbenchDataArgs = {
@@ -16,28 +16,38 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const [script, setScript] = useState("");
   const [capability, setCapability] = useState<TTSCapability | null>(null);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
-  const [voiceProfiles, setVoiceProfiles] = useState<VoiceProfileRecord[]>([]);
+  const [speakerReferences, setSpeakerReferences] = useState<SpeakerReference[]>([]);
+  const [models, setModels] = useState<ModelStatus[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState("");
   const [voiceSelectionError, setVoiceSelectionError] = useState<string | null>(null);
   const [selectedEngine, setSelectedEngine] = useState<"local_mlx" | "cloud">("cloud");
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
   const reload = async () => {
-    const [loadedProject, loadedCapability, loadedConfig, loadedProfiles] = await Promise.all([
+    const [loadedProject, loadedCapability, loadedConfig, loadedReferences, loadedModels] = await Promise.all([
       bridge.showScript(sessionId, scriptId),
       bridge.getLocalTTSCapability(),
       bridge.showTTSConfig(),
-      bridge.listVoiceProfiles(),
+      bridge.listSpeakerReferences(),
+      bridge.listModelsStatus(),
     ]);
     setProject(loadedProject);
     setScript(loadedProject.script?.final || loadedProject.script?.draft || "");
     setCapability(loadedCapability);
     setTtsConfig(loadedConfig);
-    setVoiceProfiles(loadedProfiles);
+    setSpeakerReferences(loadedReferences);
+    setModels(loadedModels);
   };
 
   const refreshWorkspace = async () => {
     await Promise.allSettled([reload(), onRefresh()]);
+  };
+
+  const refreshProject = async () => {
+    const loadedProject = await bridge.showScript(sessionId, scriptId);
+    setProject(loadedProject);
+    return loadedProject;
   };
 
   useEffect(() => {
@@ -61,6 +71,23 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     setSelectedEngine(defaultEngine);
   }, [capability?.available, ttsConfig?.provider]);
 
+  useEffect(() => {
+    const configured = ttsConfig?.model?.trim() || "";
+    const rendered = project?.render_manifest?.pipeline.find((stage) => stage.stage === "speech_synthesis")?.model || "";
+    const firstReady = models.find((model) => model.downloaded && model.available !== false)?.hf_repo_id
+      ?? models.find((model) => model.downloaded && model.available !== false)?.model_name
+      ?? "";
+    const modelIsReady = (modelId: string) => models.some(
+      (model) => (model.hf_repo_id === modelId || model.model_name === modelId)
+        && model.downloaded
+        && model.available !== false,
+    );
+    setSelectedModelId((current) => {
+      if (current && modelIsReady(current)) return current;
+      return modelIsReady(configured) ? configured : modelIsReady(rendered) ? rendered : firstReady;
+    });
+  }, [models, project?.render_manifest?.render_id, ttsConfig?.model]);
+
   const cloudProvider = useMemo(() => {
     const configuredProvider = ttsConfig?.provider?.trim();
     if (configuredProvider && configuredProvider !== "local_mlx") {
@@ -78,19 +105,19 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const topic = project?.session.topic || "Untitled Project";
   const scriptName = project?.script?.name || topic;
   const updatedAt = project?.script?.updated_at || project?.session.updated_at || "";
-  const outputFilename = project?.artifact?.audio_path?.split("/").pop() || "";
+  const outputFilename = (project?.render_manifest?.output.audio_path || project?.artifact?.audio_path || "").split("/").pop() || "";
   const sessionStateLabel = formatSessionState(project?.session.state);
 
-  const handleSelectVoiceProfile = async (profileId: string) => {
+  const handleSelectSpeakerReference = async (referenceId: string) => {
     const selectedScriptId = project?.script?.script_id || scriptId;
     if (!selectedScriptId) return;
     try {
       setVoiceSelectionError(null);
-      const updatedProject = await bridge.selectVoiceProfile(sessionId, selectedScriptId, profileId);
+      const updatedProject = await bridge.selectSpeakerReference(sessionId, selectedScriptId, referenceId);
       setProject(updatedProject);
       await onRefresh();
     } catch (err: unknown) {
-      setVoiceSelectionError(getErrorMessage(err, "Failed to select voice profile."));
+      setVoiceSelectionError(getErrorMessage(err, "Failed to select speaker reference."));
     }
   };
 
@@ -101,13 +128,17 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     setScript,
     capability,
     ttsConfig,
-    voiceProfiles,
+    speakerReferences,
+    models,
+    selectedModelId,
+    setSelectedModelId,
     voiceSelectionError,
     selectedEngine,
     setSelectedEngine,
     loading,
     loadingError,
     reload,
+    refreshProject,
     refreshWorkspace,
     cloudProvider,
     isScriptDeleted,
@@ -120,6 +151,6 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     estMinutes,
     outputFilename,
     sessionStateLabel,
-    handleSelectVoiceProfile,
+    handleSelectSpeakerReference,
   };
 }

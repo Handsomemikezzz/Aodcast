@@ -2,8 +2,8 @@ import type { SessionProject, StudioProgressState } from "../types";
 import type { ScriptCheckResult } from "../pages/script-workbench/spokenScriptTypes";
 
 function hasVoiceSelected(project: SessionProject, scriptId?: string): boolean {
-  if (project.artifact?.voice_reference && Object.keys(project.artifact.voice_reference).length > 0) return true;
-  const scriptReference = scriptId ? project.artifact?.script_artifacts?.[scriptId]?.voice_reference : undefined;
+  if (project.artifact?.speaker_reference && Object.keys(project.artifact.speaker_reference).length > 0) return true;
+  const scriptReference = scriptId ? project.artifact?.script_artifacts?.[scriptId]?.speaker_reference : undefined;
   if (scriptReference && Object.keys(scriptReference).length > 0) return true;
   return false;
 }

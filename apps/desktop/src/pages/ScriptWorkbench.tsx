@@ -31,7 +31,7 @@ function ScriptStateBanner({
           type="button"
           onClick={() => void onAction()}
           disabled={disabled}
-          className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-50"
         >
           {actionLabel}
         </button>
@@ -51,6 +51,11 @@ export function ScriptWorkbench({
 }) {
   const { sessionId: routeSessionId, scriptId: routeScriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const workbench = useScriptWorkbench(sessionId || routeSessionId || "", scriptId || routeScriptId || "", onRefresh);
+  const regenerationDialog = workbench.dialogState?.kind === "regenerate-window" ? workbench.dialogState : null;
+  const regenerationPositions = regenerationDialog?.windowSegmentIds.map((segmentId) => {
+    const segment = workbench.project?.speech_plan?.segments.find((item) => item.segment_id === segmentId);
+    return segment ? segment.position + 1 : null;
+  }).filter((position): position is number => position !== null) ?? [];
 
   if (workbench.loading) {
     return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading script workspace...</div>;
@@ -168,6 +173,30 @@ export function ScriptWorkbench({
             },
             variant: "primary",
             disabled: workbench.saving,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={regenerationDialog !== null}
+        title="重新生成上下文窗口？"
+        message={
+          regenerationPositions.length
+            ? `将重新生成第 ${regenerationPositions.join("、")} 段。相邻段会一起生成以保持语气连续；全部成功前，当前音频保持不变。`
+            : "将重新生成目标段及其相邻上下文。全部成功前，当前音频保持不变。"
+        }
+        onClose={workbench.closeDialog}
+        actions={[
+          { label: "取消", onClick: workbench.closeDialog },
+          {
+            label: "重新生成窗口",
+            onClick: () => {
+              const targetSegmentId = regenerationDialog?.targetSegmentId ?? "";
+              workbench.setDialogState(null);
+              if (targetSegmentId) void workbench.handleRegenerateAudioWindow(targetSegmentId);
+            },
+            variant: "primary",
+            disabled: workbench.generating || workbench.speechPlanStale,
           },
         ]}
       />

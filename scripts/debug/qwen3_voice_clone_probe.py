@@ -148,7 +148,7 @@ def main() -> int:
         from mlx_audio.tts.utils import load_model  # type: ignore
         from app.domain.tts_config import TTSProviderConfig
         from app.providers.tts_local_mlx.chunker import split_script_into_chunks
-        from app.providers.tts_local_mlx.runner import MLXAudioQwenRunner
+        from app.providers.tts_local_mlx.runner import MLXAudioRunner
 
         report["mlx_version"] = getattr(mx, "__version__", "")
         report["default_device"] = str(mx.default_device())
@@ -263,7 +263,7 @@ def main() -> int:
                 print(f"[ok] joined app chunks: {joined_path}", flush=True)
 
             runner_started = time.time()
-            runner = MLXAudioQwenRunner(
+            runner = MLXAudioRunner(
                 TTSProviderConfig(
                     provider="local_mlx",
                     model=args.model,

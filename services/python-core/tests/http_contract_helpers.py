@@ -23,7 +23,6 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
     "delete_generated_audio",
     "delete_artifact_audio",
     "export_podcast_audio",
-    "delete_voice_take",
     "test_llm_connection",
     "test_tts_connection",
     "show_memory_overview",
@@ -42,6 +41,11 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
     "list_forget_candidates",
     "supersede_memory",
     "update_episode_source",
+    "create_speaker_reference",
+    "update_speaker_reference",
+    "delete_speaker_reference",
+    "select_speaker_reference",
+    "regenerate_audio_window",
 )
 
 
@@ -74,20 +78,17 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("showScript", "show_script", "GET", "/api/v1/sessions/{session_id}/scripts/{script_id}", "show_script", ("--show-session", "session-123"), "P1-core"),
     BridgeContract("listScripts", "list_scripts", "GET", "/api/v1/sessions/{session_id}/scripts", "list_scripts", ("--list-projects",), "P1-core"),
     BridgeContract("renderAudio", "render_audio", "POST", "/api/v1/sessions/{session_id}/audio:render", "render_audio", ("--render-audio", "session-123"), "P1-core", long_task=True),
+    BridgeContract("regenerateAudioWindow", "regenerate_audio_window", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/audio/segments/{segment_id}:regenerate", "regenerate_audio_window", (), "P2-speech-plan", long_task=True),
     BridgeContract("deleteGeneratedAudio", "delete_generated_audio", "DELETE", "/api/v1/sessions/{session_id}/audio", "delete_generated_audio", ("--render-audio", "session-123"), "P2-voice-studio"),
     BridgeContract("deleteArtifactAudio", "delete_artifact_audio", "DELETE", "/api/v1/artifacts/audio", "delete_artifact_audio", ("--render-voice-preview",), "P2-voice-studio"),
     BridgeContract("exportPodcastAudio", "export_podcast_audio", "POST", "/api/v1/artifacts/audio/export", "export_podcast_audio", (), "P2-voice-studio"),
     BridgeContract("listVoicePresets", "list_voice_presets", "GET", "/api/v1/voice-studio/presets", "list_voice_presets", ("--list-voice-presets",), "P2-voice-studio"),
     BridgeContract("renderVoicePreview", "render_voice_preview", "POST", "/api/v1/voice-studio/preview", "render_voice_preview", ("--render-voice-preview",), "P2-voice-studio"),
-    BridgeContract("listVoiceProfiles", "list_voice_profiles", "GET", "/api/v1/voice-profiles", "list_voice_profiles", ("--list-voice-profiles",), "P2-voice-studio"),
-    BridgeContract("createVoiceProfile", "create_voice_profile", "POST", "/api/v1/voice-profiles", "create_voice_profile", ("--create-voice-profile", "Name"), "P2-voice-studio"),
-    BridgeContract("updateVoiceProfile", "update_voice_profile", "PATCH", "/api/v1/voice-profiles/{profile_id}", "update_voice_profile", ("--update-voice-profile", "profile-123"), "P2-voice-studio"),
-    BridgeContract("deleteVoiceProfile", "delete_voice_profile", "DELETE", "/api/v1/voice-profiles/{profile_id}", "delete_voice_profile", ("--delete-voice-profile", "profile-123"), "P2-voice-studio"),
-    BridgeContract("selectVoiceProfile", "select_voice_profile", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/voice-profile:select", "select_voice_profile", ("--select-voice-profile", "profile-123"), "P2-voice-studio"),
-    BridgeContract("lockVoicePreview", "lock_voice_preview", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/voice-preview:lock", "lock_voice_preview", ("--lock-voice-preview", "session-123"), "P2-voice-studio"),
-    BridgeContract("renderVoiceTake", "render_voice_take", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/voice-takes:render", "render_voice_take", ("--render-voice-take", "session-123"), "P2-voice-studio", long_task=True),
-    BridgeContract("setFinalVoiceTake", "set_final_voice_take", "POST", "/api/v1/sessions/{session_id}/voice-takes/{take_id}:final", "set_final_voice_take", ("--set-final-voice-take", "session-123"), "P2-voice-studio"),
-    BridgeContract("deleteVoiceTake", "delete_voice_take", "DELETE", "/api/v1/sessions/{session_id}/voice-takes/{take_id}", "delete_voice_take", ("--render-voice-take", "session-123"), "P2-voice-studio"),
+    BridgeContract("listSpeakerReferences", "list_speaker_references", "GET", "/api/v1/speaker-references", "list_speaker_references", ("--list-speaker-references",), "P2-voice-studio"),
+    BridgeContract("createSpeakerReference", "create_speaker_reference", "POST", "/api/v1/speaker-references", "create_speaker_reference", (), "P2-voice-studio"),
+    BridgeContract("updateSpeakerReference", "update_speaker_reference", "PATCH", "/api/v1/speaker-references/{reference_id}", "update_speaker_reference", (), "P2-voice-studio"),
+    BridgeContract("deleteSpeakerReference", "delete_speaker_reference", "DELETE", "/api/v1/speaker-references/{reference_id}", "delete_speaker_reference", (), "P2-voice-studio"),
+    BridgeContract("selectSpeakerReference", "select_speaker_reference", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/speaker-reference:select", "select_speaker_reference", (), "P2-voice-studio"),
     BridgeContract("saveEditedScript", "save_edited_script", "PUT", "/api/v1/sessions/{session_id}/scripts/{script_id}/final", "save_script", ("--save-script", "session-123", "--script-final-text", "draft"), "P1-complete"),
     BridgeContract("deleteScript", "delete_script", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}:delete", "delete_script", ("--delete-script", "session-123"), "P1-complete"),
     BridgeContract("restoreScript", "restore_script", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}:restore", "restore_script", ("--restore-script", "session-123"), "P1-complete"),
@@ -162,6 +163,8 @@ def extract_interface_methods(path: Path = DESKTOP_BRIDGE_PATH, interface_name: 
 
 
 def extract_return_object_methods(path: Path, anchor: str = "return {") -> list[str]:
+    if path == HTTP_BRIDGE_PATH and anchor == "return {":
+        anchor = "return {\n    async listProjects"
     body = extract_balanced_block(read_text(path), anchor)
     methods: list[str] = []
     depth = 0

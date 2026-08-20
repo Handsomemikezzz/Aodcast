@@ -6,12 +6,8 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
-
-from app.domain.artifact import ArtifactRecord
 from app.domain.project import SessionProject
 from app.domain.provider_config import LLMProviderConfig
-from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.main import run
@@ -45,35 +41,16 @@ class VoiceStudioCliTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["styles"]), 4)
         self.assertIsInstance(payload["standard_preview_text"], str)
 
-    def test_list_voice_profiles_outputs_builtin_profiles(self) -> None:
+    def test_list_speaker_references_outputs_provider_neutral_builtins(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            code, payloads = self.run_cli("--cwd", tmp_dir, "--list-voice-profiles")
+            code, payloads = self.run_cli("--cwd", tmp_dir, "--list-speaker-references")
 
         self.assertEqual(code, 0)
         self.assertTrue(payloads)
         payload = payloads[-1]
-        self.assertEqual(payload["request_state"]["operation"], "list_voice_profiles")
-        built_ins = [profile for profile in payload["profiles"] if profile["source"] == "built_in"]
+        self.assertEqual(payload["request_state"]["operation"], "list_speaker_references")
+        built_ins = [item for item in payload["speaker_references"] if item["source"] == "built_in"]
         self.assertEqual(len(built_ins), 2)
-
-    def test_render_voice_take_outputs_take_payload_for_latest_script(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            config = AppConfig.from_cwd(Path(tmp_dir))
-            store = ProjectStore(config.data_dir)
-            store.bootstrap()
-            session = SessionRecord(topic="CLI take", creation_intent="Render latest script")
-            session.transition(SessionState.SCRIPT_EDITED)
-            script = ScriptRecord(session_id=session.session_id, script_id="script-cli", draft="Draft", final="Final")
-            store.save_project(SessionProject(session=session, script=script, artifact=ArtifactRecord(session_id=session.session_id)))
-
-            with patch("app.providers.tts_api.mock_remote.synthesize_sine_wave_bytes", return_value=b"audio"):
-                code, payloads = self.run_cli("--cwd", tmp_dir, "--render-voice-take", session.session_id)
-
-        self.assertEqual(code, 0)
-        self.assertTrue(payloads)
-        payload = payloads[-1]
-        self.assertEqual(payload["request_state"]["operation"], "render_voice_take")
-        self.assertEqual(payload["take"]["script_id"], "script-cli")
 
     def test_generate_script_creates_first_script_snapshot_from_cli(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

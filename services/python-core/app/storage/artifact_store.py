@@ -14,6 +14,12 @@ class ArtifactStore:
     def session_export_dir(self, session_id: str) -> Path:
         return self.exports_dir / session_id
 
+    def segment_assets_dir(self, session_id: str) -> Path:
+        return self.session_export_dir(session_id) / "segment-assets"
+
+    def render_export_dir(self, session_id: str, render_id: str) -> Path:
+        return self.session_export_dir(session_id) / "renders" / render_id
+
     def write_transcript(self, session_id: str, text: str) -> Path:
         export_dir = self.session_export_dir(session_id)
         export_dir.mkdir(parents=True, exist_ok=True)
@@ -51,6 +57,35 @@ class ArtifactStore:
         path = preview_dir / f"preview-{uuid4().hex}.{suffix}"
         path.write_bytes(audio_bytes)
         return path
+
+    def write_segment_audio(self, session_id: str, segment_artifact_id: str, audio_bytes: bytes) -> Path:
+        target_dir = self.segment_assets_dir(session_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        path = target_dir / f"{segment_artifact_id}.wav"
+        self._write_bytes_atomically(path, audio_bytes)
+        return path
+
+    def write_render_audio(self, session_id: str, render_id: str, audio_bytes: bytes) -> Path:
+        target_dir = self.render_export_dir(session_id, render_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        path = target_dir / "podcast.wav"
+        self._write_bytes_atomically(path, audio_bytes)
+        return path
+
+    def write_render_transcript(self, session_id: str, render_id: str, text: str) -> Path:
+        target_dir = self.render_export_dir(session_id, render_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        path = target_dir / "transcript.txt"
+        temporary = path.with_suffix(".txt.tmp")
+        temporary.write_text(text.rstrip() + "\n", encoding="utf-8")
+        temporary.replace(path)
+        return path
+
+    @staticmethod
+    def _write_bytes_atomically(path: Path, value: bytes) -> None:
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_bytes(value)
+        temporary.replace(path)
 
     def delete_export_file(self, path: str | Path) -> bool:
         exports_dir = self.exports_dir.resolve()

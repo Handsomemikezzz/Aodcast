@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { resolveAudioFileUrl } from "../../lib/audioFile";
-import type { DesktopBridge } from "../../lib/desktopBridge";
+import type { DesktopBridge, LongTaskHandle } from "../../lib/desktopBridge";
 import {
   buildRequestState,
   getErrorMessage,
-  ensureRequestStateRunToken,
   getErrorRequestState,
   isActiveRequestState,
   isTerminalRequestState,
@@ -15,7 +14,7 @@ import {
 import { revealInFinder } from "../../lib/shellOps";
 import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
 import { analyzeSpokenScript } from "./spokenScriptChecks";
-import type { RequestState, RuntimeInfo, SessionProject } from "../../types";
+import type { AudioRenderResult, RequestState, RuntimeInfo, SessionProject } from "../../types";
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_FAILURE_THRESHOLD = 3;
@@ -27,11 +26,12 @@ type UseScriptWorkbenchAudioArgs = {
   sessionId: string;
   scriptId: string;
   onRefresh: () => Promise<void>;
-  reload: () => Promise<void>;
+  refreshProject: () => Promise<SessionProject>;
   project: SessionProject | null;
   setProject: (project: SessionProject) => void;
   selectedEngine: "local_mlx" | "cloud";
   cloudProvider: string;
+  selectedModelId: string;
 };
 
 type UseScriptWorkbenchAudioResult = {
@@ -40,10 +40,12 @@ type UseScriptWorkbenchAudioResult = {
   audioRequestState: RequestState | null;
   pollWarning: string | null;
   audioMessage: string | null;
+  affectedSegmentIds: string[];
   isAudioPlaying: boolean;
   audioRef: RefObject<HTMLAudioElement>;
   audioSrc: string;
   triggerRenderAudio: (options?: { scriptToRender?: string }) => Promise<void>;
+  triggerRegenerateAudioWindow: (targetSegmentId: string) => Promise<void>;
   handleCancelAudio: () => Promise<void>;
   handlePreviewAudio: () => Promise<void>;
   handleAudioLoadError: () => void;
@@ -53,37 +55,51 @@ type UseScriptWorkbenchAudioResult = {
   exportingMp3: boolean;
 };
 
+function taskHandleFromResult(result: AudioRenderResult): LongTaskHandle {
+  if (!result.task_id || !result.run_token) {
+    throw new Error("Audio task did not return a task id and run token.");
+  }
+  return { taskId: result.task_id, runToken: result.run_token };
+}
+
+function taskStateForResult(result: AudioRenderResult): RequestState {
+  return {
+    ...(result.request_state ?? buildRequestState("render_audio", "running", "Rendering audio...")),
+    task_id: result.task_id,
+    run_token: result.run_token,
+  };
+}
+
 export function useScriptWorkbenchAudio({
   bridge,
   sessionId,
   scriptId,
   onRefresh,
-  reload,
+  refreshProject,
   project,
   setProject,
   selectedEngine,
   cloudProvider,
+  selectedModelId,
 }: UseScriptWorkbenchAudioArgs): UseScriptWorkbenchAudioResult {
   const audioRef = useRef<HTMLAudioElement>(null);
   const pollHandleRef = useRef<number | null>(null);
   const pollingInFlightRef = useRef(false);
   const pollFailureCountRef = useRef(0);
-  const expectedRunTokenRef = useRef<string | null>(null);
-
-  const taskId = `render_audio:${sessionId}`;
+  const activeTaskRef = useRef<LongTaskHandle | null>(null);
+  const taskId = `render_audio:${sessionId}:${scriptId}`;
 
   const [generating, setGenerating] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioRequestState, setAudioRequestState] = useState<RequestState | null>(null);
   const [pollWarning, setPollWarning] = useState<string | null>(null);
   const [audioMessage, setAudioMessage] = useState<string | null>(null);
+  const [affectedSegmentIds, setAffectedSegmentIds] = useState<string[]>([]);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [exportingMp3, setExportingMp3] = useState(false);
 
-  const audioSrc = useMemo(() => {
-    const audioPath = project?.artifact?.audio_path;
-    return audioPath ? resolveAudioFileUrl(audioPath) : "";
-  }, [project?.artifact?.audio_path]);
+  const audioPath = project?.render_manifest?.output.audio_path || project?.artifact?.audio_path || "";
+  const audioSrc = useMemo(() => (audioPath ? resolveAudioFileUrl(audioPath) : ""), [audioPath]);
 
   const stopTaskPolling = () => {
     if (pollHandleRef.current !== null) {
@@ -96,124 +112,110 @@ export function useScriptWorkbenchAudio({
 
   const runtimeLabel = (runtime: RuntimeInfo): string => {
     const startedAt = new Date(runtime.started_at_unix * 1000).toLocaleString();
-    const shortToken = runtime.build_token.slice(0, 8);
-    return `runtime pid=${runtime.pid}, started=${startedAt}, build=${shortToken}`;
+    return `runtime pid=${runtime.pid}, started=${startedAt}, build=${runtime.build_token.slice(0, 8)}`;
   };
 
   const runtimeLabelFromError = (error: unknown): string | null => {
     if (typeof error !== "object" || error === null) return null;
-    const candidate = error as {
-      runtime?: RuntimeInfo;
-      details?: { runtime?: RuntimeInfo };
-    };
+    const candidate = error as { runtime?: RuntimeInfo; details?: { runtime?: RuntimeInfo } };
+    const runtime = candidate.runtime ?? candidate.details?.runtime;
     if (
-      candidate.runtime
-      && typeof candidate.runtime.pid === "number"
-      && typeof candidate.runtime.started_at_unix === "number"
-      && typeof candidate.runtime.build_token === "string"
+      runtime
+      && typeof runtime.pid === "number"
+      && typeof runtime.started_at_unix === "number"
+      && typeof runtime.build_token === "string"
     ) {
-      return runtimeLabel(candidate.runtime);
-    }
-    const nestedRuntime = candidate.details?.runtime;
-    if (
-      nestedRuntime
-      && typeof nestedRuntime.pid === "number"
-      && typeof nestedRuntime.started_at_unix === "number"
-      && typeof nestedRuntime.build_token === "string"
-    ) {
-      return runtimeLabel(nestedRuntime);
+      return runtimeLabel(runtime);
     }
     return null;
   };
 
   const refreshRenderedAudio = async () => {
-    await Promise.allSettled([onRefresh(), reload()]);
+    await Promise.allSettled([onRefresh(), refreshProject()]);
   };
 
-  const acceptPolledState = (state: RequestState | null): boolean => {
+  const acceptPolledState = (state: RequestState | null, expected: LongTaskHandle): boolean => {
+    const active = activeTaskRef.current;
+    if (!active || active.taskId !== expected.taskId || active.runToken !== expected.runToken) return false;
     if (!state) return false;
-    const expectedToken = expectedRunTokenRef.current;
-    if (expectedToken && state.run_token !== expectedToken) {
+    if (state.run_token !== expected.runToken) {
+      stopTaskPolling();
+      activeTaskRef.current = null;
+      setGenerating(false);
+      setPollWarning("A newer render replaced this task. The workspace has been refreshed.");
+      void refreshProject();
       return false;
     }
-    setAudioRequestState((previous: RequestState | null) => {
-      return keepCancellationProgress(previous, state);
-    });
+    setAudioRequestState((previous) => keepCancellationProgress(previous, state));
+    void refreshProject().catch(() => undefined);
     if (isTerminalRequestState(state)) {
       stopTaskPolling();
+      activeTaskRef.current = null;
       setGenerating(false);
-      if (state.phase === "succeeded") {
-        void refreshRenderedAudio();
-      }
+      setAffectedSegmentIds([]);
+      if (state.phase === "succeeded") void refreshRenderedAudio();
     } else {
       setGenerating(true);
     }
     return true;
   };
 
+  const pollOnce = () => {
+    const expected = activeTaskRef.current;
+    if (!expected || pollingInFlightRef.current) return;
+    pollingInFlightRef.current = true;
+    void bridge
+      .showTaskState(expected.taskId)
+      .then((state) => {
+        pollFailureCountRef.current = 0;
+        setPollWarning(null);
+        acceptPolledState(state, expected);
+      })
+      .catch((err: unknown) => {
+        pollFailureCountRef.current += 1;
+        if (pollFailureCountRef.current >= POLL_FAILURE_THRESHOLD) {
+          setPollWarning(getErrorMessage(err, "Lost connection to the rendering runtime."));
+        }
+      })
+      .finally(() => {
+        pollingInFlightRef.current = false;
+      });
+  };
+
   const startTaskPolling = () => {
     if (pollHandleRef.current !== null) return;
     pollFailureCountRef.current = 0;
     setPollWarning(null);
-    pollHandleRef.current = window.setInterval(() => {
-      if (pollingInFlightRef.current) return;
-      pollingInFlightRef.current = true;
-      void bridge
-        .showTaskState(taskId)
-        .then((state) => {
-          pollFailureCountRef.current = 0;
-          setPollWarning((previous: string | null) => (previous ? null : previous));
-          acceptPolledState(state);
-        })
-        .catch((err: unknown) => {
-          pollFailureCountRef.current += 1;
-          if (pollFailureCountRef.current >= POLL_FAILURE_THRESHOLD) {
-            setPollWarning(getErrorMessage(err, "Lost connection to the rendering runtime."));
-          }
-        })
-        .finally(() => {
-          pollingInFlightRef.current = false;
-        });
-    }, POLL_INTERVAL_MS);
-  };
-
-  const syncTaskState = async (): Promise<RequestState | null> => {
-    const state = await bridge.showTaskState(taskId);
-    if (!state) return null;
-    const expectedToken = expectedRunTokenRef.current;
-    if (expectedToken && state.run_token !== expectedToken) {
-      return null;
-    }
-    setAudioRequestState((previous: RequestState | null) => {
-      return keepCancellationProgress(previous, state);
-    });
-    return state;
+    pollHandleRef.current = window.setInterval(pollOnce, POLL_INTERVAL_MS);
   };
 
   useEffect(() => {
-    expectedRunTokenRef.current = null;
-    void syncTaskState()
+    stopTaskPolling();
+    activeTaskRef.current = null;
+    setAffectedSegmentIds([]);
+    void bridge
+      .showTaskState(taskId)
       .then((state) => {
-        if (state && isActiveRequestState(state)) {
-          expectedRunTokenRef.current = requestStateRunToken(state);
-          setGenerating(true);
-          startTaskPolling();
-        } else {
+        const runToken = requestStateRunToken(state);
+        if (!state || !runToken || !isActiveRequestState(state)) {
           setGenerating(false);
+          return;
         }
+        activeTaskRef.current = { taskId, runToken };
+        setAudioRequestState(state);
+        setGenerating(true);
+        startTaskPolling();
       })
       .catch(() => undefined);
-
     return () => {
       stopTaskPolling();
-      expectedRunTokenRef.current = null;
+      activeTaskRef.current = null;
     };
   }, [taskId]);
 
   useEffect(() => {
     const audioElement = audioRef.current;
     if (!audioElement) return undefined;
-
     const syncPlayback = () => setIsAudioPlaying(!audioElement.paused);
     audioElement.addEventListener("play", syncPlayback);
     audioElement.addEventListener("pause", syncPlayback);
@@ -223,103 +225,129 @@ export function useScriptWorkbenchAudio({
       audioElement.removeEventListener("pause", syncPlayback);
       audioElement.removeEventListener("ended", syncPlayback);
     };
-  }, [project?.artifact?.audio_path]);
+  }, [audioPath]);
+
+  const beginTask = (result: AudioRenderResult) => {
+    stopTaskPolling();
+    const handle = taskHandleFromResult(result);
+    activeTaskRef.current = handle;
+    setProject(result.project);
+    setAffectedSegmentIds(result.affected_segment_ids ?? []);
+    setAudioRequestState(taskStateForResult(result));
+    setGenerating(true);
+    startTaskPolling();
+    pollOnce();
+  };
+
+  const prepareRender = async (scriptToRender?: string): Promise<SessionProject | null> => {
+    if (scriptToRender !== undefined) {
+      const renderCheck = analyzeSpokenScript(scriptToRender);
+      if (!renderCheck.canRender) {
+        setAudioError(renderCheck.blockingSummary || "Fix blocking script issues before generating audio.");
+        setAudioMessage(null);
+        setAudioRequestState(null);
+        return null;
+      }
+    }
+    const currentTask = activeTaskRef.current;
+    if (currentTask) {
+      const state = await bridge.showTaskState(currentTask.taskId).catch(() => null);
+      if (state?.run_token === currentTask.runToken && isActiveRequestState(state)) {
+        setGenerating(true);
+        startTaskPolling();
+        return null;
+      }
+    }
+    let renderProject = project;
+    const speakerReference = renderProject?.artifact?.speaker_reference;
+    if (selectedEngine === "local_mlx" && !selectedModelId) {
+      setAudioError("请先选择一个已安装的本地语音模型。");
+      setAudioMessage(null);
+      setAudioRequestState(null);
+      return null;
+    }
+    if (selectedEngine === "local_mlx" && !speakerReference?.speaker_reference_id) {
+      setAudioError("请先在 Voice Studio 为当前脚本选择一个音色参考，然后再生成完整音频。");
+      setAudioMessage(null);
+      setAudioRequestState(null);
+      return null;
+    }
+    if (speakerReference?.speaker_reference_id) {
+      renderProject = await bridge.selectSpeakerReference(sessionId, scriptId, speakerReference.speaker_reference_id);
+      setProject(renderProject);
+    }
+    return renderProject;
+  };
 
   const triggerRenderAudio = async (options?: { scriptToRender?: string }) => {
     try {
-      if (options?.scriptToRender !== undefined) {
-        const renderCheck = analyzeSpokenScript(options.scriptToRender);
-        if (!renderCheck.canRender) {
-          setAudioError(renderCheck.blockingSummary || "Fix blocking script issues before generating audio.");
-          setAudioMessage(null);
-          setAudioRequestState(null);
-          return;
-        }
-      }
-
-      expectedRunTokenRef.current = null;
-      stopTaskPolling();
-      const existingState = await syncTaskState();
-      if (existingState && isActiveRequestState(existingState)) {
-        expectedRunTokenRef.current = requestStateRunToken(existingState);
-        setGenerating(true);
-        startTaskPolling();
-        return;
-      }
-
-      let renderProject = project;
-      const voiceReference = renderProject?.artifact?.voice_reference;
-      if (selectedEngine === "local_mlx" && (voiceReference?.source !== "voice_profile" || !voiceReference.voice_profile_id)) {
-        setAudioError("请先在 Voice Studio 为当前脚本选择一个音色，然后回到当前脚本页面生成完整音频。");
-        setAudioMessage(null);
-        setAudioRequestState(null);
-        return;
-      }
-      if (selectedEngine === "local_mlx" && voiceReference?.source === "voice_profile" && voiceReference.voice_profile_id) {
-        renderProject = await bridge.selectVoiceProfile(sessionId, scriptId, voiceReference.voice_profile_id);
-        setProject(renderProject);
-      }
-
-      setGenerating(true);
+      const renderProject = await prepareRender(options?.scriptToRender);
+      if (!renderProject) return;
       setAudioError(null);
       setAudioMessage(null);
-      setAudioRequestState({
-        operation: "render_audio",
-        phase: "running",
-        progress_percent: 0,
-        message: "Rendering audio...",
-      });
-
-      const providerOverride = selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider;
+      setAudioRequestState(buildRequestState("render_audio", "running", "Preparing speech plan..."));
+      setGenerating(true);
       const result = await bridge.renderAudio(sessionId, {
-        providerOverride,
+        providerOverride: selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider,
+        modelId: selectedEngine === "local_mlx" ? selectedModelId : undefined,
         scriptId,
         voiceSettings: resolveProjectVoiceSettings(renderProject),
-        requireVoiceProfile: selectedEngine === "local_mlx",
+        requireSpeakerReference: selectedEngine === "local_mlx",
       });
-      const runToken = typeof result.run_token === "string" && result.run_token.length > 0 ? result.run_token : requestStateRunToken(result.request_state);
-      expectedRunTokenRef.current = runToken;
-      setProject(result.project);
-      const finalTaskId = result.task_id ?? taskId;
-      const finalState = await bridge.showTaskState(finalTaskId).catch(() => null);
-      const chosenState = ensureRequestStateRunToken(
-        finalState ?? result.request_state ?? buildRequestState("render_audio", "running", "Rendering audio..."),
-        runToken,
-      );
-      setAudioRequestState(chosenState);
-      if (isTerminalRequestState(chosenState)) {
-        setGenerating(false);
-      } else {
-        setGenerating(true);
-        startTaskPolling();
-      }
+      beginTask(result);
       await onRefresh();
-      await reload();
     } catch (err: unknown) {
       const errorState = getErrorRequestState(err);
       const runtimeHint = runtimeLabelFromError(err);
-      if (errorState?.phase === "cancelled") {
-        setAudioError(null);
-      } else {
-        const baseMessage = getErrorMessage(err, "Failed to render audio.");
-        setAudioError(runtimeHint ? `${baseMessage} (${runtimeHint})` : baseMessage);
-      }
-      setAudioRequestState(
-        withRequestStateFallback(errorState, buildRequestState("render_audio", "failed", "Failed to render audio.")),
-      );
+      const baseMessage = getErrorMessage(err, "Failed to render audio.");
+      setAudioError(errorState?.phase === "cancelled" ? null : runtimeHint ? `${baseMessage} (${runtimeHint})` : baseMessage);
+      setAudioRequestState(withRequestStateFallback(errorState, buildRequestState("render_audio", "failed", baseMessage)));
       setGenerating(false);
+      activeTaskRef.current = null;
+      stopTaskPolling();
+    }
+  };
+
+  const triggerRegenerateAudioWindow = async (targetSegmentId: string) => {
+    const plan = project?.speech_plan;
+    const manifest = project?.render_manifest;
+    if (!plan || !manifest) {
+      setAudioError("请先生成完整音频，再进行局部重生成。");
+      return;
+    }
+    try {
+      setAudioError(null);
+      setAudioMessage(null);
+      setGenerating(true);
+      const result = await bridge.regenerateAudioWindow(sessionId, scriptId, targetSegmentId, {
+        speechPlanId: plan.plan_id,
+        renderManifestId: manifest.render_id,
+      });
+      beginTask(result);
+      await onRefresh();
+    } catch (err: unknown) {
+      const errorState = getErrorRequestState(err);
+      const message = getErrorMessage(err, "Failed to regenerate the speech window.");
+      setAudioError(message);
+      setAudioRequestState(withRequestStateFallback(errorState, buildRequestState("regenerate_audio_window", "failed", message)));
+      setGenerating(false);
+      activeTaskRef.current = null;
       stopTaskPolling();
     }
   };
 
   const handleCancelAudio = async () => {
+    const handle = activeTaskRef.current;
+    if (!handle) return;
     try {
-      const state = await bridge.cancelTask(taskId);
-      if (state) {
-        setAudioRequestState(state);
-      } else {
-        setAudioRequestState(buildRequestState("render_audio", "cancelling", "Cancellation requested."));
-      }
+      const state = await bridge.cancelTask(handle.taskId, handle.runToken);
+      setAudioRequestState(
+        state ?? {
+          ...buildRequestState("render_audio", "cancelling", "Cancellation requested."),
+          task_id: handle.taskId,
+          run_token: handle.runToken,
+        },
+      );
     } catch (err: unknown) {
       setAudioError(getErrorMessage(err, "Failed to request cancellation."));
     }
@@ -329,11 +357,8 @@ export function useScriptWorkbenchAudio({
     const audioElement = audioRef.current;
     if (!audioElement || !audioSrc) return;
     try {
-      if (audioElement.paused) {
-        await audioElement.play();
-      } else {
-        audioElement.pause();
-      }
+      if (audioElement.paused) await audioElement.play();
+      else audioElement.pause();
     } catch (err: unknown) {
       setAudioError(getErrorMessage(err, "Failed to preview audio."));
     }
@@ -344,19 +369,19 @@ export function useScriptWorkbenchAudio({
   };
 
   const handleRevealInFinder = async () => {
-    if (!project?.artifact?.audio_path) return;
+    if (!audioPath) return;
     try {
-      await revealInFinder(project.artifact.audio_path);
+      await revealInFinder(audioPath);
     } catch (err: unknown) {
       setAudioError(getErrorMessage(err, "Failed to reveal audio in Finder."));
     }
   };
 
   const handleDeleteAudio = async () => {
-    if (!project?.artifact?.audio_path) return;
+    if (!audioPath) return;
     try {
       setAudioError(null);
-      const updated = await bridge.deleteGeneratedAudio(sessionId, { scriptId: project.script?.script_id });
+      const updated = await bridge.deleteGeneratedAudio(sessionId, { scriptId: project?.script?.script_id });
       setProject(updated);
       setAudioRequestState(null);
       setAudioMessage("Audio artifact deleted.");
@@ -367,18 +392,12 @@ export function useScriptWorkbenchAudio({
   };
 
   const handleExportMp3 = async () => {
-    const audioPath = project?.artifact?.audio_path;
     if (!audioPath || exportingMp3) return;
     setExportingMp3(true);
     setAudioError(null);
     setAudioMessage(null);
     try {
-      const result = await bridge.exportPodcastAudio(
-        audioPath,
-        EXPORT_MP3_FORMAT,
-        EXPORT_MP3_BITRATE,
-        "",
-      );
+      const result = await bridge.exportPodcastAudio(audioPath, EXPORT_MP3_FORMAT, EXPORT_MP3_BITRATE, "");
       try {
         await revealInFinder(result.audio_path);
         setAudioMessage(`MP3 已导出：${result.file_name}`);
@@ -398,10 +417,12 @@ export function useScriptWorkbenchAudio({
     audioRequestState,
     pollWarning,
     audioMessage,
+    affectedSegmentIds,
     isAudioPlaying,
     audioRef,
     audioSrc,
     triggerRenderAudio,
+    triggerRegenerateAudioWindow,
     handleCancelAudio,
     handlePreviewAudio,
     handleAudioLoadError,

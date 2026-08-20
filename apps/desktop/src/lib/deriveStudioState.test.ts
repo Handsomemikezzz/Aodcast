@@ -46,9 +46,28 @@ function makeProject(overrides: Partial<SessionProject> = {}): SessionProject {
     transcript: { session_id: "s1", turns: [] },
     script: null,
     artifact: null,
+    speech_plan: null,
+    render_manifest: null,
     ...overrides,
   };
 }
+
+const selectedSpeakerReference = {
+  schema_version: 1 as const,
+  speaker_reference_id: "speaker-1",
+  name: "Test speaker",
+  source: "user_saved" as const,
+  audio_path: "/voice.wav",
+  audio_hash: "a".repeat(64),
+  audio_format: "wav",
+  duration_ms: 10_000,
+  reference_text: "hello",
+  language: "en",
+  reference_hash: "b".repeat(64),
+  created_at: "2024-01-01T00:00:00Z",
+  updated_at: "2024-01-01T00:00:00Z",
+  last_used_at: null,
+};
 
 function derive(
   project: SessionProject | null,
@@ -168,19 +187,7 @@ describe("deriveStudioState", () => {
         audio_path: "",
         provider: "cloud",
         created_at: "2024-01-01T00:00:00Z",
-        voice_reference: {
-          lock_id: "lk1",
-          audio_path: "/voice.wav",
-          preview_text: "hello",
-          provider: "cloud",
-          model: "m1",
-          voice_id: "v1",
-          style_id: "s1",
-          speed: 1,
-          language: "en",
-          audio_format: "mp3",
-          created_at: "2024-01-01T00:00:00Z",
-        },
+        speaker_reference: selectedSpeakerReference,
       },
     });
     expect(derive(p, { check: cleanCheck, isDirty: false })).toBe("ready_to_generate_audio");
@@ -204,19 +211,7 @@ describe("deriveStudioState", () => {
         audio_path: "/audio.mp3",
         provider: "cloud",
         created_at: "2024-01-02T00:00:00Z",
-        voice_reference: {
-          lock_id: "lk1",
-          audio_path: "/voice.wav",
-          preview_text: "hello",
-          provider: "cloud",
-          model: "m1",
-          voice_id: "v1",
-          style_id: "s1",
-          speed: 1,
-          language: "en",
-          audio_format: "mp3",
-          created_at: "2024-01-01T00:00:00Z",
-        },
+        speaker_reference: selectedSpeakerReference,
       },
     });
     expect(derive(p, { check: cleanCheck, isDirty: false })).toBe("audio_ready");

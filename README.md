@@ -10,7 +10,7 @@ English | [简体中文](README.zh-CN.md)
 
 Aodcast is an open-source, local-first macOS desktop app for turning a text idea or an existing Markdown article into a solo podcast script and final audio.
 
-The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It guides the user through an interview, generates editable script snapshots, lets the user choose a reusable voice profile, and renders final audio through local or remote speech providers.
+The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It guides the user through an interview, generates editable script snapshots, lets the user choose a reusable Speaker Reference and speech model, and renders final audio through local or remote speech providers.
 
 > Status: source-code alpha. Aodcast is usable for local development, but it is not yet a hardened packaged desktop distribution. Provider keys and generated content are stored locally; there is no Keychain or dedicated secret vault integration yet.
 
@@ -19,9 +19,12 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 - Text-topic podcast creation with an interview-guided writing flow.
 - Markdown-first creation from a local `.md` file or pasted text, with source preview, podcast adaptation or faithful narration, target-length guidance, optional source discussion, and versioned source replacement.
 - Multiple independent script snapshots per episode, regardless of whether it started from an interview or Markdown.
-- Script Workbench for editing, saving, deleting unused snapshots, choosing a voice profile, and rendering/reviewing generated audio.
-- Voice Studio for built-in and user-created voice profiles, sample upload/recording, preview rendering, and profile management.
-- Local MLX TTS on supported macOS machines, plus OpenAI-compatible remote provider adapters.
+- A Podcast Editor stage that writes clean, listenable narration with deliberate sentence length, punctuation, and paragraph rhythm—without manufacturing filler words or stage directions.
+- A Speech Director that creates a versioned, provider-neutral Speech Plan with stable segments, structured pauses, emphasis, pronunciation, and delivery guidance for the exact script hash.
+- Script Workbench for editing, saving, and deleting unused snapshots; selecting a Speaker Reference and model; inspecting the Speech Plan; rendering segment assets; and regenerating a target segment with its immediate neighbors.
+- Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, preview rendering, and reference management.
+- Local MLX TTS model adapters on supported macOS machines, plus OpenAI-compatible remote providers. VoxCPM2 8-bit is the local default; MOSS-TTS Local v1.5 and Qwen3-TTS Base remain comparison paths.
+- Manifest-driven WAV assembly with explicit pauses, consistent format/loudness, render lineage, and reusable per-segment audio assets.
 - Models page for local model storage, downloads, migration, reset, and default local voice model selection.
 - Mock LLM and TTS providers for local smoke testing without paid provider access.
 - Local-first development storage under `.local-data/`.
@@ -134,13 +137,13 @@ Configure an OpenAI-compatible TTS provider:
 
 ### Environment Variables
 
-Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper-script variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, and `HF_TOKEN`.
+Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, `HF_TOKEN`, and `VITE_AODCAST_RUNTIME_URL` for pointing a parallel worktree's Vite shell at its own local runtime.
 
 ### Exporting MP3
 
-Final renders stay WAV. After audio exists, use **Export MP3** next to the take.
+Final renders stay WAV. After audio exists, use **Export MP3** next to the final render.
 
-- Aodcast writes a 192 kbps MP3 beside the WAV, for example `.local-data/exports/<session-id>/audio.mp3`.
+- Aodcast writes a 192 kbps MP3 beside the WAV, for example `.local-data/exports/<session-id>/renders/<render-id>/podcast.mp3`.
 - Finder opens on the MP3 so you can upload it to Xiaoyuzhou or any other host.
 - Aodcast does not store platform credentials, upload audio, generate RSS, or track remote publication state.
 
@@ -157,17 +160,28 @@ uv pip install --python .venv/bin/python -e '.[local-mlx]'
 cd ../..
 ```
 
+This group pins `mlx-audio[tts]` to `0.4.6` so the model adapters and worker run against the tested TTS API surface.
+
 Default model target:
 
 ```text
-mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit
+mlx-community/VoxCPM2-8bit
 ```
 
 Download model weights into a user-owned model directory:
 
 ```bash
 uv run --with huggingface_hub --with tqdm \
-  scripts/model-download/download_qwen3_tts_mlx.py \
+  scripts/model-download/download_tts_model.py \
+  --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
+```
+
+The generic downloader defaults to VoxCPM2 8-bit. Pass a registered repository explicitly to download a comparison model, for example:
+
+```bash
+uv run --with huggingface_hub --with tqdm \
+  scripts/model-download/download_tts_model.py \
+  --repo-id OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5 \
   --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
@@ -179,7 +193,16 @@ The local MLX path is runtime-gated. Always check capability before selecting it
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
 
-The capability report is the source of truth. It checks the platform, Python environment, MLX imports, model path, and bootstrap behavior.
+The capability report is the source of truth. It checks the platform, Python environment, MLX imports, model path, and bootstrap behavior. Each adapter also reports feature support as `native`, `approximated`, or `unsupported`, which Script Workbench surfaces for cloning, emotion, and explicit pauses.
+
+Current comparison set:
+
+| Model | Role |
+| --- | --- |
+| `mlx-community/VoxCPM2-8bit` | Recommended default; combines Speaker Reference cloning with style/prosody instructions. |
+| `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5` | High-memory long-form and explicit-pause comparison. |
+| `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit` | Higher-quality cloning baseline without style instruction. |
+| `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` | Faster, lower-memory cloning baseline without style instruction. |
 
 Configure local MLX in repo-id mode:
 
@@ -194,7 +217,7 @@ Or point to an explicit local model directory:
 ```bash
 ./scripts/dev/run-python-core.sh \
   --configure-tts-provider local_mlx \
-  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/VoxCPM2-8bit"
 ```
 
 A local model directory must contain a real MLX export, including `.safetensors` weights. Placeholder directories are useful for tests but are not executable model bundles.
@@ -234,10 +257,12 @@ Use mock LLM if you only want to validate the audio path:
 
 #### Local MLX notes and limitations
 
+- This alpha redesign does not migrate the removed voice-profile / preview-lock metadata. Recreate Speaker References after updating, or reset the development `.local-data/` directory when older fixtures prevent startup.
 - First render may be slow because the worker loads the model.
-- Long scripts are chunked and joined by the project runner.
-- Voice Studio preview rendering is a pollable long task.
-- Aodcast does not currently provide voice cloning.
+- Full renders first create a Speech Plan, synthesize one WAV asset per segment, then assemble the final `podcast.wav` from the Render Manifest.
+- Voice Studio preview rendering is a pollable long task. A preview is disposable; the selected persistent Speaker Reference defines the script's cloning source.
+- Voice cloning is available when the selected model reports native Speaker Reference support. User recordings and uploads must be 10 minutes or shorter and include the matching reference transcript.
+- MOSS provider pause markers are generated inside its adapter from structured Speech Plan breaks; they never become script text.
 - `.mp4` support is audio-container support when the selected provider/runtime creates a valid file; Aodcast does not currently transcode WAV to video MP4.
 
 ## Development Commands
@@ -258,6 +283,7 @@ Run frontend checks:
 
 ```bash
 pnpm --dir apps/desktop check
+pnpm --dir apps/desktop test
 pnpm --dir apps/desktop build:web
 ```
 
@@ -298,7 +324,7 @@ Useful docs:
 
 ## Data And Privacy
 
-Aodcast is local-first. During development, generated sessions, imported source snapshots, scripts, transcripts, audio artifacts, provider configuration, and request-state files are stored under:
+Aodcast is local-first. During development, generated sessions, imported source snapshots, scripts, Speech Plans, Render Manifests, Speaker References, transcripts, audio artifacts, provider configuration, and request-state files are stored under:
 
 ```text
 .local-data/
@@ -322,12 +348,13 @@ Aodcast currently focuses on local-first solo podcast creation:
 - input: a text topic or one local/pasted Markdown source per episode
 - output: solo podcast script plus final audio from Script Workbench
 - LLM: user-configured API provider
-- TTS: local MLX as the primary first-release path, plus remote API providers
+- speech identity: a provider-neutral Speaker Reference selected per script
+- TTS: local MLX multi-model adapters as the primary first-release path, plus remote API providers
 - memory: file-native, local-only long-term user memory across episodes
 
-Out of scope: speech-to-text input, multi-host formats, cloud backend dependency, voice cloning.
+Out of scope: speech-to-text input, multi-host formats, and a required cloud backend.
 
-The app can serve common audio suffixes and can prepare some uploaded profile samples as WAV references when `ffmpeg` or `afconvert` is available. Export to compressed audio formats depends on local conversion tools. True video MP4 output is out of scope.
+The app can serve common audio suffixes and validate uploaded Speaker Reference duration through local decoders or `ffprobe`. Export to compressed audio formats depends on local conversion tools. True video MP4 output is out of scope.
 
 ## Architecture And Behavior Notes
 
@@ -341,25 +368,28 @@ Script soft-offer requires both content-dimension readiness and a minimum number
 
 Long-term memory is file-native under `.local-data/memory/`. `entries/*.md` is the source of truth; `catalog.json` and `MEMORY.md` are rebuildable indexes. Only user turns become memories. Interview/script flows use read-only retrieval and do not block on background memory work.
 
+### Podcast Editor and Speech Director
+
+The Podcast Editor keeps generated scripts as plain spoken text while improving listening structure, sentence length, punctuation, and paragraph breathing. It does not add provider tags, stage directions, or synthetic filler. At the start of a full render, the Speech Director creates a versioned Speech Plan bound to the exact script hash. Editing the script makes the prior plan and render stale; generate the full audio again before local regeneration.
+
 ### Desktop bridge and long tasks
 
-UI calls go through the desktop HTTP bridge to the local Python runtime. Long operations (audio render, voice preview, model migration/download, and similar) persist pollable `request_state`, expose progress, support cancel, and use `run_token` so retriggered runs do not show stale UI state. Stateful long-task operations should be sequenced unless concurrency is under test.
+UI calls go through the desktop HTTP bridge to the local Python runtime. Long operations (audio render, voice preview, model migration/download, and similar) persist pollable `request_state`, expose progress, support cancel, and use `run_token` so retriggered runs do not show stale UI state. Full render and context-window regeneration share the script-scoped task id `render_audio:<session_id>:<script_id>`; cancellation must carry that run's token, so different scripts do not collide. Stateful long-task operations should otherwise be sequenced unless concurrency is under test.
 
 ### Voice Studio and Script Workbench
 
-- Script Workbench owns final podcast rendering and generated-audio management.
-- Final takes stay WAV; MP3 is an on-demand sibling export next to the take.
-- Voice Studio owns reusable voice profiles, preview, and script voice selection.
-- Script `renderAudio` uses the script artifact’s `voice_settings`, falling back to Voice Studio defaults—not raw Settings `tts_config.voice`.
-- Multi-script sessions keep per-script playback/takes under `artifact.script_artifacts`.
-- Preview lock stores script-scoped `artifact.voice_reference`; local MLX/Qwen full renders and take renders pass that path as `ref_audio` when present. Locks improve continuity; they do not guarantee bit-identical output.
-- Built-in profile audio lives under `services/python-core/app/assets/voice-profiles/` (tracked). User profiles copy into `.local-data/exports/_voice_profiles`. User profile creation uses upload or microphone recording via HTTP; typing local audio paths is not part of the UI. System audio capture is not available yet.
+- Script Workbench owns final podcast rendering, per-render model selection, generated-audio management, and the read-only Speech Plan view.
+- A full render saves immutable segment WAVs and a Render Manifest, then assembles the manifest's final WAV. MP3 is an on-demand sibling export next to that final render.
+- Each Speech Plan segment can be played independently. Local regeneration follows the B/C/D window from `A | B | C | D | E`: selecting C rerenders B, C, and D sequentially, conditions each new segment on the preceding segment's audio/text, reuses A and E, and publishes a new manifest/output only after the whole replacement succeeds.
+- Voice Studio owns reusable Speaker References, previews, and script reference selection. A Speaker Reference defines who is speaking; delivery and model settings remain separate.
+- Built-in reference audio lives under `services/python-core/app/assets/speaker-references/` (tracked for now). User metadata lives in `.local-data/speaker-references/` and copied audio in `.local-data/exports/_speaker_references/`. Creation uses upload or microphone recording via HTTP and requires the matching reference text; system audio capture is not available yet.
+- Script Workbench can choose any downloaded, available local model for the next full render. The resulting manifest freezes that model and adapter pipeline for later B/C/D regeneration.
 - Artifact audio playback uses the localhost HTTP route `/api/v1/artifacts/audio` in both Web and Tauri shells.
 - Tauri-only helpers such as Reveal in Finder live in shell helpers and are not part of the HTTP `DesktopBridge` surface.
 
 ### Local MLX runtime
 
-Local MLX TTS runs in a persistent worker subprocess. The model loads once per worker lifetime; do not treat one-off CLI generation as the production path. Long text is chunked and joined; worker PCM reads must match model channel/sample-rate metadata or audio will sound stretched or muddy. Use `./scripts/dev/run-python-core.sh` and `--show-local-tts-capability` as the capability source of truth (some environments fail at native MLX bootstrap even when imports look fine). App-managed Hugging Face downloads disable Xet (`HF_HUB_DISABLE_XET=1`).
+Local MLX TTS runs in a persistent worker subprocess. The model loads once per worker lifetime; do not treat one-off CLI generation as the production path. VoxCPM2, MOSS, and Qwen requests pass through family-specific adapters, while the provider-neutral orchestration persists no model markup. The assembly stage decodes every segment to a common WAV format, applies one edge fade per segment, matches RMS level from audible samples before inserting planned silence, enforces a sample-peak ceiling, and writes `podcast.wav`. Use `./scripts/dev/run-python-core.sh` and `--show-local-tts-capability` as the capability source of truth (some environments fail at native MLX bootstrap even when imports look fine). App-managed Hugging Face downloads disable Xet (`HF_HUB_DISABLE_XET=1`).
 
 ### Development operators
 

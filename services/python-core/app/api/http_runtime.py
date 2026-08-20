@@ -29,7 +29,6 @@ from app.api.serializers import (
     serialize_script_revisions,
     serialize_turn_result,
     serialize_voice_settings,
-    serialize_voice_take_result,
     voice_settings_from_payload,
 )
 from app.config import AppConfig
@@ -51,6 +50,8 @@ from app.models_catalog import (
     migrate_model_storage,
     model_storage_status,
     reset_model_storage,
+    resolve_voice_model_id,
+    voice_model_is_downloaded,
 )
 from app.orchestration.audio_rendering import (
     AudioRenderingService,
@@ -62,7 +63,7 @@ from app.orchestration.script_generation import ScriptGenerationService
 from app.providers.llm.factory import validate_llm_provider
 from app.providers.llm.preflight import check_llm_config
 from app.providers.tts_api.factory import validate_tts_provider
-from app.providers.tts_local_mlx.presets import DEFAULT_QWEN3_TTS_MODEL
+from app.providers.tts_local_mlx.presets import DEFAULT_LOCAL_TTS_MODEL
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
 from app.runtime.long_task_state import LongTaskStateManager
 from app.runtime.request_state_store import RequestStateStore
@@ -70,7 +71,7 @@ from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
-from app.storage.voice_profile_store import VoiceProfileStore
+from app.storage.speaker_reference_store import SpeakerReferenceStore
 
 _BOOTSTRAP_TTL_SECONDS = 300.0
 DOWNLOAD_PROGRESS_MARKER = "AODCAST_PROGRESS"
@@ -195,7 +196,7 @@ class RuntimeContext:
     task_lock: threading.Lock = field(default_factory=threading.Lock)
     active_tasks: dict[str, threading.Thread] = field(default_factory=dict)
     bootstrap_nonce_used: bool = False
-    voice_profile_store: VoiceProfileStore | None = None
+    speaker_reference_store: SpeakerReferenceStore | None = None
     memory_service: MemoryService | None = None
 
     def runtime_metadata(self) -> dict[str, object]:
@@ -242,11 +243,11 @@ class RuntimeContext:
             operation="runtime_bootstrap",
         )
 
-    def get_voice_profile_store(self) -> VoiceProfileStore:
-        if self.voice_profile_store is None:
-            self.voice_profile_store = VoiceProfileStore(self.config.data_dir, self.artifact_store)
-            self.voice_profile_store.bootstrap()
-        return self.voice_profile_store
+    def get_speaker_reference_store(self) -> SpeakerReferenceStore:
+        if self.speaker_reference_store is None:
+            self.speaker_reference_store = SpeakerReferenceStore(self.config.data_dir, self.artifact_store)
+            self.speaker_reference_store.bootstrap()
+        return self.speaker_reference_store
 
     def get_memory_service(self) -> MemoryService:
         if self.memory_service is None:
@@ -260,8 +261,9 @@ class RuntimeContext:
         *,
         script_id: str = "",
         override_provider: str = "",
+        override_model: str = "",
         settings: VoiceRenderSettings | None = None,
-        require_voice_profile: bool = False,
+        require_speaker_reference: bool = False,
     ) -> dict[str, object]:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.session.is_deleted():
@@ -270,8 +272,10 @@ class RuntimeContext:
             raise ValueError("Cannot continue without a script record.")
         if project.script.is_deleted():
             raise ValueError("Script is deleted. Restore it before continuing.")
-
-        task_id = f"render_audio:{session_id}"
+        script_id = project.script.script_id
+        if override_model and not voice_model_is_downloaded(self.cwd, override_model, self.config_store):
+            raise ValueError("The selected local TTS model is not downloaded. Install it from Models first.")
+        task_id = f"render_audio:{session_id}:{script_id}"
         with self.task_lock:
             existing_thread = self.active_tasks.get(task_id)
             if existing_thread is not None and existing_thread.is_alive():
@@ -281,7 +285,7 @@ class RuntimeContext:
                         {
                             "project": serialize_project(project),
                             "provider": str(project.session.tts_provider or ""),
-                            "model": str(self.config_store.load_tts_config().model or ""),
+                            "model": str(override_model or self.config_store.load_tts_config().model or ""),
                             "audio_path": project.artifact.audio_path if project.artifact else "",
                             "transcript_path": project.artifact.transcript_path if project.artifact else "",
                             "task_id": task_id,
@@ -304,7 +308,7 @@ class RuntimeContext:
                 task_id=task_id,
                 operation="render_audio",
                 build_request_state=tagged_build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
+                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id, run_token=run_token),
             )
             self.request_state_store.clear_cancel_request(task_id)
             progress.start(
@@ -325,8 +329,9 @@ class RuntimeContext:
                         session_id,
                         script_id=script_id,
                         override_provider=override_provider,
+                        override_model=override_model,
                         settings=settings,
-                        require_voice_profile=require_voice_profile,
+                        require_speaker_reference=require_speaker_reference,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -340,7 +345,7 @@ class RuntimeContext:
                     )
                 except Exception as exc:  # pragma: no cover - exercised by integration tests
                     current_phase = progress.current_phase()
-                    if self.request_state_store.is_cancel_requested(task_id) or current_phase == "cancelling":
+                    if self.request_state_store.is_cancel_requested(task_id, run_token=run_token) or current_phase == "cancelling":
                         self.raise_task_cancelled(
                             progress,
                             task_id=task_id,
@@ -379,7 +384,7 @@ class RuntimeContext:
             {
                 "project": serialize_project(project),
                 "provider": str(project.session.tts_provider or ""),
-                "model": str(self.config_store.load_tts_config().model or ""),
+                "model": str(override_model or self.config_store.load_tts_config().model or ""),
                 "audio_path": project.artifact.audio_path if project.artifact else "",
                 "transcript_path": project.artifact.transcript_path if project.artifact else "",
                 "task_id": task_id,
@@ -392,6 +397,135 @@ class RuntimeContext:
             run_token=run_token,
         )
 
+    def start_regenerate_audio_window(
+        self,
+        session_id: str,
+        *,
+        script_id: str,
+        target_segment_id: str,
+        expected_plan_id: str,
+        expected_render_id: str,
+    ) -> dict[str, object]:
+        project = self.store.load_project_for_script(session_id, script_id)
+        ensure_session_is_active(project)
+        ensure_script_is_active(project)
+        if project.speech_plan is None or project.render_manifest is None:
+            raise ValueError("Generate the full podcast before regenerating a segment.")
+        if project.speech_plan.plan_id != expected_plan_id or project.render_manifest.render_id != expected_render_id:
+            raise ValueError("Speech plan or render manifest is stale. Refresh and try again.")
+        affected_segment_ids = [
+            segment.segment_id
+            for segment in project.speech_plan.context_window(target_segment_id, radius=1)
+        ]
+        task_id = f"render_audio:{session_id}:{script_id}"
+        with self.task_lock:
+            existing_thread = self.active_tasks.get(task_id)
+            if existing_thread is not None and existing_thread.is_alive():
+                existing_state = self.request_state_store.load(task_id) or {}
+                return success_envelope(
+                    {
+                        "project": serialize_project(project),
+                        "task_id": task_id,
+                        "run_token": str(existing_state.get("run_token") or ""),
+                        "affected_segment_ids": affected_segment_ids,
+                    },
+                    operation="regenerate_audio_window",
+                    message=str(existing_state.get("message") or "Rendering audio..."),
+                    phase=str(existing_state.get("phase") or "running"),
+                    progress_percent=progress_from_request_state(existing_state, default=5.0),
+                    run_token=str(existing_state.get("run_token") or ""),
+                )
+
+            run_token = uuid.uuid4().hex
+
+            def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
+                return build_request_state(run_token=run_token, **kwargs)
+
+            progress = LongTaskStateManager(
+                request_state_store=self.request_state_store,
+                task_id=task_id,
+                operation="regenerate_audio_window",
+                build_request_state=tagged_build_request_state,
+                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id, run_token=run_token),
+            )
+            self.request_state_store.clear_cancel_request(task_id)
+            progress.start(
+                progress_percent=5.0,
+                message=f"Regenerating {len(affected_segment_ids)} context segments...",
+            )
+
+            def worker() -> None:
+                def on_progress(snapshot: AudioRenderProgress) -> None:
+                    progress.set_progress(snapshot.percent, snapshot.message, max_percent=99.0)
+
+                try:
+                    self.audio_rendering.regenerate_audio_window_with_cancellation(
+                        session_id,
+                        script_id=script_id,
+                        target_segment_id=target_segment_id,
+                        expected_plan_id=expected_plan_id,
+                        expected_render_id=expected_render_id,
+                        should_cancel=progress.should_cancel,
+                        on_progress=on_progress,
+                    )
+                except TaskCancellationRequested as exc:
+                    self.raise_task_cancelled(
+                        progress,
+                        task_id=task_id,
+                        operation="regenerate_audio_window",
+                        message=str(exc),
+                        default_progress=10.0,
+                    )
+                except Exception as exc:  # pragma: no cover - integration coverage
+                    if self.request_state_store.is_cancel_requested(task_id, run_token=run_token) or progress.current_phase() == "cancelling":
+                        self.raise_task_cancelled(
+                            progress,
+                            task_id=task_id,
+                            operation="regenerate_audio_window",
+                            message=f"Audio regeneration cancelled for session {session_id}.",
+                            default_progress=10.0,
+                            source_error=exc,
+                        )
+                    self.fail_task(
+                        progress,
+                        task_id=task_id,
+                        message=_normalize_error_message(exc, fallback="Audio regeneration failed."),
+                        fallback_message="Audio regeneration failed.",
+                    )
+                else:
+                    self.complete_task_success(
+                        progress,
+                        task_id=task_id,
+                        operation="regenerate_audio_window",
+                        finalizing_progress=99.0,
+                        finalizing_message="Publishing regenerated podcast audio...",
+                        success_message="Audio regeneration finished.",
+                        fallback_failure_message="Unable to finalize regenerated audio.",
+                        cancellation_message="Audio regeneration cancelled.",
+                    )
+                finally:
+                    with self.task_lock:
+                        self.active_tasks.pop(task_id, None)
+
+            thread = threading.Thread(target=worker, name=task_id, daemon=True)
+            self.active_tasks[task_id] = thread
+            thread.start()
+
+        started_state = self.request_state_store.load(task_id) or {}
+        return success_envelope(
+            {
+                "project": serialize_project(project),
+                "task_id": task_id,
+                "run_token": run_token,
+                "affected_segment_ids": affected_segment_ids,
+            },
+            operation="regenerate_audio_window",
+            message=str(started_state.get("message") or "Regenerating audio..."),
+            phase=str(started_state.get("phase") or "running"),
+            progress_percent=progress_from_request_state(started_state, default=5.0),
+            run_token=run_token,
+        )
+
     def start_render_voice_preview(
         self,
         settings: VoiceRenderSettings,
@@ -399,17 +533,17 @@ class RuntimeContext:
         session_id: str = "",
         script_id: str = "",
         override_provider: str = "",
-        voice_profile_id: str = "",
+        override_model: str = "",
+        speaker_reference_id: str = "",
     ) -> dict[str, object]:
         self.request_state_store.cleanup_terminal_states(
             prefix="render_voice_preview:",
             max_age_seconds=6 * 60 * 60,
         )
+        if override_model and not voice_model_is_downloaded(self.cwd, override_model, self.config_store):
+            raise ValueError("The selected local TTS model is not downloaded. Install it from Models first.")
         run_token = uuid.uuid4().hex
         task_id = f"render_voice_preview:{run_token}"
-        if session_id.strip():
-            self.audio_rendering.save_voice_settings(session_id, settings, script_id=script_id)
-
         def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
             state = build_request_state(run_token=run_token, **kwargs)
             state["task_id"] = task_id
@@ -434,7 +568,7 @@ class RuntimeContext:
                 task_id=task_id,
                 operation="render_voice_preview",
                 build_request_state=tagged_build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
+                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id, run_token=run_token),
             )
             self.request_state_store.clear_cancel_request(task_id)
             progress.start(progress_percent=5.0, message="Rendering voice preview...")
@@ -452,22 +586,15 @@ class RuntimeContext:
                     progress.set_progress(snapshot.percent, snapshot.message, max_percent=98.0)
 
                 try:
-                    voice_reference: dict[str, object] | None = None
-                    if voice_profile_id.strip():
-                        profile = self.get_voice_profile_store().get_profile(voice_profile_id)
-                        voice_reference = {
-                            "source": "voice_profile",
-                            "voice_profile_id": profile.voice_profile_id,
-                            "audio_path": profile.audio_path,
-                            "preview_text": profile.preview_text,
-                            "reference_text": profile.preview_text,
-                            "provider": profile.provider,
-                            "model": profile.model,
-                        }
+                    speaker_reference: dict[str, object] | None = None
+                    if speaker_reference_id.strip():
+                        reference = self.get_speaker_reference_store().get_reference(speaker_reference_id)
+                        speaker_reference = reference.to_dict()
                     result = self.audio_rendering.render_voice_preview_with_cancellation(
                         settings,
                         override_provider=override_provider,
-                        voice_reference=voice_reference,
+                        override_model=override_model,
+                        speaker_reference=speaker_reference,
                         should_cancel=progress.should_cancel,
                         on_progress=on_progress,
                     )
@@ -482,7 +609,7 @@ class RuntimeContext:
                     )
                 except Exception as exc:  # pragma: no cover - exercised by integration tests
                     progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    if self.request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
+                    if self.request_state_store.is_cancel_requested(task_id, run_token=run_token) or progress.current_phase() == "cancelling":
                         self.raise_task_cancelled(
                             progress,
                             task_id=task_id,
@@ -539,137 +666,6 @@ class RuntimeContext:
         if isinstance(started_state, dict):
             envelope["data"]["request_state"] = started_state  # type: ignore[index]
         return envelope
-
-    def start_render_voice_take(
-        self,
-        session_id: str,
-        *,
-        script_id: str = "",
-        override_provider: str = "",
-        settings: VoiceRenderSettings,
-        require_voice_profile: bool = False,
-    ) -> dict[str, object]:
-        project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
-        if project.session.is_deleted():
-            raise ValueError("Session is deleted. Restore it before continuing.")
-        if project.script is None:
-            raise ValueError("Cannot continue without a script record.")
-        if project.script.is_deleted():
-            raise ValueError("Script is deleted. Restore it before continuing.")
-
-        task_id = f"render_voice_take:{session_id}"
-        with self.task_lock:
-            existing_thread = self.active_tasks.get(task_id)
-            if existing_thread is not None and existing_thread.is_alive():
-                existing_state = self.request_state_store.load(task_id)
-                if isinstance(existing_state, dict):
-                    return success_envelope(
-                        {
-                            "project": serialize_project(project),
-                            "provider": str(project.session.tts_provider or ""),
-                            "model": str(self.config_store.load_tts_config().model or ""),
-                            "audio_path": project.artifact.audio_path if project.artifact else "",
-                            "transcript_path": project.artifact.transcript_path if project.artifact else "",
-                            "task_id": task_id,
-                            "run_token": str(existing_state.get("run_token") or ""),
-                        },
-                        operation="render_voice_take",
-                        message=str(existing_state.get("message") or "Rendering voice take..."),
-                        phase=str(existing_state.get("phase") or "running"),
-                        progress_percent=progress_from_request_state(existing_state, default=5.0),
-                        run_token=str(existing_state.get("run_token") or ""),
-                    )
-
-            run_token = uuid.uuid4().hex
-
-            def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
-                return build_request_state(run_token=run_token, **kwargs)
-
-            progress = LongTaskStateManager(
-                request_state_store=self.request_state_store,
-                task_id=task_id,
-                operation="render_voice_take",
-                build_request_state=tagged_build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
-            )
-            self.request_state_store.clear_cancel_request(task_id)
-            progress.start(progress_percent=5.0, message=f"Rendering voice take for session {session_id}...")
-
-            def worker() -> None:
-                def on_progress(snapshot: AudioRenderProgress) -> None:
-                    progress.set_progress(snapshot.percent, snapshot.message, max_percent=99.0)
-
-                try:
-                    self.audio_rendering.render_voice_take_with_cancellation(
-                        session_id,
-                        script_id=script_id,
-                        override_provider=override_provider,
-                        settings=settings,
-                        require_voice_profile=require_voice_profile,
-                        should_cancel=progress.should_cancel,
-                        on_progress=on_progress,
-                    )
-                except TaskCancellationRequested as exc:
-                    self.raise_task_cancelled(
-                        progress,
-                        task_id=task_id,
-                        operation="render_voice_take",
-                        message=str(exc),
-                        default_progress=10.0,
-                    )
-                except Exception as exc:  # pragma: no cover - exercised by integration tests
-                    current_phase = progress.current_phase()
-                    if self.request_state_store.is_cancel_requested(task_id) or current_phase == "cancelling":
-                        self.raise_task_cancelled(
-                            progress,
-                            task_id=task_id,
-                            operation="render_voice_take",
-                            message=f"Voice take rendering cancelled for session {session_id}.",
-                            default_progress=10.0,
-                            source_error=exc,
-                        )
-                    self.fail_task(
-                        progress,
-                        task_id=task_id,
-                        message=_normalize_error_message(exc, fallback=f"Voice take rendering failed for session {session_id}."),
-                        fallback_message=f"Voice take rendering failed for session {session_id}.",
-                    )
-                else:
-                    self.complete_task_success(
-                        progress,
-                        task_id=task_id,
-                        operation="render_voice_take",
-                        finalizing_progress=99.0,
-                        finalizing_message=f"Finalizing voice take for session {session_id}...",
-                        success_message=f"Voice take render finished for session {session_id}.",
-                        fallback_failure_message=f"Unable to finalize voice take for session {session_id}.",
-                        cancellation_message=f"Voice take rendering cancelled for session {session_id}.",
-                    )
-                finally:
-                    with self.task_lock:
-                        self.active_tasks.pop(task_id, None)
-
-            thread = threading.Thread(target=worker, name=task_id, daemon=True)
-            self.active_tasks[task_id] = thread
-            thread.start()
-
-        started_state = self.request_state_store.load(task_id)
-        return success_envelope(
-            {
-                "project": serialize_project(project),
-                "provider": str(project.session.tts_provider or ""),
-                "model": str(self.config_store.load_tts_config().model or ""),
-                "audio_path": project.artifact.audio_path if project.artifact else "",
-                "transcript_path": project.artifact.transcript_path if project.artifact else "",
-                "task_id": task_id,
-                "run_token": run_token,
-            },
-            operation="render_voice_take",
-            message=str((started_state or {}).get("message") or "Rendering voice take..."),
-            phase=str((started_state or {}).get("phase") or "running"),
-            progress_percent=progress_from_request_state(started_state, default=5.0),
-            run_token=run_token,
-        )
 
     def start_download_model(self, model_name: str) -> dict[str, object]:
         task_id = f"download_model:{model_name}"
@@ -989,7 +985,7 @@ class RuntimeContext:
             focus_instructions=str(source_input.get("focus_instructions") or ""),
         )
         project.session.updated_at = project.source.updated_at
-        self.store.save_project(project)
+        self.store.save_session(project.session)
         return success_envelope({"project": serialize_project(project)}, operation="update_episode_source")
 
 
@@ -1123,7 +1119,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         project = self._load_script_project(session_id, script_id=script_id)
         project.script.save_final(final_text)
         project.session.transition(SessionState.SCRIPT_EDITED)
-        self.context.store.save_project(project)
+        self.context.store.save_script_and_session(project.session, project.script)
         self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="save_script"), origin=origin)
 
     def _delete_script(
@@ -1137,7 +1133,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if project.script.is_deleted():
             raise ValueError("Script is already deleted.")
         project.script.soft_delete()
-        self.context.store.save_project(project)
+        self.context.store.save_script_and_session(project.session, project.script)
         self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="delete_script"), origin=origin)
 
     def _restore_script(
@@ -1153,7 +1149,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if not project.script.is_deleted():
             raise ValueError("Script is not deleted.")
         project.script.restore()
-        self.context.store.save_project(project)
+        self.context.store.save_script_and_session(project.session, project.script)
         self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_script"), origin=origin)
 
     def _list_script_revisions(
@@ -1188,7 +1184,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         project = self._load_script_project(session_id, script_id=script_id)
         project.script.rollback_to_revision(revision_id)
         project.session.transition(SessionState.SCRIPT_EDITED)
-        self.context.store.save_project(project)
+        self.context.store.save_script_and_session(project.session, project.script)
         self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rollback_script_revision"), origin=origin)
 
     def _route_memory(
@@ -1383,85 +1379,89 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/memory" or path.startswith("/api/v1/memory/") or path.startswith("/api/v1/memory:"):
             self._route_memory(path, query, body, origin)
             return
-        if self.command == "GET" and path == "/api/v1/voice-profiles":
-            profiles = [profile.to_dict() for profile in self.context.get_voice_profile_store().list_profiles()]
-            self._send_bridge_envelope(success_envelope({"profiles": profiles}, operation="list_voice_profiles"), origin=origin)
+        if self.command == "GET" and path == "/api/v1/speaker-references":
+            references = [
+                reference.to_dict()
+                for reference in self.context.get_speaker_reference_store().list_references()
+            ]
+            self._send_bridge_envelope(
+                success_envelope({"speaker_references": references}, operation="list_speaker_references"),
+                origin=origin,
+            )
             return
-        if self.command == "POST" and path == "/api/v1/voice-profiles":
-            settings_payload = body.get("voice_settings")
-            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else None
-            raw_audio_path = str(body.get("reference_audio_path") or body.get("audio_path") or "")
-            if raw_audio_path.strip():
-                profile = self.context.get_voice_profile_store().create_user_profile(
-                    name=str(body.get("name") or ""),
-                    reference_audio_path=str(body.get("reference_audio_path") or body.get("audio_path") or ""),
-                    reference_text=str(body.get("reference_text") or ""),
-                    preview_audio_path=str(body.get("audio_path") or ""),
-                    settings=settings,
-                    provider=str(body.get("provider") or ""),
-                    model=str(body.get("model") or ""),
-                    language=str(body.get("language") or "zh"),
-                    audio_format=str(body.get("audio_format") or "wav"),
-                )
-            else:
-                profile = self.context.get_voice_profile_store().create_user_profile_metadata(
-                    name=str(body.get("name") or ""),
-                    settings=settings,
-                    provider=str(body.get("provider") or ""),
-                    model=str(body.get("model") or ""),
-                    language=str(body.get("language") or "zh"),
-                    audio_format=str(body.get("audio_format") or "wav"),
-                )
-            self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="create_voice_profile"), origin=origin)
-            return
-        if self.command == "POST" and path.startswith("/api/v1/voice-profiles/") and path.endswith("/sample"):
-            profile_id = unquote(path.removeprefix("/api/v1/voice-profiles/").removesuffix("/sample")).strip("/")
+        if self.command == "POST" and path == "/api/v1/speaker-references":
             fields, files = self._read_multipart_form()
-            sample = files.get("audio") or files.get("sample")
+            sample = files.get("audio")
             if sample is None:
                 raise ValueError("Multipart field 'audio' is required.")
             suffix = Path(sample.filename).suffix.lower() or f".{fields.get('audio_format', 'wav').lstrip('.')}"
-            with tempfile.NamedTemporaryFile(prefix="aodcast-profile-sample-", suffix=suffix, delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(prefix="aodcast-speaker-reference-", suffix=suffix, delete=False) as temp_file:
                 temp_file.write(sample.content)
                 temp_path = Path(temp_file.name)
             try:
-                profile = self.context.get_voice_profile_store().attach_user_profile_sample(
-                    profile_id,
+                reference = self.context.get_speaker_reference_store().create_user_reference(
+                    name=fields.get("name", ""),
                     source_audio_path=temp_path,
                     reference_text=fields.get("reference_text", ""),
+                    language=fields.get("language", "zh"),
                     audio_format=fields.get("audio_format", ""),
                 )
             finally:
                 temp_path.unlink(missing_ok=True)
-            self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="upload_voice_profile_sample"), origin=origin)
+            self._send_bridge_envelope(
+                success_envelope({"speaker_reference": reference.to_dict()}, operation="create_speaker_reference"),
+                origin=origin,
+            )
             return
-        if path.startswith("/api/v1/voice-profiles/"):
-            profile_id = unquote(path.removeprefix("/api/v1/voice-profiles/")).strip("/")
-            profile_store = self.context.get_voice_profile_store()
+        if path.startswith("/api/v1/speaker-references/"):
+            reference_id = unquote(path.removeprefix("/api/v1/speaker-references/")).strip("/")
+            reference_store = self.context.get_speaker_reference_store()
             if self.command == "PATCH":
-                name = body.get("name")
-                reference_text = body.get("reference_text")
-                if name is None and reference_text is None:
-                    raise ValueError("At least one of 'name' or 'reference_text' is required.")
-                profile = profile_store.update_profile(
-                    profile_id,
-                    name=str(name) if name is not None else None,
-                    reference_text=str(reference_text) if reference_text is not None else None,
+                fields: dict[str, str] = {}
+                sample_path: Path | None = None
+                if self._is_multipart_request():
+                    fields, files = self._read_multipart_form()
+                    sample = files.get("audio")
+                    if sample is not None:
+                        suffix = Path(sample.filename).suffix.lower() or f".{fields.get('audio_format', 'wav').lstrip('.')}"
+                        with tempfile.NamedTemporaryFile(prefix="aodcast-speaker-reference-update-", suffix=suffix, delete=False) as temp_file:
+                            temp_file.write(sample.content)
+                            sample_path = Path(temp_file.name)
+                else:
+                    fields = {str(key): str(value) for key, value in body.items() if value is not None}
+                try:
+                    reference = reference_store.update_reference(
+                        reference_id,
+                        name=fields.get("name"),
+                        reference_text=fields.get("reference_text"),
+                        source_audio_path=sample_path,
+                        language=fields.get("language"),
+                        audio_format=fields.get("audio_format", ""),
+                    )
+                finally:
+                    if sample_path is not None:
+                        sample_path.unlink(missing_ok=True)
+                self._send_bridge_envelope(
+                    success_envelope({"speaker_reference": reference.to_dict()}, operation="update_speaker_reference"),
+                    origin=origin,
                 )
-                self._send_bridge_envelope(success_envelope({"profile": profile.to_dict()}, operation="update_voice_profile"), origin=origin)
                 return
             if self.command == "DELETE":
-                profile = profile_store.get_profile(profile_id)
-                deleted = profile_store.delete_profile(profile_id)
-                cleared_references = self.context.audio_rendering.clear_voice_reference_for_audio(profile.audio_path) if deleted else 0
+                reference = reference_store.get_reference(reference_id)
+                dependent_count = self.context.store.count_speaker_reference_dependencies(reference_id)
+                if dependent_count:
+                    raise ValueError(
+                        f"Speaker Reference is still used by {dependent_count} script selection(s) or render(s). "
+                        "Select another reference and delete dependent audio first."
+                    )
+                deleted = reference_store.delete_reference(reference_id)
                 self._send_bridge_envelope(
                     success_envelope(
                         {
-                            "voice_profile_id": profile_id,
+                            "speaker_reference_id": reference_id,
                             "deleted": deleted,
-                            "cleared_voice_references": cleared_references,
                         },
-                        operation="delete_voice_profile",
+                        operation="delete_speaker_reference",
                     ),
                     origin=origin,
                 )
@@ -1483,14 +1483,17 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             session_id = str(body.get("session_id") or "").strip()
             script_id = str(body.get("script_id") or "").strip()
             provider = str(body.get("provider_override") or "").strip()
-            voice_profile_id = str(body.get("voice_profile_id") or "").strip()
+            raw_model_id = str(body.get("model_id") or "").strip()
+            model_id = resolve_voice_model_id(raw_model_id) if raw_model_id else ""
+            speaker_reference_id = str(body.get("speaker_reference_id") or "").strip()
             self._send_bridge_envelope(
                 self.context.start_render_voice_preview(
                     voice_settings_from_payload(body),
                     session_id=session_id,
                     script_id=script_id,
                     override_provider=provider,
-                    voice_profile_id=voice_profile_id,
+                    override_model=model_id,
+                    speaker_reference_id=speaker_reference_id,
                 ),
                 origin=origin,
             )
@@ -1595,7 +1598,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                         error_envelope(
                             operation="test_tts_connection",
                             code="tts_connection_failed",
-                            message=f"Local MLX is unavailable: {capability.message}",
+                            message=f"Local MLX is unavailable: {' '.join(capability.reasons)}",
                         ),
                         origin=origin,
                     )
@@ -1686,11 +1689,11 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             if "model" in body:
                 model_value = str(body.get("model") or "")
                 if provider == "local_mlx" and model_value == "":
-                    tts_config.model = DEFAULT_QWEN3_TTS_MODEL
+                    tts_config.model = DEFAULT_LOCAL_TTS_MODEL
                 else:
                     tts_config.model = model_value
             elif provider == "local_mlx" and tts_config.model in {"", "mock-voice"}:
-                tts_config.model = DEFAULT_QWEN3_TTS_MODEL
+                tts_config.model = DEFAULT_LOCAL_TTS_MODEL
             if "base_url" in body:
                 tts_config.base_url = str(body.get("base_url") or "")
             if "api_key" in body:
@@ -1794,7 +1797,13 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             operation = str(task_state.get("operation") or "task")
             progress_percent = progress_from_request_state(task_state)
             run_token = str(task_state.get("run_token") or "").strip() or None
-            self.context.request_state_store.request_cancel(task_id)
+            requested_run_token = str(body.get("run_token") or "").strip()
+            if run_token and requested_run_token != run_token:
+                raise ValueError("stale_task_run")
+            self.context.request_state_store.request_cancel(
+                task_id,
+                run_token=requested_run_token,
+            )
             cancelling_state = build_request_state(
                 operation=operation,
                 phase="cancelling",
@@ -1978,7 +1987,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             project = self.context.store.load_project(session_id)
             ensure_session_is_active(project)
             project.session.rename_topic(topic)
-            self.context.store.save_project(project)
+            self.context.store.save_session(project.session)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="rename_session"), origin=origin)
             return
         if self.command == "PUT" and suffix == "/source":
@@ -1992,7 +2001,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             if project.session.is_deleted():
                 raise ValueError("Session is already deleted.")
             project.session.soft_delete()
-            self.context.store.save_project(project)
+            self.context.store.save_session(project.session)
             self._notify_memory_session_event(session_id, deleted=True)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="delete_session"), origin=origin)
             return
@@ -2001,7 +2010,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             if not project.session.is_deleted():
                 raise ValueError("Session is not deleted.")
             project.session.restore()
-            self.context.store.save_project(project)
+            self.context.store.save_session(project.session)
             self._notify_memory_session_event(session_id, deleted=False)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="restore_session"), origin=origin)
             return
@@ -2020,7 +2029,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                     user_turns = [t for t in transcript.turns if t.speaker == Speaker.USER]
                     if user_turns:
                         project.session.advance_memory_cursor(user_turns[-1].turn_id)
-            self.context.store.save_project(project)
+            self.context.store.save_session(project.session)
             self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="set_session_memory_mode"), origin=origin)
             return
         if self.command == "GET" and suffix == "/memory-candidates":
@@ -2082,69 +2091,42 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 ensure_session_is_active(project)
                 self._send_bridge_envelope(success_envelope({"project": serialize_project(project)}, operation="show_script"), origin=origin)
                 return
-        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-preview:lock"):
-            script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-preview:lock").strip("/")
-            settings_payload = body.get("voice_settings")
-            settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else voice_settings_from_payload(body)
-            project = self.context.audio_rendering.lock_voice_preview(
+        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/speaker-reference:select"):
+            script_id = suffix.removeprefix("/scripts/").removesuffix("/speaker-reference:select").strip("/")
+            reference_id = str(body.get("speaker_reference_id") or "").strip()
+            if not reference_id:
+                raise ValueError("Field 'speaker_reference_id' is required.")
+            reference_store = self.context.get_speaker_reference_store()
+            reference = reference_store.get_reference(reference_id)
+            project = self.context.audio_rendering.select_speaker_reference(
                 session_id,
                 script_id=script_id,
-                preview_audio_path=str(body.get("audio_path") or ""),
-                settings=settings,
-                provider=str(body.get("provider") or ""),
-                model=str(body.get("model") or ""),
+                reference=reference,
             )
+            reference_store.mark_used(reference_id)
             self._send_bridge_envelope(
-                success_envelope({"project": serialize_project(project)}, operation="lock_voice_preview"),
+                success_envelope({"project": serialize_project(project)}, operation="select_speaker_reference"),
                 origin=origin,
             )
             return
-        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-profile:select"):
-            script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-profile:select").strip("/")
-            profile_id = str(body.get("voice_profile_id") or "").strip()
-            if not profile_id:
-                raise ValueError("Field 'voice_profile_id' is required.")
-            profile_store = self.context.get_voice_profile_store()
-            profile = profile_store.get_profile(profile_id)
-            project = self.context.audio_rendering.select_voice_profile(
-                session_id,
-                script_id=script_id,
-                profile=profile,
-            )
-            profile_store.mark_used(profile_id)
+        if (
+            self.command == "POST"
+            and suffix.startswith("/scripts/")
+            and "/audio/segments/" in suffix
+            and suffix.endswith(":regenerate")
+        ):
+            route = suffix.removeprefix("/scripts/").removesuffix(":regenerate")
+            script_id, marker, segment_id = route.partition("/audio/segments/")
+            if not marker or not script_id.strip() or not segment_id.strip():
+                raise ValueError("Invalid audio segment regeneration route.")
             self._send_bridge_envelope(
-                success_envelope({"project": serialize_project(project)}, operation="select_voice_profile"),
-                origin=origin,
-            )
-            return
-        if self.command == "POST" and suffix.startswith("/scripts/") and suffix.endswith("/voice-takes:render"):
-            script_id = suffix.removeprefix("/scripts/").removesuffix("/voice-takes:render").strip("/")
-            provider = str(body.get("provider_override") or "")
-            require_voice_profile = _body_flag(body, "require_voice_profile")
-            self._send_bridge_envelope(
-                self.context.start_render_voice_take(
+                self.context.start_regenerate_audio_window(
                     session_id,
-                    script_id=script_id,
-                    override_provider=provider,
-                    settings=voice_settings_from_payload(body),
-                    require_voice_profile=require_voice_profile,
+                    script_id=script_id.strip(),
+                    target_segment_id=segment_id.strip(),
+                    expected_plan_id=str(body.get("speech_plan_id") or ""),
+                    expected_render_id=str(body.get("render_manifest_id") or ""),
                 ),
-                origin=origin,
-            )
-            return
-        if self.command == "POST" and suffix.startswith("/voice-takes/") and suffix.endswith(":final"):
-            take_id = suffix.removeprefix("/voice-takes/").removesuffix(":final").strip("/")
-            project = self.context.audio_rendering.set_final_voice_take(session_id, take_id)
-            self._send_bridge_envelope(
-                success_envelope({"project": serialize_project(project)}, operation="set_final_voice_take"),
-                origin=origin,
-            )
-            return
-        if self.command == "DELETE" and suffix.startswith("/voice-takes/"):
-            take_id = suffix.removeprefix("/voice-takes/").removesuffix(":delete").strip("/")
-            project = self.context.audio_rendering.delete_voice_take(session_id, take_id)
-            self._send_bridge_envelope(
-                success_envelope({"project": serialize_project(project)}, operation="delete_voice_take"),
                 origin=origin,
             )
             return
@@ -2191,17 +2173,20 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         if self.command == "POST" and suffix == "/audio:render":
             provider = str(body.get("provider_override") or "")
+            raw_model_id = str(body.get("model_id") or "").strip()
+            model_id = resolve_voice_model_id(raw_model_id) if raw_model_id else ""
             script_id = str(body.get("script_id") or "").strip()
             settings_payload = body.get("voice_settings")
             settings = voice_settings_from_payload(settings_payload) if isinstance(settings_payload, dict) else None
-            require_voice_profile = _body_flag(body, "require_voice_profile")
+            require_speaker_reference = _body_flag(body, "require_speaker_reference")
             self._send_bridge_envelope(
                 self.context.start_render_audio(
                     session_id,
                     script_id=script_id,
                     override_provider=provider,
+                    override_model=model_id,
                     settings=settings,
-                    require_voice_profile=require_voice_profile,
+                    require_speaker_reference=require_speaker_reference,
                 ),
                 origin=origin,
             )
@@ -2286,10 +2271,10 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("Query parameter 'path' is required.")
 
         exports_dir = self.context.artifact_store.exports_dir.resolve()
-        builtin_voice_dir = Path(__file__).resolve().parents[1] / "assets" / "voice-profiles"
+        builtin_reference_dir = Path(__file__).resolve().parents[1] / "assets" / "speaker-references"
         audio_path = Path(raw_path).resolve(strict=True)
-        if not _path_is_within(audio_path, exports_dir) and not _path_is_within(audio_path, builtin_voice_dir):
-            raise ValueError("Artifact audio path must be inside the exports directory or packaged voice profile assets.")
+        if not _path_is_within(audio_path, exports_dir) and not _path_is_within(audio_path, builtin_reference_dir):
+            raise ValueError("Artifact audio path must be inside the exports directory or packaged speaker reference assets.")
         if not audio_path.is_file():
             raise ValueError("Artifact audio path does not point to a file.")
 
@@ -2309,14 +2294,18 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         raw_path = (query.get("path") or [""])[-1].strip()
         if not raw_path:
             raise ValueError("Query parameter 'path' is required.")
+        target = Path(raw_path).expanduser().resolve()
+        previews_dir = (self.context.artifact_store.exports_dir / "_previews").resolve()
+        if not _path_is_within(target, previews_dir):
+            raise ValueError(
+                "Only disposable Voice Studio preview audio can be deleted through this endpoint."
+            )
         deleted = self.context.artifact_store.delete_export_file(raw_path)
-        cleared_references = self.context.audio_rendering.clear_voice_reference_for_audio(raw_path) if deleted else 0
         self._send_bridge_envelope(
             success_envelope(
                 {
                     "path": raw_path,
                     "deleted": deleted,
-                    "cleared_voice_references": cleared_references,
                 },
                 operation="delete_artifact_audio",
             ),
@@ -2442,22 +2431,20 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "list_voice_presets"
         if path == "/api/v1/voice-studio/preview":
             return "render_voice_preview"
-        if path == "/api/v1/voice-profiles":
-            return "list_voice_profiles"
-        if path.startswith("/api/v1/voice-profiles/") and path.endswith("/sample"):
-            return "upload_voice_profile_sample"
-        if path.startswith("/api/v1/voice-profiles/"):
-            return "voice_profile"
-        if "/voice-preview:lock" in path:
-            return "lock_voice_preview"
-        if "/voice-profile:select" in path:
-            return "select_voice_profile"
+        if path == "/api/v1/speaker-references":
+            if self.command == "POST":
+                return "create_speaker_reference"
+            return "list_speaker_references"
+        if path.startswith("/api/v1/speaker-references/"):
+            if self.command == "DELETE":
+                return "delete_speaker_reference"
+            return "update_speaker_reference"
+        if "/speaker-reference:select" in path:
+            return "select_speaker_reference"
+        if "/audio/segments/" in path and path.endswith(":regenerate"):
+            return "regenerate_audio_window"
         if path == "/api/v1/artifacts/audio":
             return "serve_artifact_audio"
-        if "/voice-takes:render" in path:
-            return "render_voice_take"
-        if "/voice-takes/" in path and path.endswith(":final"):
-            return "set_final_voice_take"
         if path.startswith("/api/v1/tasks/") and path.endswith(":cancel"):
             return "cancel_task"
         if path.startswith("/api/v1/tasks/"):
@@ -2592,7 +2579,7 @@ def serve_http(
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
     artifact_store = ArtifactStore(config.data_dir)
-    voice_profile_store = VoiceProfileStore(config.data_dir, artifact_store)
+    speaker_reference_store = SpeakerReferenceStore(config.data_dir, artifact_store)
     request_state_store = RequestStateStore(config.data_dir)
     memory_service = MemoryService(config.data_dir, store, config_store)
     orchestrator = InterviewOrchestrator(store, config_store, memory_service)
@@ -2602,7 +2589,7 @@ def serve_http(
     store.bootstrap()
     config_store.bootstrap()
     artifact_store.bootstrap()
-    voice_profile_store.bootstrap()
+    speaker_reference_store.bootstrap()
     request_state_store.bootstrap()
     memory_service.bootstrap()
 
@@ -2612,7 +2599,7 @@ def serve_http(
         store=store,
         config_store=config_store,
         artifact_store=artifact_store,
-        voice_profile_store=voice_profile_store,
+        speaker_reference_store=speaker_reference_store,
         request_state_store=request_state_store,
         orchestrator=orchestrator,
         script_generation=script_generation,

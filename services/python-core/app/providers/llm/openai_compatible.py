@@ -33,6 +33,8 @@ from app.providers.llm.base import (
     MemoryRerankResponse,
     ScriptGenerationRequest,
     ScriptGenerationResponse,
+    SpeechPlanGenerationRequest,
+    SpeechPlanGenerationResponse,
 )
 
 
@@ -82,6 +84,30 @@ class OpenAICompatibleProvider:
         ).strip()
         return ScriptGenerationResponse(
             draft=draft,
+            provider_name=self.config.provider,
+            model_name=self.config.model,
+        )
+
+    def generate_speech_plan(self, request: SpeechPlanGenerationRequest) -> SpeechPlanGenerationResponse:
+        if not self.config.base_url or not self.config.model or not self.config.api_key:
+            raise ValueError("OpenAI-compatible provider requires base_url, model, and api_key.")
+        client = OpenAI(base_url=self.config.base_url, api_key=self.config.api_key)
+        response = client.chat.completions.create(
+            model=self.config.model,
+            messages=[
+                {"role": "system", "content": request.prompt_plan.system},
+                {"role": "user", "content": request.prompt_plan.user},
+            ],
+            temperature=0,
+            stream=False,
+        )
+        raw = (response.choices[0].message.content or "") if response.choices else ""
+        payload = _parse_object(raw)
+        directives = payload.get("segments") if isinstance(payload, dict) else None
+        if not isinstance(directives, list):
+            raise ValueError("Speech Director returned invalid JSON: expected a segments array.")
+        return SpeechPlanGenerationResponse(
+            directives=[item for item in directives if isinstance(item, dict)],
             provider_name=self.config.provider,
             model_name=self.config.model,
         )

@@ -19,12 +19,23 @@ class LongTaskStateManagerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def build_manager(self, task_id: str = "render_audio:test") -> LongTaskStateManager:
+    def build_manager(
+        self,
+        task_id: str = "render_audio:test",
+        *,
+        run_token: str = "",
+    ) -> LongTaskStateManager:
+        def build_state(**kwargs):
+            state = dict(kwargs)
+            if run_token:
+                state["run_token"] = run_token
+            return state
+
         return LongTaskStateManager(
             request_state_store=self.store,
             task_id=task_id,
             operation="render_audio",
-            build_request_state=lambda **kwargs: dict(kwargs),
+            build_request_state=build_state,
         )
 
     def test_manager_updates_running_progress(self) -> None:
@@ -37,26 +48,33 @@ class LongTaskStateManagerTests(unittest.TestCase):
         self.assertEqual(state["phase"], "running")
         self.assertEqual(state["progress_percent"], 12.0)
 
-    def test_manager_blocks_success_over_cancelling_state(self) -> None:
+    def test_committed_operation_wins_a_late_cancellation(self) -> None:
         task_id = "render_audio:test-cancel"
-        manager = self.build_manager(task_id)
+        manager = self.build_manager(task_id, run_token="run-current")
         manager.start(progress_percent=5.0, message="start")
-        self.store.save(
+        self.store.request_cancel(task_id, run_token="run-current")
+        self.store.save_if_current_phase(
             task_id,
             {
                 "operation": "render_audio",
                 "phase": "cancelling",
                 "progress_percent": 42.0,
                 "message": "cancel",
+                "run_token": "run-current",
             },
+            allowed_phases={"running"},
+            expected_run_token="run-current",
         )
 
         saved = manager.save_succeeded(message="done")
 
-        self.assertFalse(saved)
+        self.assertTrue(saved)
         state = self.store.load(task_id)
         self.assertIsNotNone(state)
-        self.assertEqual(state["phase"], "cancelling")
+        self.assertEqual(state["phase"], "succeeded")
+        self.assertFalse(
+            self.store.is_cancel_requested(task_id, run_token="run-current")
+        )
 
     def test_heartbeat_respects_start_percent_floor(self) -> None:
         manager = self.build_manager("render_audio:test-heartbeat")
@@ -75,6 +93,40 @@ class LongTaskStateManagerTests(unittest.TestCase):
         self.assertIsNotNone(state)
         progress = float(state["progress_percent"])
         self.assertGreaterEqual(progress, 12.0)
+
+    def test_stale_manager_cannot_overwrite_or_clear_new_run_state(self) -> None:
+        task_id = "render_audio:shared"
+        old = self.build_manager(task_id, run_token="run-old")
+        new = self.build_manager(task_id, run_token="run-new")
+        old.start(progress_percent=5.0, message="old start")
+        self.store.request_cancel(task_id, run_token="run-old")
+
+        new.start(progress_percent=7.0, message="new start")
+        self.assertFalse(self.store.is_cancel_requested(task_id, run_token="run-new"))
+        self.assertFalse(old.set_progress(80.0, "late old progress"))
+        self.assertFalse(old.save_failed(message="late old failure"))
+        self.assertFalse(old.save_succeeded(message="late old success"))
+
+        state = self.store.load(task_id)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["run_token"], "run-new")
+        self.assertEqual(state["phase"], "running")
+        self.assertEqual(state["message"], "new start")
+
+        self.store.request_cancel(task_id, run_token="run-new")
+        self.assertFalse(
+            old.save_cancelled(progress_percent=80.0, message="late old cancel")
+        )
+        self.assertTrue(self.store.is_cancel_requested(task_id, run_token="run-new"))
+
+        self.assertTrue(
+            new.save_cancelled(progress_percent=7.0, message="new cancelled")
+        )
+        state = self.store.load(task_id)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["run_token"], "run-new")
+        self.assertEqual(state["phase"], "cancelled")
+        self.assertFalse(self.store.is_cancel_requested(task_id, run_token="run-new"))
 
 
 if __name__ == "__main__":

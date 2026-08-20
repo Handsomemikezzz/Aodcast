@@ -9,10 +9,11 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.domain.tts_config import TTSProviderConfig
-from app.providers.tts_local_mlx.presets import (
-    DEFAULT_QWEN3_TTS_MODEL,
-    is_supported_qwen3_model,
+from app.providers.tts_local_mlx.model_spec import (
+    UnsupportedMLXModelError,
+    resolve_model_spec,
 )
+from app.providers.tts_local_mlx.presets import DEFAULT_LOCAL_TTS_MODEL
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,7 @@ class LocalMLXCapability:
     provider: str
     runtime: str
     platform: str
+    architecture: str
     mlx_installed: bool
     mlx_audio_installed: bool
     model_path_configured: bool
@@ -29,6 +31,9 @@ class LocalMLXCapability:
     model_path: str
     model_source: str
     resolved_model: str
+    model_family: str
+    model_variant: str
+    model_type: str
     fallback_provider: str
 
     def to_dict(self) -> dict[str, object]:
@@ -36,6 +41,7 @@ class LocalMLXCapability:
             "provider": self.provider,
             "runtime": self.runtime,
             "platform": self.platform,
+            "architecture": self.architecture,
             "mlx_installed": self.mlx_installed,
             "mlx_audio_installed": self.mlx_audio_installed,
             "model_path_configured": self.model_path_configured,
@@ -45,6 +51,9 @@ class LocalMLXCapability:
             "model_path": self.model_path,
             "model_source": self.model_source,
             "resolved_model": self.resolved_model,
+            "model_family": self.model_family,
+            "model_variant": self.model_variant,
+            "model_type": self.model_type,
             "fallback_provider": self.fallback_provider,
         }
 
@@ -52,7 +61,9 @@ class LocalMLXCapability:
 def local_model_directory_is_valid(model_path: Path) -> bool:
     if not model_path.exists() or not model_path.is_dir():
         return False
-    return any(model_path.glob("*.safetensors"))
+    return (model_path / "config.json").is_file() and any(
+        model_path.glob("*.safetensors")
+    )
 
 
 def resolve_local_model_target(config: TTSProviderConfig) -> tuple[str, str]:
@@ -62,7 +73,7 @@ def resolve_local_model_target(config: TTSProviderConfig) -> tuple[str, str]:
 
     model = config.model.strip()
     if not model or model == "mock-voice":
-        return DEFAULT_QWEN3_TTS_MODEL, "huggingface_repo"
+        return DEFAULT_LOCAL_TTS_MODEL, "huggingface_repo"
     return model, "huggingface_repo"
 
 
@@ -104,15 +115,21 @@ def _probe_mlx_runtime_bootstrap(python_executable: str) -> tuple[bool, str]:
 
 def detect_local_mlx_capability(config: TTSProviderConfig) -> LocalMLXCapability:
     current_platform = platform.system().lower()
+    current_architecture = platform.machine().lower()
     reasons: list[str] = []
     mlx_installed = importlib.util.find_spec("mlx") is not None
     mlx_audio_installed = importlib.util.find_spec("mlx_audio") is not None
     model_target, model_source = resolve_local_model_target(config)
     model_path_configured = model_source == "local_path"
     model_path_exists = Path(model_target).exists() if model_path_configured else False
+    model_family = ""
+    model_variant = ""
+    model_type = ""
 
     if current_platform != "darwin":
         reasons.append("Local MLX TTS currently targets macOS only.")
+    elif current_architecture not in {"arm64", "aarch64"}:
+        reasons.append("Local MLX TTS requires an Apple Silicon Mac.")
     if not mlx_installed:
         reasons.append("Python module 'mlx' is not installed in the current environment.")
     if not mlx_audio_installed:
@@ -129,18 +146,25 @@ def detect_local_mlx_capability(config: TTSProviderConfig) -> LocalMLXCapability
         reasons.append(f"Configured local model path does not exist: {model_target}")
     elif model_path_configured and not local_model_directory_is_valid(Path(model_target)):
         reasons.append(
-            "Configured local model path does not look like an MLX model directory. Expected at least one .safetensors file."
+            "Configured local model path does not look like an MLX model directory. "
+            "Expected config.json and at least one .safetensors file."
         )
-    if model_source == "huggingface_repo" and not is_supported_qwen3_model(model_target):
-        reasons.append(
-            "Configured local MLX model must be a supported mlx-community/Qwen3-TTS repo id."
-        )
+    if not (model_path_configured and not local_model_directory_is_valid(Path(model_target))):
+        try:
+            spec = resolve_model_spec(model_target)
+        except UnsupportedMLXModelError as exc:
+            reasons.append(str(exc))
+        else:
+            model_family = spec.family.value
+            model_variant = spec.variant.value
+            model_type = spec.model_type
 
     available = not reasons
     return LocalMLXCapability(
         provider="local_mlx",
         runtime=config.local_runtime,
         platform=current_platform,
+        architecture=current_architecture,
         mlx_installed=mlx_installed,
         mlx_audio_installed=mlx_audio_installed,
         model_path_configured=model_path_configured,
@@ -150,5 +174,8 @@ def detect_local_mlx_capability(config: TTSProviderConfig) -> LocalMLXCapability
         model_path=config.local_model_path.strip(),
         model_source=model_source,
         resolved_model=model_target,
+        model_family=model_family,
+        model_variant=model_variant,
+        model_type=model_type,
         fallback_provider="mock_remote",
     )

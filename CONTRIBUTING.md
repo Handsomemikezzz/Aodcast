@@ -49,6 +49,7 @@ Run the same checks used for release readiness:
 
 cd apps/desktop
 pnpm check
+pnpm test
 pnpm build:web
 
 cd src-tauri

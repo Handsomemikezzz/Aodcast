@@ -29,18 +29,19 @@ class ScriptPageSourceTests(unittest.TestCase):
         self.assertNotIn("Generate final audio", source)
         self.assertIn("Saved", source)
 
-    def test_script_audio_sidebar_selects_voice_profiles_inline(self) -> None:
+    def test_script_audio_sidebar_selects_speaker_references_and_models_inline(self) -> None:
         source = SCRIPT_AUDIO_SIDEBAR_PATH.read_text(encoding="utf-8")
         data_source = SCRIPT_WORKBENCH_DATA_PATH.read_text(encoding="utf-8")
 
         self.assertIn("voiceMenuOpen", source)
-        self.assertIn("filterActiveVoiceProfiles", source)
-        self.assertIn("handleSelectVoiceProfile", source)
+        self.assertIn("filterActiveSpeakerReferences", source)
+        self.assertIn("handleSelectSpeakerReference", source)
         self.assertIn("Generate final audio", source)
-        self.assertIn("needsVoiceProfile", source)
+        self.assertIn("needsSpeakerReference", source)
+        self.assertIn("script-render-model", source)
         self.assertNotIn("Change voice", source)
-        self.assertIn("listVoiceProfiles", data_source)
-        self.assertIn("selectVoiceProfile", data_source)
+        self.assertIn("listSpeakerReferences", data_source)
+        self.assertIn("selectSpeakerReference", data_source)
 
     def test_script_audio_sidebar_only_shows_progress_for_active_audio_tasks(self) -> None:
         source = SCRIPT_AUDIO_SIDEBAR_PATH.read_text(encoding="utf-8")
@@ -48,10 +49,17 @@ class ScriptPageSourceTests(unittest.TestCase):
         self.assertIn("isActiveRequestState", source)
         self.assertNotIn('workbench.audioRequestState.phase !== "succeeded" && workbench.audioRequestState.phase !== "failed"', source)
 
-    def test_audio_generation_refreshes_selected_profile_reference(self) -> None:
+    def test_audio_generation_refreshes_selected_speaker_reference(self) -> None:
         source = SCRIPT_WORKBENCH_AUDIO_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("bridge.selectVoiceProfile(sessionId, scriptId, voiceReference.voice_profile_id)", source)
+        self.assertIn("bridge.selectSpeakerReference(sessionId, scriptId, speakerReference.speaker_reference_id)", source)
+
+    def test_audio_generation_exposes_context_window_regeneration(self) -> None:
+        source = SCRIPT_WORKBENCH_AUDIO_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("bridge.regenerateAudioWindow", source)
+        self.assertIn("speechPlanId", source)
+        self.assertIn("renderManifestId", source)
 
     def test_audio_generation_refreshes_workspace_after_polled_success(self) -> None:
         source = SCRIPT_WORKBENCH_AUDIO_PATH.read_text(encoding="utf-8")

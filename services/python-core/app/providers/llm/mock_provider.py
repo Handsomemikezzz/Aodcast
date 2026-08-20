@@ -12,6 +12,8 @@ from app.providers.llm.base import (
     MemoryRerankResponse,
     ScriptGenerationRequest,
     ScriptGenerationResponse,
+    SpeechPlanGenerationRequest,
+    SpeechPlanGenerationResponse,
 )
 from typing import Iterator
 import re
@@ -63,6 +65,31 @@ class MockLLMProvider:
         draft = "\n\n".join(parts)
         return ScriptGenerationResponse(
             draft=draft,
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+        )
+
+    def generate_speech_plan(self, request: SpeechPlanGenerationRequest) -> SpeechPlanGenerationResponse:
+        directives: list[dict[str, object]] = []
+        for item in request.segments:
+            text = str(item.get("text") or "")
+            intent = "opening" if int(item.get("position") or 0) == 0 else "explanation"
+            emotion = "thoughtful" if any(token in text for token in ("想", "意识", "觉得", "反思")) else "calm"
+            directives.append(
+                {
+                    "position": int(item.get("position") or 0),
+                    "intent": intent,
+                    "emotion": emotion,
+                    "energy": 0.42 if intent == "opening" else 0.36,
+                    "pace": 0.96 if emotion == "thoughtful" else 1.0,
+                    "pause_after_ms": int(item.get("default_pause_after_ms") or 300),
+                    "breaks": [],
+                    "emphasis": [],
+                    "pronunciations": [],
+                }
+            )
+        return SpeechPlanGenerationResponse(
+            directives=directives,
             provider_name=self.provider_name,
             model_name=self.model_name,
         )

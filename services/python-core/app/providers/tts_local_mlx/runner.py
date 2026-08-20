@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.domain.tts_config import TTSProviderConfig
+from app.providers.tts_api.base import SpeechBreak
+from app.providers.tts_local_mlx.adapters import adapter_for_model
+from app.providers.tts_local_mlx.adapters.base import AdapterRequest
 from app.providers.tts_local_mlx.chunker import ScriptChunk, split_script_into_chunks
+from app.providers.tts_local_mlx.model_spec import resolve_model_spec
 from app.providers.tts_local_mlx.runtime import resolve_local_model_target
 from app.providers.tts_local_mlx.worker_client import (
     MLXWorkerCancelled,
@@ -25,6 +29,8 @@ class LocalMLXRunResult:
     model_name: str
     output_path: str
     chunks_total: int = 0
+    sample_rate_hz: int = 0
+    channels: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +68,7 @@ def set_default_worker_client(client: WorkerClient | None) -> None:
         _DEFAULT_CLIENT = client
 
 
-class MLXAudioQwenRunner:
+class MLXAudioRunner:
     def __init__(
         self,
         config: TTSProviderConfig,
@@ -85,14 +91,30 @@ class MLXAudioQwenRunner:
         language: str = "zh",
         reference_audio_path: str = "",
         reference_text: str = "",
+        breaks: Iterable[SpeechBreak] = (),
+        clone_mode: str = "auto",
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[ChunkProgressEvent], None] | None = None,
     ) -> LocalMLXRunResult:
         model_target, _ = resolve_local_model_target(self.config)
-        file_extension = (self.config.audio_format or audio_format).lstrip(".").lower() or "wav"
+        spec = resolve_model_spec(model_target)
+        adapter = adapter_for_model(spec)
 
-        chunks = self._chunker(text)
-        if not chunks:
+        resolved_ref_audio = reference_audio_path or self.config.local_ref_audio_path or ""
+        resolved_ref_text = reference_text.strip() if resolved_ref_audio else ""
+        adapter_request = AdapterRequest(
+            voice=voice or self.config.voice,
+            speed=speed,
+            style_prompt=style_prompt,
+            language=language,
+            reference_audio_path=resolved_ref_audio,
+            reference_text=resolved_ref_text,
+            clone_mode=clone_mode,
+        )
+        break_values = tuple(breaks)
+        adapter.validate_request(adapter_request, break_values)
+        prepared = adapter.prepare_synthesis(text, break_values, self._chunker)
+        if not prepared.segments:
             raise RuntimeError("Local MLX synthesis received empty script content.")
 
         client = self._worker_client or get_default_worker_client()
@@ -120,23 +142,15 @@ class MLXAudioQwenRunner:
                     )
                 )
 
-        resolved_ref_audio = reference_audio_path or self.config.local_ref_audio_path or None
-        resolved_ref_text = reference_text.strip() if resolved_ref_audio else ""
-
         with tempfile.TemporaryDirectory(prefix="aodcast-mlx-tts-") as temp_dir:
             output_dir = Path(temp_dir)
             try:
                 outcome = client.synthesize(
                     model=model_target,
-                    chunks=[chunk.text for chunk in chunks],
-                    voice=voice or self.config.voice,
-                    audio_format=file_extension,
-                    speed=speed,
-                    style_prompt=style_prompt,
-                    language=language,
+                    segments=prepared.segments,
+                    options=adapter_request.to_payload(),
+                    leading_silence_ms=prepared.leading_silence_ms,
                     output_dir=output_dir,
-                    ref_audio=resolved_ref_audio,
-                    ref_text=resolved_ref_text or None,
                     should_cancel=should_cancel,
                     on_event=relay,
                 )
@@ -145,34 +159,35 @@ class MLXAudioQwenRunner:
             except MLXWorkerError as exc:
                 raise RuntimeError(f"mlx-audio generation failed. {exc}") from exc
 
-            audio_path = self._resolve_output_file(outcome, output_dir, file_extension)
+            audio_path = self._resolve_output_file(outcome, output_dir)
             audio_bytes = audio_path.read_bytes()
 
         return LocalMLXRunResult(
             audio_bytes=audio_bytes,
-            file_extension=file_extension,
-            model_name=self.config.model,
+            file_extension="wav",
+            model_name=model_target,
             output_path=str(audio_path),
-            chunks_total=len(chunks),
+            chunks_total=len(prepared.segments),
+            sample_rate_hz=int(outcome.get("sample_rate") or spec.sample_rate_hz),
+            channels=int(outcome.get("channels") or spec.channels),
         )
 
     def _resolve_output_file(
         self,
         outcome: dict[str, object],
         output_dir: Path,
-        file_extension: str,
     ) -> Path:
         raw = outcome.get("audio_path") if isinstance(outcome, dict) else None
         if isinstance(raw, str) and raw:
             candidate = Path(raw)
             if candidate.exists():
                 return candidate
-        direct = output_dir / f"final.{file_extension}"
+        direct = output_dir / "final.wav"
         if direct.exists():
             return direct
         matches = sorted(output_dir.glob(f"final.*"))
         if matches:
             return matches[0]
         raise RuntimeError(
-            f"MLX worker did not produce an output .{file_extension} file in {output_dir}."
+            f"MLX worker did not produce an output .wav file in {output_dir}."
         )
