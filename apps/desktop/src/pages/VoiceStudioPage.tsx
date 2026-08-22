@@ -629,41 +629,37 @@ export function VoiceStudioPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full overflow-y-auto px-5 py-5 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5">
-        <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-lg relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-accent-amber/[0.03] to-transparent pointer-events-none" />
-          <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-accent-amber">Voice Library</p>
-              <h1 className="mt-2 font-headline text-2xl font-bold tracking-tight text-primary">音色工坊</h1>
-              <p className="mt-2.5 max-w-2xl text-sm leading-relaxed text-secondary/90">
-                {scriptBoundMode
-                  ? `为「${scriptTitle}」选择或创建一个可复用音色。完整音频生成和成品管理会在 Studio 完成。`
-                  : "管理可复用音色库。打开某个脚本后，可以把这里的音色应用到那一集播客。"}
-              </p>
-            </div>
-            {scriptBoundMode ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (returnTo) {
-                    navigate(returnTo);
-                    return;
-                  }
-                  if (selectedSessionId && selectedScriptId) navigate(`/studio/${selectedSessionId}/${selectedScriptId}`);
-                }}
-                className="rounded-2xl border border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-accent-amber/20 px-4 py-2 text-sm font-semibold text-primary transition-all duration-200 active:scale-95 cursor-pointer"
-              >
-                返回 Studio
-              </button>
-            ) : null}
+      <div className="mx-auto flex w-full max-w-[960px] flex-col gap-5">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-lg font-headline font-semibold text-primary">音色工坊</h1>
+            <p className="mt-1 text-sm text-secondary">
+              {scriptBoundMode
+                ? `为「${scriptTitle}」选择或创建一个可复用音色。完整音频生成和成品管理会在 Studio 完成。`
+                : "管理可复用音色库。打开某个脚本后，可以把这里的音色应用到那一集播客。"}
+            </p>
           </div>
-        </section>
+          {scriptBoundMode ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (returnTo) {
+                  navigate(returnTo);
+                  return;
+                }
+                if (selectedSessionId && selectedScriptId) navigate(`/studio/${selectedSessionId}/${selectedScriptId}`);
+              }}
+              className="shrink-0 rounded-2xl border border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-accent-amber/20 px-4 py-2 text-sm font-semibold text-primary transition-all duration-200 active:scale-95 cursor-pointer"
+            >
+              返回 Studio
+            </button>
+          ) : null}
+        </header>
 
         {error ? <p role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
 
         <div className="flex flex-col gap-5">
-          <div className="mx-auto w-full max-w-[960px] space-y-5">
+          <div className="space-y-5">
             <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-md">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -908,7 +904,7 @@ export function VoiceStudioPage() {
             ) : null}
           </div>
 
-          <section className="mx-auto w-full max-w-[960px] rounded-2xl border border-outline theme-panel-elevated p-4 backdrop-blur-md shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
+          <section className="rounded-2xl border border-outline theme-panel-elevated p-4 backdrop-blur-md shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-start gap-3 sm:items-center">
                 <div className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full sm:mt-0", localEngineReady ? "bg-emerald-400 shadow-[0_0_8px_#10b981]" : "bg-accent-amber animate-pulse shadow-[0_0_8px_#f59e0b]")} />
