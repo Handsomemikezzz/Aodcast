@@ -658,266 +658,266 @@ export function VoiceStudioPage() {
 
         {error ? <p role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
 
-        <div className="flex flex-col gap-5">
-          <div className="space-y-5">
-            <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-md">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h2 className="text-base font-bold font-headline text-primary tracking-wide">音色库</h2>
-                  <p className="mt-1.5 text-xs leading-relaxed text-secondary/80">
-                    {scriptBoundMode
-                      ? "当前脚本的试听会使用所选音色的参考音频与参考文本；Studio 生成音频时也会使用这份音色参考。"
-                      : "这里是可复用音色资产库。可以播放参考音频、删除我的音色；打开某个脚本后才能把音色应用到具体播客。"}
+        <div className="flex flex-col gap-6">
+          <section>
+            <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">音色库</h2>
+                <p className="mt-1 text-sm text-secondary">
+                  {scriptBoundMode
+                    ? "当前脚本的试听会使用所选音色的参考音频与参考文本；Studio 生成音频时也会使用这份音色参考。"
+                    : "这里是可复用音色资产库。可以播放参考音频、删除我的音色；打开某个脚本后才能把音色应用到具体播客。"}
+                </p>
+                {scriptBoundMode && selectedReference ? (
+                  <p className="mt-2 text-xs font-semibold text-accent-amber flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent-amber pulse-amber" />
+                    当前选用：{selectedReference.name}
                   </p>
-                  {scriptBoundMode && selectedReference ? (
-                    <p className="mt-3 text-xs font-semibold text-accent-amber flex items-center gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-accent-amber pulse-amber" />
-                      当前选用：{selectedReference.name}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2 shrink-0">
-                  <button 
-                    type="button" 
-                    onClick={openCreateReferenceDialog}
-                    className="inline-flex items-center gap-2 rounded-2xl theme-accent-gradient hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-on-primary transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                  >
-                    <Mic className="h-3.5 w-3.5" /> 创建音色
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => void refreshSpeakerReferences()}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-semibold text-secondary hover:text-primary transition-all duration-200 hover:bg-surface-container-high cursor-pointer"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" /> 刷新音色库
-                  </button>
-                </div>
-              </div>
-              <div className="mt-6 grid gap-4 grid-cols-1 sm:grid-cols-2">
-                {speakerReferences.map((reference) => {
-                  const isSelected = speakerReference?.speaker_reference_id === reference.speaker_reference_id;
-                  const referenceAudioError = referenceAudioErrors[reference.speaker_reference_id];
-                  return (
-                    <div 
-                      key={reference.speaker_reference_id}
-                      className={cn(
-                        "rounded-[24px] p-5 transition-all duration-200 relative flex flex-col justify-between min-h-[240px]", 
-                        isSelected ? "glass-card-selected" : "glass-card"
-                      )}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-primary tracking-wide truncate">{reference.name}</p>
-                            <p className="mt-1 text-[10px] uppercase tracking-wider text-secondary/80 font-headline font-semibold">
-                              {reference.source === "built_in" ? "默认音色" : "我的音色"} · {reference.language} · {formatReferenceDuration(reference.duration_ms)}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-0.5 relative z-10">
-                            {reference.source === "user_saved" ? (
-                              <div className="flex items-center rounded-xl border border-outline theme-panel-elevated p-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditReferenceDialog(reference)}
-                                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-secondary hover:bg-surface-container-high/60 hover:text-primary transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
-                                  aria-label={`编辑「${reference.name}」`}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </button>
-                                <span className="h-4 w-px bg-surface-container-high/60" aria-hidden />
-                                <button
-                                  type="button"
-                                  onClick={() => setReferenceToDelete(reference)}
-                                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-secondary hover:bg-red-500/10 hover:text-red-200 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
-                                  aria-label={`删除「${reference.name}」`}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ) : null}
-                            {isSelected ? <CheckCircle2 className="ml-1 h-5 w-5 shrink-0 text-accent-amber" /> : null}
-                          </div>
-                        </div>
-                        <p className="mt-3.5 line-clamp-2 text-xs leading-relaxed text-secondary/80">{reference.description || reference.reference_text}</p>
-                      </div>
-                      
-                      <div className="mt-4">
-                        <AudioPlayer
-                          src={resolveAudioFileUrl(reference.audio_path)}
-                          onError={() => handleReferenceAudioLoadError(reference.speaker_reference_id)}
-                          className="bg-surface-container"
-                          variant="minimal"
-                        />
-                        {referenceAudioError ? <p className="mt-2 text-xs text-red-400">{referenceAudioError}</p> : null}
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {scriptBoundMode ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleSelectSpeakerReference(reference)}
-                              disabled={isSelected}
-                              className={cn(
-                                "rounded-xl border px-3 py-2 text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer",
-                                isSelected
-                                  ? "border-accent-amber/20 bg-accent-amber/5 text-accent-amber cursor-default"
-                                  : "border-outline bg-surface-container-high/60 text-primary hover:bg-surface-container-high hover:border-accent-amber/20 active:scale-95"
-                              )}
-                            >
-                              {isSelected ? "已用于当前脚本" : "用于当前脚本"}
-                            </button>
-                          ) : (
-                            <span className="rounded-xl border border-outline bg-surface-container-high/60 px-3 py-2 text-xs font-medium text-secondary/80">
-                              打开脚本后可选用
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {speakerReferences.length === 0 ? (
-                  <div className="sm:col-span-2 rounded-[24px] border border-dashed border-outline bg-surface-container/50 p-8 text-center">
-                    <p className="text-sm font-semibold text-primary">音色库还是空的</p>
-                    <p className="mt-1.5 text-xs text-secondary/80">上传或录制一段参考音频，创建第一份音色参考。</p>
-                  </div>
                 ) : null}
               </div>
-            </section>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={openCreateReferenceDialog}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-accent-amber px-3.5 py-2 text-xs font-bold text-on-primary hover:bg-accent-amber/90 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <Mic className="h-3.5 w-3.5" /> 创建音色
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void refreshSpeakerReferences()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-outline bg-surface-container-high/60 px-3.5 py-2 text-xs font-semibold text-secondary hover:text-primary hover:bg-surface-container-high active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> 刷新音色库
+                </button>
+              </div>
+            </div>
 
-            {scriptBoundMode ? (
-              <>
-                <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-md">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              {speakerReferences.map((reference) => {
+                const isSelected = speakerReference?.speaker_reference_id === reference.speaker_reference_id;
+                const referenceAudioError = referenceAudioErrors[reference.speaker_reference_id];
+                return (
+                  <div
+                    key={reference.speaker_reference_id}
+                    className={cn(
+                      "rounded-xl border p-4 transition-colors relative flex flex-col justify-between min-h-[220px]",
+                      isSelected
+                        ? "border-accent-amber/40 bg-accent-amber/5"
+                        : "border-outline bg-surface-container-low",
+                    )}
+                  >
                     <div>
-                      <h2 className="text-xs font-semibold uppercase tracking-wider text-secondary/80">试听设置</h2>
-                      <p className="mt-2 text-xl font-bold font-headline text-primary tracking-tight">
-                        {selectedReference?.name ?? "未选择音色"} <span className="mx-1 text-primary/20 font-light">·</span> {selectedStyle?.name ?? "默认风格"} <span className="mx-1 text-primary/20 font-light">·</span> <span className="text-accent-amber">{speed.toFixed(1)}x</span>
-                      </p>
-                      <p className="mt-1.5 text-xs text-secondary/70">
-                        {selectedReference ? "风格和语速仅用于本次试听，不会写入音色参考。" : "请先为当前脚本选用一个音色。"}
-                      </p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-primary truncate">{reference.name}</p>
+                          <p className="mt-1 text-[10px] uppercase tracking-wider text-secondary font-semibold">
+                            {reference.source === "built_in" ? "默认音色" : "我的音色"} · {reference.language} · {formatReferenceDuration(reference.duration_ms)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-0.5 relative z-10">
+                          {reference.source === "user_saved" ? (
+                            <div className="flex items-center rounded-lg border border-outline bg-surface-container-high/50 p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditReferenceDialog(reference)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-secondary hover:bg-surface-container-high hover:text-primary transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
+                                aria-label={`编辑「${reference.name}」`}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="h-4 w-px bg-outline" aria-hidden />
+                              <button
+                                type="button"
+                                onClick={() => setReferenceToDelete(reference)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-secondary hover:bg-red-500/10 hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                                aria-label={`删除「${reference.name}」`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : null}
+                          {isSelected ? <CheckCircle2 className="ml-1 h-4 w-4 shrink-0 text-accent-amber" /> : null}
+                        </div>
+                      </div>
+                      <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-secondary">{reference.description || reference.reference_text}</p>
+                    </div>
+
+                    <div className="mt-4">
+                      <AudioPlayer
+                        src={resolveAudioFileUrl(reference.audio_path)}
+                        onError={() => handleReferenceAudioLoadError(reference.speaker_reference_id)}
+                        className="bg-surface-container"
+                        variant="minimal"
+                      />
+                      {referenceAudioError ? <p className="mt-2 text-xs text-red-400">{referenceAudioError}</p> : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {scriptBoundMode ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleSelectSpeakerReference(reference)}
+                            disabled={isSelected}
+                            className={cn(
+                              "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer",
+                              isSelected
+                                ? "border-accent-amber/25 bg-accent-amber/10 text-accent-amber cursor-default"
+                                : "border-outline bg-surface-container-high/60 text-primary hover:bg-surface-container-high",
+                            )}
+                          >
+                            {isSelected ? "已用于当前脚本" : "用于当前脚本"}
+                          </button>
+                        ) : (
+                          <span className="rounded-lg border border-outline bg-surface-container-high/40 px-3 py-1.5 text-xs font-medium text-secondary">
+                            打开脚本后可选用
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </section>
+                );
+              })}
+              {speakerReferences.length === 0 ? (
+                <div className="sm:col-span-2 rounded-xl border border-dashed border-outline bg-surface-container-low/40 p-8 text-center">
+                  <p className="text-sm font-semibold text-primary">音色库还是空的</p>
+                  <p className="mt-1.5 text-xs text-secondary">上传或录制一段参考音频，创建第一份音色参考。</p>
+                </div>
+              ) : null}
+            </div>
+          </section>
 
-                <section className="rounded-[32px] border border-outline theme-panel-surface p-6 backdrop-blur-xl shadow-md">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <h2 className="text-base font-bold font-headline text-primary tracking-wide">音色试听</h2>
-                      <p className="mt-1 text-xs text-secondary/85 leading-relaxed">
-                        用当前脚本选用的音色生成一段短试听；完整音频仍在 Studio 生成。
-                      </p>
-                    </div>
+          {scriptBoundMode ? (
+            <>
+              <section className="rounded-xl border border-outline bg-surface-container-low p-4">
+                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">试听设置</h2>
+                <p className="mt-2 text-sm font-semibold text-primary">
+                  {selectedReference?.name ?? "未选择音色"}
+                  <span className="mx-1.5 text-secondary/40 font-normal">·</span>
+                  {selectedStyle?.name ?? "默认风格"}
+                  <span className="mx-1.5 text-secondary/40 font-normal">·</span>
+                  <span className="text-accent-amber">{speed.toFixed(1)}x</span>
+                </p>
+                <p className="mt-1 text-xs text-secondary">
+                  {selectedReference ? "风格和语速仅用于本次试听，不会写入音色参考。" : "请先为当前脚本选用一个音色。"}
+                </p>
+              </section>
+
+              <section>
+                <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">音色试听</h2>
+                    <p className="mt-1 text-sm text-secondary">
+                      用当前脚本选用的音色生成一段短试听；完整音频仍在 Studio 生成。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handlePreview()}
+                    disabled={
+                      previewing ||
+                      !selectedVoice ||
+                      !selectedStyle ||
+                      !selectedReferenceId ||
+                      !previewEngineReady
+                    }
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-accent-amber px-3.5 py-2 text-xs font-bold text-on-primary hover:bg-accent-amber/90 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer shrink-0"
+                  >
+                    {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                    生成试听
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: "standard", label: "标准试音句" },
+                    { id: "script_opening", label: "使用脚本开头", disabled: !scriptOpening },
+                    { id: "custom", label: "自定义文本" },
+                  ].map((btn) => (
+                    <button
+                      key={btn.id}
+                      type="button"
+                      onClick={() => setPreviewTextMode(btn.id as PreviewTextMode)}
+                      disabled={btn.disabled}
+                      className={cn(
+                        "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
+                        previewTextMode === btn.id
+                          ? "border-accent-amber/30 bg-accent-amber/10 text-accent-amber"
+                          : "border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high",
+                      )}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={previewText}
+                  onChange={(event) => {
+                    setPreviewTextMode("custom");
+                    setPreviewText(event.target.value);
+                  }}
+                  rows={3}
+                  placeholder="输入一句你想用来比较音色与风格的试音文本"
+                  className={cn(
+                    "mt-3 w-full resize-none rounded-xl border border-outline bg-surface-container-low px-4 py-3 text-sm text-primary outline-none transition-colors focus:border-accent-amber/30",
+                    previewTextMode !== "custom" && "hidden",
+                  )}
+                />
+                <p className="mt-3 text-[11px] text-secondary leading-relaxed rounded-lg border border-outline bg-surface-container-low/50 px-3 py-2">
+                  <span className="font-semibold text-accent-amber">当前试音文本：</span>
+                  {effectivePreviewText ? `${effectivePreviewText.slice(0, 80)}${effectivePreviewText.length > 80 ? "…" : ""}` : "系统标准试音句"}
+                </p>
+                {!selectedReferenceId ? (
+                  <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-300 font-medium">请先为当前脚本选用一个音色。</p>
+                ) : null}
+                {previewRequestState && previewRequestState.phase !== "succeeded" ? (
+                  <div className="mt-3 rounded-xl border border-outline bg-surface-container-low px-4 py-3 text-sm text-secondary flex items-center gap-3" aria-live="polite">
+                    <Loader2 className="h-4 w-4 animate-spin text-accent-amber shrink-0" />
+                    <span className="min-w-0 flex-1">{Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}</span>
+                    {previewTask && previewRequestState.phase === "running" ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleCancelPreview()}
+                        className="min-h-9 shrink-0 rounded-lg border border-outline bg-surface-container-high px-3 text-xs font-bold text-primary hover:bg-surface-container-highest cursor-pointer"
+                      >
+                        取消
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {previewSrc && previewMatchesCurrentSelection ? (
+                  <div className="mt-3 space-y-2">
+                    <AudioPlayer ref={previewAudioRef} src={previewSrc} onError={handlePreviewAudioLoadError} />
                     <button
                       type="button"
-                      onClick={() => void handlePreview()}
-                      disabled={
-                        previewing ||
-                        !selectedVoice ||
-                        !selectedStyle ||
-                        !selectedReferenceId ||
-                        !previewEngineReady
-                      }
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl theme-accent-gradient hover:shadow-lg hover:shadow-accent-amber/15 px-4 py-2.5 text-xs font-bold text-on-primary transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 cursor-pointer shrink-0"
+                      onClick={() => void handleDeletePreview()}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                     >
-                      {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                      生成试听
+                      <Trash2 className="h-3.5 w-3.5" /> 删除试音音频
                     </button>
                   </div>
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    {[
-                      { id: "standard", label: "标准试音句" },
-                      { id: "script_opening", label: "使用脚本开头", disabled: !scriptOpening },
-                      { id: "custom", label: "自定义文本" },
-                    ].map((btn) => (
-                      <button
-                        key={btn.id}
-                        type="button"
-                        onClick={() => setPreviewTextMode(btn.id as PreviewTextMode)}
-                        disabled={btn.disabled}
-                        className={cn(
-                          "rounded-full border px-4 py-2 text-xs font-semibold transition-all duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed", 
-                          previewTextMode === btn.id 
-                            ? "border-accent-amber bg-accent-amber/10 text-accent-amber shadow-sm" 
-                            : "border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high"
-                        )}
-                      >
-                        {btn.label}
-                      </button>
-                    ))}
+                ) : null}
+                {selectedReference ? (
+                  <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-700 dark:text-emerald-200/90 leading-relaxed flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                    <p>已选择「{selectedReference.name}」。试听和 Studio 音频生成都会使用这份音色参考。</p>
                   </div>
-                  <textarea
-                    value={previewText}
-                    onChange={(event) => {
-                      setPreviewTextMode("custom");
-                      setPreviewText(event.target.value);
-                    }}
-                    rows={3}
-                    placeholder="输入一句你想用来比较音色与风格的试音文本"
-                    className={cn("mt-4 w-full resize-none rounded-[20px] border border-outline bg-background/50 px-4 py-3.5 text-sm text-primary outline-none transition-all duration-200 focus:border-accent-amber/30", previewTextMode !== "custom" && "hidden")}
-                  />
-                  <p className="mt-3.5 text-[11px] text-secondary/80 leading-relaxed bg-surface-container-low px-3.5 py-2.5 rounded-xl border border-outline-variant">
-                    <span className="font-semibold text-accent-amber/90">当前试音文本：</span>
-                    {effectivePreviewText ? `${effectivePreviewText.slice(0, 80)}${effectivePreviewText.length > 80 ? "…" : ""}` : "系统标准试音句"}
-                  </p>
-                  {!selectedReferenceId ? (
-                    <p className="mt-3 text-[11px] text-amber-300 font-medium pl-1">请先为当前脚本选用一个音色。</p>
-                  ) : null}
-                  {previewRequestState && previewRequestState.phase !== "succeeded" ? (
-                    <div className="mt-4 rounded-2xl border border-outline bg-background/30 px-4 py-3.5 text-sm text-secondary/90 flex items-center gap-3" aria-live="polite">
-                      <Loader2 className="h-4 w-4 animate-spin text-accent-amber shrink-0" />
-                      <span className="min-w-0 flex-1">{Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}</span>
-                      {previewTask && previewRequestState.phase === "running" ? (
-                        <button
-                          type="button"
-                          onClick={() => void handleCancelPreview()}
-                          className="min-h-10 shrink-0 rounded-xl border border-outline bg-surface-container-high px-3 text-xs font-bold text-primary hover:bg-surface-container-highest"
-                        >
-                          取消
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {previewSrc && previewMatchesCurrentSelection ? (
-                    <div className="mt-4 space-y-3">
-                      <AudioPlayer ref={previewAudioRef} src={previewSrc} onError={handlePreviewAudioLoadError} />
-                      <div className="flex flex-wrap gap-2">
-                        <button 
-                          type="button" 
-                          onClick={() => void handleDeletePreview()} 
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-500/10 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" /> 删除试音音频
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {selectedReference ? (
-                    <div className="mt-4 rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4 text-xs text-emerald-100/90 leading-relaxed">
-                      <div className="flex items-start gap-2.5">
-                        <CheckCircle2 className="mt-0.5 h-4.5 w-4.5 shrink-0 text-emerald-400" />
-                        <p>已选择「{selectedReference.name}」。试听和 Studio 音频生成都会使用这份音色参考。</p>
-                      </div>
-                    </div>
-                  ) : null}
-                </section>
-              </>
-            ) : null}
-          </div>
+                ) : null}
+              </section>
+            </>
+          ) : null}
 
-          <section className="rounded-2xl border border-outline theme-panel-elevated p-4 backdrop-blur-md shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
+          <section className="rounded-xl border border-outline bg-surface-container-low/40 p-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-start gap-3 sm:items-center">
-                <div className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full sm:mt-0", localEngineReady ? "bg-emerald-400 shadow-[0_0_8px_#10b981]" : "bg-accent-amber animate-pulse shadow-[0_0_8px_#f59e0b]")} />
+              <div className="flex min-w-0 items-start gap-2.5 sm:items-center">
+                <div className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full sm:mt-0", localEngineReady ? "bg-emerald-400" : "bg-accent-amber animate-pulse")} />
                 <div className="min-w-0">
                   <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">当前语音引擎</h2>
                   <p className="mt-0.5 truncate text-sm font-semibold text-primary">{engineLabel}</p>
-                  <p className={cn("mt-0.5 text-xs", localEngineReady ? "text-secondary/70" : "text-amber-200/90")}>{engineStatus}</p>
+                  <p className={cn("mt-0.5 text-xs", localEngineReady ? "text-secondary" : "text-amber-600 dark:text-amber-200/90")}>{engineStatus}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => navigate("/models")}
-                className="shrink-0 rounded-xl border border-outline bg-surface-container-high/60 px-3 py-2 text-xs font-semibold text-primary transition-all hover:border-outline hover:bg-surface-container-high active:scale-[0.98] cursor-pointer"
+                className="shrink-0 rounded-lg border border-outline bg-surface-container-high/60 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-surface-container-high active:scale-[0.98] transition-all cursor-pointer"
               >
                 Change model
               </button>
