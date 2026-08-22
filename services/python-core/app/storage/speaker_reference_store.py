@@ -16,6 +16,9 @@ BUILTIN_REFERENCE_TEXT = "Hello, welcome to use Aodcast. What shall we talk abou
 BUILTIN_REFERENCE_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "speaker-references"
 MAX_REFERENCE_AUDIO_BYTES = 100 * 1024 * 1024
 MAX_REFERENCE_AUDIO_SECONDS = 10 * 60.0
+REFERENCE_SAMPLE_RATE_HZ = 48_000
+REFERENCE_CHANNELS = 1
+REFERENCE_SAMPLE_WIDTH_BYTES = 2
 
 _BUILTIN_REFERENCES = (
     {
@@ -75,8 +78,10 @@ class SpeakerReferenceStore:
         if not text:
             raise ValueError("Field 'reference_text' is required.")
         reference_id = f"speaker_{uuid4().hex}"
-        suffix = (audio_format.strip().lstrip(".") or source_audio.suffix.lower().lstrip(".") or "wav").lower()
-        target = self._copy_audio_blob(source_audio, reference_id=reference_id, suffix=suffix)
+        target = self._write_canonical_audio_blob(
+            source_audio,
+            reference_id=reference_id,
+        )
         now = utc_now_iso()
         reference = self._build_reference(
             reference_id=reference_id,
@@ -108,11 +113,9 @@ class SpeakerReferenceStore:
         target = Path(current.audio_path)
         if source_audio_path is not None:
             source = self._validate_source_audio(source_audio_path)
-            suffix = (audio_format.strip().lstrip(".") or source.suffix.lower().lstrip(".") or current.audio_format).lower()
-            target = self._copy_audio_blob(
+            target = self._write_canonical_audio_blob(
                 source,
                 reference_id=current.speaker_reference_id,
-                suffix=suffix,
             )
         next_text = current.reference_text if reference_text is None else reference_text.strip()
         if not next_text:
@@ -230,20 +233,90 @@ class SpeakerReferenceStore:
     def _builtin_audio_path(self, asset: str) -> Path:
         return BUILTIN_REFERENCE_ASSETS_DIR / asset
 
-    def _copy_audio_blob(self, source: Path, *, reference_id: str, suffix: str) -> Path:
-        audio_bytes = source.read_bytes()
-        audio_hash = sha256_bytes(audio_bytes)
-        target = self.audio_dir / f"{reference_id}-{audio_hash}.{suffix}"
-        if target.exists():
-            return target
-        temporary = self.audio_dir / f".{reference_id}-{uuid4().hex}.tmp"
+    def _write_canonical_audio_blob(self, source: Path, *, reference_id: str) -> Path:
+        temporary = self.audio_dir / f".{reference_id}-{uuid4().hex}.wav"
         try:
-            temporary.write_bytes(audio_bytes)
+            self._transcode_to_canonical_wav(source, temporary)
+            self._validate_canonical_wav(temporary)
+            audio_hash = sha256_bytes(temporary.read_bytes())
+            target = self.audio_dir / f"{reference_id}-{audio_hash}.wav"
+            if target.exists():
+                return target
             temporary.replace(target)
+            return target
         finally:
             temporary.unlink(missing_ok=True)
-        return target
 
+    def _transcode_to_canonical_wav(self, source: Path, target: Path) -> None:
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            result = subprocess.run(
+                [
+                    ffmpeg,
+                    "-nostdin",
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    str(source),
+                    "-map",
+                    "0:a:0",
+                    "-vn",
+                    "-ac",
+                    str(REFERENCE_CHANNELS),
+                    "-ar",
+                    str(REFERENCE_SAMPLE_RATE_HZ),
+                    "-c:a",
+                    "pcm_s16le",
+                    str(target),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0 and target.is_file():
+                return
+            detail = result.stderr.strip() or "ffmpeg did not produce a WAV file."
+            raise ValueError(f"Unable to normalize Speaker Reference audio: {detail}")
+
+        try:
+            import miniaudio  # type: ignore
+
+            decoded = miniaudio.decode_file(
+                str(source),
+                output_format=miniaudio.SampleFormat.SIGNED16,
+                nchannels=REFERENCE_CHANNELS,
+                sample_rate=REFERENCE_SAMPLE_RATE_HZ,
+            )
+        except Exception as exc:
+            raise ValueError(
+                "Unable to normalize Speaker Reference audio. Install ffmpeg for MP4, M4A, AAC, or WebM input."
+            ) from exc
+        with wave.open(str(target), "wb") as wav_file:
+            wav_file.setnchannels(REFERENCE_CHANNELS)
+            wav_file.setsampwidth(REFERENCE_SAMPLE_WIDTH_BYTES)
+            wav_file.setframerate(REFERENCE_SAMPLE_RATE_HZ)
+            wav_file.writeframes(decoded.samples.tobytes())
+
+    @staticmethod
+    def _validate_canonical_wav(path: Path) -> None:
+        try:
+            with wave.open(str(path), "rb") as wav_file:
+                channels = wav_file.getnchannels()
+                sample_width = wav_file.getsampwidth()
+                sample_rate = wav_file.getframerate()
+                frames = wav_file.getnframes()
+        except (wave.Error, EOFError) as exc:
+            raise ValueError("Normalized Speaker Reference is not a readable WAV file.") from exc
+        if (
+            channels != REFERENCE_CHANNELS
+            or sample_width != REFERENCE_SAMPLE_WIDTH_BYTES
+            or sample_rate != REFERENCE_SAMPLE_RATE_HZ
+            or frames <= 0
+        ):
+            raise ValueError(
+                "Normalized Speaker Reference must be 48 kHz mono 16-bit PCM WAV."
+            )
     def _validate_source_audio(self, path: Path) -> Path:
         target = path.expanduser().resolve()
         if not target.exists() or not target.is_file():

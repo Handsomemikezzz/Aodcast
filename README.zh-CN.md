@@ -382,7 +382,7 @@ UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频�
 - 完整渲染会保存不可变的分段 WAV 与 Render Manifest，再装配 manifest 指向的最终 WAV；MP3 是该最终成片旁的按需导出。
 - 每个 Speech Plan 分段都可独立试听。局部重生成采用 `A | B | C | D | E` 中的 B/C/D 窗口：选择 C 会依次重新生成 B、C、D，每一段都以前一段的音频和文本作为条件，复用 A、E，并且只有整个替换窗口成功后才发布新的 manifest 与成片。
 - Voice Studio 负责可复用 Speaker Reference、预览与脚本 reference 选择。Speaker Reference 只定义“谁在说”，表达和模型设置保持分离。
-- 内置 reference 音频当前位于 `services/python-core/app/assets/speaker-references/`（纳入版本控制）。用户 metadata 位于 `.local-data/speaker-references/`，复制的音频位于 `.local-data/exports/_speaker_references/`。创建流程通过 HTTP 上传或麦克风录音，并要求匹配的参考文本；系统音频捕获尚不可用。
+- 内置 reference 音频当前位于 `services/python-core/app/assets/speaker-references/`（纳入版本控制）。用户 metadata 位于 `.local-data/speaker-references/`；上传或录制的音频会规范化为不可变的 48 kHz、单声道、16-bit PCM WAV，并保存到 `.local-data/exports/_speaker_references/`。创建时必须提供匹配的参考文本；系统音频捕获尚不可用。
 - Script Workbench 可以为下一次完整渲染选择任意已下载且可用的本地模型；生成的 manifest 会冻结该模型和 Adapter pipeline，供后续 B/C/D 重生成沿用。
 - Artifact 音频播放在 Web 与 Tauri 中都走 localhost HTTP 路由 `/api/v1/artifacts/audio`。
 - Reveal in Finder 等 Tauri-only 助手不在 HTTP `DesktopBridge` 接口中。
