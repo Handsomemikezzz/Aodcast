@@ -153,7 +153,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             return_value=type(
                 "Capability",
                 (),
-                {"available": True, "reasons": [], "fallback_provider": "mock_remote"},
+                {"available": True, "reasons": [], "fallback_provider": "openai_compatible"},
             )(),
         ), patch.object(
             provider.runner,
@@ -200,7 +200,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             return_value=type(
                 "Capability",
                 (),
-                {"available": True, "reasons": [], "fallback_provider": "mock_remote"},
+                {"available": True, "reasons": [], "fallback_provider": "openai_compatible"},
             )(),
         ), patch.object(provider.runner, "synthesize", side_effect=capture_runner):
             provider.synthesize(

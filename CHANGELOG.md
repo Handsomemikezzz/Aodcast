@@ -15,7 +15,7 @@ All notable changes to Aodcast will be documented in this file.
 - VoxCPM2 and MOSS-TTS Local v1.5 MLX adapters alongside the Qwen3-TTS Base baseline, with explicit `native` / `approximated` / `unsupported` capability negotiation.
 - Generic `scripts/model-download/download_tts_model.py` model downloader, defaulting to VoxCPM2 8-bit.
 - Localhost HTTP runtime bridge between the Tauri/web UI and Python orchestration core.
-- Mock provider paths for smoke tests and development fallback.
+- Mock LLM provider path for smoke tests and development fallback.
 - Shared request-state contracts for long-running operations, script-scoped audio task ids, run-token-safe cancellation, and stale-poll rejection.
 
 ### Changed
@@ -23,10 +23,12 @@ All notable changes to Aodcast will be documented in this file.
 - Local MLX now defaults to `mlx-community/VoxCPM2-8bit`; MOSS-TTS Local v1.5 is the long-form/explicit-pause comparison and Qwen3-TTS Base remains the cloning baseline.
 - Local MLX dependencies now pin `mlx-audio[tts]` to `0.4.6`.
 - Final `podcast.wav` is assembled from the Render Manifest with explicit pauses, format normalization, one edge fade per segment, audible-sample RMS matching, and a sample-peak ceiling.
+- Default TTS provider is `local_mlx` (Primary); cloud TTS remains OpenAI-compatible only.
 
 ### Removed
 
 - Legacy voice-profile, preview-lock, and voice-take bridge/API flows. Persistent speaker identity now uses Speaker References, while final audio comes from manifest-driven rendering.
+- Mock Testing TTS provider (`mock_remote`).
 
 ### Notes
 

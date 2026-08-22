@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.config import AppConfig
 from app.domain.artifact import ArtifactRecord
@@ -16,6 +17,7 @@ from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+from tests.tts_test_fakes import SineWaveTTSProvider
 
 
 class AudioRenderingTests(unittest.TestCase):
@@ -29,7 +31,17 @@ class AudioRenderingTests(unittest.TestCase):
         configs.bootstrap()
         artifacts.bootstrap()
         configs.save_llm_config(LLMProviderConfig(provider="mock"))
-        configs.save_tts_config(TTSProviderConfig(provider="mock_remote", model="mock-voice", audio_format="wav"))
+        configs.save_tts_config(
+            TTSProviderConfig(provider="local_mlx", model="mlx-community/VoxCPM2-8bit", audio_format="wav")
+        )
+        fake = SineWaveTTSProvider()
+        for target in (
+            "app.orchestration.podcast_rendering.build_tts_provider",
+            "app.orchestration.audio_rendering.build_tts_provider",
+        ):
+            patcher = patch(target, return_value=fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         return temp, store, configs, artifacts, AudioRenderingService(store, configs, artifacts)
 
     def seed_project(self, store: ProjectStore):
@@ -51,7 +63,7 @@ class AudioRenderingTests(unittest.TestCase):
         result = service.render_audio(session_id, script_id=script_id)
         loaded = store.load_project_for_script(session_id, script_id)
 
-        self.assertEqual(result.provider, "mock_remote")
+        self.assertEqual(result.provider, "test_sine")
         self.assertTrue(Path(result.audio_path).is_file())
         self.assertEqual(loaded.session.state, SessionState.COMPLETED)
         self.assertIsNotNone(loaded.speech_plan)

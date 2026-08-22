@@ -93,7 +93,7 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     if (configuredProvider && configuredProvider !== "local_mlx") {
       return configuredProvider;
     }
-    return capability?.fallback_provider || "mock_remote";
+    return capability?.fallback_provider || "openai_compatible";
   }, [capability?.fallback_provider, ttsConfig?.provider]);
 
   const serverScript = project?.script?.final || project?.script?.draft || "";

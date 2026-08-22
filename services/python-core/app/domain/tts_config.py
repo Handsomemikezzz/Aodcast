@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.providers.tts_local_mlx.presets import DEFAULT_LOCAL_TTS_MODEL
+
 
 @dataclass(slots=True)
 class TTSProviderConfig:
-    provider: str = "mock_remote"
-    model: str = "mock-voice"
+    provider: str = "local_mlx"
+    model: str = DEFAULT_LOCAL_TTS_MODEL
     base_url: str = ""
     api_key: str = ""
     voice: str = "alloy"
@@ -32,8 +34,8 @@ class TTSProviderConfig:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "TTSProviderConfig":
         return cls(
-            provider=str(payload.get("provider", "mock_remote")),
-            model=str(payload.get("model", "mock-voice")),
+            provider=str(payload.get("provider", "local_mlx")),
+            model=str(payload.get("model", DEFAULT_LOCAL_TTS_MODEL)),
             base_url=str(payload.get("base_url", "")),
             api_key=str(payload.get("api_key", "")),
             voice=str(payload.get("voice", "alloy")),

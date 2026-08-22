@@ -81,11 +81,11 @@ cd ../..
 
 ## First Smoke Test
 
-Use mock providers first. This verifies the app flow without paid API access or local model weights:
+Use the mock LLM provider first. This verifies the interview and script flow without paid API access. TTS uses the local MLX engine (download a voice model from Models Center before rendering audio):
 
 ```bash
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
 ./scripts/dev/run-python-core.sh --create-demo-session
 ./scripts/dev/run-dev-all.sh
 ```
@@ -96,13 +96,13 @@ In the app, create or open a session, continue the interview, generate a script,
 
 Provider settings are stored locally under `.local-data/` and are not intended for version control.
 
-### Development Mock Providers
+### Development Mock LLM
 
-Use mock providers for smoke testing without paid API access or local model weights:
+Use the mock LLM provider for smoke testing interview and script generation without paid API access:
 
 ```bash
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
 ```
 
 Check whether the saved LLM configuration is ready for interview and script generation:

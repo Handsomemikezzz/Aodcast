@@ -177,5 +177,5 @@ def detect_local_mlx_capability(config: TTSProviderConfig) -> LocalMLXCapability
         model_family=model_family,
         model_variant=model_variant,
         model_type=model_type,
-        fallback_provider="mock_remote",
+        fallback_provider="openai_compatible",
     )

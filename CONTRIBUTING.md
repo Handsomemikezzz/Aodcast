@@ -32,12 +32,12 @@ pnpm install
 ./scripts/dev/run-dev-all.sh
 ```
 
-For backend-only smoke testing with mock providers:
+For backend-only smoke testing with the mock LLM provider:
 
 ```bash
 ./scripts/dev/run-python-core.sh --create-demo-session
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
 ```
 
 ## Verification before opening a PR

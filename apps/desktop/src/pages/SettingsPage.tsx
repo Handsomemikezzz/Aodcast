@@ -142,8 +142,8 @@ export function SettingsPage() {
   });
 
   const [ttsForm, setTtsForm] = useState<TTSForm>({
-    provider: "mock_remote",
-    model: "mock-voice",
+    provider: "local_mlx",
+    model: "",
     base_url: "",
     api_key: "",
     voice: "alloy",
@@ -414,14 +414,11 @@ export function SettingsPage() {
 
             {/* SECTION 1: LLM CONFIGURATION */}
             <section className="p-6 rounded-2xl border border-outline bg-surface-container-low/50 backdrop-blur-xl shadow-xl space-y-6 relative">
-              <div className="flex items-center justify-between border-b border-outline pb-4">
+              <div className="flex items-center border-b border-outline pb-4">
                 <div className="flex items-center gap-2.5 text-accent-amber">
                   <Sparkles className="w-5 h-5" />
                   <h2 className="text-sm font-semibold tracking-wider uppercase font-headline">Language Model (LLM)</h2>
                 </div>
-                <span className="text-[10px] bg-surface-container-high text-secondary px-2 py-0.5 rounded-full font-mono">
-                  config/llm.json
-                </span>
               </div>
 
               <div className="space-y-5">
@@ -613,14 +610,11 @@ export function SettingsPage() {
 
             {/* SECTION 2: TTS CONFIGURATION */}
             <section className="p-6 rounded-2xl border border-outline bg-surface-container-low/50 backdrop-blur-xl shadow-xl space-y-6 relative">
-              <div className="flex items-center justify-between border-b border-outline pb-4">
+              <div className="flex items-center border-b border-outline pb-4">
                 <div className="flex items-center gap-2.5 text-accent-amber">
                   <Volume2 className="w-5 h-5" />
                   <h2 className="text-sm font-semibold tracking-wider uppercase font-headline">Text-to-Speech (TTS)</h2>
                 </div>
-                <span className="text-[10px] bg-surface-container-high text-secondary px-2 py-0.5 rounded-full font-mono">
-                  config/tts.json
-                </span>
               </div>
 
               <div className="space-y-5">
@@ -635,7 +629,6 @@ export function SettingsPage() {
                     >
                       <option value="local_mlx">Local · MLX on this Mac (Primary)</option>
                       <option value="openai_compatible">Remote API · OpenAI-compatible Cloud</option>
-                      <option value="mock_remote">Mock Testing Provider</option>
                     </select>
                     <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
                   </div>
@@ -661,7 +654,7 @@ export function SettingsPage() {
                 )}
 
                 {/* Remote API Settings */}
-                {!ttsUsesLocalModels && ttsForm.provider !== "mock_remote" && (
+                {!ttsUsesLocalModels && (
                   <div className="space-y-4 pt-1">
                     <label className="block">
                       <span className="text-xs font-semibold text-on-surface-variant mb-2 block">Cloud TTS Model</span>

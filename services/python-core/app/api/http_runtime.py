@@ -1643,15 +1643,6 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             api_key = str(body.get("api_key") or "").strip()
             voice = str(body.get("voice") or "alloy").strip()
             audio_format = str(body.get("audio_format") or "wav").strip()
-            if provider == "mock_remote":
-                self._send_bridge_envelope(
-                    success_envelope(
-                        {"status": "success", "latency_ms": 0, "message": "Mock connection successful."},
-                        operation="test_tts_connection"
-                    ),
-                    origin=origin,
-                )
-                return
             if provider == "local_mlx":
                 capability = detect_local_mlx_capability(self.context.config_store.load_tts_config())
                 if capability.available:

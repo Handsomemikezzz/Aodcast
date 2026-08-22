@@ -81,11 +81,11 @@ cd ../..
 
 ## 第一次 Smoke Test
 
-建议先使用 mock provider。这样无需付费 API，也无需下载本地模型权重，就能验证主流程：
+建议先使用 mock LLM provider。这样无需付费 API 就能验证访谈与脚本主流程。TTS 使用本地 MLX 引擎（渲染音频前请先在 Models Center 下载语音模型）：
 
 ```bash
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
 ./scripts/dev/run-python-core.sh --create-demo-session
 ./scripts/dev/run-dev-all.sh
 ```
@@ -96,13 +96,13 @@ cd ../..
 
 Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
 
-### 开发用 Mock Provider
+### 开发用 Mock LLM
 
-无需付费 API 或本地模型权重时，可先用 mock provider 做 smoke test：
+无需付费 API 时，可先用 mock LLM 做访谈与脚本生成的 smoke test：
 
 ```bash
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider mock_remote
+./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
 ```
 
 检查当前 LLM 配置是否可用于访谈和脚本生成：

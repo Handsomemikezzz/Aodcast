@@ -305,7 +305,7 @@ class HttpRuntimeTests(unittest.TestCase):
         transcript_path = self.artifact_store.write_transcript(session_id, "transcript")
         project.artifact.audio_path = str(audio_path)
         project.artifact.transcript_path = str(transcript_path)
-        project.artifact.provider = "mock_remote"
+        project.artifact.provider = "openai_compatible"
         self.store.save_project(project)
 
         status, _, payload = self.request_json("DELETE", f"/api/v1/sessions/{session_id}/audio")
@@ -633,7 +633,7 @@ class HttpRuntimeTests(unittest.TestCase):
             status, _, payload = self.request_json(
                 "POST",
                 "/api/v1/sessions/session-123/audio:render",
-                body={"provider_override": "mock_remote", "script_id": "script-abc"},
+                body={"provider_override": "openai_compatible", "script_id": "script-abc"},
             )
 
         self.assertEqual(status, 200)
@@ -642,7 +642,7 @@ class HttpRuntimeTests(unittest.TestCase):
             self.context,
             "session-123",
             script_id="script-abc",
-            override_provider="mock_remote",
+            override_provider="openai_compatible",
             override_model="",
             settings=None,
             require_speaker_reference=False,
@@ -733,41 +733,53 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["data"]["standard_preview_text"], "欢迎收听今天的节目，我们将用几分钟理清一个复杂但重要的话题。")
 
     def test_voice_preview_route_returns_audio_without_session(self) -> None:
-        status, _, payload = self.request_json(
-            "POST",
-            "/api/v1/voice-studio/preview",
-            body={
-                "voice_id": "warm_narrator",
-                "voice_name": "Warm Narrator",
-                "style_id": "natural",
-                "style_name": "Natural",
-                "speed": 1.2,
-                "preview_text": "自定义试音文本。",
-            },
-        )
+        from tests.tts_test_fakes import SineWaveTTSProvider
 
-        self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["data"]["request_state"]["operation"], "render_voice_preview")
-        self.assertEqual(payload["data"]["request_state"]["phase"], "running")
-        task_id = str(payload["data"]["task_id"])
-        self.assertTrue(task_id.startswith("render_voice_preview:"))
-        self.assertEqual(payload["data"]["request_state"].get("task_id"), task_id)
-        self.assertTrue(str(payload["data"]["request_state"].get("run_token") or ""))
+        with (
+            patch(
+                "app.orchestration.audio_rendering.build_tts_provider",
+                return_value=SineWaveTTSProvider(),
+            ),
+            patch(
+                "app.orchestration.podcast_rendering.build_tts_provider",
+                return_value=SineWaveTTSProvider(),
+            ),
+        ):
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/voice-studio/preview",
+                body={
+                    "voice_id": "warm_narrator",
+                    "voice_name": "Warm Narrator",
+                    "style_id": "natural",
+                    "style_name": "Natural",
+                    "speed": 1.2,
+                    "preview_text": "自定义试音文本。",
+                },
+            )
 
-        task_state: dict[str, object] | None = None
-        for _ in range(20):
-            state_status, _, state_payload = self.request_json("GET", f"/api/v1/tasks/{task_id}")
-            self.assertEqual(state_status, 200)
-            task_state = state_payload["data"]["task_state"]  # type: ignore[assignment]
-            if isinstance(task_state, dict) and task_state.get("phase") == "succeeded":
-                break
-            time.sleep(0.05)
+            self.assertEqual(status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["data"]["request_state"]["operation"], "render_voice_preview")
+            self.assertEqual(payload["data"]["request_state"]["phase"], "running")
+            task_id = str(payload["data"]["task_id"])
+            self.assertTrue(task_id.startswith("render_voice_preview:"))
+            self.assertEqual(payload["data"]["request_state"].get("task_id"), task_id)
+            self.assertTrue(str(payload["data"]["request_state"].get("run_token") or ""))
 
-        assert isinstance(task_state, dict)
-        self.assertEqual(task_state["phase"], "succeeded")
-        self.assertEqual(task_state["settings"]["preview_text"], "自定义试音文本。")
-        self.assertTrue(Path(str(task_state["audio_path"])).exists())
+            task_state: dict[str, object] | None = None
+            for _ in range(20):
+                state_status, _, state_payload = self.request_json("GET", f"/api/v1/tasks/{task_id}")
+                self.assertEqual(state_status, 200)
+                task_state = state_payload["data"]["task_state"]  # type: ignore[assignment]
+                if isinstance(task_state, dict) and task_state.get("phase") == "succeeded":
+                    break
+                time.sleep(0.05)
+
+            assert isinstance(task_state, dict)
+            self.assertEqual(task_state["phase"], "succeeded")
+            self.assertEqual(task_state["settings"]["preview_text"], "自定义试音文本。")
+            self.assertTrue(Path(str(task_state["audio_path"])).exists())
 
 
     def test_voice_preview_route_passes_provider_override_to_runtime_context(self) -> None:
@@ -783,7 +795,7 @@ class HttpRuntimeTests(unittest.TestCase):
                 body={
                     "voice_id": "news_anchor",
                     "style_id": "news",
-                    "provider_override": "mock_remote",
+                    "provider_override": "openai_compatible",
                     "session_id": "session-123",
                     "script_id": "script-abc",
                 },
@@ -795,7 +807,7 @@ class HttpRuntimeTests(unittest.TestCase):
         _, args, kwargs = mocked_start.mock_calls[0]
         self.assertEqual(kwargs["session_id"], "session-123")
         self.assertEqual(kwargs["script_id"], "script-abc")
-        self.assertEqual(kwargs["override_provider"], "mock_remote")
+        self.assertEqual(kwargs["override_provider"], "openai_compatible")
         self.assertEqual(args[1].voice_id, "news_anchor")
 
     def test_voice_preview_route_passes_speaker_reference_id_to_runtime_context(self) -> None:
@@ -1021,7 +1033,7 @@ class HttpRuntimeTests(unittest.TestCase):
             result = self.context.start_render_audio(
                 session_id,
                 script_id=script_id,
-                override_provider="mock_remote",
+                override_provider="openai_compatible",
             )
 
         task_id = str(result["data"]["task_id"])
@@ -1081,22 +1093,6 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["data"]["status"], "success")
         self.assertEqual(payload["data"]["latency_ms"], 0)
 
-    def test_tts_connection_mock_remote_provider_returns_success_instantly(self) -> None:
-        status, _, payload = self.request_json(
-            "POST",
-            "/api/v1/config/tts/test",
-            body={
-                "provider": "mock_remote",
-                "model": "any-model",
-                "base_url": "http://any-url",
-                "api_key": "any-key",
-            },
-            token="runtime-token",
-        )
-        self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["data"]["status"], "success")
-        self.assertEqual(payload["data"]["latency_ms"], 0)
 
     def test_audio_export_route_converts_to_wav(self) -> None:
         audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")

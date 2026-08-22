@@ -241,10 +241,6 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
                       <div className="px-3 py-2 rounded-lg bg-accent-amber/5 border border-accent-amber/10 text-[10px] leading-relaxed text-accent-amber/90">
                         Local Qwen MLX synthesis is active. Voices are scoped per-script.
                       </div>
-                    ) : ttsConfig.provider === "mock_remote" ? (
-                      <div className="px-3 py-1.5 rounded-lg bg-surface-container-high border border-outline text-[11px] text-secondary">
-                        Mock Voice Synthesizer
-                      </div>
                     ) : (
                       <div className="relative">
                         <select

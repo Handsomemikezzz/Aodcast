@@ -100,7 +100,7 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("configureLLMProvider", "configure_llm_provider", "PUT", "/api/v1/config/llm", "configure_llm_provider", ("--configure-llm-provider", "openai"), "P1-complete"),
     BridgeContract("testLLMConnection", "test_llm_connection", "POST", "/api/v1/config/llm/test", "test_llm_connection", (), "P1-complete"),
     BridgeContract("showTTSConfig", "show_tts_config", "GET", "/api/v1/config/tts", "show_tts_config", ("--show-tts-config",), "P1-complete"),
-    BridgeContract("configureTTSProvider", "configure_tts_provider", "PUT", "/api/v1/config/tts", "configure_tts_provider", ("--configure-tts-provider", "mock"), "P1-complete"),
+    BridgeContract("configureTTSProvider", "configure_tts_provider", "PUT", "/api/v1/config/tts", "configure_tts_provider", ("--configure-tts-provider", "local_mlx"), "P1-complete"),
     BridgeContract("testTTSConnection", "test_tts_connection", "POST", "/api/v1/config/tts/test", "test_tts_connection", (), "P1-complete"),
     BridgeContract("listModelsStatus", "list_models_status", "GET", "/api/v1/models", "list_models_status", ("--list-models-status",), "P1-complete"),
     BridgeContract("showModelStorage", "show_model_storage", "GET", "/api/v1/models/storage", "show_model_storage", ("--show-model-storage",), "P1-complete"),

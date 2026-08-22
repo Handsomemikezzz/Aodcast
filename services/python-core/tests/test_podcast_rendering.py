@@ -18,6 +18,7 @@ from app.orchestration.audio_rendering import AudioRenderingService, VoiceRender
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
+from tests.tts_test_fakes import SineWaveTTSProvider
 
 
 class PodcastRenderingTests(unittest.TestCase):
@@ -31,7 +32,17 @@ class PodcastRenderingTests(unittest.TestCase):
         configs.bootstrap()
         artifacts.bootstrap()
         configs.save_llm_config(LLMProviderConfig(provider="mock"))
-        configs.save_tts_config(TTSProviderConfig(provider="mock_remote", model="mock-voice", audio_format="wav"))
+        configs.save_tts_config(
+            TTSProviderConfig(provider="local_mlx", model="mlx-community/VoxCPM2-8bit", audio_format="wav")
+        )
+        fake = SineWaveTTSProvider()
+        for target in (
+            "app.orchestration.podcast_rendering.build_tts_provider",
+            "app.orchestration.audio_rendering.build_tts_provider",
+        ):
+            patcher = patch(target, return_value=fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         return temp, store, configs, artifacts, AudioRenderingService(store, configs, artifacts)
 
     def seed_project(self, store: ProjectStore) -> tuple[str, str]:
