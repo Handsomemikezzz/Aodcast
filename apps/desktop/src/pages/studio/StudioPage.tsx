@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useBridge } from "../../lib/BridgeContext";
+import type { SessionProject } from "../../types";
 import { useScriptWorkbench } from "../script-workbench/useScriptWorkbench";
 import { ScriptEditorPane } from "../script-workbench/ScriptEditorPane";
 import { ScriptCleanupPreviewDialog } from "../script-workbench/ScriptCleanupPreviewDialog";
@@ -62,18 +63,25 @@ function StudioWorkspace({
   sessionId,
   scriptId,
   onRefresh,
+  listTopic,
   initialTranscriptOpen,
   initialSourceOpen,
 }: {
   sessionId: string;
   scriptId: string;
   onRefresh: () => Promise<void>;
+  listTopic?: string;
   initialTranscriptOpen: boolean;
   initialSourceOpen: boolean;
 }) {
   const bridge = useBridge();
   const navigate = useNavigate();
   const workbench = useScriptWorkbench(sessionId, scriptId, onRefresh);
+
+  useEffect(() => {
+    if (listTopic) workbench.applyLocalTopic(listTopic);
+  }, [listTopic, workbench.applyLocalTopic]);
+
   const regenerationDialog = workbench.dialogState?.kind === "regenerate-window" ? workbench.dialogState : null;
   const regenerationPositions = regenerationDialog?.windowSegmentIds.map((segmentId) => {
     const segment = workbench.project?.speech_plan?.segments.find((item) => item.segment_id === segmentId);
@@ -202,6 +210,7 @@ function StudioWorkspace({
         {/* Header: title + stepper + global CTA */}
         <StudioHeader
           workbench={workbench}
+          listTopic={listTopic}
           audioOutOfDate={audioOutOfDate}
           sourceOutOfDate={sourceOutOfDate}
           onMaterialOpen={() => {
@@ -433,13 +442,20 @@ function StudioWorkspace({
 }
 
 // ── Entry Point ──────────────────────────────────────────────────────────────
-export function StudioPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
+export function StudioPage({
+  projects = [],
+  onRefresh,
+}: {
+  projects?: SessionProject[];
+  onRefresh: () => Promise<void>;
+}) {
   const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
   const [searchParams] = useSearchParams();
 
   const panelParam = searchParams.get("panel");
   const initialTranscriptOpen = panelParam === "conversation";
   const initialSourceOpen = panelParam === "source";
+  const listTopic = projects.find((item) => item.session.session_id === sessionId)?.session.topic;
 
   if (!sessionId) {
     return (
@@ -459,6 +475,7 @@ export function StudioPage({ onRefresh }: { onRefresh: () => Promise<void> }) {
       sessionId={sessionId}
       scriptId={scriptId}
       onRefresh={onRefresh}
+      listTopic={listTopic}
       initialTranscriptOpen={initialTranscriptOpen}
       initialSourceOpen={initialSourceOpen}
     />

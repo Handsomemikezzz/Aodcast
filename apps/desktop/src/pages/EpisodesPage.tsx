@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronRight, FileText, MessageSquare, PlusCircle, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { SessionTopicEditor } from "../components/SessionTopicEditor";
 import type { SessionProject } from "../types";
 import { useBridge } from "../lib/BridgeContext";
 
@@ -23,6 +24,7 @@ export function EpisodesPage({
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState("");
+  const [renamingId, setRenamingId] = useState("");
   const openEpisode = async (project: SessionProject) => {
     const sid = project.session.session_id;
     if (project.script?.script_id) {
@@ -112,28 +114,45 @@ export function EpisodesPage({
                 const statusLabel = p.session.state.replace(/_/g, " ");
                 const isMarkdown = p.session.creation_mode === "markdown";
                 const OriginIcon = isMarkdown ? FileText : MessageSquare;
+                const busy = deletingId === rowId || renamingId === p.session.session_id;
                 return (
                   <div
                     key={p.session.session_id}
                     className="flex items-center gap-2 px-4 py-3 hover:bg-surface-container transition-colors"
                   >
-                    <button
-                      type="button"
-                      onClick={() => void openEpisode(p)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <p className="font-medium text-[14px] text-primary truncate">{title}</p>
-                      <p className="mt-1 flex items-center gap-1.5 text-[12px] text-secondary truncate capitalize">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1 min-w-0">
+                        <SessionTopicEditor
+                          sessionId={p.session.session_id}
+                          topic={title}
+                          disabled={busy}
+                          density="list"
+                          className="flex-1"
+                          onRenamed={async () => {
+                            setRenamingId(p.session.session_id);
+                            try {
+                              await onRefresh();
+                            } finally {
+                              setRenamingId("");
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void openEpisode(p)}
+                        className="mt-1 flex w-full items-center gap-1.5 text-left text-[12px] text-secondary truncate capitalize"
+                      >
                         <OriginIcon className="h-3 w-3 shrink-0" />
                         <span>{isMarkdown ? "Markdown" : "Conversation"}</span>
                         <span className="text-outline">·</span>
                         <span>{statusLabel}</span>
-                      </p>
-                    </button>
+                      </button>
+                    </div>
                     <button
                       type="button"
                       aria-label={`Move "${title}" to trash`}
-                      disabled={deletingId === rowId}
+                      disabled={busy}
                       onClick={() =>
                         setDeleteTarget({ project: p, kind: hasScript ? "script" : "session" })
                       }
@@ -141,7 +160,14 @@ export function EpisodesPage({
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
-                    <ChevronRight className="w-4 h-4 text-outline shrink-0" />
+                    <button
+                      type="button"
+                      aria-label={`Open "${title}"`}
+                      onClick={() => void openEpisode(p)}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-outline transition-colors hover:bg-surface-container-high hover:text-primary"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
                 );
               })

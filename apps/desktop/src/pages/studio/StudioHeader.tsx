@@ -1,4 +1,5 @@
 import { RefreshCw, Wand2 } from "lucide-react";
+import { SessionTopicEditor } from "../../components/SessionTopicEditor";
 import { WorkflowStepper, buildWorkflowSteps, type StepId } from "./WorkflowStepper";
 import { resolveGlobalCtaKind } from "./studioWorkflow";
 import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWorkbench";
@@ -114,6 +115,7 @@ function GlobalCTA({
 
 export function StudioHeader({
   workbench,
+  listTopic,
   audioOutOfDate,
   sourceOutOfDate,
   onMaterialOpen,
@@ -122,6 +124,7 @@ export function StudioHeader({
   onAudioFocus,
 }: {
   workbench: UseScriptWorkbenchResult;
+  listTopic?: string;
   audioOutOfDate: boolean;
   sourceOutOfDate: boolean;
   onMaterialOpen: () => void;
@@ -130,7 +133,7 @@ export function StudioHeader({
   onAudioFocus: () => void;
 }) {
   const { project, generating, audioSrc, audioError } = workbench;
-  const topic = project?.session.topic || "Untitled Episode";
+  const topic = listTopic?.trim() || project?.session.topic || "Untitled Episode";
   const hasTranscript = Boolean(project?.transcript?.turns?.length);
   const hasSource = Boolean(project?.source);
   const hasScript = Boolean(project?.script && !project.script.deleted_at);
@@ -159,16 +162,27 @@ export function StudioHeader({
     else if (id === "audio") onAudioFocus();
   };
 
+  const sessionId = project?.session.session_id ?? "";
+
   return (
     <header className="shrink-0 flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 px-4 lg:px-5 py-3 border-b border-outline bg-surface-container-low/70 backdrop-blur-sm">
-      {/* Title */}
-      <div className="min-w-0 shrink max-w-[220px]">
-        <h1
-          className="truncate text-[13px] font-semibold text-primary leading-tight"
-          title={topic}
-        >
-          {topic}
-        </h1>
+      {/* Title — click or pencil to rename */}
+      <div className="min-w-0 shrink max-w-[240px]">
+        {sessionId ? (
+          <SessionTopicEditor
+            sessionId={sessionId}
+            topic={topic}
+            density="header"
+            disabled={workbench.isSessionDeleted || workbench.generating}
+            onRenamed={async (updated) => {
+              await workbench.handleRenameTopic(updated);
+            }}
+          />
+        ) : (
+          <h1 className="truncate text-[13px] font-semibold text-primary leading-tight" title={topic}>
+            {topic}
+          </h1>
+        )}
         <p className="text-[10px] text-secondary mt-0.5 truncate">{workbench.sessionStateLabel}</p>
       </div>
 

@@ -1,4 +1,4 @@
-import { Check, Mic, Music2, FileText, MessageSquare } from "lucide-react";
+import { Mic, Music2, FileText, MessageSquare } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export type StepId = "material" | "script" | "voice" | "audio";
@@ -65,7 +65,6 @@ export function WorkflowStepper({
               onClick={() => onStepClick(step.id)}
               title={step.label}
             >
-              <span className="stepper-dot" />
               <Icon className="w-3 h-3 shrink-0" />
               <span className="hidden sm:inline">{step.label}</span>
               {step.badge && step.badge.variant !== "none" && (

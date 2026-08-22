@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, useNavigate, useLocation, Navigate, useParams }
 import { useBridge } from "./lib/BridgeContext";
 import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
+import { SessionTopicEditor } from "./components/SessionTopicEditor";
 
 import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
 import { List, Layers, Mic, AudioLines, Package, Settings, Sun, Moon, Brain } from "lucide-react";
@@ -208,7 +209,18 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 bg-background relative">
         <header className="h-[74px] flex items-end pb-3 px-6 border-b border-outline bg-surface-container-low/85 backdrop-blur-xl drag-region shrink-0 shadow-[0_1px_0_var(--color-outline)]">
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className="font-headline font-semibold text-[15px] tracking-wide text-primary truncate">{title}</h2>
+            {currentProject ? (
+              <SessionTopicEditor
+                sessionId={currentProject.session.session_id}
+                topic={currentProject.session.topic || "Untitled Episode"}
+                density="app"
+                onRenamed={async () => {
+                  await fetchProjects();
+                }}
+              />
+            ) : (
+              <h2 className="font-headline font-semibold text-[15px] tracking-wide text-primary truncate">{title}</h2>
+            )}
             {currentProject && (
               <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-headline font-semibold bg-accent-amber/10 border border-accent-amber/20 text-accent-amber uppercase tracking-wider">
                 {currentProject.session.state.replace(/_/g, " ")}
@@ -232,8 +244,8 @@ export default function App() {
               <Route path="/episodes/new" element={<NewEpisodePage mode="choose" onRefresh={fetchProjects} />} />
               <Route path="/episodes/new/markdown" element={<NewEpisodePage mode="markdown" onRefresh={fetchProjects} />} />
               <Route path="/studio" element={<Navigate to="/episodes" replace />} />
-              <Route path="/studio/:sessionId" element={<StudioPage onRefresh={fetchProjects} />} />
-              <Route path="/studio/:sessionId/:scriptId" element={<StudioPage onRefresh={fetchProjects} />} />
+              <Route path="/studio/:sessionId" element={<StudioPage projects={projects} onRefresh={fetchProjects} />} />
+              <Route path="/studio/:sessionId/:scriptId" element={<StudioPage projects={projects} onRefresh={fetchProjects} />} />
               <Route path="/models" element={<ModelsPage />} />
               <Route path="/memory" element={<MemoryPage />} />
               <Route path="/voice-studio" element={<VoiceStudioPage />} />

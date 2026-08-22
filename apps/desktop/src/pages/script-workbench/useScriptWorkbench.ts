@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { useCallback } from "react";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { useBridge } from "../../lib/BridgeContext";
 import type { ModelStatus, RequestState, SessionProject, SpeakerReference, TTSCapability, TTSProviderConfig } from "../../types";
@@ -77,6 +78,8 @@ export type UseScriptWorkbenchResult = {
   handleExportMp3: () => Promise<void>;
   handleDeleteAudio: () => Promise<void>;
   handleSelectSpeakerReference: (referenceId: string) => Promise<void>;
+  handleRenameTopic: (updated: SessionProject) => Promise<void>;
+  applyLocalTopic: (topic: string) => void;
   requestSegmentRegeneration: (segmentId: string) => void;
   handleRegenerateAudioWindow: (segmentId: string) => Promise<void>;
   reload: () => Promise<void>;
@@ -172,6 +175,31 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     await audio.triggerRegenerateAudioWindow(segmentId);
   };
 
+  const handleRenameTopic = async (updated: SessionProject) => {
+    // Only patch topic so an in-progress script workspace stays on the same script snapshot.
+    data.setProject((prev) =>
+      prev
+        ? {
+            ...prev,
+            session: {
+              ...prev.session,
+              topic: updated.session.topic,
+            },
+          }
+        : updated,
+    );
+    await onRefresh();
+  };
+
+  const applyLocalTopic = useCallback((topic: string) => {
+    const next = topic.trim();
+    if (!next) return;
+    data.setProject((prev) => {
+      if (!prev || prev.session.topic === next) return prev;
+      return { ...prev, session: { ...prev.session, topic: next } };
+    });
+  }, [data.setProject]);
+
   return {
     navigate,
     loading: data.loading,
@@ -233,6 +261,8 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     handleExportMp3: audio.handleExportMp3,
     handleDeleteAudio: audio.handleDeleteAudio,
     handleSelectSpeakerReference: data.handleSelectSpeakerReference,
+    handleRenameTopic,
+    applyLocalTopic,
     requestSegmentRegeneration,
     handleRegenerateAudioWindow,
     reload: data.reload,
