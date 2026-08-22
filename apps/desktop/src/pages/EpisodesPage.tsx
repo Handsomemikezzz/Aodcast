@@ -118,7 +118,17 @@ export function EpisodesPage({
                 return (
                   <div
                     key={p.session.session_id}
-                    className="flex items-center gap-2 px-4 py-3 hover:bg-surface-container transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open "${title}"`}
+                    onClick={() => void openEpisode(p)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        void openEpisode(p);
+                      }
+                    }}
+                    className="flex cursor-pointer items-center gap-2 px-4 py-3 hover:bg-surface-container transition-colors"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1 min-w-0">
@@ -138,36 +148,31 @@ export function EpisodesPage({
                           }}
                         />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void openEpisode(p)}
-                        className="mt-1 flex w-full items-center gap-1.5 text-left text-[12px] text-secondary truncate capitalize"
-                      >
+                      <div className="mt-1 flex w-full items-center gap-1.5 text-left text-[12px] text-secondary truncate capitalize">
                         <OriginIcon className="h-3 w-3 shrink-0" />
                         <span>{isMarkdown ? "Markdown" : "Conversation"}</span>
                         <span className="text-outline">·</span>
                         <span>{statusLabel}</span>
-                      </button>
+                      </div>
                     </div>
                     <button
                       type="button"
                       aria-label={`Move "${title}" to trash`}
                       disabled={busy}
-                      onClick={() =>
-                        setDeleteTarget({ project: p, kind: hasScript ? "script" : "session" })
-                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDeleteTarget({ project: p, kind: hasScript ? "script" : "session" });
+                      }}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
-                    <button
-                      type="button"
-                      aria-label={`Open "${title}"`}
-                      onClick={() => void openEpisode(p)}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-outline transition-colors hover:bg-surface-container-high hover:text-primary"
+                    <span
+                      aria-hidden
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-outline"
                     >
                       <ChevronRight className="w-4 h-4" />
-                    </button>
+                    </span>
                   </div>
                 );
               })

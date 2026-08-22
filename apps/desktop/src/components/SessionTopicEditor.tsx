@@ -93,7 +93,12 @@ export function SessionTopicEditor({
 
   if (editing) {
     return (
-      <div className={cn("min-w-0", className)}>
+      <div
+        className={cn("min-w-0", className)}
+        // Keep rename typing from bubbling into a parent row click (e.g. open episode).
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
         <div className="flex items-center gap-1.5 min-w-0">
           <input
             ref={inputRef}
@@ -139,7 +144,10 @@ export function SessionTopicEditor({
       )}
       <button
         type="button"
-        onClick={startEditing}
+        onClick={(event) => {
+          event.stopPropagation();
+          startEditing();
+        }}
         disabled={disabled}
         aria-label={`Rename "${topic || "Untitled Episode"}"`}
         className={cn(
