@@ -323,6 +323,13 @@ export function VoiceStudioPage() {
     void loadProject(selectedSessionId, selectedScriptId).catch((err) => setError(getErrorMessage(err, "Failed to load script.")));
   }, [clearPreviewState, scriptBoundMode, selectedScriptId, selectedSessionId, ttsConfig?.audio_format]);
 
+  // Success copy is ephemeral: show briefly, then clear so it doesn't pin the layout.
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
   useEffect(() => {
     if (!lastCurrentPreviewKeyRef.current) {
       lastCurrentPreviewKeyRef.current = currentPreviewKey;
@@ -654,7 +661,6 @@ export function VoiceStudioPage() {
         </section>
 
         {error ? <p role="alert" className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
-        {message ? <p aria-live="polite" className="rounded-2xl border border-accent-amber/20 bg-accent-amber/10 p-3 text-sm text-accent-amber">{message}</p> : null}
 
         <div className="flex flex-col gap-5">
           <div className="mx-auto w-full max-w-[960px] space-y-5">
@@ -925,10 +931,18 @@ export function VoiceStudioPage() {
       </div>
       {referenceDialogMode ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center theme-modal-overlay backdrop-blur-md px-4 py-6">
-          <div role="dialog" aria-modal="true" aria-labelledby="speaker-reference-dialog-title" className="max-h-full w-full max-w-2xl overflow-y-auto rounded-[32px] border border-outline theme-modal-surface backdrop-blur-2xl p-8 shadow-[0_24px_60px_rgba(0,0,0,0.5)]">
-            <div className="flex items-start justify-between gap-4 border-b border-outline pb-5">
-              <div>
-                <h2 id="speaker-reference-dialog-title" className="text-lg font-bold font-display text-primary tracking-tight">{referenceDialogMode === "create" ? "创建我的音色" : "编辑我的音色"}</h2>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="speaker-reference-dialog-title"
+            className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-[32px] border border-outline theme-modal-surface backdrop-blur-2xl shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
+          >
+            {/* Sticky header — stays visible while the form scrolls */}
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-outline px-6 pb-4 pt-6 sm:px-8 sm:pt-7">
+              <div className="min-w-0">
+                <h2 id="speaker-reference-dialog-title" className="text-lg font-bold font-display text-primary tracking-tight">
+                  {referenceDialogMode === "create" ? "创建我的音色" : "编辑我的音色"}
+                </h2>
                 <p className="mt-1.5 text-xs leading-relaxed text-secondary/80">
                   {referenceDialogMode === "create"
                     ? "添加 10-30 秒参考音频，并逐字填写音频里实际朗读的文本。"
@@ -938,152 +952,158 @@ export function VoiceStudioPage() {
               <button
                 type="button"
                 onClick={resetReferenceDialog}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
                 aria-label="关闭"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="mt-6 grid gap-5">
-              <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
-                音色名称
-                <input
-                  value={newReferenceName}
-                  onChange={(event) => setNewReferenceName(event.target.value)}
-                  className="w-full rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
-                  placeholder="例如：我的知识讲述音色"
-                />
-              </label>
+            {/* Only the form body scrolls so Cancel / Save remain on-screen */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 mac-scrollbar sm:px-8">
+              <div className="grid gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
+                    音色名称
+                    <input
+                      value={newReferenceName}
+                      onChange={(event) => setNewReferenceName(event.target.value)}
+                      className="w-full rounded-2xl border border-outline bg-surface-container-high px-4 py-2.5 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
+                      placeholder="例如：我的知识讲述音色"
+                    />
+                  </label>
 
-              <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
-                参考音频语言
-                <input
-                  value={newReferenceLanguage}
-                  onChange={(event) => setNewReferenceLanguage(event.target.value)}
-                  className="w-full rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
-                  placeholder="例如：zh、en 或 yue"
-                />
-                <span className="font-normal text-secondary/60">使用简短语言标签，帮助引擎正确理解参考内容。</span>
-              </label>
+                  <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
+                    参考音频语言
+                    <input
+                      value={newReferenceLanguage}
+                      onChange={(event) => setNewReferenceLanguage(event.target.value)}
+                      className="w-full rounded-2xl border border-outline bg-surface-container-high px-4 py-2.5 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans placeholder:text-secondary/40 focus:bg-background"
+                      placeholder="例如：zh、en 或 yue"
+                    />
+                    <span className="font-normal text-[11px] text-secondary/60">简短语言标签，帮助引擎理解参考内容。</span>
+                  </label>
+                </div>
 
-              <div>
-                <p className="text-xs font-semibold text-secondary/90 mb-2">参考音频来源</p>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {[
-                    { id: "upload", label: "上传", icon: Upload },
-                    { id: "microphone", label: "麦克风录音", icon: Mic },
-                    { id: "system", label: "系统内录", icon: FileAudio },
-                  ].map((item) => {
-                    const Icon = item.icon;
-                    const isSystem = item.id === "system";
-                    const selected = referenceAudioSource === item.id;
-                    return (
+                <div>
+                  <p className="text-xs font-semibold text-secondary/90 mb-2">参考音频来源</p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {[
+                      { id: "upload", label: "上传", icon: Upload },
+                      { id: "microphone", label: "麦克风录音", icon: Mic },
+                      { id: "system", label: "系统内录", icon: FileAudio },
+                    ].map((item) => {
+                      const Icon = item.icon;
+                      const isSystem = item.id === "system";
+                      const selected = referenceAudioSource === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => !isSystem && setReferenceAudioSource(item.id as ReferenceAudioSource)}
+                          disabled={isSystem}
+                          className={cn(
+                            "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 transition-all cursor-pointer",
+                            selected
+                              ? "border-accent-amber/30 bg-accent-amber/10 text-accent-amber shadow-[0_0_12px_rgba(242,191,87,0.1)]"
+                              : "border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-outline",
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {referenceAudioSource === "upload" ? (
+                    <div className="mt-3 rounded-2xl border border-dashed border-outline bg-surface-container px-4 py-4 text-center hover:border-accent-amber/20 transition-colors">
+                      <input
+                        ref={referenceFileInputRef}
+                        type="file"
+                        accept="audio/*,.wav,.mp3,.m4a,.mp4,.aac,.flac,.webm,.ogg"
+                        className="hidden"
+                        onChange={(event) => handleReferenceFileSelected(event.target.files?.[0] ?? null)}
+                      />
                       <button
-                        key={item.id}
                         type="button"
-                        onClick={() => !isSystem && setReferenceAudioSource(item.id as ReferenceAudioSource)}
-                        disabled={isSystem}
+                        onClick={() => referenceFileInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 px-4 py-2 text-xs font-semibold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        <Upload className="h-4 w-4" />
+                        选择音频文件
+                      </button>
+                      <p className="mt-2 text-[11px] text-secondary/60 leading-normal">支持 wav、mp3、m4a、mp4、aac、flac、webm、ogg；WAV 会校验 30 秒上限。</p>
+                    </div>
+                  ) : null}
+                  {referenceAudioSource === "microphone" ? (
+                    <div className="mt-3 rounded-2xl border border-outline bg-surface-container px-4 py-4 flex flex-col items-center justify-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => (recordingReferenceSample ? handleStopReferenceRecording() : void handleStartReferenceRecording())}
                         className={cn(
-                          "inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 transition-all cursor-pointer",
-                          selected 
-                            ? "border-accent-amber/30 bg-accent-amber/10 text-accent-amber shadow-[0_0_12px_rgba(242,191,87,0.1)]" 
-                            : "border-outline bg-surface-container-high/60 text-secondary hover:text-primary hover:bg-surface-container-high hover:border-outline",
+                          "inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer",
+                          recordingReferenceSample
+                            ? "bg-red-500/10 border border-red-500/20 text-red-400 animate-pulse"
+                            : "bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] text-on-primary shadow-[0_4px_16px_rgba(242,191,87,0.2)]",
                         )}
                       >
-                        <Icon className="h-3.5 w-3.5" />
-                        {item.label}
+                        {recordingReferenceSample ? <Square className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+                        {recordingReferenceSample ? "停止录音" : "开始录音"}
                       </button>
-                    );
-                  })}
+                      <p className="text-[11px] text-secondary/60">录音完成后会自动作为参考音频。请控制在 30 秒以内。</p>
+                    </div>
+                  ) : null}
+                  {referenceAudioSource === "system" ? (
+                    <div className="mt-3 rounded-2xl border border-outline bg-surface-container px-4 py-3 text-xs text-secondary/60">
+                      系统内录需要新增 macOS 桌面采集能力；当前版本请使用上传或麦克风录音。
+                    </div>
+                  ) : null}
+                  {referenceDialogMode === "edit" && existingReferenceAudioUrl && !newReferenceAudioPreviewUrl ? (
+                    <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high px-3 py-3">
+                      <p className="mb-2 text-[11px] font-semibold text-secondary">当前参考音频</p>
+                      <audio controls src={existingReferenceAudioUrl} className="w-full rounded-lg" />
+                    </div>
+                  ) : null}
+                  {newReferenceAudioPreviewUrl ? (
+                    <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high px-3 py-3">
+                      <p className="mb-2 text-[11px] font-semibold text-secondary">{newReferenceAudioFileName || "新参考音频"}</p>
+                      <audio controls src={newReferenceAudioPreviewUrl} className="w-full rounded-lg" />
+                    </div>
+                  ) : null}
                 </div>
-                {referenceAudioSource === "upload" ? (
-                  <div className="mt-3 rounded-2xl border border-dashed border-outline bg-surface-container p-6 text-center hover:border-accent-amber/20 transition-colors">
-                    <input
-                      ref={referenceFileInputRef}
-                      type="file"
-                      accept="audio/*,.wav,.mp3,.m4a,.mp4,.aac,.flac,.webm,.ogg"
-                      className="hidden"
-                      onChange={(event) => handleReferenceFileSelected(event.target.files?.[0] ?? null)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => referenceFileInputRef.current?.click()}
-                      className="inline-flex items-center gap-2 rounded-xl border border-outline bg-surface-container-high/60 px-4 py-2.5 text-xs font-semibold text-primary hover:bg-surface-container-high hover:border-outline active:scale-[0.98] transition-all cursor-pointer"
-                    >
-                      <Upload className="h-4 w-4" />
-                      选择音频文件
-                    </button>
-                    <p className="mt-2.5 text-[11px] text-secondary/60 leading-normal">支持 wav、mp3、m4a、mp4、aac、flac、webm、ogg；WAV 会校验 30 秒上限。</p>
-                  </div>
-                ) : null}
-                {referenceAudioSource === "microphone" ? (
-                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container p-6 flex flex-col items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => (recordingReferenceSample ? handleStopReferenceRecording() : void handleStartReferenceRecording())}
-                      className={cn(
-                        "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all cursor-pointer",
-                        recordingReferenceSample
-                          ? "bg-red-500/10 border border-red-500/20 text-red-400 animate-pulse" 
-                          : "bg-accent-amber hover:bg-accent-amber/90 active:scale-[0.98] text-on-primary shadow-[0_4px_16px_rgba(242,191,87,0.2)]",
-                      )}
-                    >
-                      {recordingReferenceSample ? <Square className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-                      {recordingReferenceSample ? "停止录音" : "开始录音"}
-                    </button>
-                    <p className="text-[11px] text-secondary/60">录音完成后会自动作为参考音频。请控制在 30 秒以内。</p>
-                  </div>
-                ) : null}
-                {referenceAudioSource === "system" ? (
-                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container p-4 text-xs text-secondary/60">
-                    系统内录需要新增 macOS 桌面采集能力；当前版本请使用上传或麦克风录音。
-                  </div>
-                ) : null}
-                {referenceDialogMode === "edit" && existingReferenceAudioUrl && !newReferenceAudioPreviewUrl ? (
-                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high p-4">
-                    <p className="mb-2.5 text-xs font-semibold text-primary">当前参考音频</p>
-                    <audio controls src={existingReferenceAudioUrl} className="w-full rounded-lg" />
-                  </div>
-                ) : null}
-                {newReferenceAudioPreviewUrl ? (
-                  <div className="mt-3 rounded-2xl border border-outline bg-surface-container-high p-4">
-                    <p className="mb-2.5 text-xs font-semibold text-primary">{newReferenceAudioFileName || "新参考音频"}</p>
-                    <audio controls src={newReferenceAudioPreviewUrl} className="w-full rounded-lg" />
-                  </div>
-                ) : null}
+
+                <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
+                  参考音频文本
+                  <textarea
+                    value={newReferenceText}
+                    onChange={(event) => setNewReferenceText(event.target.value)}
+                    rows={4}
+                    className="w-full resize-none rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans leading-relaxed placeholder:text-secondary/40 focus:bg-background"
+                    placeholder="逐字填写参考音频里实际说出的内容"
+                  />
+                </label>
               </div>
+            </div>
 
-              <label className="text-xs font-semibold text-secondary/90 flex flex-col gap-2">
-                参考音频文本
-                <textarea
-                  value={newReferenceText}
-                  onChange={(event) => setNewReferenceText(event.target.value)}
-                  rows={5}
-                  className="w-full resize-none rounded-2xl border border-outline bg-surface-container-high px-4 py-3 text-sm text-primary outline-none focus:border-accent-amber/30 transition-all font-sans leading-relaxed placeholder:text-secondary/40 focus:bg-background"
-                  placeholder="逐字填写参考音频里实际说出的内容"
-                />
-              </label>
-
+            {/* Sticky footer: delete (edit only) left, primary actions right */}
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-outline px-6 py-4 sm:px-8">
               {referenceDialogMode === "edit" ? (
-                <div className="rounded-2xl border border-red-500/10 bg-red-500/5 p-4 flex items-center justify-between gap-4">
-                  <p className="text-xs text-secondary/80">删除后无法恢复；已使用该音色的脚本会清除对应参考。</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const reference = speakerReferences.find((item) => item.speaker_reference_id === editingReferenceId);
-                      if (reference) setReferenceToDelete(reference);
-                    }}
-                    disabled={savingReference}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    删除此音色
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end border-t border-outline pt-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const reference = speakerReferences.find((item) => item.speaker_reference_id === editingReferenceId);
+                    if (reference) setReferenceToDelete(reference);
+                  }}
+                  disabled={savingReference}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 text-xs font-semibold text-red-300/90 hover:bg-red-500/10 hover:text-red-200 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  删除
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
                   onClick={resetReferenceDialog}
@@ -1131,6 +1151,17 @@ export function VoiceStudioPage() {
           },
         ]}
       />
+      {message ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-8 z-50 flex justify-center px-4">
+          <p
+            role="status"
+            aria-live="polite"
+            className="max-w-md rounded-2xl border border-accent-amber/25 bg-surface-container px-4 py-3 text-sm font-medium text-accent-amber shadow-[0_12px_32px_rgba(0,0,0,0.18)]"
+          >
+            {message}
+          </p>
+        </div>
+      ) : null}
     </motion.div>
   );
 }

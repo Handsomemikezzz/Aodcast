@@ -2,7 +2,16 @@ import type { RefObject } from "react";
 import { useCallback } from "react";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { useBridge } from "../../lib/BridgeContext";
-import type { ModelStatus, RequestState, SessionProject, SpeakerReference, TTSCapability, TTSProviderConfig } from "../../types";
+import type {
+  ModelStatus,
+  RequestState,
+  SessionProject,
+  SpeakerReference,
+  TTSCapability,
+  TTSProviderConfig,
+  VoiceRenderSettings,
+  VoiceStylePreset,
+} from "../../types";
 import { contextWindowSegmentIds, type EditorTransform } from "./workbenchUtils";
 import { useScriptWorkbenchAudio } from "./useScriptWorkbenchAudio";
 import { useScriptWorkbenchData } from "./useScriptWorkbenchData";
@@ -24,12 +33,18 @@ export type UseScriptWorkbenchResult = {
   capability: TTSCapability | null;
   ttsConfig: TTSProviderConfig | null;
   speakerReferences: SpeakerReference[];
+  voiceStyles: VoiceStylePreset[];
   models: ModelStatus[];
   selectedModelId: string;
   setSelectedModelId: (value: string) => void;
   voiceSelectionError: string | null;
   selectedEngine: "local_mlx" | "cloud";
   setSelectedEngine: (value: "local_mlx" | "cloud") => void;
+  selectedStyleId: string;
+  setSelectedStyleId: (value: string) => void;
+  deliverySpeed: number;
+  setDeliverySpeed: (value: number) => void;
+  voiceSettings: VoiceRenderSettings;
   loadingError: string | null;
   saving: boolean;
   generating: boolean;
@@ -46,6 +61,7 @@ export type UseScriptWorkbenchResult = {
   isAudioPlaying: boolean;
   textareaRef: RefObject<HTMLTextAreaElement>;
   audioRef: RefObject<HTMLAudioElement>;
+  previewAudioRef: RefObject<HTMLAudioElement>;
   toolbarButtonClass: string;
   isScriptDeleted: boolean;
   isSessionDeleted: boolean;
@@ -57,10 +73,13 @@ export type UseScriptWorkbenchResult = {
   estMinutes: string;
   cloudProvider: string;
   audioSrc: string;
+  previewing: boolean;
+  previewError: string | null;
+  previewRequestState: RequestState | null;
+  previewSrc: string;
   outputFilename: string;
   localEngineDisabled: boolean;
   cloudEngineDisabled: boolean;
-  sessionStateLabel: string;
   runWithUnsavedCheck: (action: () => Promise<void>) => void;
   applyToolbarAction: (
     formatter: (value: string, selectionStart: number, selectionEnd: number) => EditorTransform,
@@ -71,7 +90,9 @@ export type UseScriptWorkbenchResult = {
   handleRestoreSession: () => Promise<void>;
   handleRollbackRevision: (revisionId: string) => Promise<void>;
   handleGenerateAudio: () => void;
+  handleRenderPreview: (previewText: string) => Promise<void>;
   handleCancelAudio: () => Promise<void>;
+  handleCancelPreview: () => Promise<void>;
   handlePreviewAudio: () => Promise<void>;
   handleAudioLoadError: () => void;
   handleRevealInFinder: () => Promise<void>;
@@ -123,6 +144,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     selectedEngine: data.selectedEngine,
     cloudProvider: data.cloudProvider,
     selectedModelId: data.selectedModelId,
+    voiceSettings: data.voiceSettings,
   });
 
   const scriptCheck = useSpokenScriptChecks(data.script);
@@ -209,12 +231,18 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     capability: data.capability,
     ttsConfig: data.ttsConfig,
     speakerReferences: data.speakerReferences,
+    voiceStyles: data.voiceStyles,
     models: data.models,
     selectedModelId: data.selectedModelId,
     setSelectedModelId: data.setSelectedModelId,
     voiceSelectionError: data.voiceSelectionError,
     selectedEngine: data.selectedEngine,
     setSelectedEngine: data.setSelectedEngine,
+    selectedStyleId: data.selectedStyleId,
+    setSelectedStyleId: data.setSelectedStyleId,
+    deliverySpeed: data.deliverySpeed,
+    setDeliverySpeed: data.setDeliverySpeed,
+    voiceSettings: data.voiceSettings,
     loadingError: data.loadingError,
     saving: editor.saving,
     generating: audio.generating,
@@ -231,6 +259,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     isAudioPlaying: audio.isAudioPlaying,
     textareaRef: editor.textareaRef,
     audioRef: audio.audioRef,
+    previewAudioRef: audio.previewAudioRef,
     toolbarButtonClass: editor.toolbarButtonClass,
     isScriptDeleted: data.isScriptDeleted,
     isSessionDeleted: data.isSessionDeleted,
@@ -242,10 +271,13 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     estMinutes: data.estMinutes,
     cloudProvider: data.cloudProvider,
     audioSrc: audio.audioSrc,
+    previewing: audio.previewing,
+    previewError: audio.previewError,
+    previewRequestState: audio.previewRequestState,
+    previewSrc: audio.previewSrc,
     outputFilename: data.outputFilename,
     localEngineDisabled,
     cloudEngineDisabled,
-    sessionStateLabel: data.sessionStateLabel,
     runWithUnsavedCheck: editor.runWithUnsavedCheck,
     applyToolbarAction: editor.applyToolbarAction,
     handleSave: editor.handleSave,
@@ -254,7 +286,9 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     handleRestoreSession: editor.handleRestoreSession,
     handleRollbackRevision: editor.handleRollbackRevision,
     handleGenerateAudio,
+    handleRenderPreview: audio.triggerVoicePreview,
     handleCancelAudio: audio.handleCancelAudio,
+    handleCancelPreview: audio.handleCancelPreview,
     handlePreviewAudio: audio.handlePreviewAudio,
     handleAudioLoadError: audio.handleAudioLoadError,
     handleRevealInFinder: audio.handleRevealInFinder,

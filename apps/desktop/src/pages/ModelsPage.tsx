@@ -219,7 +219,7 @@ export function ModelsPage() {
     const taskId = `download_model:${busyDownloadName}`;
     const runToken = requestState?.run_token;
     if (!runToken) {
-      setError("The active download is missing its run token. Refresh Models before cancelling.");
+      setError("This download can no longer be cancelled safely. Refresh Models and try again.");
       return;
     }
     try {

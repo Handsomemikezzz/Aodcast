@@ -7,7 +7,6 @@ import {
   Circle,
   Lightbulb,
   Loader2,
-  Layers,
   Mic,
   PanelLeft,
   PanelLeftClose,
@@ -188,7 +187,7 @@ export function ChatPage({
       });
       const sid = created.session.session_id;
       await onRefresh();
-      navigate(`/chat/${sid}`, { state: { initialReply: message } });
+      navigate(`/studio/${sid}?panel=conversation`, { state: { initialReply: message } });
       setLandingInput("");
     } catch (err) {
       setLandingError(getErrorMessage(err, "Failed to start conversation."));
@@ -411,7 +410,7 @@ export function ChatPage({
     const key = `${sessionId}:${initialReply}`;
     if (consumedInitialReplyRef.current === key) return;
     consumedInitialReplyRef.current = key;
-    navigate(`/chat/${sessionId}`, { replace: true, state: null });
+    navigate(`/studio/${sessionId}?panel=conversation`, { replace: true, state: null });
     void submitReplyContent(initialReply);
   }, [sessionId, loading, submitting, initialReply]);
 
@@ -447,9 +446,9 @@ export function ChatPage({
       );
       await refreshWorkspace();
       if (newScriptId) {
-        navigate(`/script/${sessionId}/${newScriptId}`);
+        navigate(`/studio/${sessionId}/${newScriptId}`);
       } else {
-        navigate(`/script/${sessionId}`);
+        navigate(`/studio/${sessionId}`);
       }
     } catch (err) {
       setError(getErrorMessage(err, "Failed to generate script from chat."));
@@ -632,7 +631,7 @@ export function ChatPage({
                     <button
                       type="button"
                       onClick={() => {
-                        navigate(`/chat/${p.session.session_id}`);
+                        navigate(`/studio/${p.session.session_id}?panel=conversation`);
                         setHistoryOpen(false);
                       }}
                       className="w-full text-left"
@@ -852,9 +851,9 @@ export function ChatPage({
     try {
       const p = await bridge.showLatestScript(sessionId);
       if (p.script?.script_id) {
-        navigate(`/script/${sessionId}/${p.script.script_id}`);
+        navigate(`/studio/${sessionId}/${p.script.script_id}`);
       } else {
-        navigate(`/script/${sessionId}`);
+        navigate(`/studio/${sessionId}`);
       }
       setRequestState(buildRequestState("show_latest_script", "succeeded", "Script opened."));
     } catch (err) {
@@ -1137,40 +1136,11 @@ export function ChatPage({
       <aside className="w-[300px] border-l border-outline bg-surface/50 flex flex-col shrink-0 overflow-y-auto hidden xl:flex">
         <div className="p-5 space-y-8">
 
-          {/* Interview Stage */}
-          <section>
-            <div className="flex items-center gap-2 mb-4 text-secondary">
-               <Layers className="w-4 h-4" />
-               <span className="text-[11px] font-bold uppercase tracking-wider">Interview Stage</span>
-            </div>
-            <div className="space-y-3">
-              {[
-                { label: 'Topic Defined', state: 'topic_defined' },
-                { label: 'Deep Dive', state: 'interview_in_progress' },
-                { label: 'Evaluation', state: 'readiness_evaluation' },
-                { label: 'Ready', state: 'ready_to_generate' }
-              ].map((s, idx) => (
-                <div key={idx} className="flex items-center gap-3">
-                  <div className={cn(
-                    "w-2 h-2 rounded-full",
-                    state === s.state ? "bg-accent-amber animate-pulse shadow-[0_0_8px_rgba(212,163,75,0.5)]" : "bg-outline"
-                  )} />
-                  <span className={cn(
-                    "text-[13px] transition-colors",
-                    state === s.state ? "text-primary font-semibold" : "text-secondary font-medium"
-                  )}>
-                    {s.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Exposed Topics */}
+          {/* Episode context */}
           <section>
             <div className="flex items-center gap-2 mb-4 text-secondary">
                <BookOpen className="w-4 h-4" />
-               <span className="text-[11px] font-bold uppercase tracking-wider">Exposed Topics</span>
+               <span className="text-[11px] font-bold uppercase tracking-wider">Episode notes</span>
             </div>
             <div className="space-y-2">
               <div className="bg-surface-container rounded-lg p-3 border border-outline">
@@ -1179,16 +1149,16 @@ export function ChatPage({
                 </p>
               </div>
               <p className="text-[11px] leading-relaxed text-secondary">
-                {turns.length} transcript turns recorded. Readiness gaps below are derived from the actual interview state.
+                {turns.length} conversation turns saved with this episode.
               </p>
             </div>
           </section>
 
-          {/* Missing Information (Readiness) */}
+          {/* Conversation coverage */}
           <section>
             <div className="flex items-center gap-2 mb-4 text-secondary">
                <AlertCircle className="w-4 h-4" />
-               <span className="text-[11px] font-bold uppercase tracking-wider">Gap Analysis</span>
+               <span className="text-[11px] font-bold uppercase tracking-wider">What we've covered</span>
             </div>
             <div className="space-y-4">
                {[
@@ -1214,18 +1184,18 @@ export function ChatPage({
             </div>
           </section>
 
-          {/* AI Intent */}
+          {/* Current conversational focus */}
           <section>
             <div className="flex items-center gap-2 mb-4 text-secondary">
                <Target className="w-4 h-4" />
-               <span className="text-[11px] font-bold uppercase tracking-wider">AI Strategy</span>
+               <span className="text-[11px] font-bold uppercase tracking-wider">Current focus</span>
             </div>
             <div className="bg-primary/5 rounded-xl p-4 border border-outline/50 relative overflow-hidden group">
                <div className="absolute right-0 top-0 p-2 opacity-10 group-hover:scale-125 transition-transform">
                   <Sparkles className="w-8 h-8 text-primary" />
                </div>
                <p className="text-[12px] text-on-surface leading-relaxed relative z-10">
-                  {promptInput?.suggested_focus || promptInput?.strategy_instruction || "Initializing strategy based on your topic definition..."}
+                  {promptInput?.suggested_focus || promptInput?.strategy_instruction || "Listening for the angle, details, and takeaway that belong in this episode."}
                </p>
             </div>
           </section>

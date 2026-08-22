@@ -20,9 +20,9 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 - Markdown-first creation from a local `.md` file or pasted text, with source preview, podcast adaptation or faithful narration, target-length guidance, optional source discussion, and versioned source replacement.
 - Multiple independent script snapshots per episode, regardless of whether it started from an interview or Markdown.
 - A Podcast Editor stage that writes clean, listenable narration with deliberate sentence length, punctuation, and paragraph rhythm—without manufacturing filler words or stage directions.
-- A Speech Director that creates a versioned, provider-neutral Speech Plan with stable segments, structured pauses, emphasis, pronunciation, and delivery guidance for the exact script hash.
-- Script Workbench for editing, saving, and deleting unused snapshots; selecting a Speaker Reference and model; inspecting the Speech Plan; rendering segment assets; and regenerating a target segment with its immediate neighbors.
-- Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, preview rendering, and reference management.
+- An internal Speech Director that creates a versioned, provider-neutral Speech Plan with stable segments, structured pauses, emphasis, pronunciation, and delivery guidance for the exact script hash without exposing those engineering concepts in the main UI.
+- A script-first Episode Workspace for editing, contextual Voice and Delivery selection, short passage previews, full audio rendering, non-destructive audio updates, playback, and export.
+- Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, asset previews, and reference management; existing voices are selected directly inside an episode.
 - Local MLX TTS model adapters on supported macOS machines, plus OpenAI-compatible remote providers. VoxCPM2 8-bit is the local default; MOSS-TTS Local v1.5 and Qwen3-TTS Base remain comparison paths.
 - Manifest-driven WAV assembly with explicit pauses, consistent format/loudness, render lineage, and reusable per-segment audio assets.
 - Models page for local model storage, downloads, migration, reset, and default local voice model selection.
@@ -90,7 +90,7 @@ Use the mock LLM provider first. This verifies the interview and script flow wit
 ./scripts/dev/run-dev-all.sh
 ```
 
-In the app, create or open a session, continue the interview, generate a script, and render audio from Script Workbench.
+In the app, create or open an episode, continue its conversation, create a draft, and preview or render audio from the Episode Workspace.
 
 ## Provider Setup
 
@@ -193,7 +193,7 @@ The local MLX path is runtime-gated. Always check capability before selecting it
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
 
-The capability report is the source of truth. It checks the platform, Python environment, MLX imports, model path, and bootstrap behavior. Each adapter also reports feature support as `native`, `approximated`, or `unsupported`, which Script Workbench surfaces for cloning, emotion, and explicit pauses.
+The capability report is the source of truth. It checks the platform, Python environment, MLX imports, model path, and bootstrap behavior. Each adapter also reports feature support as `native`, `approximated`, or `unsupported`; the runtime uses those declarations without exposing provider capability jargon in the primary Episode UI.
 
 Current comparison set:
 
@@ -346,7 +346,7 @@ Aodcast currently focuses on local-first solo podcast creation:
 
 - platform: macOS desktop (Tauri) + local Python orchestration core
 - input: a text topic or one local/pasted Markdown source per episode
-- output: solo podcast script plus final audio from Script Workbench
+- output: solo podcast script plus final audio from Episode Workspace
 - LLM: user-configured API provider
 - speech identity: a provider-neutral Speaker Reference selected per script
 - TTS: local MLX multi-model adapters as the primary first-release path, plus remote API providers
@@ -376,14 +376,15 @@ The Podcast Editor keeps generated scripts as plain spoken text while improving 
 
 UI calls go through the desktop HTTP bridge to the local Python runtime. Long operations (audio render, voice preview, model migration/download, and similar) persist pollable `request_state`, expose progress, support cancel, and use `run_token` so retriggered runs do not show stale UI state. Full render and context-window regeneration share the script-scoped task id `render_audio:<session_id>:<script_id>`; cancellation must carry that run's token, so different scripts do not collide. Stateful long-task operations should otherwise be sequenced unless concurrency is under test.
 
-### Voice Studio and Script Workbench
+### Episode Workspace and Voice Studio
 
-- Script Workbench owns final podcast rendering, per-render model selection, generated-audio management, and the read-only Speech Plan view.
+- Episode Workspace keeps the script as the primary canvas, with Sources and Conversation in contextual drawers, Voice and Delivery in a lightweight inspector, and Preview/full audio controls in a persistent bottom dock.
 - A full render saves immutable segment WAVs and a Render Manifest, then assembles the manifest's final WAV. MP3 is an on-demand sibling export next to that final render.
-- Each Speech Plan segment can be played independently. Local regeneration follows the B/C/D window from `A | B | C | D | E`: selecting C rerenders B, C, and D sequentially, conditions each new segment on the preceding segment's audio/text, reuses A and E, and publishes a new manifest/output only after the whole replacement succeeds.
-- Voice Studio owns reusable Speaker References, previews, and script reference selection. A Speaker Reference defines who is speaking; delivery and model settings remain separate.
+- Preview uses selected text, the current paragraph, or the script opening and creates disposable audio without replacing the current episode render.
+- Existing audio remains playable after script, source, voice, or delivery changes and is labeled `Audio needs update` until a replacement render succeeds.
+- Voice Studio owns reusable Speaker Reference assets. A Speaker Reference defines who is speaking; an episode chooses an existing reference in place while asset creation and cloning stay in Voice Studio.
 - Built-in reference audio lives under `services/python-core/app/assets/speaker-references/` (tracked for now). User metadata lives in `.local-data/speaker-references/`; uploaded or recorded audio is normalized to immutable 48 kHz mono 16-bit PCM WAV under `.local-data/exports/_speaker_references/`. Creation requires the matching reference text; system audio capture is not available yet.
-- Script Workbench can choose any downloaded, available local model for the next full render. The resulting manifest freezes that model and adapter pipeline for later B/C/D regeneration.
+- Episode Workspace can choose any downloaded, available local model under Advanced for the next full render. The resulting manifest freezes that model and adapter pipeline. Speech Plan and context-window regeneration contracts remain internal rather than appearing in the primary UI.
 - Artifact audio playback uses the localhost HTTP route `/api/v1/artifacts/audio` in both Web and Tauri shells.
 - Tauri-only helpers such as Reveal in Finder live in shell helpers and are not part of the HTTP `DesktopBridge` surface.
 

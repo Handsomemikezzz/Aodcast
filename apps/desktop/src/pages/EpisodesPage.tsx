@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronRight, FileText, MessageSquare, PlusCircle, Trash2 } from "lucide-react";
@@ -6,6 +6,12 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SessionTopicEditor } from "../components/SessionTopicEditor";
 import type { SessionProject } from "../types";
 import { useBridge } from "../lib/BridgeContext";
+import {
+  deriveEpisodeProductStatus,
+  episodeStatusTone,
+  formatEpisodeDuration,
+  formatRelativeEpisodeTime,
+} from "../lib/episodeStatus";
 
 type DeleteTarget = {
   project: SessionProject;
@@ -25,6 +31,27 @@ export function EpisodesPage({
   const [listError, setListError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState("");
   const [renamingId, setRenamingId] = useState("");
+  const [projectDetails, setProjectDetails] = useState<Record<string, SessionProject>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(
+      projects.map(async (project) => {
+        try {
+          return await bridge.showLatestScript(project.session.session_id);
+        } catch {
+          return project;
+        }
+      }),
+    ).then((items) => {
+      if (!cancelled) {
+        setProjectDetails(Object.fromEntries(items.map((item) => [item.session.session_id, item])));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, projects]);
   const openEpisode = async (project: SessionProject) => {
     const sid = project.session.session_id;
     if (project.script?.script_id) {
@@ -77,7 +104,7 @@ export function EpisodesPage({
         animate={{ opacity: 1 }}
         className="flex flex-col h-full w-full overflow-y-auto px-6 lg:px-12 py-8"
       >
-        <div className="max-w-2xl mx-auto w-full">
+        <div className="max-w-3xl mx-auto w-full">
           <div className="mb-8 border-b border-outline pb-6 flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-headline font-bold text-primary mb-2">Episodes</h1>
@@ -108,24 +135,30 @@ export function EpisodesPage({
               </div>
             ) : (
               sorted.map((p) => {
-                const hasScript = Boolean(p.script?.script_id);
-                const title = p.session.topic || "Untitled Episode";
-                const rowId = hasScript ? (p.script?.script_id ?? "") : p.session.session_id;
-                const statusLabel = p.session.state.replace(/_/g, " ");
-                const isMarkdown = p.session.creation_mode === "markdown";
+                const displayProject = projectDetails[p.session.session_id] ?? p;
+                const hasScript = Boolean(displayProject.script?.script_id);
+                const title = displayProject.session.topic || "Untitled Episode";
+                const rowId = hasScript ? (displayProject.script?.script_id ?? "") : displayProject.session.session_id;
+                const status = deriveEpisodeProductStatus({
+                  project: displayProject,
+                  scriptId: displayProject.script?.script_id,
+                });
+                const duration = formatEpisodeDuration(displayProject);
+                const updated = formatRelativeEpisodeTime(displayProject.session.updated_at);
+                const isMarkdown = displayProject.session.creation_mode === "markdown";
                 const OriginIcon = isMarkdown ? FileText : MessageSquare;
-                const busy = deletingId === rowId || renamingId === p.session.session_id;
+                const busy = deletingId === rowId || renamingId === displayProject.session.session_id;
                 return (
                   <div
                     key={p.session.session_id}
                     role="button"
                     tabIndex={0}
                     aria-label={`Open "${title}"`}
-                    onClick={() => void openEpisode(p)}
+                    onClick={() => void openEpisode(displayProject)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        void openEpisode(p);
+                        void openEpisode(displayProject);
                       }
                     }}
                     className="flex cursor-pointer items-center gap-2 px-4 py-3 hover:bg-surface-container transition-colors"
@@ -133,13 +166,13 @@ export function EpisodesPage({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1 min-w-0">
                         <SessionTopicEditor
-                          sessionId={p.session.session_id}
+                          sessionId={displayProject.session.session_id}
                           topic={title}
                           disabled={busy}
                           density="list"
                           className="flex-1"
                           onRenamed={async () => {
-                            setRenamingId(p.session.session_id);
+                            setRenamingId(displayProject.session.session_id);
                             try {
                               await onRefresh();
                             } finally {
@@ -148,11 +181,14 @@ export function EpisodesPage({
                           }}
                         />
                       </div>
-                      <div className="mt-1 flex w-full items-center gap-1.5 text-left text-[12px] text-secondary truncate capitalize">
-                        <OriginIcon className="h-3 w-3 shrink-0" />
+                      <div className="mt-1 flex w-full items-center gap-1.5 truncate text-left text-[12px]">
+                        <span className={episodeStatusTone(status.kind)}>{status.label}</span>
+                        {duration ? <><span className="text-outline">·</span><span className="tabular-nums text-secondary">{duration}</span></> : null}
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-secondary/75">
+                        <OriginIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
                         <span>{isMarkdown ? "Markdown" : "Conversation"}</span>
-                        <span className="text-outline">·</span>
-                        <span>{statusLabel}</span>
+                        {updated ? <><span className="text-outline">·</span><span>{updated}</span></> : null}
                       </div>
                     </div>
                     <button
@@ -161,7 +197,7 @@ export function EpisodesPage({
                       disabled={busy}
                       onClick={(event) => {
                         event.stopPropagation();
-                        setDeleteTarget({ project: p, kind: hasScript ? "script" : "session" });
+                        setDeleteTarget({ project: displayProject, kind: hasScript ? "script" : "session" });
                       }}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50"
                     >

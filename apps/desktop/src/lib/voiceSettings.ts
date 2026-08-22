@@ -24,9 +24,14 @@ export function defaultVoiceRenderSettings(): VoiceRenderSettings {
   };
 }
 
-export function resolveProjectVoiceSettings(project: SessionProject | null | undefined): VoiceRenderSettings {
+export function resolveProjectVoiceSettings(
+  project: SessionProject | null | undefined,
+  scriptId?: string,
+): VoiceRenderSettings {
   const defaults = defaultVoiceRenderSettings();
-  const saved = project?.artifact?.voice_settings;
+  const saved = scriptId
+    ? project?.artifact?.script_artifacts?.[scriptId]?.voice_settings ?? project?.artifact?.voice_settings
+    : project?.artifact?.voice_settings;
   if (!saved) return defaults;
   return {
     ...defaults,
@@ -39,8 +44,13 @@ export function resolveProjectVoiceSettings(project: SessionProject | null | und
   };
 }
 
-export function selectedSpeakerReferenceLabel(project: SessionProject | null | undefined): string {
-  const reference = project?.artifact?.speaker_reference;
+export function selectedSpeakerReferenceLabel(
+  project: SessionProject | null | undefined,
+  scriptId?: string,
+): string {
+  const reference = scriptId
+    ? project?.artifact?.script_artifacts?.[scriptId]?.speaker_reference ?? project?.artifact?.speaker_reference
+    : project?.artifact?.speaker_reference;
   if (!reference?.speaker_reference_id) return "";
   if (reference.name.trim()) return reference.name.trim();
   return BUILT_IN_SPEAKER_REFERENCE_LABELS[reference.speaker_reference_id] || "已选择音色";

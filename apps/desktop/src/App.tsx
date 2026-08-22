@@ -1,17 +1,13 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Routes, Route, NavLink, useNavigate, useLocation, Navigate, useParams } from "react-router-dom";
+import { Routes, Route, NavLink, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useBridge } from "./lib/BridgeContext";
 import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
-import { SessionTopicEditor } from "./components/SessionTopicEditor";
-
-import { ScriptSessionResolve } from "./pages/ScriptSessionResolve";
-import { List, Layers, Mic, AudioLines, Package, Settings, Sun, Moon, Brain } from "lucide-react";
+import { List, Mic, AudioLines, Package, Settings, Sun, Moon, Brain } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
 import { applyTheme, readStoredTheme, type AppTheme } from "./lib/theme";
 
 const ChatPage = lazy(() => import("./pages/ChatPage").then((module) => ({ default: module.ChatPage })));
-const ScriptPage = lazy(() => import("./pages/ScriptPage").then((module) => ({ default: module.ScriptPage })));
 const ModelsPage = lazy(() => import("./pages/ModelsPage").then((module) => ({ default: module.ModelsPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const VoiceStudioPage = lazy(() => import("./pages/VoiceStudioPage").then((module) => ({ default: module.VoiceStudioPage })));
@@ -22,32 +18,6 @@ const NewEpisodePage = lazy(() => import("./pages/NewEpisodePage").then((module)
 
 function RouteFallback() {
   return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading workspace…</div>;
-}
-
-function RedirectInterviewToChat() {
-  const { sessionId } = useParams<{ sessionId?: string }>();
-  if (sessionId) return <Navigate to={`/chat/${sessionId}`} replace />;
-  return <Navigate to="/chat" replace />;
-}
-
-function RedirectVoiceOrExportToScript() {
-  const { sessionId } = useParams<{ sessionId?: string }>();
-  if (sessionId) return <Navigate to={`/script/${sessionId}`} replace />;
-  return <Navigate to="/script" replace />;
-}
-
-// Compatibility redirects for old routes → studio
-function RedirectChatToStudio() {
-  const { sessionId } = useParams<{ sessionId?: string }>();
-  if (sessionId) return <Navigate to={`/studio/${sessionId}?panel=conversation`} replace />;
-  return <Navigate to="/chat" replace />;
-}
-
-function RedirectScriptToStudio() {
-  const { sessionId, scriptId } = useParams<{ sessionId?: string; scriptId?: string }>();
-  if (sessionId && scriptId) return <Navigate to={`/studio/${sessionId}/${scriptId}?focus=script`} replace />;
-  if (sessionId) return <Navigate to={`/studio/${sessionId}`} replace />;
-  return <Navigate to="/episodes" replace />;
 }
 
 export default function App() {
@@ -80,12 +50,6 @@ export default function App() {
 
   const pathParts = location.pathname.split("/").filter(Boolean);
   const pathSegment = pathParts[0] ?? "";
-  const urlSessionId = pathParts.length >= 2 ? pathParts[1] : null;
-
-  const currentProject =
-    urlSessionId && (pathSegment === "chat" || pathSegment === "script" || pathSegment === "studio")
-      ? projects.find((p) => p.session.session_id === urlSessionId)
-      : undefined;
 
   let title = "Aodcast";
   if (pathSegment === "models") title = "Models";
@@ -93,10 +57,8 @@ export default function App() {
   else if (pathSegment === "voice-studio") title = "Voice";
   else if (pathSegment === "memory") title = "Memory";
   else if (pathSegment === "episodes") title = "Episodes";
-  else if (pathSegment === "studio" && !urlSessionId) title = "Studio";
-  else if (pathSegment === "chat" && !urlSessionId) title = "Chat";
-  else if (pathSegment === "script" && !urlSessionId) title = "Script";
-  else if (currentProject) title = currentProject.session.topic;
+  else if (pathSegment === "studio") title = "Episode Workspace";
+  else if (pathSegment === "chat") title = "New Episode";
 
   const navItemClass = (active: boolean) =>
     cn(
@@ -123,25 +85,14 @@ export default function App() {
           <NavLink
             to="/episodes"
             title="Episodes"
-            className={({ isActive }) => navItemClass(isActive)}
+            className={({ isActive }) => navItemClass(
+              isActive || location.pathname.startsWith("/studio/") || location.pathname === "/chat",
+            )}
           >
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               <List className="w-4 h-4" />
             </div>
             <span className="hidden lg:inline">Episodes</span>
-          </NavLink>
-
-          <NavLink
-            to="/studio"
-            title="Studio"
-            className={({ isActive }) =>
-              navItemClass(isActive || location.pathname.startsWith("/studio/"))
-            }
-          >
-            <div className="w-5 h-5 flex items-center justify-center shrink-0">
-              <Layers className="w-4 h-4" />
-            </div>
-            <span className="hidden lg:inline">Studio</span>
           </NavLink>
 
           <NavLink
@@ -209,23 +160,7 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 bg-background relative">
         <header className="h-[74px] flex items-end pb-3 px-6 border-b border-outline bg-surface-container-low/85 backdrop-blur-xl drag-region shrink-0 shadow-[0_1px_0_var(--color-outline)]">
           <div className="flex items-center gap-3 min-w-0">
-            {currentProject ? (
-              <SessionTopicEditor
-                sessionId={currentProject.session.session_id}
-                topic={currentProject.session.topic || "Untitled Episode"}
-                density="app"
-                onRenamed={async () => {
-                  await fetchProjects();
-                }}
-              />
-            ) : (
-              <h2 className="font-headline font-semibold text-[15px] tracking-wide text-primary truncate">{title}</h2>
-            )}
-            {currentProject && (
-              <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-headline font-semibold bg-accent-amber/10 border border-accent-amber/20 text-accent-amber uppercase tracking-wider">
-                {currentProject.session.state.replace(/_/g, " ")}
-              </span>
-            )}
+            <h2 className="font-headline font-semibold text-[15px] tracking-wide text-primary truncate">{title}</h2>
           </div>
         </header>
 
@@ -252,19 +187,7 @@ export default function App() {
               <Route path="/voice-studio/:sessionId/:scriptId" element={<VoiceStudioPage />} />
               <Route path="/settings" element={<SettingsPage />} />
 
-              {/* Legacy routes kept as compatibility redirects */}
-              <Route path="/history" element={<Navigate to="/episodes" replace />} />
               <Route path="/chat" element={<ChatPage onRefresh={fetchProjects} />} />
-              <Route path="/chat/:sessionId" element={<RedirectChatToStudio />} />
-              <Route path="/script" element={<Navigate to="/episodes" replace />} />
-              <Route path="/script/:sessionId/:scriptId" element={<RedirectScriptToStudio />} />
-              <Route path="/script/:sessionId" element={<ScriptSessionResolve />} />
-              <Route path="/interview" element={<RedirectInterviewToChat />} />
-              <Route path="/interview/:sessionId" element={<RedirectInterviewToChat />} />
-              <Route path="/voice" element={<RedirectVoiceOrExportToScript />} />
-              <Route path="/voice/:sessionId" element={<RedirectVoiceOrExportToScript />} />
-              <Route path="/export" element={<RedirectVoiceOrExportToScript />} />
-              <Route path="/export/:sessionId" element={<RedirectVoiceOrExportToScript />} />
             </Routes>
           </Suspense>
         </div>

@@ -6,49 +6,6 @@ import { getErrorMessage } from "../../lib/requestState";
 import type { SessionProject } from "../../types";
 import { cn } from "../../lib/utils";
 
-export function SourceBar({
-  project,
-  onOpen,
-}: {
-  project: SessionProject;
-  onOpen: () => void;
-}) {
-  const source = project.source;
-  if (!source) return null;
-  const generatedSource = project.script?.generation_metadata?.source;
-  const stale = Boolean(
-    generatedSource &&
-      (generatedSource.version !== source.version || generatedSource.content_hash !== source.content_hash),
-  );
-  const hasAudio = Boolean(project.artifact?.audio_path);
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group flex w-full shrink-0 items-center gap-2 border-b border-outline bg-surface-container-low/40 px-4 py-2 text-left transition-colors hover:bg-surface-container-high/50"
-      title="View imported source"
-    >
-      <FileText className="h-3.5 w-3.5 shrink-0 text-accent-amber" />
-      <span className="min-w-0 truncate text-[11px] font-medium text-secondary">
-        Markdown source
-        <span className="mx-1.5 text-outline">·</span>
-        <span className="font-semibold text-primary">v{source.version}</span>
-        <span className="mx-1.5 text-outline">·</span>
-        {source.name}
-      </span>
-      {stale ? (
-        <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
-          <AlertTriangle className="h-3 w-3" />
-          {hasAudio ? "Script & audio need review" : "Script needs review"}
-        </span>
-      ) : (
-        <span className="ml-auto shrink-0 text-[10px] font-semibold text-accent-amber group-hover:text-accent-amber/80">View source</span>
-      )}
-    </button>
-  );
-}
-
 export function SourceDrawer({
   project,
   isOpen,

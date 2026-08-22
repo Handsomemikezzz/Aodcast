@@ -1,208 +1,78 @@
-import { RefreshCw, Wand2 } from "lucide-react";
+import { ArrowLeft, FileText, MessageSquare } from "lucide-react";
 import { SessionTopicEditor } from "../../components/SessionTopicEditor";
-import { WorkflowStepper, buildWorkflowSteps, type StepId } from "./WorkflowStepper";
-import { resolveGlobalCtaKind } from "./studioWorkflow";
+import { episodeStatusTone, type EpisodeProductStatus } from "../../lib/episodeStatus";
 import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWorkbench";
-
-function GlobalCTA({
-  workbench,
-  audioOutOfDate,
-  sourceOutOfDate,
-  onSourceReview,
-}: {
-  workbench: UseScriptWorkbenchResult;
-  audioOutOfDate: boolean;
-  sourceOutOfDate: boolean;
-  onSourceReview: () => void;
-}) {
-  const { generating, audioSrc, audioError, project, scriptCheck } = workbench;
-  const hasScript = Boolean(project?.script && !project.script.deleted_at);
-  const hasAudio = Boolean(audioSrc);
-  const isDisabled =
-    workbench.isScriptDeleted || workbench.isSessionDeleted;
-
-  if (sourceOutOfDate) {
-    return (
-      <button
-        type="button"
-        onClick={onSourceReview}
-        disabled={isDisabled}
-        className="h-9 px-5 rounded-full bg-accent-amber text-on-primary text-xs font-bold shadow-[0_4px_14px_rgba(161,123,67,0.22)] hover:bg-accent-amber/90 active:scale-[0.97] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
-      >
-        <Wand2 className="w-3.5 h-3.5" />
-        Review Updated Source
-      </button>
-    );
-  }
-
-  const ctaKind = resolveGlobalCtaKind({
-    generating,
-    hasScript,
-    hasAudio,
-    audioOutOfDate,
-    audioError: Boolean(audioError),
-  });
-
-  if (ctaKind === "generating") {
-    const pct = workbench.audioRequestState?.progress_percent ?? 0;
-    return (
-      <div className="flex items-center gap-2 shrink-0">
-        <div className="flex items-center gap-2 px-4 h-9 rounded-full border border-accent-amber/30 bg-accent-amber/8 text-accent-amber text-[12px] font-semibold">
-          <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-accent-amber/30 border-t-accent-amber animate-spin" />
-          <span>{Math.round(pct)}%</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => void workbench.handleCancelAudio()}
-          className="h-9 px-4 rounded-full border border-outline bg-surface-container-low text-xs font-bold text-secondary hover:text-primary hover:bg-primary/5 transition-all cursor-pointer"
-        >
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
-  if (ctaKind === "generate-script") {
-    return (
-      <button
-        type="button"
-        disabled={isDisabled}
-        className="h-9 px-5 rounded-full bg-accent-amber text-on-primary text-xs font-bold shadow-[0_4px_14px_rgba(161,123,67,0.22)] hover:bg-accent-amber/90 active:scale-[0.97] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
-        title="Go to the interview to generate a script"
-        onClick={() => workbench.navigate(`/chat/${project?.session.session_id ?? ""}`)}
-      >
-        <Wand2 className="w-3.5 h-3.5" />
-        Generate Script
-      </button>
-    );
-  }
-
-  if (ctaKind === "ready") {
-    return (
-      <div className="h-9 px-4 rounded-full border border-outline bg-surface-container-low text-xs font-semibold text-secondary flex items-center shrink-0">
-        Audio ready
-      </div>
-    );
-  }
-
-  if (ctaKind === "update-audio") {
-    return (
-      <button
-        type="button"
-        onClick={workbench.handleGenerateAudio}
-        disabled={isDisabled || !scriptCheck.canRender}
-        className="h-9 px-5 rounded-full bg-accent-amber text-on-primary text-xs font-bold shadow-[0_4px_14px_rgba(161,123,67,0.22)] hover:bg-accent-amber/90 active:scale-[0.97] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
-      >
-        <RefreshCw className="w-3.5 h-3.5" />
-        Update Audio
-      </button>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={workbench.handleGenerateAudio}
-      disabled={isDisabled || !scriptCheck.canRender}
-      title={!scriptCheck.canRender ? (workbench.scriptCheck.blockingSummary ?? undefined) : undefined}
-      className="h-9 px-5 rounded-full bg-accent-amber text-on-primary text-xs font-bold shadow-[0_4px_14px_rgba(161,123,67,0.22)] hover:bg-accent-amber/90 active:scale-[0.97] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
-    >
-      <Wand2 className="w-3.5 h-3.5" />
-      Generate Audio
-    </button>
-  );
-}
 
 export function StudioHeader({
   workbench,
   listTopic,
-  audioOutOfDate,
-  sourceOutOfDate,
-  onMaterialOpen,
-  onScriptFocus,
-  onVoiceNavigate,
-  onAudioFocus,
+  status,
+  onSourceOpen,
+  onConversationOpen,
 }: {
   workbench: UseScriptWorkbenchResult;
   listTopic?: string;
-  audioOutOfDate: boolean;
-  sourceOutOfDate: boolean;
-  onMaterialOpen: () => void;
-  onScriptFocus: () => void;
-  onVoiceNavigate: () => void;
-  onAudioFocus: () => void;
+  status: EpisodeProductStatus;
+  onSourceOpen: () => void;
+  onConversationOpen: () => void;
 }) {
-  const { project, generating, audioSrc, audioError } = workbench;
+  const project = workbench.project;
   const topic = listTopic?.trim() || project?.session.topic || "Untitled Episode";
-  const hasTranscript = Boolean(project?.transcript?.turns?.length);
-  const hasSource = Boolean(project?.source);
-  const hasScript = Boolean(project?.script && !project.script.deleted_at);
-  const hasAudio = Boolean(audioSrc);
-  const voiceConfigured = Boolean(
-    project?.artifact?.speaker_reference && Object.keys(project.artifact.speaker_reference).length > 0,
-  );
-
-  const steps = buildWorkflowSteps({
-    materialKind: project?.session.creation_mode === "markdown" ? "markdown" : "interview",
-    hasSource,
-    hasTranscript,
-    hasScript,
-    scriptDirty: workbench.isDirty,
-    hasAudio,
-    audioOutOfDate,
-    generating,
-    audioFailed: Boolean(audioError),
-    voiceConfigured,
-  });
-
-  const handleStepClick = (id: StepId) => {
-    if (id === "material") onMaterialOpen();
-    else if (id === "script") onScriptFocus();
-    else if (id === "voice") onVoiceNavigate();
-    else if (id === "audio") onAudioFocus();
-  };
-
   const sessionId = project?.session.session_id ?? "";
+  const source = project?.source;
+  const turnCount = project?.transcript?.turns.length ?? 0;
 
   return (
-    <header className="shrink-0 flex flex-wrap lg:flex-nowrap items-center gap-2 lg:gap-3 px-4 lg:px-5 py-3 border-b border-outline bg-surface-container-low/70 backdrop-blur-sm">
-      {/* Title — click or pencil to rename */}
-      <div className="min-w-0 shrink max-w-[240px]">
+    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-outline bg-surface-container-low/72 px-4 py-3 backdrop-blur-sm lg:flex-nowrap lg:px-5">
+      <button
+        type="button"
+        onClick={() => workbench.navigate("/episodes")}
+        aria-label="Back to Episodes"
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-secondary transition-colors hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
+      >
+        <ArrowLeft className="h-4 w-4" />
+      </button>
+
+      <div className="min-w-0 flex-1">
         {sessionId ? (
           <SessionTopicEditor
             sessionId={sessionId}
             topic={topic}
             density="header"
             disabled={workbench.isSessionDeleted || workbench.generating}
-            onRenamed={async (updated) => {
-              await workbench.handleRenameTopic(updated);
-            }}
+            onRenamed={workbench.handleRenameTopic}
           />
         ) : (
-          <h1 className="truncate text-[13px] font-semibold text-primary leading-tight" title={topic}>
-            {topic}
-          </h1>
+          <h1 className="truncate text-sm font-semibold text-primary">{topic}</h1>
         )}
-        <p className="text-[10px] text-secondary mt-0.5 truncate">{workbench.sessionStateLabel}</p>
+        <p className={`mt-0.5 text-[11px] font-medium ${episodeStatusTone(status.kind)}`} aria-live="polite">
+          {status.label}
+        </p>
       </div>
 
-      {/* Divider */}
-      <div className="hidden lg:block w-px h-6 bg-outline shrink-0" />
-
-      {/* Stepper */}
-      <div className="order-3 lg:order-none w-full lg:w-auto lg:flex-1 flex justify-start lg:justify-center min-w-0 overflow-x-auto mac-scrollbar">
-        <WorkflowStepper steps={steps} onStepClick={handleStepClick} />
+      <div className="flex items-center gap-2">
+        {source ? (
+          <button
+            type="button"
+            onClick={onSourceOpen}
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-outline bg-surface-container-low px-3 text-xs font-semibold text-secondary transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
+          >
+            <FileText className="h-4 w-4" />
+            <span className="hidden sm:inline">Source</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onConversationOpen}
+          className="inline-flex h-11 items-center gap-2 rounded-xl border border-outline bg-surface-container-low px-3 text-xs font-semibold text-secondary transition-colors hover:bg-surface-container-high hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
+        >
+          <MessageSquare className="h-4 w-4" />
+          <span className="hidden sm:inline">Conversation</span>
+          {turnCount ? (
+            <span className="rounded-full bg-primary/7 px-1.5 py-0.5 text-[9px] tabular-nums text-secondary">{turnCount}</span>
+          ) : null}
+        </button>
       </div>
-
-      <div className="hidden lg:block w-px h-6 bg-outline shrink-0" />
-
-      {/* Global CTA */}
-      <GlobalCTA
-        workbench={workbench}
-        audioOutOfDate={audioOutOfDate}
-        sourceOutOfDate={sourceOutOfDate}
-        onSourceReview={onMaterialOpen}
-      />
     </header>
   );
 }

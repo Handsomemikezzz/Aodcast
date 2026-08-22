@@ -30,5 +30,3 @@ export type CleanupPreview = {
   changes: CleanupChange[];
   hasChanges: boolean;
 };
-
-export type EditorDisplayMode = "script" | "plain" | "speech_plan";

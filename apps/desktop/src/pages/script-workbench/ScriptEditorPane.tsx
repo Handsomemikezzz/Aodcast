@@ -2,8 +2,7 @@ import { useState } from "react";
 import { CheckCircle2, ChevronDown, Loader2, RefreshCw, Sparkles, Trash2, Wand2, AlertCircle } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
-import type { EditorDisplayMode, ScriptIssue } from "./spokenScriptTypes";
-import { SpeechPlanPane } from "./SpeechPlanPane";
+import type { ScriptIssue } from "./spokenScriptTypes";
 
 function issueTone(level: ScriptIssue["level"]): string {
   if (level === "blocking") return "text-red-300";
@@ -66,106 +65,37 @@ function AutosaveChip({
   );
 }
 
-export function ScriptEditorPane({
-  workbench,
-  textareaRef: externalRef,
-}: {
-  workbench: UseScriptWorkbenchResult;
-  /** Optional external ref to focus the textarea programmatically */
-  textareaRef?: React.RefObject<HTMLTextAreaElement>;
-}) {
-  const [editorMode, setEditorMode] = useState<EditorDisplayMode>("script");
+export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchResult }) {
   const [issuesExpanded, setIssuesExpanded] = useState(false);
 
   const visibleIssues = workbench.scriptCheck.issues.filter((issue) => issue.level !== "info");
   const infoIssues = workbench.scriptCheck.issues.filter((issue) => issue.level === "info");
   const showIssuePanel = issuesExpanded && workbench.scriptCheck.issues.length > 0;
 
-  // Use external ref if provided, otherwise fall back to workbench ref
-  const ref = externalRef ?? workbench.textareaRef;
-
   return (
     <section className="flex min-w-0 min-h-0 flex-col gap-5 overflow-hidden h-full">
       <div className="rounded-[28px] border border-outline bg-surface-container backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-full">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline px-5 py-3 shrink-0">
-          <div className="inline-flex rounded-xl border border-outline bg-surface-container-low p-0.5">
-            <button
-              type="button"
-              onClick={() => setEditorMode("script")}
-              className={cn(
-                "min-h-11 rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
-                editorMode === "script"
-                  ? "bg-accent-amber/15 text-accent-amber shadow-[0_0_12px_rgba(161,123,67,0.08)]"
-                  : "text-secondary hover:text-primary",
-              )}
-            >
-              Script
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditorMode("plain")}
-              className={cn(
-                "min-h-11 rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
-                editorMode === "plain"
-                  ? "bg-primary/8 text-primary"
-                  : "text-secondary hover:text-primary",
-              )}
-            >
-              Plain text
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditorMode("speech_plan")}
-              className={cn(
-                "min-h-11 rounded-[10px] px-3.5 py-1.5 text-xs font-bold transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
-                editorMode === "speech_plan"
-                  ? "bg-accent-amber/15 text-accent-amber shadow-[0_0_12px_rgba(161,123,67,0.08)]"
-                  : "text-secondary hover:text-primary",
-              )}
-            >
-              Speech Plan
-            </button>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-secondary/80 font-medium select-none">
-            <Sparkles className="h-3.5 w-3.5 text-accent-amber" />
-            {editorMode === "speech_plan" ? "Read-only delivery and pause plan" : "Every visible character will be spoken by TTS"}
-          </div>
+        <div className="flex items-center gap-2 border-b border-outline px-5 py-3 shrink-0 text-xs text-secondary/80 font-medium select-none">
+          <Sparkles className="h-3.5 w-3.5 text-accent-amber" />
+          Edit the words your listeners will hear
         </div>
 
-        {editorMode === "speech_plan" ? (
-          <div className="min-h-[520px] flex-1 p-4">
-            <SpeechPlanPane
-              plan={workbench.project?.speech_plan ?? null}
-              manifest={workbench.project?.render_manifest ?? null}
-              activeRequestState={workbench.audioRequestState}
-              affectedSegmentIds={workbench.affectedSegmentIds}
-              disabled={workbench.isScriptDeleted || workbench.isSessionDeleted || workbench.isDirty || workbench.generating}
-              stale={workbench.speechPlanStale}
-              onRequestRegeneration={workbench.requestSegmentRegeneration}
-            />
-          </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4 mac-scrollbar">
-            <textarea
-              ref={ref}
-              value={workbench.script}
-              onChange={(event) => workbench.setScript(event.target.value)}
-              disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
-              spellCheck={false}
-              placeholder="Write the exact narration you want spoken in the final audio."
-              className={cn(
-                "min-h-[480px] w-full resize-none rounded-[20px] border border-outline bg-surface-container-low px-6 py-6 text-primary outline-none transition-all placeholder:text-secondary/30 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40",
-                editorMode === "script"
-                  ? "text-[16px] leading-[2.1rem] tracking-[0.01em]"
-                  : "text-[14px] leading-[2rem] font-mono",
-              )}
-            />
-          </div>
-        )}
+        <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4 mac-scrollbar">
+          <textarea
+            ref={workbench.textareaRef}
+            value={workbench.script}
+            onChange={(event) => workbench.setScript(event.target.value)}
+            disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
+            spellCheck={false}
+            placeholder="Write the narration for this episode."
+            aria-label="Episode script"
+            className="min-h-[480px] w-full resize-none rounded-[20px] border border-outline bg-surface-container-low px-6 py-6 text-[16px] leading-[2.1rem] tracking-[0.01em] text-primary outline-none transition-all placeholder:text-secondary/50 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40"
+          />
+        </div>
 
         {/* Status bar */}
-        {editorMode !== "speech_plan" ? <div className="border-t border-outline px-5 py-3 shrink-0">
+        <div className="border-t border-outline px-5 py-3 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-secondary/80 font-medium">
             {/* Left: checks + stats + autosave */}
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
@@ -267,7 +197,7 @@ export function ScriptEditorPane({
               ) : null}
             </div>
           ) : null}
-        </div> : null}
+        </div>
       </div>
     </section>
   );

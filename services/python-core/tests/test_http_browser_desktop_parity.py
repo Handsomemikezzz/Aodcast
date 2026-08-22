@@ -38,9 +38,10 @@ class HttpBrowserDesktopParityPrepTests(unittest.TestCase):
         app_text = read_text(APP_PATH)
         self.assertIn("lazy(", app_text)
         self.assertIn("<Suspense", app_text)
-        for page in ("ChatPage", "ScriptPage", "ModelsPage", "SettingsPage", "VoiceStudioPage"):
+        for page in ("ChatPage", "EpisodesPage", "NewEpisodePage", "ModelsPage", "SettingsPage", "VoiceStudioPage"):
             with self.subTest(page=page):
                 self.assertNotIn(f'import {{ {page} }} from "./pages/{page}"', app_text)
+        self.assertIn('import("./pages/studio/StudioPage")', app_text)
 
 
 if __name__ == "__main__":

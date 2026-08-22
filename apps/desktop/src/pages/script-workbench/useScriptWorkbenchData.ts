@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DesktopBridge } from "../../lib/desktopBridge";
 import { getErrorMessage } from "../../lib/requestState";
-import type { ModelStatus, SessionProject, SpeakerReference, TTSCapability, TTSProviderConfig } from "../../types";
-import { estimateWordCount, formatEstimateMinutes, formatSessionState } from "./workbenchUtils";
+import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
+import type {
+  ModelStatus,
+  SessionProject,
+  SpeakerReference,
+  TTSCapability,
+  TTSProviderConfig,
+  VoiceRenderSettings,
+  VoiceStylePreset,
+} from "../../types";
+import { estimateWordCount, formatEstimateMinutes } from "./workbenchUtils";
 
 type UseScriptWorkbenchDataArgs = {
   bridge: DesktopBridge;
@@ -17,20 +26,24 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const [capability, setCapability] = useState<TTSCapability | null>(null);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
   const [speakerReferences, setSpeakerReferences] = useState<SpeakerReference[]>([]);
+  const [voiceStyles, setVoiceStyles] = useState<VoiceStylePreset[]>([]);
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [voiceSelectionError, setVoiceSelectionError] = useState<string | null>(null);
   const [selectedEngine, setSelectedEngine] = useState<"local_mlx" | "cloud">("cloud");
+  const [selectedStyleId, setSelectedStyleId] = useState("natural");
+  const [deliverySpeed, setDeliverySpeed] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
   const reload = async () => {
-    const [loadedProject, loadedCapability, loadedConfig, loadedReferences, loadedModels] = await Promise.all([
+    const [loadedProject, loadedCapability, loadedConfig, loadedReferences, loadedModels, voiceCatalog] = await Promise.all([
       bridge.showScript(sessionId, scriptId),
       bridge.getLocalTTSCapability(),
       bridge.showTTSConfig(),
       bridge.listSpeakerReferences(),
       bridge.listModelsStatus(),
+      bridge.listVoicePresets(),
     ]);
     setProject(loadedProject);
     setScript(loadedProject.script?.final || loadedProject.script?.draft || "");
@@ -38,6 +51,7 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     setTtsConfig(loadedConfig);
     setSpeakerReferences(loadedReferences);
     setModels(loadedModels);
+    setVoiceStyles(voiceCatalog.styles);
   };
 
   const refreshWorkspace = async () => {
@@ -88,6 +102,13 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     });
   }, [models, project?.render_manifest?.render_id, ttsConfig?.model]);
 
+  const savedVoiceSettings = resolveProjectVoiceSettings(project, scriptId);
+
+  useEffect(() => {
+    setSelectedStyleId(savedVoiceSettings.style_id || "natural");
+    setDeliverySpeed(savedVoiceSettings.speed || 1);
+  }, [scriptId, savedVoiceSettings.speed, savedVoiceSettings.style_id]);
+
   const cloudProvider = useMemo(() => {
     const configuredProvider = ttsConfig?.provider?.trim();
     if (configuredProvider && configuredProvider !== "local_mlx") {
@@ -106,7 +127,15 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const scriptName = project?.script?.name || topic;
   const updatedAt = project?.script?.updated_at || project?.session.updated_at || "";
   const outputFilename = (project?.render_manifest?.output.audio_path || project?.artifact?.audio_path || "").split("/").pop() || "";
-  const sessionStateLabel = formatSessionState(project?.session.state);
+  const voiceSettings = useMemo<VoiceRenderSettings>(() => {
+    const selectedStyle = voiceStyles.find((style) => style.style_id === selectedStyleId);
+    return {
+      ...savedVoiceSettings,
+      style_id: selectedStyleId || "natural",
+      style_name: selectedStyle?.name || savedVoiceSettings.style_name || "Natural",
+      speed: deliverySpeed,
+    };
+  }, [deliverySpeed, savedVoiceSettings, selectedStyleId, voiceStyles]);
 
   const handleSelectSpeakerReference = async (referenceId: string) => {
     const selectedScriptId = project?.script?.script_id || scriptId;
@@ -129,12 +158,18 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     capability,
     ttsConfig,
     speakerReferences,
+    voiceStyles,
     models,
     selectedModelId,
     setSelectedModelId,
     voiceSelectionError,
     selectedEngine,
     setSelectedEngine,
+    selectedStyleId,
+    setSelectedStyleId,
+    deliverySpeed,
+    setDeliverySpeed,
+    voiceSettings,
     loading,
     loadingError,
     reload,
@@ -150,7 +185,6 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     wordCount,
     estMinutes,
     outputFilename,
-    sessionStateLabel,
     handleSelectSpeakerReference,
   };
 }

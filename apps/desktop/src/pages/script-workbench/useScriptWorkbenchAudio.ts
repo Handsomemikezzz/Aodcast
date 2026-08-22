@@ -12,9 +12,14 @@ import {
   withRequestStateFallback,
 } from "../../lib/requestState";
 import { revealInFinder } from "../../lib/shellOps";
-import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
 import { analyzeSpokenScript } from "./spokenScriptChecks";
-import type { AudioRenderResult, RequestState, RuntimeInfo, SessionProject } from "../../types";
+import type {
+  AudioRenderResult,
+  RequestState,
+  RuntimeInfo,
+  SessionProject,
+  VoiceRenderSettings,
+} from "../../types";
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_FAILURE_THRESHOLD = 3;
@@ -32,6 +37,7 @@ type UseScriptWorkbenchAudioArgs = {
   selectedEngine: "local_mlx" | "cloud";
   cloudProvider: string;
   selectedModelId: string;
+  voiceSettings: VoiceRenderSettings;
 };
 
 type UseScriptWorkbenchAudioResult = {
@@ -44,9 +50,16 @@ type UseScriptWorkbenchAudioResult = {
   isAudioPlaying: boolean;
   audioRef: RefObject<HTMLAudioElement>;
   audioSrc: string;
+  previewing: boolean;
+  previewError: string | null;
+  previewRequestState: RequestState | null;
+  previewSrc: string;
+  previewAudioRef: RefObject<HTMLAudioElement>;
   triggerRenderAudio: (options?: { scriptToRender?: string }) => Promise<void>;
+  triggerVoicePreview: (previewText: string) => Promise<void>;
   triggerRegenerateAudioWindow: (targetSegmentId: string) => Promise<void>;
   handleCancelAudio: () => Promise<void>;
+  handleCancelPreview: () => Promise<void>;
   handlePreviewAudio: () => Promise<void>;
   handleAudioLoadError: () => void;
   handleRevealInFinder: () => Promise<void>;
@@ -57,7 +70,7 @@ type UseScriptWorkbenchAudioResult = {
 
 function taskHandleFromResult(result: AudioRenderResult): LongTaskHandle {
   if (!result.task_id || !result.run_token) {
-    throw new Error("Audio task did not return a task id and run token.");
+    throw new Error("Audio rendering could not start. Please try again.");
   }
   return { taskId: result.task_id, runToken: result.run_token };
 }
@@ -81,12 +94,16 @@ export function useScriptWorkbenchAudio({
   selectedEngine,
   cloudProvider,
   selectedModelId,
+  voiceSettings,
 }: UseScriptWorkbenchAudioArgs): UseScriptWorkbenchAudioResult {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const previewAudioRef = useRef<HTMLAudioElement>(null);
   const pollHandleRef = useRef<number | null>(null);
   const pollingInFlightRef = useRef(false);
   const pollFailureCountRef = useRef(0);
   const activeTaskRef = useRef<LongTaskHandle | null>(null);
+  const previewTaskRef = useRef<LongTaskHandle | null>(null);
+  const previewRequestTokenRef = useRef(0);
   const taskId = `render_audio:${sessionId}:${scriptId}`;
 
   const [generating, setGenerating] = useState(false);
@@ -97,9 +114,31 @@ export function useScriptWorkbenchAudio({
   const [affectedSegmentIds, setAffectedSegmentIds] = useState<string[]>([]);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [exportingMp3, setExportingMp3] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
+  const [previewSrc, setPreviewSrc] = useState("");
 
   const audioPath = project?.render_manifest?.output.audio_path || project?.artifact?.audio_path || "";
   const audioSrc = useMemo(() => (audioPath ? resolveAudioFileUrl(audioPath) : ""), [audioPath]);
+  const speakerReference = project?.artifact?.script_artifacts?.[scriptId]?.speaker_reference
+    ?? project?.artifact?.speaker_reference;
+  const previewInputKey = JSON.stringify({
+    engine: selectedEngine,
+    model: selectedModelId,
+    reference: speakerReference?.speaker_reference_id ?? "",
+    style: voiceSettings.style_id,
+    speed: voiceSettings.speed,
+  });
+
+  useEffect(() => {
+    previewRequestTokenRef.current += 1;
+    previewTaskRef.current = null;
+    setPreviewing(false);
+    setPreviewError(null);
+    setPreviewRequestState(null);
+    setPreviewSrc("");
+  }, [previewInputKey]);
 
   const stopTaskPolling = () => {
     if (pollHandleRef.current !== null) {
@@ -259,21 +298,22 @@ export function useScriptWorkbenchAudio({
       }
     }
     let renderProject = project;
-    const speakerReference = renderProject?.artifact?.speaker_reference;
+    const renderSpeakerReference = renderProject?.artifact?.script_artifacts?.[scriptId]?.speaker_reference
+      ?? renderProject?.artifact?.speaker_reference;
     if (selectedEngine === "local_mlx" && !selectedModelId) {
       setAudioError("请先选择一个已安装的本地语音模型。");
       setAudioMessage(null);
       setAudioRequestState(null);
       return null;
     }
-    if (selectedEngine === "local_mlx" && !speakerReference?.speaker_reference_id) {
-      setAudioError("请先在 Voice Studio 为当前脚本选择一个音色参考，然后再生成完整音频。");
+    if (selectedEngine === "local_mlx" && !renderSpeakerReference?.speaker_reference_id) {
+      setAudioError("Choose a voice in this episode before generating audio.");
       setAudioMessage(null);
       setAudioRequestState(null);
       return null;
     }
-    if (speakerReference?.speaker_reference_id) {
-      renderProject = await bridge.selectSpeakerReference(sessionId, scriptId, speakerReference.speaker_reference_id);
+    if (renderSpeakerReference?.speaker_reference_id) {
+      renderProject = await bridge.selectSpeakerReference(sessionId, scriptId, renderSpeakerReference.speaker_reference_id);
       setProject(renderProject);
     }
     return renderProject;
@@ -291,7 +331,7 @@ export function useScriptWorkbenchAudio({
         providerOverride: selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider,
         modelId: selectedEngine === "local_mlx" ? selectedModelId : undefined,
         scriptId,
-        voiceSettings: resolveProjectVoiceSettings(renderProject),
+        voiceSettings,
         requireSpeakerReference: selectedEngine === "local_mlx",
       });
       beginTask(result);
@@ -305,6 +345,65 @@ export function useScriptWorkbenchAudio({
       setGenerating(false);
       activeTaskRef.current = null;
       stopTaskPolling();
+    }
+  };
+
+  const triggerVoicePreview = async (previewText: string) => {
+    const text = previewText.trim();
+    if (!text) {
+      setPreviewError("Add some script text before previewing.");
+      return;
+    }
+    if (!speakerReference?.speaker_reference_id) {
+      setPreviewError("Choose a voice before previewing this passage.");
+      return;
+    }
+    if (selectedEngine === "local_mlx" && !selectedModelId) {
+      setPreviewError("Choose an installed voice model before previewing.");
+      return;
+    }
+
+    const requestToken = previewRequestTokenRef.current + 1;
+    previewRequestTokenRef.current = requestToken;
+    const isCurrentRequest = () => previewRequestTokenRef.current === requestToken;
+
+    try {
+      setPreviewing(true);
+      setPreviewError(null);
+      setPreviewSrc("");
+      setPreviewRequestState(buildRequestState("render_voice_preview", "running", "Preparing preview..."));
+      const result = await bridge.renderVoicePreview(
+        { ...voiceSettings, preview_text: text },
+        {
+          sessionId,
+          scriptId,
+          providerOverride: selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider,
+          modelId: selectedEngine === "local_mlx" ? selectedModelId : undefined,
+          speakerReferenceId: speakerReference.speaker_reference_id,
+          onState: (state) => {
+            if (isCurrentRequest()) setPreviewRequestState(state);
+          },
+          onTaskStarted: (handle) => {
+            if (isCurrentRequest()) previewTaskRef.current = handle;
+          },
+        },
+      );
+      if (!isCurrentRequest()) return;
+      setPreviewRequestState(result.request_state ?? null);
+      setPreviewSrc(resolveAudioFileUrl(result.audio_path));
+      window.setTimeout(() => {
+        if (isCurrentRequest()) void previewAudioRef.current?.play().catch(() => undefined);
+      }, 100);
+    } catch (err: unknown) {
+      if (!isCurrentRequest()) return;
+      const message = getErrorMessage(err, "Failed to render this preview.");
+      setPreviewError(/cancel/i.test(message) ? null : message);
+      setPreviewRequestState(null);
+    } finally {
+      if (isCurrentRequest()) {
+        previewTaskRef.current = null;
+        setPreviewing(false);
+      }
     }
   };
 
@@ -350,6 +449,17 @@ export function useScriptWorkbenchAudio({
       );
     } catch (err: unknown) {
       setAudioError(getErrorMessage(err, "Failed to request cancellation."));
+    }
+  };
+
+  const handleCancelPreview = async () => {
+    const handle = previewTaskRef.current;
+    if (!handle) return;
+    try {
+      const state = await bridge.cancelTask(handle.taskId, handle.runToken);
+      if (state) setPreviewRequestState(state);
+    } catch (err: unknown) {
+      setPreviewError(getErrorMessage(err, "Failed to cancel the preview."));
     }
   };
 
@@ -421,9 +531,16 @@ export function useScriptWorkbenchAudio({
     isAudioPlaying,
     audioRef,
     audioSrc,
+    previewing,
+    previewError,
+    previewRequestState,
+    previewSrc,
+    previewAudioRef,
     triggerRenderAudio,
+    triggerVoicePreview,
     triggerRegenerateAudioWindow,
     handleCancelAudio,
+    handleCancelPreview,
     handlePreviewAudio,
     handleAudioLoadError,
     handleRevealInFinder,

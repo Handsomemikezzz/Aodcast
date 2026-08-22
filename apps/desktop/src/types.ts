@@ -542,17 +542,6 @@ export type ModelStorageStatus = {
   exists: boolean;
 };
 
-export type StudioProgressState =
-  | "needs_brief"
-  | "needs_interview"
-  | "ready_to_generate_script"
-  | "script_ready_needs_review"
-  | "script_blocked_for_tts"
-  | "needs_voice"
-  | "ready_to_generate_audio"
-  | "audio_ready"
-  | "script_changed_after_audio";
-
 export type MemoryType = "profile" | "experience" | "viewpoint" | "preference";
 
 export type MemoryOrigin = "auto" | "explicit";

@@ -31,10 +31,6 @@ export function estimateWordCount(text: string): number {
   return normalized.split(/\s+/).filter(Boolean).length;
 }
 
-export function formatSessionState(state: string | undefined): string {
-  return (state || "draft").replace(/_/g, " ").toUpperCase();
-}
-
 export function formatEstimateMinutes(wordCount: number): string {
   if (wordCount <= 0) return "~0m";
   return `~${Math.max(1, Math.round(wordCount / 150))}m`;

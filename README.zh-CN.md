@@ -20,9 +20,9 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - 支持导入本地 `.md` 文件或粘贴 Markdown，通过来源预览、播客化改写或忠实朗读、目标时长、可选来源讨论和版本化替换来创建播客。
 - 每个 episode 都可以生成多个独立脚本快照，无论它来自访谈还是 Markdown。
 - Podcast Editor 阶段负责生成干净、适合听觉理解的口播稿，通过句子长短、标点和段落节奏安排呼吸，不人为制造 filler 或舞台指令。
-- Speech Director 为精确的脚本 hash 生成版本化、provider-neutral 的 Speech Plan，包含稳定分段、结构化停顿、重音、发音和表达指导。
-- Script Workbench 支持编辑、保存和删除未使用快照；选择 Speaker Reference 与模型；检查 Speech Plan；生成分段资产；并对目标段及其相邻段做局部重生成。
-- Voice Studio 支持内置和用户创建的 Speaker Reference、最长 10 分钟的样本上传/录音、预览渲染和 reference 管理。
+- 内部 Speech Director 为精确的脚本 hash 生成版本化、provider-neutral 的 Speech Plan，包含稳定分段、结构化停顿、重音、发音和表达指导，但主 UI 不暴露这些工程概念。
+- 以脚本为核心的 Episode Workspace 支持编辑、上下文内 Voice 与 Delivery 选择、短片段试听、完整音频生成、非破坏式更新、播放和导出。
+- Voice Studio 支持内置和用户创建的 Speaker Reference、最长 10 分钟的样本上传/录音、资产试听和 reference 管理；已有 Voice 直接在 Episode 内选择。
 - 支持本地 MLX TTS 模型 Adapter，也支持 OpenAI-compatible 远程 provider。本地默认 VoxCPM2 8-bit，同时保留 MOSS-TTS Local v1.5 与 Qwen3-TTS Base 作为对比路径。
 - 通过 Render Manifest 装配 WAV，显式处理停顿、格式/响度一致性、渲染血缘和可复用分段音频资产。
 - Models 页面支持本地模型存储、下载、迁移、重置和默认本地语音模型选择。
@@ -90,7 +90,7 @@ cd ../..
 ./scripts/dev/run-dev-all.sh
 ```
 
-进入应用后，创建或打开一个 session，继续访谈，生成脚本，然后在 Script Workbench 中渲染音频。
+进入应用后，创建或打开一个 Episode，继续对话、获得 Draft，然后在 Episode Workspace 中试听或生成完整音频。
 
 ## Provider 配置
 
@@ -193,7 +193,7 @@ Local MLX 路径受 runtime 能力门控。选择它之前务必先检查：
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
 
-能力报告是 source of truth，会检查平台、Python 环境、MLX import、模型路径和 bootstrap 行为。每个 Adapter 还会把功能标记为 `native`、`approximated` 或 `unsupported`；Script Workbench 会展示克隆、情绪和显式停顿能力。
+能力报告是 source of truth，会检查平台、Python 环境、MLX import、模型路径和 bootstrap 行为。每个 Adapter 还会把功能标记为 `native`、`approximated` 或 `unsupported`；runtime 会使用这些声明，但主 Episode UI 不暴露 provider capability 术语。
 
 当前对比集合：
 
@@ -346,7 +346,7 @@ Aodcast 当前聚焦本地优先的单人播客创作：
 
 - 平台：macOS 桌面（Tauri）+ 本地 Python orchestration core
 - 输入：文本主题，或每个 episode 一个本地/粘贴的 Markdown 来源
-- 输出：单人播客脚本 + Script Workbench 渲染的最终音频
+- 输出：单人播客脚本 + Episode Workspace 渲染的最终音频
 - LLM：用户配置的 API provider
 - 说话者身份：每个脚本选择一个 provider-neutral Speaker Reference
 - TTS：本地 MLX 多模型 Adapter 为首发主路径，同时支持远程 API provider
@@ -376,14 +376,15 @@ Podcast Editor 保持脚本为纯口播正文，同时优化听觉结构、句�
 
 UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频渲染、音色预览、模型迁移/下载等）会持久化可轮询的 `request_state`，暴露进度，支持取消，并用 `run_token` 避免重入后的陈旧 UI 状态。完整渲染与上下文窗口重生成共享脚本级 task id `render_audio:<session_id>:<script_id>`；取消请求必须携带本次 run token，因此不同脚本不会互相冲突。有状态的其他长任务应串行执行，除非明确在测并发。
 
-### Voice Studio 与 Script Workbench
+### Episode Workspace 与 Voice Studio
 
-- Script Workbench 负责最终播客渲染、每次完整渲染的模型选择、生成音频管理和只读 Speech Plan 视图。
+- Episode Workspace 始终以脚本为主画布；Source 与 Conversation 位于上下文抽屉，Voice 与 Delivery 位于轻量 Inspector，Preview 与完整音频控制位于常驻底部 Dock。
 - 完整渲染会保存不可变的分段 WAV 与 Render Manifest，再装配 manifest 指向的最终 WAV；MP3 是该最终成片旁的按需导出。
-- 每个 Speech Plan 分段都可独立试听。局部重生成采用 `A | B | C | D | E` 中的 B/C/D 窗口：选择 C 会依次重新生成 B、C、D，每一段都以前一段的音频和文本作为条件，复用 A、E，并且只有整个替换窗口成功后才发布新的 manifest 与成片。
-- Voice Studio 负责可复用 Speaker Reference、预览与脚本 reference 选择。Speaker Reference 只定义“谁在说”，表达和模型设置保持分离。
+- Preview 优先使用选中文字，其次使用当前段落或稿件开头，生成一次性试听音频，不会替换当前 Episode 成片。
+- 修改脚本、Source、Voice 或 Delivery 后，旧音频仍可播放，并显示 `Audio needs update`，直到新成片成功发布。
+- Voice Studio 负责可复用 Speaker Reference 资产；Speaker Reference 只定义“谁在说”。Episode 内直接选择已有 reference，创建与克隆仍在 Voice Studio 完成。
 - 内置 reference 音频当前位于 `services/python-core/app/assets/speaker-references/`（纳入版本控制）。用户 metadata 位于 `.local-data/speaker-references/`；上传或录制的音频会规范化为不可变的 48 kHz、单声道、16-bit PCM WAV，并保存到 `.local-data/exports/_speaker_references/`。创建时必须提供匹配的参考文本；系统音频捕获尚不可用。
-- Script Workbench 可以为下一次完整渲染选择任意已下载且可用的本地模型；生成的 manifest 会冻结该模型和 Adapter pipeline，供后续 B/C/D 重生成沿用。
+- Episode Workspace 可在 Advanced 中为下一次完整生成选择已下载且可用的本地模型；生成的 manifest 会冻结该模型和 Adapter pipeline。Speech Plan 与上下文窗口重生成合同保留在内部，不进入主 UI。
 - Artifact 音频播放在 Web 与 Tauri 中都走 localhost HTTP 路由 `/api/v1/artifacts/audio`。
 - Reveal in Finder 等 Tauri-only 助手不在 HTTP `DesktopBridge` 接口中。
 

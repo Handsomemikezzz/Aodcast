@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
   FileText,
   Loader2,
   MessageSquare,
@@ -204,16 +205,16 @@ export function NewEpisodePage({
           <div className="grid gap-4 md:grid-cols-2">
             <ChoiceCard
               icon={MessageSquare}
-              title="Talk through an idea"
-              description="Use a guided conversation to discover your angle, examples, and takeaway before writing the script."
-              action="Start a conversation"
+              title="Start from an idea"
+              description="Talk with AI to shape your angle, examples, and takeaway before creating a draft."
+              action="Talk through the idea"
               onClick={() => navigate("/chat")}
             />
             <ChoiceCard
               icon={FileText}
-              title="Import Markdown"
-              description="Bring in a blog post or article, review the source, then adapt it into a natural solo podcast."
-              action="Import an article"
+              title="Start from content"
+              description="Import an article, note, or Markdown file and turn it into a natural spoken draft."
+              action="Import content"
               onClick={() => navigate("/episodes/new/markdown")}
               accent
             />
@@ -348,7 +349,15 @@ export function NewEpisodePage({
               </div>
             </section>
 
-            <section className="rounded-2xl border border-outline bg-surface-container-low p-4">
+            <details className="group rounded-2xl border border-outline bg-surface-container-low">
+              <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
+                <span>
+                  Customize
+                  <span className="ml-2 text-xs font-normal text-secondary">Optional</span>
+                </span>
+                <ChevronDown className="h-4 w-4 text-secondary transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="border-t border-outline p-4">
               <fieldset>
                 <legend className="text-sm font-semibold text-primary">How should Aodcast use it?</legend>
                 <div className="mt-3 grid gap-2">
@@ -416,7 +425,8 @@ export function NewEpisodePage({
                   className="mt-2 min-h-[88px] w-full resize-y rounded-xl border border-outline bg-background/45 px-3 py-2.5 text-sm leading-5 text-primary outline-none placeholder:text-secondary/60 focus:border-accent-amber/40"
                 />
               </div>
-            </section>
+              </div>
+            </details>
 
             <div className="sticky bottom-0 rounded-2xl border border-outline bg-background/90 p-3 shadow-xl backdrop-blur-xl">
               {!canContinue && rawMarkdown.trim() ? (
@@ -431,7 +441,7 @@ export function NewEpisodePage({
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl theme-accent-gradient px-4 text-sm font-semibold text-on-primary transition-opacity disabled:cursor-not-allowed disabled:opacity-35"
               >
                 {submitting === "generate" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {submitting === "generate" ? "Generating script…" : "Generate script"}
+                {submitting === "generate" ? "Creating draft…" : "Create draft"}
               </button>
               <button
                 type="button"

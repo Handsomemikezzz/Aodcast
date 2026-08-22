@@ -10,7 +10,7 @@ All notable changes to Aodcast will be documented in this file.
 - Interview-driven session flow, Podcast Editor rhythm guidance, script generation, script snapshots, and script editing.
 - Versioned, provider-neutral Speech Plans with stable segments, structured breaks, emphasis, pronunciation, delivery metadata, and exact script-hash binding.
 - Voice Studio for provider-neutral Speaker References, sample upload/recording up to 10 minutes, preview rendering, and reference management.
-- Script Workbench model and Speaker Reference selection, read-only Speech Plan inspection, per-segment playback, and B/C/D context-window regeneration.
+- Script-first Episode Workspace with contextual Sources/Conversation drawers, in-place Voice and Delivery controls, short passage preview, a persistent audio dock, and non-destructive audio freshness states.
 - Immutable segment WAV assets and Render Manifests that record script, plan, reference, model pipeline, regeneration, assembly, and final-output lineage.
 - VoxCPM2 and MOSS-TTS Local v1.5 MLX adapters alongside the Qwen3-TTS Base baseline, with explicit `native` / `approximated` / `unsupported` capability negotiation.
 - Generic `scripts/model-download/download_tts_model.py` model downloader, defaulting to VoxCPM2 8-bit.
@@ -20,6 +20,7 @@ All notable changes to Aodcast will be documented in this file.
 
 ### Changed
 
+- Desktop creation now flows from Episodes into one Episode Workspace instead of a Material/Script/Voice/Audio wizard. Voice Studio remains the asset library while existing voices are selected inside the episode.
 - Local MLX now defaults to `mlx-community/VoxCPM2-8bit`; MOSS-TTS Local v1.5 is the long-form/explicit-pause comparison and Qwen3-TTS Base remains the cloning baseline.
 - Local MLX dependencies now pin `mlx-audio[tts]` to `0.4.6`.
 - Final `podcast.wav` is assembled from the Render Manifest with explicit pauses, format normalization, one edge fade per segment, audible-sample RMS matching, and a sample-peak ceiling.
@@ -27,6 +28,7 @@ All notable changes to Aodcast will be documented in this file.
 
 ### Removed
 
+- Top-level Studio navigation, the four-step workflow stepper, raw session-state labels, and the primary Speech Plan viewer.
 - Legacy voice-profile, preview-lock, and voice-take bridge/API flows. Persistent speaker identity now uses Speaker References, while final audio comes from manifest-driven rendering.
 - Mock Testing TTS provider (`mock_remote`).
 
