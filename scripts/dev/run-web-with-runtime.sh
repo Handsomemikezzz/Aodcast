@@ -4,13 +4,39 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 runtime_pid=""
+download_helper_script="$repo_root/scripts/model-download/download_tts_model.py"
+
+reap_model_download_helpers() {
+  local pids
+  pids="$(pgrep -f "$download_helper_script" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true)"
+  [[ -z "$pids" ]] && return
+  kill ${=pids} >/dev/null 2>&1 || true
+  for _ in {1..30}; do
+    pids="$(pgrep -f "$download_helper_script" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true)"
+    [[ -z "$pids" ]] && return
+    sleep 0.1
+  done
+  pids="$(pgrep -f "$download_helper_script" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true)"
+  if [[ -n "$pids" ]]; then
+    kill -9 ${=pids} >/dev/null 2>&1 || true
+  fi
+}
 
 cleanup() {
   if [[ -n "${runtime_pid}" ]]; then
     if kill -0 "${runtime_pid}" >/dev/null 2>&1; then
+      # SIGTERM triggers python-core stop handler to reclaim download children.
       kill "${runtime_pid}" >/dev/null 2>&1 || true
+      for _ in {1..30}; do
+        kill -0 "${runtime_pid}" >/dev/null 2>&1 || break
+        sleep 0.1
+      done
+      if kill -0 "${runtime_pid}" >/dev/null 2>&1; then
+        kill -9 "${runtime_pid}" >/dev/null 2>&1 || true
+      fi
     fi
   fi
+  reap_model_download_helpers
 }
 
 trap cleanup EXIT INT TERM

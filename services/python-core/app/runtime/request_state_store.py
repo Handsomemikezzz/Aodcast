@@ -5,6 +5,7 @@ import json
 import re
 import tempfile
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -196,6 +197,59 @@ class RequestStateStore:
                 self._cancel_path(task_id).unlink(missing_ok=True)
                 removed += 1
         return removed
+
+    def fail_orphaned_active_states(
+        self,
+        *,
+        prefix: str,
+        message: str,
+        build_request_state: Callable[..., dict[str, object]],
+    ) -> int:
+        """Mark running/cancelling tasks as failed after a runtime restart with no live worker."""
+
+        active_phases = {"running", "cancelling"}
+        failed = 0
+        for path in list(self._dir.glob("*.json")):
+            payload = self._load_payload(path)
+            if payload is None:
+                continue
+            task_id = str(payload.get("task_id") or "")
+            if not task_id.startswith(prefix):
+                continue
+            request_state = payload.get("request_state")
+            if not isinstance(request_state, dict):
+                continue
+            phase = str(request_state.get("phase") or "").strip().lower()
+            if phase not in active_phases:
+                continue
+            operation = str(request_state.get("operation") or prefix.rstrip(":") or "task")
+            progress = request_state.get("progress_percent")
+            progress_percent = float(progress) if isinstance(progress, (int, float)) else 0.0
+            with self._task_guard(task_id):
+                current = self._load_request_state(self._path(task_id))
+                if not isinstance(current, dict):
+                    continue
+                current_phase = str(current.get("phase") or "").strip().lower()
+                if current_phase not in active_phases:
+                    continue
+                failed_state = build_request_state(
+                    operation=operation,
+                    phase="failed",
+                    message=message,
+                    progress_percent=progress_percent,
+                    run_token=str(current.get("run_token") or "") or None,
+                )
+                self._atomic_write_json(
+                    self._path(task_id),
+                    {
+                        "task_id": task_id,
+                        "request_state": failed_state,
+                        "updated_at": _now_iso(),
+                    },
+                )
+                self._cancel_path(task_id).unlink(missing_ok=True)
+                failed += 1
+        return failed
 
     def _path(self, task_id: str) -> Path:
         return self._dir / f"{_safe_task_file_name(task_id)}.json"

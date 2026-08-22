@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
-import json
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -195,6 +196,59 @@ def _safe_tree_size(path: Path) -> int:
     return total
 
 
+def find_external_download_pids(repo_id: str, *, exclude_pids: set[int] | None = None) -> list[int]:
+    """Return PIDs of download_tts_model.py processes for repo_id (e.g. orphans after restart)."""
+
+    excluded = exclude_pids or set()
+    marker = f"--repo-id {repo_id}"
+    try:
+        output = subprocess.check_output(["ps", "-ax", "-o", "pid=,command="], text=True)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found: list[int] = []
+    for line in output.splitlines():
+        text = line.strip()
+        if not text or "download_tts_model.py" not in text or marker not in text:
+            continue
+        pid_text, _, _command = text.partition(" ")
+        try:
+            pid = int(pid_text)
+        except ValueError:
+            continue
+        if pid in excluded or pid == os.getpid():
+            continue
+        found.append(pid)
+    return found
+
+
+def stop_download_process(proc: subprocess.Popen[str], *, force: bool = False) -> None:
+    """Stop a download child and its process group so runtime restarts leave no orphans."""
+
+    if proc.poll() is not None:
+        return
+    sig = signal.SIGKILL if force else signal.SIGTERM
+    pid = proc.pid
+    if pid is None:
+        return
+    try:
+        # start_new_session=True puts the child in its own group; kill the group.
+        os.killpg(pid, sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            if force:
+                proc.kill()
+            else:
+                proc.terminate()
+        except ProcessLookupError:
+            return
+    try:
+        proc.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        if force:
+            return
+        stop_download_process(proc, force=True)
+
+
 def model_storage_status(config_store: ConfigStore, cwd: Path) -> dict[str, object]:
     default_base = _base_default_download_base(cwd).expanduser().resolve()
     custom_base = _load_custom_model_storage_base(config_store)
@@ -295,6 +349,8 @@ def download_voice_model(
     config_store: ConfigStore | None = None,
     on_output_line: Callable[[str], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
+    on_process_finished: Callable[[subprocess.Popen[str]], None] | None = None,
 ) -> dict[str, object]:
     entry = _BY_NAME.get(model_name)
     if entry is None or entry.category != "voice" or not entry.hf_repo_id:
@@ -305,6 +361,12 @@ def download_voice_model(
     base = _default_download_base(cwd, config_store)
     out_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
     base.mkdir(parents=True, exist_ok=True)
+    external_pids = find_external_download_pids(entry.hf_repo_id)
+    if external_pids:
+        raise RuntimeError(
+            f"A download for {entry.hf_repo_id} is already running (pid {external_pids[0]}). "
+            "Wait for it to finish, then refresh Models — do not start a second download."
+        )
     cmd = [
         sys.executable,
         str(script),
@@ -313,6 +375,7 @@ def download_voice_model(
         "--base-dir",
         str(base),
     ]
+    # Own process group so cancel/shutdown can kill the whole download tree.
     proc = subprocess.Popen(
         cmd,
         cwd=str(cwd),
@@ -321,7 +384,10 @@ def download_voice_model(
         text=True,
         bufsize=1,
         env=_download_subprocess_env(),
+        start_new_session=True,
     )
+    if on_process_started is not None:
+        on_process_started(proc)
     tail_lines: deque[str] = deque(maxlen=40)
     stream = proc.stdout
     reader_done = threading.Event()
@@ -353,50 +419,46 @@ def download_voice_model(
     cancelled = False
     stalled = False
     last_size_check_at = 0.0
-    while proc.poll() is None:
-        if should_cancel is not None and should_cancel():
-            cancelled = True
-            proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-            break
-        now = time.monotonic()
-        if now - last_size_check_at >= 2.0:
-            current_size = _safe_tree_size(out_dir)
-            if current_size != last_observed_size:
-                last_observed_size = current_size
-                with activity_lock:
-                    last_activity_at = now
-            last_size_check_at = now
-        with activity_lock:
-            idle_seconds = now - last_activity_at
-        if DOWNLOAD_STALL_TIMEOUT_SECONDS > 0 and idle_seconds >= DOWNLOAD_STALL_TIMEOUT_SECONDS:
-            stalled = True
-            proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-            break
-        time.sleep(0.2)
+    try:
+        while proc.poll() is None:
+            if should_cancel is not None and should_cancel():
+                cancelled = True
+                stop_download_process(proc)
+                break
+            now = time.monotonic()
+            if now - last_size_check_at >= 2.0:
+                current_size = _safe_tree_size(out_dir)
+                if current_size != last_observed_size:
+                    last_observed_size = current_size
+                    with activity_lock:
+                        last_activity_at = now
+                last_size_check_at = now
+            with activity_lock:
+                idle_seconds = now - last_activity_at
+            if DOWNLOAD_STALL_TIMEOUT_SECONDS > 0 and idle_seconds >= DOWNLOAD_STALL_TIMEOUT_SECONDS:
+                stalled = True
+                stop_download_process(proc)
+                break
+            time.sleep(0.2)
 
-    if proc.poll() is None:
-        proc.wait()
-    reader_done.wait(timeout=2.0)
-    reader_thread.join(timeout=2.0)
-    if cancelled:
-        raise TaskCancellationRequested(f"Download cancelled for {model_name}.")
-    if stalled:
-        raise RuntimeError(
-            f"Download stalled for {model_name}: no output or file growth for "
-            f"{int(DOWNLOAD_STALL_TIMEOUT_SECONDS)} seconds. Please retry the download."
-        )
-    if proc.returncode != 0:
-        msg = "\n".join(tail_lines).strip() or "download failed"
-        raise RuntimeError(msg)
-    return {"message": "ok", "path": str(out_dir.resolve())}
+        if proc.poll() is None:
+            proc.wait()
+        reader_done.wait(timeout=2.0)
+        reader_thread.join(timeout=2.0)
+        if cancelled:
+            raise TaskCancellationRequested(f"Download cancelled for {model_name}.")
+        if stalled:
+            raise RuntimeError(
+                f"Download stalled for {model_name}: no output or file growth for "
+                f"{int(DOWNLOAD_STALL_TIMEOUT_SECONDS)} seconds. Please retry the download."
+            )
+        if proc.returncode != 0:
+            msg = "\n".join(tail_lines).strip() or "download failed"
+            raise RuntimeError(msg)
+        return {"message": "ok", "path": str(out_dir.resolve())}
+    finally:
+        if on_process_finished is not None:
+            on_process_finished(proc)
 
 
 def delete_voice_model(cwd: Path, model_name: str, config_store: ConfigStore | None = None) -> dict[str, object]:

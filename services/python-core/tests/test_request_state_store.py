@@ -209,6 +209,42 @@ class RequestStateStoreTests(unittest.TestCase):
         self.assertIsNotNone(self.store.load(running_preview))
         self.assertIsNotNone(self.store.load(other_task))
 
+    def test_fail_orphaned_active_states_marks_running_downloads_failed(self) -> None:
+        from app.api.bridge_envelope import build_request_state
+
+        task_id = "download_model:voxcpm2-8bit"
+        self.store.save(
+            task_id,
+            build_request_state(
+                operation="download_model",
+                phase="running",
+                progress_percent=65.0,
+                message="Downloading...",
+            ),
+        )
+        self.store.save(
+            "download_model:done",
+            build_request_state(
+                operation="download_model",
+                phase="succeeded",
+                progress_percent=100.0,
+                message="ready",
+            ),
+        )
+
+        failed = self.store.fail_orphaned_active_states(
+            prefix="download_model:",
+            message="Download interrupted by a runtime restart. Retry to resume.",
+            build_request_state=build_request_state,
+        )
+
+        self.assertEqual(failed, 1)
+        state = self.store.load(task_id)
+        assert state is not None
+        self.assertEqual(state["phase"], "failed")
+        self.assertIn("runtime restart", str(state["message"]))
+        self.assertEqual(self.store.load("download_model:done")["phase"], "succeeded")
+
 
 if __name__ == "__main__":
     unittest.main()

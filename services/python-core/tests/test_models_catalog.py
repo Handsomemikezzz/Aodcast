@@ -54,10 +54,12 @@ class ModelsCatalogTests(unittest.TestCase):
             script.parent.mkdir(parents=True)
             script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
             captured_env: dict[str, str] = {}
+            captured_kwargs: dict[str, object] = {}
 
             class FakeProcess:
                 stdout = io.StringIO("")
                 returncode = 0
+                pid = 4242
 
                 def poll(self) -> int:
                     return 0
@@ -67,14 +69,29 @@ class ModelsCatalogTests(unittest.TestCase):
 
             def fake_popen(*args: object, **kwargs: object) -> FakeProcess:
                 captured_env.update(kwargs.get("env") or {})
+                captured_kwargs.update(kwargs)
                 return FakeProcess()
 
-            with patch("app.models_catalog.subprocess.Popen", side_effect=fake_popen):
+            with (
+                patch("app.models_catalog.subprocess.Popen", side_effect=fake_popen),
+                patch("app.models_catalog.find_external_download_pids", return_value=[]),
+            ):
                 result = download_voice_model(cwd, "qwen-tts-0.6B")
 
             self.assertEqual(result["message"], "ok")
             self.assertEqual(captured_env["HF_HUB_DISABLE_XET"], "1")
             self.assertEqual(captured_env["PYTHONUNBUFFERED"], "1")
+            self.assertTrue(captured_kwargs.get("start_new_session"))
+
+    def test_download_voice_model_refuses_when_external_download_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            script = cwd / "scripts" / "model-download" / "download_tts_model.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+            with patch("app.models_catalog.find_external_download_pids", return_value=[81821]):
+                with self.assertRaisesRegex(RuntimeError, "already running"):
+                    download_voice_model(cwd, "voxcpm2-8bit")
 
     @patch.dict("os.environ", {"AODCAST_HF_MODEL_BASE": "", "HF_HUB_CACHE": ""}, clear=False)
     def test_storage_status_reports_custom_base(self) -> None:

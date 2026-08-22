@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+import subprocess
 import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from email import policy
 from email.parser import BytesParser
@@ -51,6 +54,7 @@ from app.models_catalog import (
     model_storage_status,
     reset_model_storage,
     resolve_voice_model_id,
+    stop_download_process,
     voice_model_is_downloaded,
 )
 from app.orchestration.audio_rendering import (
@@ -195,6 +199,7 @@ class RuntimeContext:
     allowed_origins: frozenset[str] = field(default_factory=frozenset)
     task_lock: threading.Lock = field(default_factory=threading.Lock)
     active_tasks: dict[str, threading.Thread] = field(default_factory=dict)
+    active_download_processes: dict[str, subprocess.Popen[str]] = field(default_factory=dict)
     bootstrap_nonce_used: bool = False
     speaker_reference_store: SpeakerReferenceStore | None = None
     memory_service: MemoryService | None = None
@@ -205,6 +210,51 @@ class RuntimeContext:
             "started_at_unix": self.runtime_started_at,
             "build_token": self.runtime_build_token,
         }
+
+    def register_download_process(self, task_id: str, proc: subprocess.Popen[str]) -> None:
+        with self.task_lock:
+            self.active_download_processes[task_id] = proc
+
+    def unregister_download_process(self, task_id: str, proc: subprocess.Popen[str]) -> None:
+        with self.task_lock:
+            current = self.active_download_processes.get(task_id)
+            if current is proc:
+                self.active_download_processes.pop(task_id, None)
+
+    def shutdown_download_processes(self, *, mark_failed: bool = True) -> None:
+        """Kill tracked download process groups and clear sticky running markers.
+
+        Download children use ``start_new_session=True``, so killing only the
+        runtime PID leaves orphans. Runtime stop paths (SIGTERM/SIGINT/finally)
+        must call this so ownership stays with the HTTP process.
+        """
+
+        with self.task_lock:
+            procs = list(self.active_download_processes.items())
+            self.active_download_processes.clear()
+        for task_id, proc in procs:
+            stop_download_process(proc)
+            if not mark_failed:
+                continue
+            existing = self.request_state_store.load(task_id)
+            phase = ""
+            if isinstance(existing, dict):
+                phase = str(existing.get("phase") or "").strip().lower()
+            if phase not in {"running", "cancelling"}:
+                continue
+            self.request_state_store.save(
+                task_id,
+                build_request_state(
+                    operation=str(existing.get("operation") or "download_model"),
+                    phase="failed",
+                    progress_percent=progress_from_request_state(existing, default=5.0),
+                    message=(
+                        "Download interrupted because the runtime stopped. "
+                        "Retry the download to resume."
+                    ),
+                    run_token=str(existing.get("run_token") or "") or None,
+                ),
+            )
 
     def get_allowed_origin(self, origin: str | None) -> str | None:
         if not origin:
@@ -681,6 +731,23 @@ class RuntimeContext:
                     progress_percent=progress_from_request_state(existing_state, default=5.0),
                 )
 
+            # Runtime restart can leave a running marker with no live worker.
+            if isinstance(existing_state, dict):
+                stale_phase = str(existing_state.get("phase") or "").strip().lower()
+                if stale_phase in {"running", "cancelling"}:
+                    self.request_state_store.save(
+                        task_id,
+                        build_request_state(
+                            operation="download_model",
+                            phase="failed",
+                            progress_percent=progress_from_request_state(existing_state, default=5.0),
+                            message=(
+                                f"Previous download for {model_name} was interrupted by a runtime restart. "
+                                "Retry the download to resume."
+                            ),
+                        ),
+                    )
+
             progress = LongTaskStateManager(
                 request_state_store=self.request_state_store,
                 task_id=task_id,
@@ -720,6 +787,8 @@ class RuntimeContext:
                         config_store=self.config_store,
                         on_output_line=on_download_output_line,
                         should_cancel=progress.should_cancel,
+                        on_process_started=lambda proc: self.register_download_process(task_id, proc),
+                        on_process_finished=lambda proc: self.unregister_download_process(task_id, proc),
                     )
                 except TaskCancellationRequested as exc:
                     progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
@@ -1824,6 +1893,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         if self.command == "POST" and path == "/admin/shutdown":
             self._send_json(HTTPStatus.OK, {"ok": True, "status": "shutting_down"}, origin=origin)
+            self.context.shutdown_download_processes()
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
             
@@ -2563,6 +2633,40 @@ def _path_is_within(path: Path, parent: Path) -> bool:
         return False
 
 
+def install_runtime_stop_handlers(
+    *,
+    on_stop: Callable[[], None],
+) -> Callable[[], None]:
+    """Install SIGTERM/SIGINT handlers so hard kills still reclaim download children.
+
+    Default SIGTERM exits without running ``finally``, which is the root cause of
+    orphaned ``download_tts_model.py`` processes after ``run-dev-all`` restarts.
+    """
+
+    previous_term = signal.getsignal(signal.SIGTERM)
+    previous_int = signal.getsignal(signal.SIGINT)
+    stopping = threading.Event()
+
+    def _handle_stop(_signum: int, _frame: object | None) -> None:
+        if stopping.is_set():
+            return
+        stopping.set()
+        try:
+            on_stop()
+        except Exception:
+            # Never raise from a signal handler; process exit still proceeds.
+            pass
+
+    signal.signal(signal.SIGTERM, _handle_stop)
+    signal.signal(signal.SIGINT, _handle_stop)
+
+    def restore() -> None:
+        signal.signal(signal.SIGTERM, previous_term)
+        signal.signal(signal.SIGINT, previous_int)
+
+    return restore
+
+
 def serve_http(
     *,
     cwd: Path,
@@ -2592,6 +2696,11 @@ def serve_http(
     speaker_reference_store.bootstrap()
     request_state_store.bootstrap()
     memory_service.bootstrap()
+    request_state_store.fail_orphaned_active_states(
+        prefix="download_model:",
+        message="Download interrupted by a runtime restart. Retry to resume.",
+        build_request_state=build_request_state,
+    )
 
     context = RuntimeContext(
         cwd=cwd,
@@ -2614,6 +2723,20 @@ def serve_http(
     )
 
     server = RuntimeHttpServer((host, port), context)
+    stop_lock = threading.Lock()
+    stop_started = False
+
+    def request_stop() -> None:
+        nonlocal stop_started
+        with stop_lock:
+            if stop_started:
+                return
+            stop_started = True
+        # Reclaim download process groups before the runtime PID disappears.
+        context.shutdown_download_processes()
+        threading.Thread(target=server.shutdown, daemon=True, name="runtime-stop").start()
+
+    restore_signals = install_runtime_stop_handlers(on_stop=request_stop)
     print(
         json.dumps(
             {
@@ -2629,8 +2752,10 @@ def serve_http(
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:  # pragma: no cover - manual stop path
-        pass
+        request_stop()
     finally:
+        restore_signals()
+        context.shutdown_download_processes()
         memory_service.shutdown()
         server.server_close()
     return 0
