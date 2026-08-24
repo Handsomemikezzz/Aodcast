@@ -392,6 +392,8 @@ UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频�
 
 Local MLX TTS 运行在持久 worker 子进程中；模型在 worker 生命周期内只加载一次，不要把一次性 CLI 生成当作生产路径。VoxCPM2、MOSS 与 Qwen 请求分别经过 family-specific Adapter，provider-neutral orchestration 不持久化任何模型标记。装配阶段把所有分段解码为统一 WAV 格式，每段只做一次边缘淡化；插入计划静音之前，仅根据可听样本匹配 RMS 电平，并对 master 施加 sample-peak 上限，最后写出 `podcast.wav`。以 `./scripts/dev/run-python-core.sh` 与 `--show-local-tts-capability` 为能力门控依据（部分环境即使 import 看似正常，原生 MLX bootstrap 仍可能失败）。应用内 Hugging Face 下载禁用 Xet（`HF_HUB_DISABLE_XET=1`）。
 
+选中 Speaker Reference 后，每个语音分段都会持续把这份不可变引用作为音色身份锚点。VoxCPM2 还可以把上一段音频及其准确文本作为独立的连续性上下文；无法同时组合身份与连续性的模型会保留选中的 Speaker Reference，不再递归地把生成分段当成新的音色来源。
+
 ### 开发运维
 
 - `./scripts/dev/run-dev-all.sh` 默认重启 `8765` 上的 Python runtime；只有需要进程连续性时才用 `--reuse-runtime`。

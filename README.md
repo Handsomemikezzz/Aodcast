@@ -392,6 +392,8 @@ UI calls go through the desktop HTTP bridge to the local Python runtime. Long op
 
 Local MLX TTS runs in a persistent worker subprocess. The model loads once per worker lifetime; do not treat one-off CLI generation as the production path. VoxCPM2, MOSS, and Qwen requests pass through family-specific adapters, while the provider-neutral orchestration persists no model markup. The assembly stage decodes every segment to a common WAV format, applies one edge fade per segment, matches RMS level from audible samples before inserting planned silence, enforces a sample-peak ceiling, and writes `podcast.wav`. Use `./scripts/dev/run-python-core.sh` and `--show-local-tts-capability` as the capability source of truth (some environments fail at native MLX bootstrap even when imports look fine). App-managed Hugging Face downloads disable Xet (`HF_HUB_DISABLE_XET=1`).
 
+When a Speaker Reference is selected, every speech segment keeps that immutable reference as its identity anchor. VoxCPM2 can additionally receive the preceding segment's audio and exact text as separate continuation context. Models that cannot combine identity and continuity preserve the selected Speaker Reference instead of recursively cloning generated segment audio.
+
 ### Development operators
 
 - `./scripts/dev/run-dev-all.sh` defaults to restarting the Python runtime on port `8765`; use `--reuse-runtime` only when process continuity is intentional.

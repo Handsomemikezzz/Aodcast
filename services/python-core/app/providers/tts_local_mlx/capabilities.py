@@ -49,6 +49,7 @@ class ModelCapabilities:
     audio_context: SupportLevel
     voice_conversion: SupportLevel
     clone_with_style: SupportLevel
+    reference_with_context: SupportLevel
     speed_control: SupportLevel
     continuation: SupportLevel
     streaming: SupportLevel
@@ -143,6 +144,7 @@ def capabilities_for_model(spec: ModelSpec) -> ModelCapabilities:
             audio_context=SupportLevel.NATIVE,
             voice_conversion=SupportLevel.UNSUPPORTED,
             clone_with_style=SupportLevel.UNSUPPORTED,
+            reference_with_context=SupportLevel.UNSUPPORTED,
             continuation=SupportLevel.UNSUPPORTED,
             streaming=SupportLevel.NATIVE,
             requires_reference_text=False,
@@ -166,6 +168,7 @@ def capabilities_for_model(spec: ModelSpec) -> ModelCapabilities:
             audio_context=SupportLevel.UNSUPPORTED,
             voice_conversion=SupportLevel.UNSUPPORTED,
             clone_with_style=SupportLevel.UNSUPPORTED,
+            reference_with_context=SupportLevel.UNSUPPORTED,
             continuation=SupportLevel.UNSUPPORTED,
             streaming=SupportLevel.NATIVE,
             requires_reference_text=False,
@@ -186,6 +189,7 @@ def capabilities_for_model(spec: ModelSpec) -> ModelCapabilities:
             audio_context=SupportLevel.NATIVE,
             voice_conversion=SupportLevel.UNSUPPORTED,
             clone_with_style=SupportLevel.NATIVE,
+            reference_with_context=SupportLevel.NATIVE,
             continuation=SupportLevel.NATIVE,
             streaming=SupportLevel.UNSUPPORTED,
             requires_reference_text=False,
@@ -206,6 +210,7 @@ def capabilities_for_model(spec: ModelSpec) -> ModelCapabilities:
             audio_context=SupportLevel.NATIVE,
             voice_conversion=SupportLevel.UNSUPPORTED,
             clone_with_style=SupportLevel.UNSUPPORTED,
+            reference_with_context=SupportLevel.UNSUPPORTED,
             continuation=SupportLevel.NATIVE,
             streaming=(
                 SupportLevel.NATIVE
@@ -236,17 +241,40 @@ def validate_request_capabilities(
     style_prompt: str,
     reference_audio_path: str,
     reference_text: str,
+    context_audio_path: str,
+    context_text: str,
     breaks: tuple[SpeechBreak, ...],
     clone_mode: str,
 ) -> CloneMode:
     capabilities = capabilities_for_model(spec)
     mode = normalize_clone_mode(clone_mode)
     has_reference = bool(reference_audio_path.strip())
+    has_context = bool(context_audio_path.strip())
     has_style = bool(style_prompt.strip())
 
     if reference_text.strip() and not has_reference:
         raise UnsupportedTTSRequestError(
             "reference_text requires reference_audio_path."
+        )
+    if context_text.strip() and not has_context:
+        raise UnsupportedTTSRequestError(
+            "context_text requires context_audio_path."
+        )
+    if has_context and not context_text.strip():
+        raise UnsupportedTTSRequestError(
+            "context_audio_path requires the exact context transcript."
+        )
+    if has_context and capabilities.audio_context == SupportLevel.UNSUPPORTED:
+        raise UnsupportedTTSRequestError(
+            f"{spec.family.value}/{spec.variant.value} does not support audio context."
+        )
+    if (
+        has_reference
+        and has_context
+        and capabilities.reference_with_context == SupportLevel.UNSUPPORTED
+    ):
+        raise UnsupportedTTSRequestError(
+            f"{spec.family.value}/{spec.variant.value} cannot combine a speaker reference with audio context."
         )
     if not math.isclose(float(speed), 1.0, rel_tol=0.0, abs_tol=1e-6):
         if capabilities.speed_control == SupportLevel.UNSUPPORTED:
@@ -270,13 +298,15 @@ def validate_request_capabilities(
             f"{spec.family.value}/{spec.variant.value} does not support planned pauses."
         )
 
-    if mode == CloneMode.NONE and has_reference:
+    has_conditioning = has_reference or has_context
+    conditioning_text = reference_text.strip() if has_reference else context_text.strip()
+    if mode == CloneMode.NONE and has_conditioning:
         raise UnsupportedTTSRequestError(
-            "clone_mode 'none' cannot be used with reference audio."
+            "clone_mode 'none' cannot be used with reference or context audio."
         )
-    if mode not in {CloneMode.AUTO, CloneMode.NONE} and not has_reference:
+    if mode not in {CloneMode.AUTO, CloneMode.NONE} and not has_conditioning:
         raise UnsupportedTTSRequestError(
-            f"clone_mode '{mode.value}' requires reference audio."
+            f"clone_mode '{mode.value}' requires reference or context audio."
         )
 
     if spec.variant == ModelVariant.QWEN_BASE:
@@ -289,7 +319,7 @@ def validate_request_capabilities(
             raise UnsupportedTTSRequestError(
                 f"Qwen3-TTS Base does not support clone_mode '{mode.value}'."
             )
-        if mode == CloneMode.ULTIMATE and not reference_text.strip():
+        if mode == CloneMode.ULTIMATE and not conditioning_text:
             raise UnsupportedTTSRequestError(
                 "Qwen3-TTS ultimate cloning requires the exact reference transcript."
             )
@@ -324,7 +354,7 @@ def validate_request_capabilities(
                 f"VoxCPM2 does not support clone_mode '{mode.value}'."
             )
         if mode in {CloneMode.ULTIMATE, CloneMode.CONTINUATION}:
-            if not reference_text.strip():
+            if not conditioning_text:
                 raise UnsupportedTTSRequestError(
                     f"VoxCPM2 {mode.value} cloning requires the exact reference transcript."
                 )
@@ -346,7 +376,7 @@ def validate_request_capabilities(
             raise UnsupportedTTSRequestError(
                 f"MOSS-TTS does not support clone_mode '{mode.value}'."
             )
-        if mode == CloneMode.CONTINUATION and not reference_text.strip():
+        if mode == CloneMode.CONTINUATION and not conditioning_text:
             raise UnsupportedTTSRequestError(
                 "MOSS-TTS continuation requires the exact reference transcript."
             )

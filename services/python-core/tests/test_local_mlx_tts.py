@@ -175,7 +175,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             )
 
         self.assertEqual(response.provider_name, "local_mlx")
-        self.assertEqual(response.adapter_version, "speech-plan-v1")
+        self.assertEqual(response.adapter_version, "speech-plan-v2")
         self.assertEqual(response.file_extension, "wav")
         self.assertEqual(response.audio_bytes, b"runner-bytes")
 
@@ -215,6 +215,8 @@ class LocalMLXRuntimeTests(unittest.TestCase):
                     language="zh",
                     reference_audio_path="/tmp/locked-preview.wav",
                     reference_text="锁定这一句试音。",
+                    context_audio_path="/tmp/previous-segment.wav",
+                    context_text="上一段的准确文本。",
                 )
             )
 
@@ -225,6 +227,8 @@ class LocalMLXRuntimeTests(unittest.TestCase):
         self.assertEqual(captured["language"], "zh")
         self.assertEqual(captured["reference_audio_path"], "/tmp/locked-preview.wav")
         self.assertEqual(captured["reference_text"], "锁定这一句试音。")
+        self.assertEqual(captured["context_audio_path"], "/tmp/previous-segment.wav")
+        self.assertEqual(captured["context_text"], "上一段的准确文本。")
 
     def test_runner_submits_chunks_to_worker_and_returns_audio(self) -> None:
         config = TTSProviderConfig(
@@ -342,7 +346,7 @@ class LocalMLXRuntimeTests(unittest.TestCase):
     def test_runner_prefers_request_reference_audio_over_config_reference(self) -> None:
         config = TTSProviderConfig(
             provider="local_mlx",
-            model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+            model="mlx-community/VoxCPM2-8bit",
             local_ref_audio_path="/tmp/global-reference.wav",
         )
 
@@ -371,11 +375,52 @@ class LocalMLXRuntimeTests(unittest.TestCase):
             audio_format="wav",
             reference_audio_path="/tmp/locked-preview.wav",
             reference_text="Locked preview text.",
+            context_audio_path="/tmp/previous-segment.wav",
+            context_text="Previous segment text.",
         )
 
         options = fake.last_kwargs["options"]
         self.assertEqual(options["reference_audio_path"], "/tmp/locked-preview.wav")
         self.assertEqual(options["reference_text"], "Locked preview text.")
+        self.assertEqual(options["context_audio_path"], "/tmp/previous-segment.wav")
+        self.assertEqual(options["context_text"], "Previous segment text.")
+
+    def test_runner_preserves_reference_when_model_cannot_combine_context(self) -> None:
+        config = TTSProviderConfig(
+            provider="local_mlx",
+            model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+        )
+
+        class FakeWorkerClient:
+            def __init__(self) -> None:
+                self.last_kwargs: dict[str, object] = {}
+
+            def synthesize(self, **kwargs: object) -> dict[str, object]:
+                self.last_kwargs = dict(kwargs)
+                output_dir = Path(kwargs["output_dir"])
+                audio_path = output_dir / "final.wav"
+                audio_path.write_bytes(b"worker-wav")
+                return {
+                    "audio_path": str(audio_path),
+                    "sample_rate": 24_000,
+                    "channels": 1,
+                }
+
+        fake = FakeWorkerClient()
+        MLXAudioRunner(config, worker_client=fake).synthesize(
+            "Target sentence.",
+            audio_format="wav",
+            reference_audio_path="/tmp/original-speaker.wav",
+            reference_text="Original speaker transcript.",
+            context_audio_path="/tmp/generated-previous.wav",
+            context_text="Previous segment text.",
+        )
+
+        options = fake.last_kwargs["options"]
+        self.assertEqual(options["reference_audio_path"], "/tmp/original-speaker.wav")
+        self.assertEqual(options["reference_text"], "Original speaker transcript.")
+        self.assertEqual(options["context_audio_path"], "")
+        self.assertEqual(options["context_text"], "")
 
     def test_runner_translates_worker_cancellation_into_task_cancellation(self) -> None:
         config = TTSProviderConfig(

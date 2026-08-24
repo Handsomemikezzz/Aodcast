@@ -14,6 +14,7 @@ class VoxCPM2Adapter(MLXTTSAdapter):
     ) -> dict[str, Any]:
         mode = normalize_clone_mode(request.clone_mode)
         has_reference = bool(request.reference_audio_path.strip())
+        has_context = bool(request.context_audio_path.strip())
         has_style = bool(request.style_prompt.strip())
         if mode == CloneMode.AUTO and has_reference:
             if has_style:
@@ -26,6 +27,14 @@ class VoxCPM2Adapter(MLXTTSAdapter):
         kwargs: dict[str, Any] = {"text": text}
         if has_style:
             kwargs["instruct"] = request.style_prompt.strip()
+        if has_context:
+            if has_reference:
+                kwargs["ref_audio"] = request.reference_audio_path.strip()
+            kwargs.update(
+                prompt_audio=request.context_audio_path.strip(),
+                prompt_text=request.context_text.strip(),
+            )
+            return kwargs
         if not has_reference:
             return kwargs
 

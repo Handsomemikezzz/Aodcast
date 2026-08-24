@@ -25,10 +25,19 @@ class Qwen3TTSAdapter(MLXTTSAdapter):
         }
 
         if self.spec.variant == ModelVariant.QWEN_BASE:
-            if request.reference_audio_path.strip():
-                kwargs["ref_audio"] = request.reference_audio_path.strip()
-                if mode != CloneMode.SPEAKER and request.reference_text.strip():
-                    kwargs["ref_text"] = request.reference_text.strip()
+            conditioning_audio = (
+                request.reference_audio_path.strip()
+                or request.context_audio_path.strip()
+            )
+            conditioning_text = (
+                request.reference_text.strip()
+                if request.reference_audio_path.strip()
+                else request.context_text.strip()
+            )
+            if conditioning_audio:
+                kwargs["ref_audio"] = conditioning_audio
+                if mode != CloneMode.SPEAKER and conditioning_text:
+                    kwargs["ref_text"] = conditioning_text
             elif request.voice.strip():
                 kwargs["voice"] = request.voice.strip()
             return kwargs

@@ -72,6 +72,49 @@ class MLXTTSAdapterTests(unittest.TestCase):
         self.assertEqual(kwargs["prompt_text"], "Exact transcript.")
         self.assertNotIn("ref_text", kwargs)
 
+    def test_voxcpm_keeps_original_reference_when_using_previous_context(self) -> None:
+        adapter = VoxCPM2Adapter(model_spec_from_config({"model_type": "voxcpm2"}))
+        request = AdapterRequest(
+            reference_audio_path="speaker.wav",
+            reference_text="Speaker transcript.",
+            context_audio_path="previous.wav",
+            context_text="Previous segment.",
+            style_prompt="Calm and natural.",
+        )
+
+        adapter.validate_request(request, ())
+        kwargs = adapter.generation_kwargs("Target text.", request)
+
+        self.assertEqual(kwargs["ref_audio"], "speaker.wav")
+        self.assertEqual(kwargs["prompt_audio"], "previous.wav")
+        self.assertEqual(kwargs["prompt_text"], "Previous segment.")
+        self.assertEqual(kwargs["instruct"], "Calm and natural.")
+
+    def test_context_only_conditioning_maps_to_qwen_and_moss(self) -> None:
+        qwen = Qwen3TTSAdapter(
+            model_spec_from_config(
+                {"model_type": "qwen3_tts", "tts_model_type": "base"}
+            )
+        )
+        moss = MossTTSAdapter(
+            model_spec_from_config({"model_type": "moss_tts_delay"})
+        )
+        request = AdapterRequest(
+            context_audio_path="previous.wav",
+            context_text="Previous segment.",
+        )
+
+        qwen.validate_request(request, ())
+        moss.validate_request(request, ())
+        qwen_kwargs = qwen.generation_kwargs("Target text.", request)
+        moss_kwargs = moss.generation_kwargs("Target text.", request)
+
+        self.assertEqual(qwen_kwargs["ref_audio"], "previous.wav")
+        self.assertEqual(qwen_kwargs["ref_text"], "Previous segment.")
+        self.assertEqual(moss_kwargs["ref_audio"], "previous.wav")
+        self.assertEqual(moss_kwargs["ref_text"], "Previous segment.")
+        self.assertEqual(moss_kwargs["mode"], "continuation")
+
     def test_moss_expands_structured_break_without_mutating_script(self) -> None:
         adapter = MossTTSAdapter(
             model_spec_from_config({"model_type": "moss_tts_delay"})

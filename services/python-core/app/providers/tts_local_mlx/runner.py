@@ -10,6 +10,7 @@ from app.domain.tts_config import TTSProviderConfig
 from app.providers.tts_api.base import SpeechBreak
 from app.providers.tts_local_mlx.adapters import adapter_for_model
 from app.providers.tts_local_mlx.adapters.base import AdapterRequest
+from app.providers.tts_local_mlx.capabilities import SupportLevel
 from app.providers.tts_local_mlx.chunker import ScriptChunk, split_script_into_chunks
 from app.providers.tts_local_mlx.model_spec import resolve_model_spec
 from app.providers.tts_local_mlx.runtime import resolve_local_model_target
@@ -91,6 +92,8 @@ class MLXAudioRunner:
         language: str = "zh",
         reference_audio_path: str = "",
         reference_text: str = "",
+        context_audio_path: str = "",
+        context_text: str = "",
         breaks: Iterable[SpeechBreak] = (),
         clone_mode: str = "auto",
         should_cancel: Callable[[], bool] | None = None,
@@ -102,6 +105,17 @@ class MLXAudioRunner:
 
         resolved_ref_audio = reference_audio_path or self.config.local_ref_audio_path or ""
         resolved_ref_text = reference_text.strip() if resolved_ref_audio else ""
+        resolved_context_audio = context_audio_path
+        resolved_context_text = context_text.strip() if resolved_context_audio else ""
+        if (
+            resolved_ref_audio
+            and resolved_context_audio
+            and adapter.capabilities.reference_with_context == SupportLevel.UNSUPPORTED
+        ):
+            # This model has only one conditioning slot. Preserve the immutable
+            # speaker identity anchor instead of recursively cloning generated audio.
+            resolved_context_audio = ""
+            resolved_context_text = ""
         adapter_request = AdapterRequest(
             voice=voice or self.config.voice,
             speed=speed,
@@ -109,6 +123,8 @@ class MLXAudioRunner:
             language=language,
             reference_audio_path=resolved_ref_audio,
             reference_text=resolved_ref_text,
+            context_audio_path=resolved_context_audio,
+            context_text=resolved_context_text,
             clone_mode=clone_mode,
         )
         break_values = tuple(breaks)

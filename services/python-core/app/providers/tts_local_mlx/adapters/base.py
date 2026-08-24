@@ -23,6 +23,8 @@ class AdapterRequest:
     language: str = "zh"
     reference_audio_path: str = ""
     reference_text: str = ""
+    context_audio_path: str = ""
+    context_text: str = ""
     clone_mode: str = CloneMode.AUTO
 
     def to_payload(self) -> dict[str, object]:
@@ -33,6 +35,8 @@ class AdapterRequest:
             "language": self.language,
             "reference_audio_path": self.reference_audio_path,
             "reference_text": self.reference_text,
+            "context_audio_path": self.context_audio_path,
+            "context_text": self.context_text,
             "clone_mode": self.clone_mode,
         }
 
@@ -45,6 +49,8 @@ class AdapterRequest:
             language=str(payload.get("language") or "zh"),
             reference_audio_path=str(payload.get("reference_audio_path") or ""),
             reference_text=str(payload.get("reference_text") or ""),
+            context_audio_path=str(payload.get("context_audio_path") or ""),
+            context_text=str(payload.get("context_text") or ""),
             clone_mode=str(payload.get("clone_mode") or CloneMode.AUTO),
         )
 
@@ -94,6 +100,8 @@ class MLXTTSAdapter:
             style_prompt=request.style_prompt,
             reference_audio_path=request.reference_audio_path,
             reference_text=request.reference_text,
+            context_audio_path=request.context_audio_path,
+            context_text=request.context_text,
             breaks=breaks,
             clone_mode=request.clone_mode,
         )

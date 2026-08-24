@@ -31,6 +31,8 @@ class LocalMLXTTSProvider:
             language=request.language,
             reference_audio_path=request.reference_audio_path,
             reference_text=request.reference_text,
+            context_audio_path=request.context_audio_path,
+            context_text=request.context_text,
             breaks=request.breaks,
             clone_mode=request.clone_mode,
             should_cancel=request.should_cancel,

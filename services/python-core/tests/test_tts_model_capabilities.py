@@ -27,6 +27,8 @@ class TTSModelCapabilitiesTests(unittest.TestCase):
             "style_prompt": "",
             "reference_audio_path": "",
             "reference_text": "",
+            "context_audio_path": "",
+            "context_text": "",
             "breaks": (),
             "clone_mode": "auto",
         }
@@ -55,6 +57,8 @@ class TTSModelCapabilitiesTests(unittest.TestCase):
         self.assertEqual(qwen_custom.speaker_cloning, SupportLevel.UNSUPPORTED)
         self.assertEqual(qwen_custom.style_instruction, SupportLevel.NATIVE)
         self.assertEqual(vox.clone_with_style, SupportLevel.NATIVE)
+        self.assertEqual(vox.reference_with_context, SupportLevel.NATIVE)
+        self.assertEqual(qwen_base.reference_with_context, SupportLevel.UNSUPPORTED)
         self.assertEqual(vox.explicit_breaks, SupportLevel.APPROXIMATED)
         self.assertEqual(moss.explicit_breaks, SupportLevel.NATIVE)
         self.assertEqual(moss.channels, 2)
@@ -100,6 +104,26 @@ class TTSModelCapabilitiesTests(unittest.TestCase):
                 reference_text="Reference transcript.",
                 style_prompt="Calm and reflective.",
                 clone_mode="ultimate",
+            )
+
+    def test_only_voxcpm_combines_speaker_reference_with_audio_context(self) -> None:
+        self._validate(
+            {"model_type": "voxcpm2"},
+            reference_audio_path="speaker.wav",
+            reference_text="Speaker transcript.",
+            context_audio_path="previous.wav",
+            context_text="Previous segment.",
+        )
+        with self.assertRaisesRegex(
+            UnsupportedTTSRequestError,
+            "cannot combine a speaker reference with audio context",
+        ):
+            self._validate(
+                {"model_type": "qwen3_tts", "tts_model_type": "base"},
+                reference_audio_path="speaker.wav",
+                reference_text="Speaker transcript.",
+                context_audio_path="previous.wav",
+                context_text="Previous segment.",
             )
 
     def test_moss_accepts_structured_breaks_but_rejects_style(self) -> None:

@@ -47,11 +47,23 @@ class MossTTSAdapter(MLXTTSAdapter):
         language = moss_language(request.language)
         if language:
             kwargs["language"] = language
-        if request.reference_audio_path.strip():
-            kwargs["ref_audio"] = request.reference_audio_path.strip()
-        if mode == CloneMode.CONTINUATION:
+        conditioning_audio = (
+            request.reference_audio_path.strip()
+            or request.context_audio_path.strip()
+        )
+        conditioning_text = (
+            request.reference_text.strip()
+            if request.reference_audio_path.strip()
+            else request.context_text.strip()
+        )
+        if conditioning_audio:
+            kwargs["ref_audio"] = conditioning_audio
+        if mode == CloneMode.CONTINUATION or (
+            request.context_audio_path.strip()
+            and not request.reference_audio_path.strip()
+        ):
             kwargs["mode"] = "continuation"
-            kwargs["ref_text"] = request.reference_text.strip()
+            kwargs["ref_text"] = conditioning_text
         return kwargs
 
 

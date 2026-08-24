@@ -361,16 +361,10 @@ class PodcastRenderingPipeline:
             style_prompt = _delivery_prompt(segment, settings.style_prompt)
         reference_audio = speaker_reference["audio_path"] if speaker_reference else ""
         reference_text = speaker_reference["reference_text"] if speaker_reference else ""
-        clone_mode = "auto"
+        context_audio = ""
+        context_text = ""
         if provider_name == "local_mlx" and previous_context is not None:
-            reference_audio, reference_text = previous_context
-            family = str(getattr(local_capabilities, "family", ""))
-            if family == "moss_tts":
-                clone_mode = "continuation"
-            elif family == "voxcpm2":
-                clone_mode = "controllable" if style_prompt else "continuation"
-            else:
-                clone_mode = "ultimate"
+            context_audio, context_text = previous_context
         if provider_name != "local_mlx" and provider_breaks:
             return self._render_remote_break_units(
                 provider=provider,
@@ -395,9 +389,11 @@ class PodcastRenderingPipeline:
                 language=settings.language,
                 reference_audio_path=reference_audio,
                 reference_text=reference_text,
+                context_audio_path=context_audio,
+                context_text=context_text,
                 voice_lock_id=speaker_reference["speaker_reference_id"] if speaker_reference else "",
                 breaks=tuple(SpeechBreak(item.offset, item.duration_ms) for item in provider_breaks),
-                clone_mode=clone_mode,
+                clone_mode="auto",
                 should_cancel=should_cancel,
             )
         )
