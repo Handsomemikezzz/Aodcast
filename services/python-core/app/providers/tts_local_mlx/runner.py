@@ -63,12 +63,6 @@ def get_default_worker_client() -> WorkerClient:
         return _DEFAULT_CLIENT
 
 
-def set_default_worker_client(client: WorkerClient | None) -> None:
-    global _DEFAULT_CLIENT
-    with _DEFAULT_CLIENT_LOCK:
-        _DEFAULT_CLIENT = client
-
-
 class MLXAudioRunner:
     def __init__(
         self,

@@ -162,7 +162,3 @@ export function buildScriptCleanupPreview(text: string): CleanupPreview {
     hasChanges: cleaned !== text && changes.length > 0,
   };
 }
-
-export function applyScriptCleanup(text: string): string {
-  return buildScriptCleanupPreview(text).cleaned;
-}

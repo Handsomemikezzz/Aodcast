@@ -38,14 +38,11 @@ export function deriveEpisodeRenderReadiness({
   const ttsReady = selectedEngine === "local_mlx"
     ? Boolean(selectedModelId && capability?.available)
     : Boolean(
-        ttsConfig?.provider === "mock"
-        || (
-          ttsConfig?.provider
-          && ttsConfig.provider !== "local_mlx"
-          && ttsConfig.model
-          && ttsConfig.base_url
-          && ttsConfig.api_key
-        )
+        ttsConfig?.provider
+        && ttsConfig.provider !== "local_mlx"
+        && ttsConfig.model
+        && ttsConfig.base_url
+        && ttsConfig.api_key
       );
   return {
     scriptReady,

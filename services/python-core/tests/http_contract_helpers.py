@@ -9,7 +9,6 @@ DESKTOP_BRIDGE_PATH = REPO_ROOT / "apps/desktop/src/lib/desktopBridge.ts"
 HTTP_BRIDGE_PATH = REPO_ROOT / "apps/desktop/src/lib/httpBridge.ts"
 BRIDGE_FACTORY_PATH = REPO_ROOT / "apps/desktop/src/lib/bridgeFactory.ts"
 APP_PATH = REPO_ROOT / "apps/desktop/src/App.tsx"
-TAURI_COMMANDS_PATH = REPO_ROOT / "apps/desktop/src-tauri/src/commands.rs"
 MAIN_PATH = REPO_ROOT / "services/python-core/app/main.py"
 CLI_PARSER_PATH = REPO_ROOT / "services/python-core/app/cli/parser.py"
 HTTP_RUNTIME_PATH = REPO_ROOT / "services/python-core/app/api/http_runtime.py"
@@ -54,81 +53,78 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
 @dataclass(frozen=True)
 class BridgeContract:
     desktop_method: str
-    tauri_command: str
     http_method: str
     http_path: str
     operation: str
     cli_args: tuple[str, ...]
-    migration_phase: str
-    long_task: bool = False
     streaming: bool = False
 
 
 HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
-    BridgeContract("listProjects", "list_projects", "GET", "/api/v1/projects", "list_projects", ("--list-projects",), "P1-core"),
-    BridgeContract("createSession", "create_session", "POST", "/api/v1/sessions", "create_session", ("--create-session",), "P1-core"),
-    BridgeContract("updateEpisodeSource", "update_episode_source", "PUT", "/api/v1/sessions/{session_id}/source", "update_episode_source", (), "P1-source"),
-    BridgeContract("showSession", "show_session", "GET", "/api/v1/sessions/{session_id}", "show_session", ("--show-session", "session-123"), "P1-core"),
-    BridgeContract("renameSession", "rename_session", "PATCH", "/api/v1/sessions/{session_id}", "rename_session", ("--rename-session", "session-123", "--session-topic", "Renamed"), "P1-complete"),
-    BridgeContract("deleteSession", "delete_session", "POST", "/api/v1/sessions/{session_id}:delete", "delete_session", ("--delete-session", "session-123"), "P1-complete"),
-    BridgeContract("restoreSession", "restore_session", "POST", "/api/v1/sessions/{session_id}:restore", "restore_session", ("--restore-session", "session-123"), "P1-complete"),
-    BridgeContract("startInterview", "start_interview", "POST", "/api/v1/sessions/{session_id}/interview:start", "start_interview", ("--start-interview", "session-123"), "P1-core"),
-    BridgeContract("submitReplyStream", "submit_reply_stream", "POST", "/api/v1/sessions/{session_id}/interview:reply-stream", "submit_reply", ("--reply-session", "session-123", "--message", "hello"), "P1-core", streaming=True),
-    BridgeContract("requestFinish", "request_finish", "POST", "/api/v1/sessions/{session_id}/interview:finish", "request_finish", ("--finish-session", "session-123"), "P1-core"),
-    BridgeContract("generateScript", "generate_script", "POST", "/api/v1/sessions/{session_id}/script:generate", "generate_script", ("--generate-script", "session-123"), "P1-core"),
-    BridgeContract("showLatestScript", "show_latest_script", "GET", "/api/v1/sessions/{session_id}/scripts/latest", "show_latest_script", ("--show-session", "session-123"), "P1-core"),
-    BridgeContract("showScript", "show_script", "GET", "/api/v1/sessions/{session_id}/scripts/{script_id}", "show_script", ("--show-session", "session-123"), "P1-core"),
-    BridgeContract("listScripts", "list_scripts", "GET", "/api/v1/sessions/{session_id}/scripts", "list_scripts", ("--list-projects",), "P1-core"),
-    BridgeContract("renderAudio", "render_audio", "POST", "/api/v1/sessions/{session_id}/audio:render", "render_audio", ("--render-audio", "session-123"), "P1-core", long_task=True),
-    BridgeContract("regenerateAudioWindow", "regenerate_audio_window", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/audio/segments/{segment_id}:regenerate", "regenerate_audio_window", (), "P2-speech-plan", long_task=True),
-    BridgeContract("deleteGeneratedAudio", "delete_generated_audio", "DELETE", "/api/v1/sessions/{session_id}/audio", "delete_generated_audio", ("--render-audio", "session-123"), "P2-voice-studio"),
-    BridgeContract("deleteArtifactAudio", "delete_artifact_audio", "DELETE", "/api/v1/artifacts/audio", "delete_artifact_audio", ("--render-voice-preview",), "P2-voice-studio"),
-    BridgeContract("exportPodcastAudio", "export_podcast_audio", "POST", "/api/v1/artifacts/audio/export", "export_podcast_audio", (), "P2-voice-studio"),
-    BridgeContract("listVoicePresets", "list_voice_presets", "GET", "/api/v1/voice-studio/presets", "list_voice_presets", ("--list-voice-presets",), "P2-voice-studio"),
-    BridgeContract("renderVoicePreview", "render_voice_preview", "POST", "/api/v1/voice-studio/preview", "render_voice_preview", ("--render-voice-preview",), "P2-voice-studio"),
-    BridgeContract("listSpeakerReferences", "list_speaker_references", "GET", "/api/v1/speaker-references", "list_speaker_references", ("--list-speaker-references",), "P2-voice-studio"),
-    BridgeContract("createSpeakerReference", "create_speaker_reference", "POST", "/api/v1/speaker-references", "create_speaker_reference", (), "P2-voice-studio"),
-    BridgeContract("updateSpeakerReference", "update_speaker_reference", "PATCH", "/api/v1/speaker-references/{reference_id}", "update_speaker_reference", (), "P2-voice-studio"),
-    BridgeContract("deleteSpeakerReference", "delete_speaker_reference", "DELETE", "/api/v1/speaker-references/{reference_id}", "delete_speaker_reference", (), "P2-voice-studio"),
-    BridgeContract("selectSpeakerReference", "select_speaker_reference", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/speaker-reference:select", "select_speaker_reference", (), "P2-voice-studio"),
-    BridgeContract("saveEditedScript", "save_edited_script", "PUT", "/api/v1/sessions/{session_id}/scripts/{script_id}/final", "save_script", ("--save-script", "session-123", "--script-final-text", "draft"), "P1-complete"),
-    BridgeContract("deleteScript", "delete_script", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}:delete", "delete_script", ("--delete-script", "session-123"), "P1-complete"),
-    BridgeContract("restoreScript", "restore_script", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}:restore", "restore_script", ("--restore-script", "session-123"), "P1-complete"),
-    BridgeContract("listScriptRevisions", "list_script_revisions", "GET", "/api/v1/sessions/{session_id}/scripts/{script_id}/revisions", "list_script_revisions", ("--list-script-revisions", "session-123"), "P1-complete"),
-    BridgeContract("rollbackScriptRevision", "rollback_script_revision", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/revisions/{revision_id}:rollback", "rollback_script_revision", ("--rollback-script-revision", "session-123", "--revision-id", "rev-1"), "P1-complete"),
-    BridgeContract("getLocalTTSCapability", "show_local_tts_capability", "GET", "/api/v1/runtime/tts/local-capability", "show_local_tts_capability", ("--show-local-tts-capability",), "P1-complete"),
-    BridgeContract("showLLMConfig", "show_llm_config", "GET", "/api/v1/config/llm", "show_llm_config", ("--show-llm-config",), "P1-complete"),
-    BridgeContract("checkLLMConfig", "check_llm_config", "GET", "/api/v1/config/llm/preflight", "check_llm_config", ("--check-llm-config",), "P1-complete"),
-    BridgeContract("configureLLMProvider", "configure_llm_provider", "PUT", "/api/v1/config/llm", "configure_llm_provider", ("--configure-llm-provider", "openai"), "P1-complete"),
-    BridgeContract("testLLMConnection", "test_llm_connection", "POST", "/api/v1/config/llm/test", "test_llm_connection", (), "P1-complete"),
-    BridgeContract("showLLMProviderStatus", "show_llm_provider_status", "GET", "/api/v1/config/llm/status", "show_llm_provider_status", (), "P1-codex-subscription"),
-    BridgeContract("startLLMProviderLogin", "start_llm_provider_login", "POST", "/api/v1/config/llm/auth:start", "start_llm_provider_login", (), "P1-codex-subscription"),
-    BridgeContract("showTTSConfig", "show_tts_config", "GET", "/api/v1/config/tts", "show_tts_config", ("--show-tts-config",), "P1-complete"),
-    BridgeContract("configureTTSProvider", "configure_tts_provider", "PUT", "/api/v1/config/tts", "configure_tts_provider", ("--configure-tts-provider", "local_mlx"), "P1-complete"),
-    BridgeContract("testTTSConnection", "test_tts_connection", "POST", "/api/v1/config/tts/test", "test_tts_connection", (), "P1-complete"),
-    BridgeContract("listModelsStatus", "list_models_status", "GET", "/api/v1/models", "list_models_status", ("--list-models-status",), "P1-complete"),
-    BridgeContract("showModelStorage", "show_model_storage", "GET", "/api/v1/models/storage", "show_model_storage", ("--show-model-storage",), "P1-complete"),
-    BridgeContract("migrateModelStorage", "migrate_model_storage", "POST", "/api/v1/models/storage:migrate", "migrate_model_storage", ("--migrate-model-storage", "/tmp/aodcast-models"), "P1-complete", long_task=True),
-    BridgeContract("resetModelStorage", "reset_model_storage", "POST", "/api/v1/models/storage:reset", "reset_model_storage", ("--reset-model-storage",), "P1-complete"),
-    BridgeContract("downloadModel", "download_model", "POST", "/api/v1/models/{model_name}:download", "download_model", ("--download-model", "qwen-tts-0.6B"), "P1-complete", long_task=True),
-    BridgeContract("deleteModel", "delete_model", "POST", "/api/v1/models/{model_name}:delete", "delete_model", ("--delete-model", "qwen-tts-0.6B"), "P1-complete"),
-    BridgeContract("showTaskState", "show_task_state", "GET", "/api/v1/tasks/{task_id}", "show_task_state", ("--show-task-state", "render_audio:session-123"), "P1-core", long_task=True),
-    BridgeContract("cancelTask", "cancel_task", "POST", "/api/v1/tasks/{task_id}:cancel", "cancel_task", ("--cancel-task", "render_audio:session-123"), "P1-core", long_task=True),
-    BridgeContract("getMemoryOverview", "get_memory_overview", "GET", "/api/v1/memory", "show_memory_overview", (), "P3-memory"),
-    BridgeContract("updateMemorySettings", "update_memory_settings", "PATCH", "/api/v1/memory/settings", "update_memory_settings", (), "P3-memory"),
-    BridgeContract("acknowledgeMemory", "acknowledge_memory", "POST", "/api/v1/memory:acknowledge", "acknowledge_memory", (), "P3-memory"),
-    BridgeContract("listMemories", "list_memories", "GET", "/api/v1/memory/items", "list_memory_items", (), "P3-memory"),
-    BridgeContract("getMemory", "get_memory", "GET", "/api/v1/memory/items/{memory_id}", "show_memory_item", (), "P3-memory"),
-    BridgeContract("deleteMemory", "delete_memory", "DELETE", "/api/v1/memory/items/{memory_id}", "delete_memory_item", (), "P3-memory"),
-    BridgeContract("clearAllMemory", "clear_all_memory", "POST", "/api/v1/memory:clear", "clear_memory", (), "P3-memory"),
-    BridgeContract("listMemoryUsage", "list_memory_usage", "GET", "/api/v1/memory/usage", "list_memory_usage", (), "P3-memory"),
-    BridgeContract("setSessionMemoryMode", "set_session_memory_mode", "POST", "/api/v1/sessions/{session_id}:memory-mode", "set_session_memory_mode", (), "P3-memory"),
-    BridgeContract("listMemoryCandidates", "list_memory_candidates", "GET", "/api/v1/sessions/{session_id}/memory-candidates", "list_memory_candidates", (), "P3-memory"),
-    BridgeContract("authorizeMemory", "authorize_memory", "POST", "/api/v1/sessions/{session_id}/memory:authorize", "authorize_memory", (), "P3-memory"),
-    BridgeContract("runMemoryMaintenance", "run_memory_maintenance", "POST", "/api/v1/memory:maintain", "run_memory_maintenance", (), "P3-memory"),
-    BridgeContract("listMemorySuperseded", "list_memory_superseded", "GET", "/api/v1/memory/superseded", "list_memory_superseded", (), "P3-memory"),
-    BridgeContract("findForgetCandidates", "find_forget_candidates", "GET", "/api/v1/memory/forget-candidates", "list_forget_candidates", (), "P3-memory"),
-    BridgeContract("supersedeMemory", "supersede_memory", "POST", "/api/v1/memory:supersede", "supersede_memory", (), "P3-memory"),
+    BridgeContract("listProjects", "GET", "/api/v1/projects", "list_projects", ("--list-projects",)),
+    BridgeContract("createSession", "POST", "/api/v1/sessions", "create_session", ("--create-session",)),
+    BridgeContract("updateEpisodeSource", "PUT", "/api/v1/sessions/{session_id}/source", "update_episode_source", ()),
+    BridgeContract("showSession", "GET", "/api/v1/sessions/{session_id}", "show_session", ("--show-session", "session-123")),
+    BridgeContract("renameSession", "PATCH", "/api/v1/sessions/{session_id}", "rename_session", ("--rename-session", "session-123", "--session-topic", "Renamed")),
+    BridgeContract("deleteSession", "POST", "/api/v1/sessions/{session_id}:delete", "delete_session", ("--delete-session", "session-123")),
+    BridgeContract("restoreSession", "POST", "/api/v1/sessions/{session_id}:restore", "restore_session", ("--restore-session", "session-123")),
+    BridgeContract("startInterview", "POST", "/api/v1/sessions/{session_id}/interview:start", "start_interview", ("--start-interview", "session-123")),
+    BridgeContract("submitReplyStream", "POST", "/api/v1/sessions/{session_id}/interview:reply-stream", "submit_reply", ("--reply-session", "session-123", "--message", "hello"), streaming=True),
+    BridgeContract("requestFinish", "POST", "/api/v1/sessions/{session_id}/interview:finish", "request_finish", ("--finish-session", "session-123")),
+    BridgeContract("generateScript", "POST", "/api/v1/sessions/{session_id}/script:generate", "generate_script", ("--generate-script", "session-123")),
+    BridgeContract("showLatestScript", "GET", "/api/v1/sessions/{session_id}/scripts/latest", "show_latest_script", ("--show-session", "session-123")),
+    BridgeContract("showScript", "GET", "/api/v1/sessions/{session_id}/scripts/{script_id}", "show_script", ("--show-session", "session-123")),
+    BridgeContract("listScripts", "GET", "/api/v1/sessions/{session_id}/scripts", "list_scripts", ("--list-projects",)),
+    BridgeContract("renderAudio", "POST", "/api/v1/sessions/{session_id}/audio:render", "render_audio", ("--render-audio", "session-123")),
+    BridgeContract("regenerateAudioWindow", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/audio/segments/{segment_id}:regenerate", "regenerate_audio_window", ()),
+    BridgeContract("deleteGeneratedAudio", "DELETE", "/api/v1/sessions/{session_id}/audio", "delete_generated_audio", ("--render-audio", "session-123")),
+    BridgeContract("deleteArtifactAudio", "DELETE", "/api/v1/artifacts/audio", "delete_artifact_audio", ("--render-voice-preview",)),
+    BridgeContract("exportPodcastAudio", "POST", "/api/v1/artifacts/audio/export", "export_podcast_audio", ()),
+    BridgeContract("listVoicePresets", "GET", "/api/v1/voice-studio/presets", "list_voice_presets", ("--list-voice-presets",)),
+    BridgeContract("renderVoicePreview", "POST", "/api/v1/voice-studio/preview", "render_voice_preview", ("--render-voice-preview",)),
+    BridgeContract("listSpeakerReferences", "GET", "/api/v1/speaker-references", "list_speaker_references", ("--list-speaker-references",)),
+    BridgeContract("createSpeakerReference", "POST", "/api/v1/speaker-references", "create_speaker_reference", ()),
+    BridgeContract("updateSpeakerReference", "PATCH", "/api/v1/speaker-references/{reference_id}", "update_speaker_reference", ()),
+    BridgeContract("deleteSpeakerReference", "DELETE", "/api/v1/speaker-references/{reference_id}", "delete_speaker_reference", ()),
+    BridgeContract("selectSpeakerReference", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/speaker-reference:select", "select_speaker_reference", ()),
+    BridgeContract("saveEditedScript", "PUT", "/api/v1/sessions/{session_id}/scripts/{script_id}/final", "save_script", ("--save-script", "session-123", "--script-final-text", "draft")),
+    BridgeContract("deleteScript", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}:delete", "delete_script", ("--delete-script", "session-123")),
+    BridgeContract("restoreScript", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}:restore", "restore_script", ("--restore-script", "session-123")),
+    BridgeContract("listScriptRevisions", "GET", "/api/v1/sessions/{session_id}/scripts/{script_id}/revisions", "list_script_revisions", ("--list-script-revisions", "session-123")),
+    BridgeContract("rollbackScriptRevision", "POST", "/api/v1/sessions/{session_id}/scripts/{script_id}/revisions/{revision_id}:rollback", "rollback_script_revision", ("--rollback-script-revision", "session-123", "--revision-id", "rev-1")),
+    BridgeContract("getLocalTTSCapability", "GET", "/api/v1/runtime/tts/local-capability", "show_local_tts_capability", ("--show-local-tts-capability",)),
+    BridgeContract("showLLMConfig", "GET", "/api/v1/config/llm", "show_llm_config", ("--show-llm-config",)),
+    BridgeContract("checkLLMConfig", "GET", "/api/v1/config/llm/preflight", "check_llm_config", ("--check-llm-config",)),
+    BridgeContract("configureLLMProvider", "PUT", "/api/v1/config/llm", "configure_llm_provider", ("--configure-llm-provider", "openai")),
+    BridgeContract("testLLMConnection", "POST", "/api/v1/config/llm/test", "test_llm_connection", ()),
+    BridgeContract("showLLMProviderStatus", "GET", "/api/v1/config/llm/status", "show_llm_provider_status", ()),
+    BridgeContract("startLLMProviderLogin", "POST", "/api/v1/config/llm/auth:start", "start_llm_provider_login", ()),
+    BridgeContract("showTTSConfig", "GET", "/api/v1/config/tts", "show_tts_config", ("--show-tts-config",)),
+    BridgeContract("configureTTSProvider", "PUT", "/api/v1/config/tts", "configure_tts_provider", ("--configure-tts-provider", "local_mlx")),
+    BridgeContract("testTTSConnection", "POST", "/api/v1/config/tts/test", "test_tts_connection", ()),
+    BridgeContract("listModelsStatus", "GET", "/api/v1/models", "list_models_status", ("--list-models-status",)),
+    BridgeContract("showModelStorage", "GET", "/api/v1/models/storage", "show_model_storage", ("--show-model-storage",)),
+    BridgeContract("migrateModelStorage", "POST", "/api/v1/models/storage:migrate", "migrate_model_storage", ("--migrate-model-storage", "/tmp/aodcast-models")),
+    BridgeContract("resetModelStorage", "POST", "/api/v1/models/storage:reset", "reset_model_storage", ("--reset-model-storage",)),
+    BridgeContract("downloadModel", "POST", "/api/v1/models/{model_name}:download", "download_model", ("--download-model", "qwen-tts-0.6B")),
+    BridgeContract("deleteModel", "POST", "/api/v1/models/{model_name}:delete", "delete_model", ("--delete-model", "qwen-tts-0.6B")),
+    BridgeContract("showTaskState", "GET", "/api/v1/tasks/{task_id}", "show_task_state", ("--show-task-state", "render_audio:session-123")),
+    BridgeContract("cancelTask", "POST", "/api/v1/tasks/{task_id}:cancel", "cancel_task", ("--cancel-task", "render_audio:session-123")),
+    BridgeContract("getMemoryOverview", "GET", "/api/v1/memory", "show_memory_overview", ()),
+    BridgeContract("updateMemorySettings", "PATCH", "/api/v1/memory/settings", "update_memory_settings", ()),
+    BridgeContract("acknowledgeMemory", "POST", "/api/v1/memory:acknowledge", "acknowledge_memory", ()),
+    BridgeContract("listMemories", "GET", "/api/v1/memory/items", "list_memory_items", ()),
+    BridgeContract("getMemory", "GET", "/api/v1/memory/items/{memory_id}", "show_memory_item", ()),
+    BridgeContract("deleteMemory", "DELETE", "/api/v1/memory/items/{memory_id}", "delete_memory_item", ()),
+    BridgeContract("clearAllMemory", "POST", "/api/v1/memory:clear", "clear_memory", ()),
+    BridgeContract("listMemoryUsage", "GET", "/api/v1/memory/usage", "list_memory_usage", ()),
+    BridgeContract("setSessionMemoryMode", "POST", "/api/v1/sessions/{session_id}:memory-mode", "set_session_memory_mode", ()),
+    BridgeContract("listMemoryCandidates", "GET", "/api/v1/sessions/{session_id}/memory-candidates", "list_memory_candidates", ()),
+    BridgeContract("authorizeMemory", "POST", "/api/v1/sessions/{session_id}/memory:authorize", "authorize_memory", ()),
+    BridgeContract("runMemoryMaintenance", "POST", "/api/v1/memory:maintain", "run_memory_maintenance", ()),
+    BridgeContract("listMemorySuperseded", "GET", "/api/v1/memory/superseded", "list_memory_superseded", ()),
+    BridgeContract("findForgetCandidates", "GET", "/api/v1/memory/forget-candidates", "list_forget_candidates", ()),
+    BridgeContract("supersedeMemory", "POST", "/api/v1/memory:supersede", "supersede_memory", ()),
 )
 
 
@@ -180,8 +176,3 @@ def extract_return_object_methods(path: Path, anchor: str = "return {") -> list[
                 methods.append(match.group(1))
         depth += line.count("{") - line.count("}")
     return methods
-
-
-def extract_tauri_commands(path: Path = TAURI_COMMANDS_PATH) -> list[str]:
-    text = read_text(path)
-    return re.findall(r"#\[tauri::command\]\s*pub(?:\s+async)?\s+fn\s+([A-Za-z_][A-Za-z0-9_]*)", text, re.MULTILINE)

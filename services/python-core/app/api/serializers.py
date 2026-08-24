@@ -20,7 +20,9 @@ def serialize_project(project: SessionProject) -> dict[str, object]:
 
 
 def serialize_memory_entry(entry: MemoryEntry) -> dict[str, object]:
-    return entry.to_dict()
+    payload = entry.to_dict()
+    payload.pop("superseded_at", None)
+    return payload
 
 
 def serialize_memory_overview(overview) -> dict[str, object]:

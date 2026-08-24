@@ -7,10 +7,55 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
+from app.api.serializers import serialize_memory_entry, serialize_memory_overview
 from app.domain.artifact import ArtifactRecord
+from app.domain.memory import MemoryEntry, MemoryState, MemoryType
+from app.orchestration.memory_service import MemoryOverview
 
 
 class BridgeRequestStateSchemaTests(unittest.TestCase):
+    def test_memory_bridge_payloads_match_shared_schemas(self) -> None:
+        schemas_dir = Path(__file__).resolve().parents[3] / "packages/shared-schemas"
+        entry_schema = json.loads(
+            (schemas_dir / "memory-entry.schema.json").read_text(encoding="utf-8")
+        )
+        state_schema = json.loads(
+            (schemas_dir / "memory-state.schema.json").read_text(encoding="utf-8")
+        )
+        usage_schema = json.loads(
+            (schemas_dir / "memory-usage-event.schema.json").read_text(encoding="utf-8")
+        )
+
+        entry = MemoryEntry(
+            name="Writing preference",
+            description="Prefers concise scripts",
+            type=MemoryType.PREFERENCE,
+            body="Keep scripts concise.",
+            superseded_at="2026-08-24T00:00:00+00:00",
+        )
+        entry_payload = serialize_memory_entry(entry)
+        Draft202012Validator(entry_schema).validate(entry_payload)
+        self.assertNotIn("superseded_at", entry_payload)
+
+        overview = MemoryOverview(
+            state=MemoryState(),
+            entry_count=1,
+            pending_job_count=2,
+            superseded_count=3,
+        )
+        Draft202012Validator(state_schema).validate(
+            serialize_memory_overview(overview)
+        )
+        Draft202012Validator(usage_schema).validate(
+            {
+                "session_id": "session-schema-test",
+                "session_topic": "Schema test",
+                "operation": "script",
+                "memory_ids": [entry.id],
+                "used_at": "2026-08-24T00:00:00+00:00",
+            }
+        )
+
     def test_llm_provider_schemas_cover_codex_subscription_without_tokens(self) -> None:
         schemas_dir = Path(__file__).resolve().parents[3] / "packages/shared-schemas"
         config_schema = json.loads(

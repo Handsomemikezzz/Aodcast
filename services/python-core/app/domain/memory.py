@@ -176,7 +176,7 @@ class WorkerState:
 
 @dataclass(slots=True)
 class MemoryState:
-    """Full contents of state.json: settings + worker status."""
+    """In-memory view of separately persisted settings and worker status."""
 
     settings: MemorySettings = field(default_factory=MemorySettings)
     worker: WorkerState = field(default_factory=WorkerState)

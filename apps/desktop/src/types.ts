@@ -607,14 +607,14 @@ export type MemorySettings = {
   first_run_acknowledged: boolean;
   writing_enabled: boolean;
   usage_enabled: boolean;
-  last_maintenance_at?: string | null;
+  last_maintenance_at: string | null;
   changes_since_maintenance: number;
 };
 
 export type MemoryWorkerState = {
   status: "idle" | "running" | "error";
   last_error: string;
-  updated_at?: string | null;
+  updated_at: string | null;
 };
 
 export type MemoryOverview = {
@@ -622,7 +622,7 @@ export type MemoryOverview = {
   worker: MemoryWorkerState;
   entry_count: number;
   pending_job_count: number;
-  superseded_count?: number;
+  superseded_count: number;
 };
 
 export type MemoryUsageEvent = {

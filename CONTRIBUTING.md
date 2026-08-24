@@ -18,9 +18,9 @@ Bootstrap from the repository root:
 ```bash
 cd services/python-core
 uv venv .venv
-uv pip install --python .venv/bin/python -e .
+uv pip install --python .venv/bin/python -e '.[test]'
 # For the primary local MLX TTS path on supported macOS machines:
-uv pip install --python .venv/bin/python -e '.[local-mlx]'
+uv pip install --python .venv/bin/python -e '.[local-mlx,test]'
 
 cd ../../apps/desktop
 pnpm install
@@ -64,7 +64,7 @@ cd ../../../services/python-core
 
 - Keep changes small, reviewable, and behavior-preserving unless the PR explicitly changes behavior.
 - Update docs when changing user flow, storage shape, provider configuration, runtime behavior, or development workflow.
-- Do not commit `.local-data/`, model weights, `.env`, `.omx/`, `docs-local/`, build outputs, virtualenvs, or node modules.
+- Do not commit `.local-data/`, model weights, `.env`, `.omx/`, `docs/`, build outputs, virtualenvs, or node modules.
 - Do not commit API keys, provider credentials, private prompts, generated audio, or user session data.
 - For refactors, protect existing behavior with tests first and prefer deletion/reuse over new abstractions.
 

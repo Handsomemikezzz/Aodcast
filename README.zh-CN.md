@@ -19,14 +19,14 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - 基于文本主题的访谈式播客创作流程。
 - 支持导入本地 `.md` 文件或粘贴 Markdown，通过来源预览、播客化改写或忠实朗读、目标时长、可选来源讨论和版本化替换来创建播客。
 - 每个 episode 都可以生成多个独立脚本快照，无论它来自访谈还是 Markdown。
-- Podcast Editor 阶段负责生成干净、适合听觉理解的口播稿，通过句子长短、标点和段落节奏安排呼吸，不人为制造 filler 或舞台指令。
+- 脚本生成采用 Podcast Editor 行为，生成干净、适合听觉理解的口播稿，通过句子长短、标点和段落节奏安排呼吸，不人为制造 filler 或舞台指令。
 - 内部 Speech Director 为精确的脚本 hash 生成版本化、provider-neutral 的 Speech Plan，包含稳定分段、结构化停顿、重音、发音和表达指导，但主 UI 不暴露这些工程概念。
 - 以脚本为核心的 Episode Workspace 支持编辑、上下文内 Voice 与 Delivery 选择、短片段试听、完整音频生成、非破坏式更新、播放和导出。
 - Voice Studio 支持内置和用户创建的 Speaker Reference、最长 10 分钟的样本上传/录音、资产试听和 reference 管理；已有 Voice 直接在 Episode 内选择。
 - 支持本地 MLX TTS 模型 Adapter，也支持 OpenAI-compatible 远程 provider。本地默认 VoxCPM2 4-bit，同时保留 VoxCPM2 8-bit、MOSS-TTS Local v1.5 与 Qwen3-TTS Base 作为对比路径。
 - 通过 Render Manifest 装配 WAV，显式处理停顿、格式/响度一致性、渲染血缘和可复用分段音频资产。
 - Models 页面支持本地模型存储、下载、迁移、重置和默认本地语音模型选择。
-- Mock LLM/TTS provider 可用于无付费 API、无本地模型权重的 smoke test。
+- Mock LLM provider 可用于无付费 API 的访谈与脚本 smoke test；音频渲染仍需本地 MLX 模型或已配置的远程 TTS provider。
 - 可通过官方本地 Codex app-server 使用 ChatGPT 订阅额度，支持浏览器登录、账户模型发现和 Codex 使用窗口展示。
 - 开发期本地数据默认存储在 `.local-data/`。
 
@@ -54,7 +54,7 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - Node.js
 - `pnpm`
 - Rust 和 Cargo
-- `curl` 和 `lsof`，用于开发启动脚本
+- `curl`、`lsof` 和 `pgrep`，用于开发启动脚本
 
 检查本机工具链：
 
@@ -82,9 +82,12 @@ cd ../..
 
 ## 第一次 Smoke Test
 
-建议先使用 mock LLM provider。这样无需付费 API 就能验证访谈与脚本主流程。TTS 使用本地 MLX 引擎（渲染音频前请先在 Models Center 下载语音模型）：
+建议先使用 mock LLM provider。这样无需付费 API 就能验证访谈与脚本主流程。音频渲染使用本地 MLX 引擎，因此渲染前需要安装 `local-mlx` 可选依赖组，并在 Models 中下载语音模型：
 
 ```bash
+cd services/python-core
+uv pip install --python .venv/bin/python -e '.[local-mlx]'
+cd ../..
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
 ./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
 ./scripts/dev/run-python-core.sh --create-demo-session
@@ -163,7 +166,7 @@ Aodcast 会启动官方本地 `codex app-server`、打开 ChatGPT 浏览器登�
 
 ### 导出 MP3
 
-最终成片仍是 WAV。音频生成后，在成片旁点击 **Export MP3**。
+最终成片仍是 WAV。音频生成后，在成片旁点击 **Export**。MP3 转换要求本机安装 FFmpeg。
 
 - Aodcast 会在 WAV 旁边写出一份 192 kbps 的 MP3，例如 `.local-data/exports/<session-id>/renders/<render-id>/podcast.mp3`。
 - Finder 会打开该 MP3，随后可手动上传小宇宙或其他平台。
@@ -282,13 +285,12 @@ CLI 等价命令：
 
 #### Local MLX 说明与限制
 
-- 本次 alpha redesign 不迁移已移除的 voice-profile / preview-lock metadata。更新后请重新创建 Speaker Reference；如果旧 fixture 阻止启动，可重置开发环境的 `.local-data/`。
 - 首次渲染可能较慢，因为 worker 需要加载模型。
 - 完整渲染会先创建 Speech Plan，为每个分段生成 WAV 资产，再根据 Render Manifest 装配最终 `podcast.wav`。
 - Voice Studio 预览渲染是 pollable long task。预览是临时资产；脚本的克隆来源由所选的持久化 Speaker Reference 决定。
 - 当所选模型声明原生支持 Speaker Reference 时可进行音色克隆。用户上传或录制的音频最长 10 分钟，并且必须提供匹配的参考文本。
 - MOSS 的 pause marker 只由 Adapter 根据 Speech Plan 的结构化 break 临时生成，绝不会写入脚本正文。
-- `.mp4` 支持的是音频容器能力；Aodcast 当前不会把 WAV 转成视频 MP4。
+- `.mp4` 仅作为 Speaker Reference 音频容器输入，随后会规范化为 WAV；Aodcast 不生成视频 MP4。
 
 ## 开发命令
 
@@ -323,6 +325,7 @@ Python 测试：
 
 ```bash
 cd services/python-core
+uv pip install --python .venv/bin/python -e '.[test]'
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
@@ -337,9 +340,8 @@ cd services/python-core
 - `apps/desktop`：Tauri UI、React 路由、桌面命令和前端 bridge。
 - `services/python-core`：访谈编排、脚本生成、provider 分发、本地存储、artifact 和 HTTP runtime。
 - `packages/shared-schemas`：前后端共享 contract schema。
-- `scripts`：开发、维护、发布和模型下载脚本。
+- `scripts`：开发、维护和模型下载脚本。
 - `docs`：被 Git 忽略的本地草稿目录（例如 `tmp.md`、`plan.md`）；人读安装说明见 README；Agent 约束见 AGENTS.md。
-- `examples`：轻量示例和占位样例。
 
 常用文档：
 
@@ -374,7 +376,7 @@ Aodcast 当前聚焦本地优先的单人播客创作：
 - 平台：macOS 桌面（Tauri）+ 本地 Python orchestration core
 - 输入：文本主题，或每个 episode 一个本地/粘贴的 Markdown 来源
 - 输出：单人播客脚本 + Episode Workspace 渲染的最终音频
-- LLM：用户配置的 API provider
+- LLM：Mock、OpenAI-compatible，或通过 Codex 使用 ChatGPT 订阅
 - 说话者身份：每个脚本选择一个 provider-neutral Speaker Reference
 - TTS：本地 MLX 多模型 Adapter 为首发主路径，同时支持远程 API provider
 - 记忆：文件原生、仅本地的跨 Episode 长期用户记忆
@@ -389,7 +391,7 @@ Aodcast 当前聚焦本地优先的单人播客创作：
 
 ### 访谈与脚本软提议
 
-脚本 soft-offer 需要内容维度就绪，以及最少用户回答轮数（`MIN_USER_TURNS_FOR_SCRIPT_OFFER`，默认 4）。访谈不会在单次关键词完整回复后硬切到生成；在用户明确结束前保持进行中，并通过 soft-ready 选项模式继续追问。
+提供脚本生成选项需要内容维度就绪，以及最少用户回答轮数（`MIN_USER_TURNS_FOR_SCRIPT_OFFER`，默认 4）。访谈会继续开放式追问，只把生成脚本作为次级可选动作；只有用户明确结束或选择生成时才进入生成。
 
 ### 记忆
 

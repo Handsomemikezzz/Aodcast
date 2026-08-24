@@ -19,14 +19,14 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 - Text-topic podcast creation with an interview-guided writing flow.
 - Markdown-first creation from a local `.md` file or pasted text, with source preview, podcast adaptation or faithful narration, target-length guidance, optional source discussion, and versioned source replacement.
 - Multiple independent script snapshots per episode, regardless of whether it started from an interview or Markdown.
-- A Podcast Editor stage that writes clean, listenable narration with deliberate sentence length, punctuation, and paragraph rhythm—without manufacturing filler words or stage directions.
+- Script generation uses Podcast Editor behavior to write clean, listenable narration with deliberate sentence length, punctuation, and paragraph rhythm—without manufacturing filler words or stage directions.
 - An internal Speech Director that creates a versioned, provider-neutral Speech Plan with stable segments, structured pauses, emphasis, pronunciation, and delivery guidance for the exact script hash without exposing those engineering concepts in the main UI.
 - A script-first Episode Workspace for editing, contextual Voice and Delivery selection, short passage previews, full audio rendering, non-destructive audio updates, playback, and export.
 - Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, asset previews, and reference management; existing voices are selected directly inside an episode.
 - Local MLX TTS model adapters on supported macOS machines, plus OpenAI-compatible remote providers. VoxCPM2 4-bit is the local default; VoxCPM2 8-bit, MOSS-TTS Local v1.5, and Qwen3-TTS Base remain comparison paths.
 - Manifest-driven WAV assembly with explicit pauses, consistent format/loudness, render lineage, and reusable per-segment audio assets.
 - Models page for local model storage, downloads, migration, reset, and default local voice model selection.
-- Mock LLM and TTS providers for local smoke testing without paid provider access.
+- A mock LLM provider for interview and script smoke testing without paid provider access; audio rendering still requires a local MLX model or a configured remote TTS provider.
 - ChatGPT subscription LLM access through the official local Codex app-server, with browser sign-in, account model discovery, and Codex usage-window reporting.
 - Local-first development storage under `.local-data/`.
 
@@ -54,7 +54,7 @@ To refresh screenshots later: run `./scripts/dev/run-dev-all.sh`, capture the cu
 - Node.js
 - `pnpm`
 - Rust and Cargo
-- `curl` and `lsof` for the development launcher
+- `curl`, `lsof`, and `pgrep` for the development launcher
 
 Check the local toolchain:
 
@@ -82,9 +82,12 @@ cd ../..
 
 ## First Smoke Test
 
-Use the mock LLM provider first. This verifies the interview and script flow without paid API access. TTS uses the local MLX engine (download a voice model from Models Center before rendering audio):
+Use the mock LLM provider first. This verifies the interview and script flow without paid API access. Audio rendering uses the local MLX engine, so install the `local-mlx` optional dependency group and download a voice model from Models before rendering:
 
 ```bash
+cd services/python-core
+uv pip install --python .venv/bin/python -e '.[local-mlx]'
+cd ../..
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
 ./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
 ./scripts/dev/run-python-core.sh --create-demo-session
@@ -163,7 +166,7 @@ Aodcast does not require a `.env` file for normal development. `.env.example` do
 
 ### Exporting MP3
 
-Final renders stay WAV. After audio exists, use **Export MP3** next to the final render.
+Final renders stay WAV. After audio exists, use **Export** next to the final render. MP3 conversion requires FFmpeg on the local machine.
 
 - Aodcast writes a 192 kbps MP3 beside the WAV, for example `.local-data/exports/<session-id>/renders/<render-id>/podcast.mp3`.
 - Finder opens on the MP3 so you can upload it to Xiaoyuzhou or any other host.
@@ -282,13 +285,12 @@ Use mock LLM if you only want to validate the audio path:
 
 #### Local MLX notes and limitations
 
-- This alpha redesign does not migrate the removed voice-profile / preview-lock metadata. Recreate Speaker References after updating, or reset the development `.local-data/` directory when older fixtures prevent startup.
 - First render may be slow because the worker loads the model.
 - Full renders first create a Speech Plan, synthesize one WAV asset per segment, then assemble the final `podcast.wav` from the Render Manifest.
 - Voice Studio preview rendering is a pollable long task. A preview is disposable; the selected persistent Speaker Reference defines the script's cloning source.
 - Voice cloning is available when the selected model reports native Speaker Reference support. User recordings and uploads must be 10 minutes or shorter and include the matching reference transcript.
 - MOSS provider pause markers are generated inside its adapter from structured Speech Plan breaks; they never become script text.
-- `.mp4` support is audio-container support when the selected provider/runtime creates a valid file; Aodcast does not currently transcode WAV to video MP4.
+- `.mp4` is accepted only as a Speaker Reference audio-container input and is normalized to WAV; Aodcast does not generate video MP4.
 
 ## Development Commands
 
@@ -323,6 +325,7 @@ Run Python tests:
 
 ```bash
 cd services/python-core
+uv pip install --python .venv/bin/python -e '.[test]'
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
@@ -337,9 +340,8 @@ Run the repository hygiene check:
 - `apps/desktop`: Tauri UI, React routes, desktop shell commands, and frontend bridge code.
 - `services/python-core`: interview orchestration, script generation, provider dispatch, local storage, artifacts, and HTTP runtime.
 - `packages/shared-schemas`: shared frontend/backend contract schemas.
-- `scripts`: development, maintenance, release, and model-download helpers.
+- `scripts`: development, maintenance, and model-download helpers.
 - `docs`: gitignored local scratch (for example `tmp.md`, `plan.md`); human setup lives in README; agent constraints live in AGENTS.md.
-- `examples`: sample placeholders and examples.
 
 Useful docs:
 
@@ -374,7 +376,7 @@ Aodcast currently focuses on local-first solo podcast creation:
 - platform: macOS desktop (Tauri) + local Python orchestration core
 - input: a text topic or one local/pasted Markdown source per episode
 - output: solo podcast script plus final audio from Episode Workspace
-- LLM: user-configured API provider
+- LLM: mock, OpenAI-compatible, or ChatGPT subscription through Codex
 - speech identity: a provider-neutral Speaker Reference selected per script
 - TTS: local MLX multi-model adapters as the primary first-release path, plus remote API providers
 - memory: file-native, local-only long-term user memory across episodes
@@ -389,7 +391,7 @@ These notes describe current product behavior for humans and operators. Agent co
 
 ### Interview and script offer
 
-Script soft-offer requires both content-dimension readiness and a minimum number of user answers (`MIN_USER_TURNS_FOR_SCRIPT_OFFER`, default 4). The interview does not hard-cut to generate after a single keyword-complete reply; it stays in progress with a soft-ready option mode until the user explicitly finishes.
+Offering script generation requires both content-dimension readiness and a minimum number of user answers (`MIN_USER_TURNS_FOR_SCRIPT_OFFER`, default 4). The interview keeps asking open-ended follow-ups and presents script generation only as a secondary option until the user explicitly finishes or chooses to generate.
 
 ### Memory
 

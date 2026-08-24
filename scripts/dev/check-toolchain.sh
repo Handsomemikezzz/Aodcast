@@ -7,6 +7,9 @@ echo "pnpm: $(command -v pnpm >/dev/null && pnpm --version || echo missing)"
 echo "python3: $(command -v python3 >/dev/null && python3 --version || echo missing)"
 echo "uv: $(command -v uv >/dev/null && uv --version || echo missing)"
 echo "cargo: $(command -v cargo >/dev/null && cargo --version || echo missing)"
+echo "curl: $(command -v curl || echo missing)"
+echo "lsof: $(command -v lsof || echo missing)"
+echo "pgrep: $(command -v pgrep || echo missing)"
 if [[ -x "$(cd "$(dirname "$0")/../.." && pwd)/services/python-core/.venv/bin/python" ]]; then
   echo "python-core venv: present"
 else

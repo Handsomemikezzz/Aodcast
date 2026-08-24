@@ -2,7 +2,7 @@
 
 These files define the cross-boundary contracts between the desktop shell and the Python orchestration core.
 
-Current MVP contracts:
+Current cross-boundary contracts:
 
 - `session.schema.json`
 - `episode-source.schema.json`

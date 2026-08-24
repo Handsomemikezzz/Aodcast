@@ -12,7 +12,7 @@ import type {
   VoiceRenderSettings,
   VoiceStylePreset,
 } from "../../types";
-import { contextWindowSegmentIds, type EditorTransform } from "./workbenchUtils";
+import { contextWindowSegmentIds } from "./workbenchUtils";
 import { useScriptWorkbenchAudio } from "./useScriptWorkbenchAudio";
 import { useScriptWorkbenchData } from "./useScriptWorkbenchData";
 import { useScriptWorkbenchEditor } from "./useScriptWorkbenchEditor";
@@ -62,7 +62,6 @@ export type UseScriptWorkbenchResult = {
   textareaRef: RefObject<HTMLTextAreaElement>;
   audioRef: RefObject<HTMLAudioElement>;
   previewAudioRef: RefObject<HTMLAudioElement>;
-  toolbarButtonClass: string;
   isScriptDeleted: boolean;
   isSessionDeleted: boolean;
   isDirty: boolean;
@@ -81,9 +80,6 @@ export type UseScriptWorkbenchResult = {
   localEngineDisabled: boolean;
   cloudEngineDisabled: boolean;
   runWithUnsavedCheck: (action: () => Promise<void>) => void;
-  applyToolbarAction: (
-    formatter: (value: string, selectionStart: number, selectionEnd: number) => EditorTransform,
-  ) => void;
   handleSave: () => Promise<boolean>;
   handleDeleteScript: () => Promise<void>;
   handleRestoreScript: () => Promise<void>;
@@ -260,7 +256,6 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     textareaRef: editor.textareaRef,
     audioRef: audio.audioRef,
     previewAudioRef: audio.previewAudioRef,
-    toolbarButtonClass: editor.toolbarButtonClass,
     isScriptDeleted: data.isScriptDeleted,
     isSessionDeleted: data.isSessionDeleted,
     isDirty: data.isDirty,
@@ -279,7 +274,6 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     localEngineDisabled,
     cloudEngineDisabled,
     runWithUnsavedCheck: editor.runWithUnsavedCheck,
-    applyToolbarAction: editor.applyToolbarAction,
     handleSave: editor.handleSave,
     handleDeleteScript: editor.handleDeleteScript,
     handleRestoreScript: editor.handleRestoreScript,

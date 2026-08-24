@@ -108,11 +108,6 @@ export function requestStateRunToken(state: RequestState | null | undefined): st
   return typeof state?.run_token === "string" && state.run_token.length > 0 ? state.run_token : null;
 }
 
-export function ensureRequestStateRunToken(state: RequestState, runToken: string | null | undefined): RequestState {
-  if (!runToken || state.run_token) return state;
-  return { ...state, run_token: runToken };
-}
-
 export function isActiveRequestState(state: RequestState | null | undefined): boolean {
   return state?.phase === "running" || state?.phase === "cancelling";
 }

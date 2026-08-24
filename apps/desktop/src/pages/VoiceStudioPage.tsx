@@ -508,7 +508,7 @@ export function VoiceStudioPage() {
         if (canApplyReferenceToScript) {
           const updated = await bridge.selectSpeakerReference(selectedSessionId, selectedScriptId, reference.speaker_reference_id);
           setProject(updated);
-          setMessage(`已创建「${reference.name}」并用于当前脚本。返回 Studio 后可以生成完整音频。`);
+          setMessage(`已创建「${reference.name}」并用于当前脚本。返回单集工作区后可以生成完整音频。`);
           if (returnTo) {
             navigate(returnTo);
           }
@@ -566,7 +566,7 @@ export function VoiceStudioPage() {
 
   const handleSelectSpeakerReference = async (reference: SpeakerReference) => {
     if (!canApplyReferenceToScript) {
-      setError("请先从 Studio 打开 Voice Studio，再把音色应用到具体脚本。");
+      setError("请先从单集工作区打开 Voice Studio，再把音色应用到具体脚本。");
       return;
     }
     try {
@@ -575,7 +575,7 @@ export function VoiceStudioPage() {
       const updated = await bridge.selectSpeakerReference(selectedSessionId, selectedScriptId, reference.speaker_reference_id);
       setProject(updated);
       await refreshSpeakerReferences();
-      setMessage(`已为当前脚本选用「${reference.name}」。返回 Studio 后可以生成完整音频。`);
+      setMessage(`已为当前脚本选用「${reference.name}」。返回单集工作区后可以生成完整音频。`);
       if (returnTo) {
         navigate(returnTo);
       }
@@ -635,7 +635,7 @@ export function VoiceStudioPage() {
             <h1 className="text-lg font-headline font-semibold text-primary">音色工坊</h1>
             <p className="mt-1 text-sm text-secondary">
               {scriptBoundMode
-                ? `为「${scriptTitle}」选择或创建一个可复用音色。完整音频生成和成品管理会在 Studio 完成。`
+                ? `为「${scriptTitle}」选择或创建一个可复用音色。完整音频生成和成品管理会在单集工作区完成。`
                 : "管理可复用音色库。打开某个脚本后，可以把这里的音色应用到那一集播客。"}
             </p>
           </div>
@@ -651,7 +651,7 @@ export function VoiceStudioPage() {
               }}
               className="shrink-0 rounded-2xl border border-outline bg-surface-container-high/60 hover:bg-surface-container-high hover:border-accent-amber/20 px-4 py-2 text-sm font-semibold text-primary transition-all duration-200 active:scale-95 cursor-pointer"
             >
-              返回 Studio
+              返回单集工作区
             </button>
           ) : null}
         </header>
@@ -665,7 +665,7 @@ export function VoiceStudioPage() {
                 <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">音色库</h2>
                 <p className="mt-1 text-sm text-secondary">
                   {scriptBoundMode
-                    ? "当前脚本的试听会使用所选音色的参考音频与参考文本；Studio 生成音频时也会使用这份音色参考。"
+                    ? "当前脚本的试听会使用所选音色的参考音频与参考文本；单集工作区生成音频时也会使用这份音色参考。"
                     : "这里是可复用音色资产库。可以播放参考音频、删除我的音色；打开某个脚本后才能把音色应用到具体播客。"}
                 </p>
                 {scriptBoundMode && selectedReference ? (
@@ -806,7 +806,7 @@ export function VoiceStudioPage() {
                   <div>
                     <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">音色试听</h2>
                     <p className="mt-1 text-sm text-secondary">
-                      用当前脚本选用的音色生成一段短试听；完整音频仍在 Studio 生成。
+                      用当前脚本选用的音色生成一段短试听；完整音频仍在单集工作区生成。
                     </p>
                   </div>
                   <button
@@ -897,7 +897,7 @@ export function VoiceStudioPage() {
                 {selectedReference ? (
                   <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-700 dark:text-emerald-200/90 leading-relaxed flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                    <p>已选择「{selectedReference.name}」。试听和 Studio 音频生成都会使用这份音色参考。</p>
+                    <p>已选择「{selectedReference.name}」。试听和单集工作区音频生成都会使用这份音色参考。</p>
                   </div>
                 ) : null}
               </section>
@@ -1028,7 +1028,7 @@ export function VoiceStudioPage() {
                         <Upload className="h-4 w-4" />
                         选择音频文件
                       </button>
-                      <p className="mt-2 text-[11px] text-secondary/60 leading-normal">支持 wav、mp3、m4a、mp4、aac、flac、webm、ogg；WAV 会校验 30 秒上限。</p>
+                      <p className="mt-2 text-[11px] text-secondary/60 leading-normal">支持 wav、mp3、m4a、mp4、aac、flac、webm、ogg；参考音频最长 10 分钟。</p>
                     </div>
                   ) : null}
                   {referenceAudioSource === "microphone" ? (
@@ -1046,7 +1046,7 @@ export function VoiceStudioPage() {
                         {recordingReferenceSample ? <Square className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
                         {recordingReferenceSample ? "停止录音" : "开始录音"}
                       </button>
-                      <p className="text-[11px] text-secondary/60">录音完成后会自动作为参考音频。请控制在 30 秒以内。</p>
+                      <p className="text-[11px] text-secondary/60">录音完成后会自动作为参考音频。建议保持简短，最长 10 分钟。</p>
                     </div>
                   ) : null}
                   {referenceAudioSource === "system" ? (

@@ -178,7 +178,6 @@ export default function App() {
               <Route path="/episodes" element={<EpisodesPage projects={projects} onRefresh={fetchProjects} />} />
               <Route path="/episodes/new" element={<NewEpisodePage mode="choose" onRefresh={fetchProjects} />} />
               <Route path="/episodes/new/markdown" element={<NewEpisodePage mode="markdown" onRefresh={fetchProjects} />} />
-              <Route path="/studio" element={<Navigate to="/episodes" replace />} />
               <Route path="/studio/:sessionId" element={<StudioPage projects={projects} onRefresh={fetchProjects} />} />
               <Route path="/studio/:sessionId/:scriptId" element={<StudioPage projects={projects} onRefresh={fetchProjects} />} />
               <Route path="/models" element={<ModelsPage />} />
