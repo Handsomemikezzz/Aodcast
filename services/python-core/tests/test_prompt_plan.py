@@ -150,10 +150,10 @@ class TestAssemblePlan(unittest.TestCase):
             operation_profile="test",
             system_sections=[],
             user_sections=[],
-            gates={"option_mode": "abc", "script_exists": False},
+            gates={"option_mode": "open", "script_exists": False},
             omitted_sections=[{"section_id": "memory_context", "reason": "empty"}],
         )
-        self.assertEqual(plan.metadata.gates["option_mode"], "abc")
+        self.assertEqual(plan.metadata.gates["option_mode"], "open")
         self.assertEqual(len(plan.metadata.omitted_sections), 1)
         self.assertEqual(plan.metadata.omitted_sections[0]["section_id"], "memory_context")
 
@@ -228,34 +228,35 @@ class TestFocusSectionSelection(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestOptionMode(unittest.TestCase):
-    def test_abc_for_first_turn_or_short_answer(self) -> None:
-        """§10: option_mode can be none without breaking the interview contract."""
+    def test_open_for_first_turn_or_short_answer(self) -> None:
+        """Default interview posture is open: observation + one question, no A/B/C."""
         r = _readiness(topic_context=False, core_viewpoint=False)
         tr = _empty_transcript()
         mode = _determine_option_mode(r, tr, script_exists=False)
-        self.assertEqual(mode, "abc")
+        self.assertEqual(mode, "open")
 
-    def test_none_for_detailed_user_answer(self) -> None:
-        """Detailed last user answer (>250 chars) → option_mode=none."""
+    def test_open_for_detailed_user_answer(self) -> None:
+        """Long answers still use open mode (no A/B/C branch)."""
         r = _readiness(topic_context=False, core_viewpoint=False)
         long_content = "A" * 300
         tr = _transcript_with_turns(("user", long_content))
         mode = _determine_option_mode(r, tr, script_exists=False)
-        self.assertEqual(mode, "none")
+        self.assertEqual(mode, "open")
 
-    def test_none_mode_not_present_in_sections_when_abc(self) -> None:
+    def test_open_mode_section_loaded_by_default(self) -> None:
         r = _readiness(topic_context=False, core_viewpoint=False)
         tr = _transcript_with_turns(("user", "short"))
         plan = build_interview_prompt_plan(
             topic="T", creation_intent="I", transcript=tr,
             readiness=r, script_exists=False, transcript_text="user: short",
         )
-        self.assertIn("option_mode.abc", plan.metadata.section_ids)
+        self.assertIn("option_mode.open", plan.metadata.section_ids)
+        self.assertNotIn("option_mode.abc", plan.metadata.section_ids)
         self.assertNotIn("option_mode.none", plan.metadata.section_ids)
         self.assertNotIn("option_mode.soft_ready", plan.metadata.section_ids)
+        self.assertIn("Do NOT offer A/B/C options", plan.system)
 
-    def test_none_mode_section_loaded_when_detailed_answer(self) -> None:
-        """§10: dynamic option_mode=none is a valid state without breaking response."""
+    def test_open_mode_section_loaded_when_detailed_answer(self) -> None:
         r = _readiness(topic_context=False, core_viewpoint=False)
         long_content = "A" * 300
         tr = _transcript_with_turns(("user", long_content))
@@ -263,11 +264,10 @@ class TestOptionMode(unittest.TestCase):
             topic="T", creation_intent="I", transcript=tr,
             readiness=r, script_exists=False, transcript_text=f"user: {long_content}",
         )
-        self.assertIn("option_mode.none", plan.metadata.section_ids)
-        self.assertNotIn("option_mode.abc", plan.metadata.section_ids)
+        self.assertIn("option_mode.open", plan.metadata.section_ids)
         self.assertNotIn("option_mode.soft_ready", plan.metadata.section_ids)
 
-    def test_near_ready_keeps_abc_without_script_push(self) -> None:
+    def test_near_ready_keeps_open_without_script_push(self) -> None:
         """3/4 dims alone must not soft-offer script generation."""
         r = _readiness(
             topic_context=True,
@@ -278,14 +278,14 @@ class TestOptionMode(unittest.TestCase):
         )
         tr = _empty_transcript()
         mode = _determine_option_mode(r, tr, script_exists=False)
-        self.assertEqual(mode, "abc")
+        self.assertEqual(mode, "open")
 
     def test_soft_ready_requires_dims_and_turn_floor(self) -> None:
         """Full dims + turn floor → soft_ready; dims alone are not enough."""
         r_early = _readiness(user_turn_count=1)
         r_ready = _readiness(user_turn_count=4)
         tr = _empty_transcript()
-        self.assertEqual(_determine_option_mode(r_early, tr, script_exists=False), "abc")
+        self.assertEqual(_determine_option_mode(r_early, tr, script_exists=False), "open")
         self.assertEqual(_determine_option_mode(r_ready, tr, script_exists=False), "soft_ready")
 
     def test_soft_ready_section_in_plan_when_can_offer(self) -> None:
@@ -295,9 +295,15 @@ class TestOptionMode(unittest.TestCase):
         self.assertIn("focus.deepen", plan.metadata.section_ids)
         self.assertTrue(plan.metadata.gates.get("can_offer_script"))
 
+    def test_revision_uses_open_mode(self) -> None:
+        r = _readiness(topic_context=False)
+        tr = _empty_transcript()
+        mode = _determine_option_mode(r, tr, script_exists=True)
+        self.assertEqual(mode, "open")
+
     def test_gate_option_mode_matches_section(self) -> None:
         """option_mode gate must match the option_mode.* section loaded."""
-        r_abc = _readiness(
+        r_open = _readiness(
             topic_context=False,
             core_viewpoint=False,
             example_or_detail=True,
@@ -306,7 +312,7 @@ class TestOptionMode(unittest.TestCase):
         )
         r_soft = _readiness(user_turn_count=4)
         for r, expected_mode in [
-            (r_abc, "abc"),
+            (r_open, "open"),
             (r_soft, "soft_ready"),
         ]:
             plan = _make_plan(readiness=r)

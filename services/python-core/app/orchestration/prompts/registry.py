@@ -15,7 +15,7 @@ from typing import Any
 
 
 # Current prompt system version — bump when section content changes materially.
-PROMPT_VERSION = "interview-v2"
+PROMPT_VERSION = "interview-v3"
 
 
 class CachePolicy(StrEnum):

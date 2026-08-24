@@ -35,11 +35,12 @@ class ScriptPromptTests(unittest.TestCase):
         self.assertIn("执行力", content)
         self.assertIn("user: I feel stuck.", content)
 
-    def test_interview_stream_system_prompt_requires_abc_structure(self) -> None:
+    def test_interview_stream_system_prompt_forbids_abc_presets(self) -> None:
         lowered = INTERVIEW_STREAM_SYSTEM_PROMPT.lower()
-        self.assertIn("a, b, and c", lowered)
-        self.assertIn("recommend", lowered)
-        self.assertIn("respond freely", lowered)
+        self.assertIn("a/b/c", lowered)
+        self.assertIn("one high-value follow-up", lowered)
+        self.assertIn("do not choose viewpoints", lowered)
+        self.assertNotIn("recommend one of them", lowered)
 
     def test_interview_stream_instructions_vary_by_script_exists(self) -> None:
         instructions_no_script = build_interview_stream_instructions(
@@ -47,17 +48,17 @@ class ScriptPromptTests(unittest.TestCase):
             suggested_focus="topic_context",
         )
         self.assertIn("topic_context", instructions_no_script)
-        self.assertIn("A, B, and C", instructions_no_script)
-        self.assertIn("Recommend one option", instructions_no_script)
-        self.assertIn("ignore the options", instructions_no_script)
+        self.assertIn("Do NOT offer A/B/C options", instructions_no_script)
+        self.assertIn("one high-value follow-up", instructions_no_script)
+        self.assertNotIn("Recommend one option", instructions_no_script)
 
         instructions_with_script = build_interview_stream_instructions(
             script_exists=True,
             suggested_focus="ready_to_generate",
         )
         self.assertIn("NEW script version", instructions_with_script)
-        self.assertIn("A. Add a new concrete example", instructions_with_script)
-        self.assertNotIn("Priority dimension to explore next", instructions_with_script)
+        self.assertIn("Do NOT offer A/B/C options", instructions_with_script)
+        self.assertNotIn("Soft priority to explore next", instructions_with_script)
 
     def test_interview_stream_user_content_embeds_instructions(self) -> None:
         content = build_interview_stream_user_content(
@@ -70,7 +71,7 @@ class ScriptPromptTests(unittest.TestCase):
         )
         self.assertIn("Session topic: Local tools", content)
         self.assertIn("example_or_detail", content)
-        self.assertIn("A, B, and C", content)
+        self.assertIn("Do NOT offer A/B/C options", content)
         self.assertIn("Do not write the podcast script.", content)
 
 

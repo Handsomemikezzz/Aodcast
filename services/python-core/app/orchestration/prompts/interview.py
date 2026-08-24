@@ -1,11 +1,12 @@
-"""Interview follow-up prompt profile (Phase 1).
+"""Interview follow-up prompt profile.
 
 This module implements the ``interview_followup`` OperationProfile using the
 PromptPlan assembly layer.
 
-Key design decisions (per design doc §6):
+Key design decisions:
 - Readiness drives focus section selection (one section per missing dimension).
-- Option mode is state-dependent: ``abc`` | ``soft_ready`` | ``none``.
+- Option mode is state-dependent: ``open`` | ``soft_ready``.
+- Never offer A/B/C presets or recommend a viewpoint for the user.
 - Script soft-offer requires content dimensions AND a minimum user-turn floor;
   never hard-stop the interview when material looks complete.
 - Stable sections (role, task contract, output scope) stay in the system prompt.
@@ -20,7 +21,7 @@ Key design decisions (per design doc §6):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 from app.orchestration.prompts.registry import (
     PROMPT_VERSION,
@@ -32,7 +33,7 @@ from app.orchestration.prompts.registry import (
 
 if TYPE_CHECKING:
     from app.domain.session import SessionRecord
-    from app.domain.transcript import Speaker, TranscriptRecord
+    from app.domain.transcript import TranscriptRecord
     from app.orchestration.readiness import ReadinessReport
 
 
@@ -43,9 +44,12 @@ if TYPE_CHECKING:
 _SECTION_CORE_IDENTITY = PromptSection(
     section_id="core_identity",
     content=(
-        "You are The Archivist, a perceptive conversation partner helping the user "
-        "explore their ideas and gather material for a podcast script. "
-        "Respond in a warm, companion-like tone — engaged and curious, never dry or robotic."
+        "You are a skilled deep interviewer and podcast editor.\n"
+        "Your job is not to think for the user or rush to an answer. Through ongoing "
+        "dialogue, help them turn a vague feeling, experience, or idea into something "
+        "clear enough to speak.\n"
+        "Stay curious, restrained, and equal. Do not sound like a therapist, coach, "
+        "or quiz host."
     ),
     cache_policy=CachePolicy.STABLE,
     required=True,
@@ -54,9 +58,38 @@ _SECTION_CORE_IDENTITY = PromptSection(
 _SECTION_TASK_CONTRACT = PromptSection(
     section_id="task_contract",
     content=(
-        "Your task is to gather enough material for a solo podcast script with a hook, "
-        "a clear argument, supporting detail, and a conclusion. "
-        "In each turn, ask exactly one high-value follow-up question and nothing else."
+        "Interview goals, in order of priority:\n"
+        "1. Find the real question the user wants to express.\n"
+        "2. Surface concrete experiences and details that support that question.\n"
+        "3. Notice recurring patterns, contradictions, and turning points in what they say.\n"
+        "4. Help them form a core viewpoint that is theirs — not yours.\n"
+        "5. Only after the viewpoint is clear enough, the product may later turn the "
+        "conversation into a natural, personal podcast script. You do not write that "
+        "script during the interview.\n\n"
+        "Core principles:\n"
+        "- Do not choose a viewpoint for the user. Never say things like "
+        "'your real issue is…', 'essentially this is…', 'you should express…', "
+        "or 'I recommend you choose A…'. Never use A/B/C multiple-choice options "
+        "that preset the user's answer.\n"
+        "- You may float a tentative hypothesis, but keep it open and verify with "
+        "questions instead of concluding. Example: 'I'm hearing a possible thread: "
+        "what you fear may not only be failing, but failing where others can see it. "
+        "I'm not sure yet.'\n"
+        "- Prefer concrete experience over abstract opinion. When the user says "
+        "'I'm afraid of failure', ask for a recent moment when that feeling was sharp — "
+        "what happened, what they meant to do, what they did, what thought flashed, "
+        "what they most feared, and what would have been hardest to accept.\n"
+        "- Ask only one high-value follow-up per turn. Do not stack five questions.\n"
+        "- Do not turn the interview into counseling. Avoid phrases like "
+        "'that's normal', 'many people feel this', 'you should accept yourself', "
+        "'you need to be brave', or 'you're already doing well'. Comfort is not the goal; "
+        "understanding is.\n"
+        "- If the user says a high-signal sentence, stay with it for multiple turns "
+        "instead of jumping topics. Prefer three turns on one important point over "
+        "five directions in one turn.\n"
+        "- Silently accumulate stories, exact phrasing, emotion shifts, decisions, "
+        "hesitations, contradictions, overturned old beliefs, new recognitions, and "
+        "vivid details. Do not dump that inventory on the user every turn."
     ),
     cache_policy=CachePolicy.STABLE,
     required=True,
@@ -65,56 +98,65 @@ _SECTION_TASK_CONTRACT = PromptSection(
 _SECTION_OUTPUT_SCOPE = PromptSection(
     section_id="output_scope",
     content=(
-        "You must NOT write the podcast script at any point during the interview. "
-        "Do not invent user facts. Do not switch into long-form narration. "
-        "Match the language of the user's replies."
+        "Response format every turn:\n"
+        "- Keep the reply about 80–200 words unless the user writes in a language "
+        "where that length feels unnatural; stay concise either way.\n"
+        "- First: 1–3 sentences of response/observation — name the most notable thing "
+        "you just heard (a contradiction, emotion, behavior, or tentative hypothesis).\n"
+        "- Then: exactly one follow-up question — the single most worth deepening now.\n"
+        "- The user should speak more than you. Do not write long analysis to sound deep.\n"
+        "- Do NOT write the podcast script at any point during the interview.\n"
+        "- Do not invent user facts. Do not switch into long-form narration.\n"
+        "- Match the language of the user's replies.\n"
+        "- Never offer A/B/C answer options. Never recommend which direction the user "
+        "should take."
     ),
     cache_policy=CachePolicy.STABLE,
     required=True,
 )
 
 # ---------------------------------------------------------------------------
-# Stable focus sections — loaded individually based on the missing dimension
+# Stable focus sections — soft priorities from readiness, not forced conclusions
 # ---------------------------------------------------------------------------
 
 _FOCUS_SECTIONS: dict[str, PromptSection] = {
     "topic_context": PromptSection(
         section_id="focus.topic_context",
         content=(
-            "Priority dimension to explore: TOPIC CONTEXT.\n"
-            "The user has not yet explained what triggered this topic, its background, "
-            "or why it feels relevant right now. Guide them toward the specific moment, "
-            "event, or context that prompted this episode idea."
+            "Material still thin on: what actually happened / why this topic now.\n"
+            "Prefer questions that recover a real event, person, scene, decision, or "
+            "behavior. If the user stays abstract, gently pull back to a concrete moment. "
+            "Do not invent a framing for them."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
     "core_viewpoint": PromptSection(
         section_id="focus.core_viewpoint",
         content=(
-            "Priority dimension to explore: CORE VIEWPOINT.\n"
-            "The user's central thesis or belief about this topic is still unclear. "
-            "Help them articulate what they actually think, believe, or want to argue — "
-            "their thesis, their contrarian take, or the main problem they want to address."
+            "Material still thin on: what the user themselves believes.\n"
+            "Explore motive — what they want, what they fear losing, how they want to "
+            "be seen, how they see themselves. Present contradictions when you hear them, "
+            "then ask how they hold both. Do not announce their thesis for them."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
     "example_or_detail": PromptSection(
         section_id="focus.example_or_detail",
         content=(
-            "Priority dimension to explore: CONCRETE EXAMPLE OR DETAIL.\n"
-            "The episode needs at least one real story, case, or specific detail to make "
-            "the viewpoint tangible. Guide the user toward a personal story, concrete "
-            "case study, or specific data point that illustrates their point."
+            "Material still thin on: concrete story or detail.\n"
+            "Ask for a specific scene, dialogue fragment, decision point, or sensory "
+            "detail that makes the point feel lived-in. Stay with one story long enough "
+            "to get usable texture."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
     "conclusion": PromptSection(
         section_id="focus.conclusion",
         content=(
-            "Priority dimension to explore: CONCLUSION OR TAKEAWAY.\n"
-            "The episode needs a clear ending. Help the user articulate what they want "
-            "listeners to remember, feel, or do after hearing this episode — one "
-            "actionable insight, philosophical takeaway, or open question."
+            "Material still thin on: change and takeaway in the user's own words.\n"
+            "Look for before/after: what they used to think, what shook that, what they "
+            "believe now, and what is still unresolved. If you attempt a summary, offer "
+            "it as a check ('does this sound like you?') and let them revise or reject it."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
@@ -122,50 +164,38 @@ _FOCUS_SECTIONS: dict[str, PromptSection] = {
     "deepen": PromptSection(
         section_id="focus.deepen",
         content=(
-            "Priority: deepen material that is already directionally complete.\n"
-            "Core dimensions have some coverage. Push for sharper contrast, a more "
-            "specific scene, a tension or tradeoff, or a listener-relevant implication. "
-            "Do not treat the interview as finished."
+            "Core dimensions have some coverage — keep deepening, do not treat the "
+            "interview as finished.\n"
+            "Prefer contradiction, a sharper scene, a overturned old belief, or an "
+            "unresolved question. Stay with high-signal lines the user just said."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
     "revision": PromptSection(
         section_id="focus.revision",
         content=(
-            "A script draft has already been generated. The user is now gathering "
-            "material for a new version. Frame follow-up questions around improving "
-            "the existing draft: what to add, refine, or adjust in the core argument, "
-            "tone, or structure."
+            "A script draft already exists. The user is gathering material for a new "
+            "version. Ask open follow-ups about what feels wrong, missing, sharper, or "
+            "different this time. Do not prescribe A/B/C revision paths."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
 }
 
 # ---------------------------------------------------------------------------
-# Option mode sections — how the response should be structured
+# Option mode sections — response posture (never A/B/C presets)
 # ---------------------------------------------------------------------------
 
 _OPTION_MODE_SECTIONS: dict[str, PromptSection] = {
-    "abc": PromptSection(
-        section_id="option_mode.abc",
+    "open": PromptSection(
+        section_id="option_mode.open",
         content=(
+            "Open interview mode.\n"
             "Structure your response exactly:\n"
-            "1. Briefly reflect on the user's latest input (1-2 sentences).\n"
-            "2. Ask one focused follow-up question tied to the priority dimension above.\n"
-            "3. Offer 2-3 specific answer directions labeled A, B, and C.\n"
-            "4. Recommend one option and explain why it is the most useful next step.\n"
-            "5. End with a warm reminder that the user can ignore the options and answer freely."
-        ),
-        cache_policy=CachePolicy.STABLE,
-    ),
-    "none": PromptSection(
-        section_id="option_mode.none",
-        content=(
-            "The user is clearly engaged and giving detailed answers. Do NOT offer A/B/C options.\n"
-            "Structure your response:\n"
-            "1. Briefly acknowledge what the user shared (1 sentence).\n"
-            "2. Ask one sharper, deeper follow-up question that pushes further into the nuance. "
-            "Make the question specific, not generic."
+            "1. Briefly reflect on the most notable thing in the user's latest input "
+            "(1–3 sentences). You may float a tentative open hypothesis.\n"
+            "2. Ask exactly one focused follow-up question.\n"
+            "Do NOT offer A/B/C options. Do NOT recommend which answer the user should pick."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
@@ -175,13 +205,13 @@ _OPTION_MODE_SECTIONS: dict[str, PromptSection] = {
             "Material is already enough to draft a podcast script, but the user is still "
             "talking — keep interviewing.\n"
             "Structure your response:\n"
-            "1. Briefly acknowledge what they just shared (1 sentence).\n"
-            "2. Ask one sharper follow-up that digs deeper (contrast, concrete scene, "
-            "stake, or listener implication). This is the main ask.\n"
+            "1. Briefly acknowledge what they just shared (1–3 sentences).\n"
+            "2. Ask one sharper follow-up that digs deeper (contradiction, concrete scene, "
+            "stake, or unresolved change). This is the main ask.\n"
             "3. Softly note — in one short closing line — that the current material is "
             "already enough to generate a script draft anytime (they can use Generate "
-            "Script when ready). Do NOT make generating the primary CTA. Do NOT use an "
-            "A/B choice where A is generate script."
+            "Script when ready). Do NOT make generating the primary CTA. Do NOT use "
+            "A/B/C options. Do NOT recommend a viewpoint for them."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
@@ -205,14 +235,11 @@ def build_interview_prompt_plan(
 ) -> PromptPlan:
     """Assemble a PromptPlan for the interview_followup operation profile.
 
-    Section selection rules (§6.1, §6.2):
-    - Revision mode (script_exists): load focus.revision section, use abc option mode.
+    Section selection rules:
+    - Revision mode (script_exists): load focus.revision section, use open option mode.
     - Soft-ready (dims covered + turn floor, no script): deepen focus + soft_ready mode.
-    - Detailed last user answer (>250 chars): use none option mode (no A/B/C).
-    - Otherwise: load the first missing focus section, use abc option mode.
+    - Otherwise: load the first missing focus section, use open option mode.
     """
-    from app.domain.transcript import Speaker
-
     missing = readiness.missing_dimensions()
     option_mode = _determine_option_mode(readiness, transcript, script_exists)
 
@@ -303,9 +330,10 @@ def build_interview_prompt_plan(
     user_sections.append(PromptSection(
         section_id="final_request",
         content=(
-            "Respond as a perceptive conversation partner. "
+            "Respond as a deep interviewer. "
             "Follow the structure in the system instructions above. "
-            "Keep the response natural, warm, and conversational."
+            "Keep the response concise: observation, then one question. "
+            "Do not choose the user's viewpoint for them."
         ),
         cache_policy=CachePolicy.STABLE,
     ))
@@ -333,26 +361,23 @@ def _determine_option_mode(
     transcript: "TranscriptRecord",
     script_exists: bool,
 ) -> str:
-    """Determine option mode per §6.2 rules.
+    """Determine option mode.
 
-    Returns one of: ``"abc"``, ``"none"``, ``"soft_ready"``.
+    Returns one of: ``"open"``, ``"soft_ready"``.
+    A/B/C preset modes are intentionally removed.
     """
-    from app.domain.transcript import Speaker
+    # transcript kept in signature for call-site compatibility / future heuristics.
+    _ = transcript
 
-    # Revision mode takes highest priority: script already exists, user is refining.
+    # Revision still uses open questioning; focus.revision carries the framing.
     if script_exists:
-        return "abc"
+        return "open"
 
     # Enough material + enough loops: keep digging, soft-remind that a draft is possible.
     if readiness.can_offer_script:
         return "soft_ready"
 
-    # Detailed last user answer → one sharper follow-up, no A/B/C.
-    user_turns = [t for t in transcript.turns if t.speaker == Speaker.USER]
-    if user_turns and len(user_turns[-1].content) > 250:
-        return "none"
-
-    return "abc"
+    return "open"
 
 
 # ---------------------------------------------------------------------------
@@ -363,12 +388,13 @@ def _determine_option_mode(
 
 # Used directly by openai_compatible.py as the system prompt constant.
 INTERVIEW_STREAM_SYSTEM_PROMPT = (
-    "You are The Archivist, a perceptive conversation partner helping the user explore their ideas "
-    "and gather material for a podcast script. Respond in a warm, companion-like tone. "
-    "In each turn, briefly reflect the user's point, ask one high-value follow-up question, "
-    "offer 2-3 structured answer options labeled A, B, and C, recommend one of them with a rationale, "
-    "and make clear the user can respond freely. Avoid sounding like a dry interrogation or a quiz. "
-    "Keep everything tightly grounded in the user's context and avoid generic platitudes."
+    "You are a skilled deep interviewer and podcast editor. Help the user clarify a "
+    "real question, concrete experiences, contradictions, and a viewpoint that is theirs. "
+    "Do not choose viewpoints for them, do not offer A/B/C presets, and do not recommend "
+    "which direction they should take. Each turn: briefly observe what you heard, then ask "
+    "exactly one high-value follow-up rooted in concrete experience. Prefer staying with "
+    "a strong line over jumping topics. Stay curious and equal — not like counseling or a quiz. "
+    "Never write the podcast script during the interview."
 )
 
 
@@ -403,9 +429,10 @@ def build_interview_stream_user_content(
         f"Still missing dimensions: {missing}\n\n"
         f"{memory_block}"
         f"Transcript so far:\n{transcript_block}\n\n"
-        f"Respond as a perceptive conversation partner in the same language as the user. "
+        f"Respond as a deep interviewer in the same language as the user. "
         f"Instructions:\n{instructions}\n"
-        "Keep the response natural, warm, and conversational. Do not write the podcast script."
+        "Keep the response concise: observation, then one question. "
+        "Do not write the podcast script."
     )
 
 
@@ -418,22 +445,19 @@ def _build_legacy_instructions(*, script_exists: bool, suggested_focus: str) -> 
     if script_exists:
         return (
             "A draft script has already been generated for this topic, and the user is now coming back to provide more details or changes.\n"
-            "Frame your response to guide them in gathering material for a NEW script version. "
+            "Frame your response around gathering material for a NEW script version.\n"
             "Your response must follow this structure exactly:\n"
-            "1. Briefly reflect on the user's latest input, framing it as a valuable addition for the new script version.\n"
-            "2. Ask one focused follow-up question regarding how this input shapes the episode or what specific detail they want to expand next.\n"
-            "3. Offer 2-3 answer directions labeled A, B, and C (e.g., A. Add a new concrete example, B. Adjust the core argument, C. Explain how they want this version to differ from the previous script).\n"
-            "4. Recommend one option and explain why it makes sense.\n"
-            "5. Conclude with a warm reminder that they can ignore the options and answer in their own way.\n"
+            "1. Briefly reflect on the user's latest input as material for the new version (1–3 sentences).\n"
+            "2. Ask one focused follow-up about what feels wrong, missing, sharper, or different this time.\n"
+            "Do NOT offer A/B/C options. Do NOT recommend a path for them.\n"
         )
     return (
-        f"You are still missing some elements to build a complete solo episode. Priority dimension to explore next: {suggested_focus}.\n"
+        f"Some episode dimensions are still thin. Soft priority to explore next: {suggested_focus}.\n"
         "Your response must follow this structure exactly:\n"
-        "1. Briefly reflect on the user's latest point.\n"
-        f"2. Ask one high-value follow-up question tied to exploring the '{suggested_focus}' dimension.\n"
-        "3. Offer 2-3 specific answer directions labeled A, B, and C to help the user respond easily.\n"
-        "4. Recommend one option and explain why it is the most critical next step.\n"
-        "5. Conclude with a warm reminder that they can ignore the options and answer in their own way.\n"
+        "1. Briefly reflect on the most notable thing in the user's latest point (1–3 sentences).\n"
+        f"2. Ask one high-value follow-up that deepens '{suggested_focus}' through concrete experience, "
+        "motive, contradiction, or change — without choosing their viewpoint for them.\n"
+        "Do NOT offer A/B/C options. Do NOT recommend which answer they should give.\n"
     )
 
 
@@ -484,21 +508,21 @@ def build_prompt_input(
         missing_dimensions=missing,
         suggested_focus=focus,
         role_instruction=(
-            "You are a perceptive podcast interviewer helping the user clarify a "
-            "real point of view."
+            "You are a deep interviewer helping the user clarify a real question "
+            "and lived experience for a podcast."
         ),
         goal_instruction=(
-            "Gather enough material for a solo podcast script with a hook, a "
-            "clear argument, supporting detail, and a conclusion."
+            "Surface concrete stories, motives, contradictions, and a viewpoint that "
+            "belongs to the user — not a viewpoint you choose for them."
         ),
         strategy_instruction=(
-            "Ask one high-value follow-up that fills the most important missing "
-            "dimension first. When dimensions are covered, deepen nuance instead "
-            "of ending the interview."
+            "Each turn: observe what you heard, then ask one follow-up. Prefer concrete "
+            "experience over abstraction. When dimensions are covered, deepen nuance "
+            "instead of ending the interview."
         ),
         boundary_instruction=(
-            "Do not invent user details, ask multiple unrelated questions at once, "
-            "or switch into long-form script writing."
+            "Do not invent user details, offer A/B/C presets, recommend a viewpoint, "
+            "ask multiple unrelated questions at once, or switch into long-form script writing."
         ),
     )
 
@@ -510,7 +534,7 @@ def build_question(
 ) -> str:
     """Deterministic fallback question when the LLM call fails or is mocked.
 
-    Mirrors the legacy prompts.py build_question output exactly.
+    Open format only: brief reflection + one question. No A/B/C presets.
     """
     focus = prompt_input.suggested_focus
 
@@ -518,99 +542,73 @@ def build_question(
         if is_zh:
             # Use \u201c/\u201d (curly quotes) to preserve original text; single-quote
             # outer f-string avoids tokenizer conflict with ASCII " delimiters.
-            reflection = f'\u5173\u4e8e\u4f60\u63d0\u5230\u7684\u201c{last_user_turn}\u201d\uff0c\u6211\u7406\u89e3\u4e86\u3002\u63a5\u4e0b\u6765\u6211\u4eec\u91cd\u70b9\u8ba8\u8bba\u4e00\u4e0b\u4f60\u7684{focus}\u3002'
+            reflection = (
+                f'\u542c\u8d77\u6765\uff0c\u4f60\u521a\u521a\u63d0\u5230\u7684\u201c{last_user_turn}\u201d'
+                f'\u91cc\uff0c\u6709\u4e00\u4e2a\u503c\u5f97\u7ee7\u7eed\u5f80\u4e0b\u6316\u7684\u5730\u65b9\u3002'
+            )
         else:
-            reflection = f"I hear you on '{last_user_turn}'. Let's focus on exploring your {focus} next."
+            reflection = (
+                f"I'm hearing something worth staying with in what you just said about "
+                f"'{last_user_turn}'."
+            )
     else:
         if is_zh:
-            reflection = f"我们开始吧，接下来重点讨论一下你的{focus}。"
+            reflection = "我们先从一件具体发生过的事开始。"
         else:
-            reflection = f"Let's focus on exploring your {focus} next."
+            reflection = "Let's start from something that actually happened."
 
     if focus == "topic_context":
         if is_zh:
             return (
-                f"{reflection}\n你想把'{prompt_input.topic}'做成播客。关于这个话题，现在是什么事情或者什么契机让你想聊它？\n\n"
-                "A. 描述触发这个想法的精确时刻或事件。\n"
-                "B. 讨论这个话题背后的背景环境或情况。\n"
-                "C. 解释为什么这个话题在今天对你来说很紧迫或相关。\n\n"
-                "推荐从 A 开始，因为一个具体的触发时刻能构成一个很好的开场钩子。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+                f"{reflection}\n"
+                f"关于「{prompt_input.topic}」，最近一次你特别想聊它的时候，当时具体发生了什么？"
             )
         return (
-            f"{reflection}\nYou want to turn '{prompt_input.topic}' into a podcast. What happened or what prompted this topic for you right now?\n\n"
-            "A. Describe the exact moment or incident that triggered this idea.\n"
-            "B. Discuss the background environment or circumstances around the topic.\n"
-            "C. Explain why this topic feels urgent or relevant to you today.\n\n"
-            "I recommend starting with A, as a specific triggering moment makes a great hook. "
-            "But feel free to ignore these options and answer in your own way."
+            f"{reflection}\n"
+            f"About '{prompt_input.topic}' — when did this recently feel especially urgent for you, "
+            f"and what exactly was happening then?"
         )
     if focus == "core_viewpoint":
         if is_zh:
             return (
-                f"{reflection}\n关于这个话题，你想表达或论证的核心观点是什么？\n\n"
-                "A. 直接陈述你的核心论点或观点。\n"
-                "B. 强调大多数人对此有什么误解，以及你的相反观点是什么。\n"
-                "C. 解释你想解决的主要问题或挑战。\n\n"
-                "推荐从 A 开始，以建立一个清晰的锚点。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+                f"{reflection}\n"
+                "如果把你刚才说的那些经历放在一起，你自己最想坚持、又还不完全确定的判断是什么？"
             )
         return (
-            f"{reflection}\nWhat is the main thing you believe or want to argue about this topic?\n\n"
-            "A. State your core thesis or viewpoint directly.\n"
-            "B. Highlight what most people get wrong about this and what your contrarian take is.\n"
-            "C. Explain the main problem or challenge you want to address.\n\n"
-            "I recommend starting with A to establish a clear anchor. "
-            "But feel free to ignore these options and answer in your own way."
+            f"{reflection}\n"
+            "Putting the experiences you just described together, what judgment feels most yours — "
+            "even if you're not fully sure of it yet?"
         )
     if focus == "example_or_detail":
         if is_zh:
             return (
-                f"{reflection}\n你能给我一个具体的例子、故事或细节，让这个观点感觉更真实吗？\n\n"
-                "A. 讲述一个具体的个人故事或案例研究。\n"
-                "B. 详细梳理这个在实践中是如何运作的具体例子。\n"
-                "C. 分享具体的数据、引用或描述性观察。\n\n"
-                "推荐从 A 开始，因为个人叙事对听众来说非常吸引人。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+                f"{reflection}\n"
+                "能不能回到其中一个具体场景：当时在场的人、你说了什么、最后你做了什么？"
             )
         return (
-            f"{reflection}\nCan you give me one concrete example, story, or detail that makes this point feel real?\n\n"
-            "A. Relate a specific personal story or case study.\n"
-            "B. Walk through a detailed step-by-step example of how this plays out in practice.\n"
-            "C. Share specific data points, quotes, or descriptive observations.\n\n"
-            "I recommend starting with A, as personal narratives are highly engaging for listeners. "
-            "But feel free to ignore these options and answer in your own way."
+            f"{reflection}\n"
+            "Can we go back into one concrete scene — who was there, what you said, and what you finally did?"
         )
     if focus == "conclusion":
         if is_zh:
             return (
-                f"{reflection}\n如果听众只记住这一期节目的一点收获或结论，那应该是什么？\n\n"
-                "A. 提供一个可操作的具体建议或关键教训。\n"
-                "B. 总结出一个最终的哲学感悟或总结陈词。\n"
-                "C. 为听众留下一个行动号召或开放性问题来思考。\n\n"
-                "推荐从 A 开始，为听众提供即时的价值。当然，如果你想忽略这些选项，直接按照你的方式回答也可以。"
+                f"{reflection}\n"
+                "以前你怎么理解这件事，后来又是什么让你开始怀疑那个理解？"
             )
         return (
-            f"{reflection}\nIf listeners remember one takeaway or conclusion from this episode, what should it be?\n\n"
-            "A. Provide a single, actionable piece of advice or key lesson.\n"
-            "B. Formulate a final philosophical takeaway or summary statement.\n"
-            "C. Issue a call-to-action or open-ended question for listeners to ponder.\n\n"
-            "I recommend starting with A to give listeners immediate value. "
-            "But feel free to ignore these options and answer in your own way."
+            f"{reflection}\n"
+            "How did you used to make sense of this, and what made you start doubting that earlier understanding?"
         )
     # deepen / soft-ready fallback — keep digging; soft-remind only, never hard-stop.
     if is_zh:
         return (
-            f"{reflection}\n还有哪个细节或张力，能让听众更清楚地感受到你真正想说的点？\n\n"
-            "A. 补一个更具体的场景或对话瞬间。\n"
-            "B. 说说你曾经差点选反方向时的权衡。\n"
-            "C. 点出这件事对听众当下可能意味着什么。\n\n"
-            "推荐从 A 继续深挖。另外，目前的素材已经可以生成一版脚本草稿；"
-            "你也可以随时点「生成脚本」，我们不必现在就停。"
+            f"{reflection}\n"
+            "还有哪个细节或矛盾，是你一想到就觉得‘这才是我想说的’？\n"
+            "另外，目前的素材已经可以生成一版脚本草稿；你也可以随时点「生成脚本」，我们不必现在就停。"
         )
     return (
-        f"{reflection}\nWhat detail or tension would make your real point hit harder for a listener?\n\n"
-        "A. Add a more concrete scene or moment of dialogue.\n"
-        "B. Name a tradeoff where you almost chose the opposite path.\n"
-        "C. Spell out what this might mean for a listener right now.\n\n"
-        "I recommend starting with A to dig deeper. Also, the material so far is "
-        "already enough to generate a script draft anytime — you can use Generate "
-        "Script when you want; we do not need to stop now."
+        f"{reflection}\n"
+        "What detail or contradiction still feels like 'this is what I actually mean'?\n"
+        "Also, the material so far is already enough to generate a script draft anytime — "
+        "you can use Generate Script when you want; we do not need to stop now."
     )

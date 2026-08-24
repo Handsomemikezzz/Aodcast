@@ -205,7 +205,7 @@ class InterviewOrchestratorTests(unittest.TestCase):
         self.assertEqual(result.project.session.state, SessionState.READY_TO_GENERATE)
         self.assertTrue(result.ai_can_finish)
 
-    def test_build_question_fallback_reflection_and_options(self) -> None:
+    def test_build_question_fallback_reflection_without_abc(self) -> None:
         from app.orchestration.prompts import build_prompt_input, build_question
         session = SessionRecord(topic="Productivity tools", creation_intent="Draft article")
         from app.domain.transcript import TranscriptRecord
@@ -217,20 +217,20 @@ class InterviewOrchestratorTests(unittest.TestCase):
         prompt_input = build_prompt_input(session, transcript, readiness)
 
         question_en = build_question(prompt_input, last_user_turn="I want to get organized.", is_zh=False)
-        self.assertIn("I hear you on 'I want to get organized.'", question_en)
-        self.assertIn("A.", question_en)
-        self.assertIn("B.", question_en)
-        self.assertIn("C.", question_en)
-        self.assertIn("I recommend starting with", question_en)
+        self.assertIn("I'm hearing something worth staying with", question_en)
+        self.assertIn("I want to get organized.", question_en)
+        self.assertNotIn("\nA.", question_en)
+        self.assertNotIn("\nB.", question_en)
+        self.assertNotIn("\nC.", question_en)
+        self.assertNotIn("I recommend starting with", question_en)
 
         session_zh = SessionRecord(topic="个人效率", creation_intent="起草文章")
         prompt_input_zh = build_prompt_input(session_zh, transcript, readiness)
         question_zh = build_question(prompt_input_zh, last_user_turn="我想整理桌面", is_zh=True)
-        self.assertIn("关于你提到的“我想整理桌面”，我理解了。", question_zh)
-        self.assertIn("A. 描述触发这个想法的精确时刻或事件", question_zh)
-        self.assertIn("B.", question_zh)
-        self.assertIn("C.", question_zh)
-        self.assertIn("推荐从 A 开始", question_zh)
+        self.assertIn("我想整理桌面", question_zh)
+        self.assertIn("值得继续往下挖", question_zh)
+        self.assertNotIn("\nA.", question_zh)
+        self.assertNotIn("推荐从 A 开始", question_zh)
 
 
 if __name__ == "__main__":

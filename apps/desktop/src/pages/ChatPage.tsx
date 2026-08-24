@@ -7,7 +7,6 @@ import {
   Circle,
   Lightbulb,
   Loader2,
-  Mic,
   PanelLeft,
   PanelLeftClose,
   PencilLine,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import { SafeMarkdown } from "../components/SafeMarkdown";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ComposerModelPicker } from "../components/ComposerModelPicker";
 import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
 import { useBridge } from "../lib/BridgeContext";
 import {
@@ -338,7 +338,13 @@ export function ChatPage({
           session_id: prev.transcript?.session_id ?? prev.session.session_id,
           turns: [...(prev.transcript?.turns ?? []), optimisticTurn],
         };
-        return { ...prev, transcript: newTranscript };
+        // Leave topic_defined immediately so the composer/Stop dock stays mounted
+        // while the first streamed reply is still in flight.
+        const nextSession =
+          prev.session.state === "topic_defined"
+            ? { ...prev.session, state: "interview_in_progress" as const }
+            : prev.session;
+        return { ...prev, session: nextSession, transcript: newTranscript };
       });
 
       replyStreamAbortRef.current?.abort();
@@ -738,19 +744,10 @@ export function ChatPage({
                 ) : null}
                 <div
                   className={cn(
-                    // ~1.6× text line height: slightly roomier than 1.5×
-                    "flex items-center gap-2 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl px-3.5 py-2 shadow-[0_20px_50px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.02)]",
+                    "flex flex-col gap-2 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl px-3.5 pt-2.5 pb-2 shadow-[0_20px_50px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.02)]",
                     "focus-within:border-accent-amber/35 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.3),0_0_20px_rgba(242,191,87,0.06)] transition-all duration-300",
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => landingInputRef.current?.focus()}
-                    className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0"
-                    aria-label="Focus input"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
                   <div
                     ref={landingInputRef}
                     contentEditable={!landingSubmitting}
@@ -764,29 +761,37 @@ export function ChatPage({
                     }}
                     onPaste={handlePaste}
                     data-placeholder="今天你想聊什么?"
-                    className="flex-1 min-h-[24px] max-h-[160px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[14px] text-primary placeholder:text-outline/75 py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
+                    className="w-full min-h-[28px] max-h-[160px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[14px] text-primary placeholder:text-outline/75 py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
                   />
-                  <span
-                    title="Voice input coming soon"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-outline bg-surface-container-high/60 px-2.5 py-1 text-[10px] font-headline font-semibold uppercase tracking-[0.16em] text-secondary shrink-0 select-none shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
-                    aria-label="Voice input coming soon"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-accent-amber/60 pulse-amber shrink-0" />
-                    Soon
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void handleLandingCreate()}
-                    disabled={!landingInput.trim() || landingSubmitting}
-                    className="p-1.5 theme-accent-gradient text-on-primary rounded-lg hover:scale-105 active:scale-95 shadow-md shadow-accent-amber/15 transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed shrink-0"
-                    aria-label="Start chat"
-                  >
-                    {landingSubmitting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4 text-on-primary" />
-                    )}
-                  </button>
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => landingInputRef.current?.focus()}
+                      className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0"
+                      aria-label="Focus input"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <ComposerModelPicker
+                        disabled={landingSubmitting}
+                        onConfigChange={() => void ensureLlmReady()}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleLandingCreate()}
+                        disabled={!landingInput.trim() || landingSubmitting}
+                        className="p-1.5 theme-accent-gradient text-on-primary rounded-full hover:scale-105 active:scale-95 shadow-md shadow-accent-amber/15 transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed shrink-0"
+                        aria-label="Start chat"
+                      >
+                        {landingSubmitting ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4 text-on-primary" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -837,7 +842,16 @@ export function ChatPage({
   const isFinished = state === "ready_to_generate" || state === "script_generated" || state === "script_edited" || state === "completed";
   const isDeletedSession = Boolean(project.session.deleted_at);
   const hasUserTurns = turns.some((turn) => turn.speaker === "user");
-  const showChatComposer = !isDeletedSession && state !== "topic_defined";
+  // Keep the dock visible during the first reply stream: landing → studio leaves
+  // session.state as topic_defined until submit_reply finishes, which previously hid
+  // both the composer and the Stop control for the entire first generation.
+  const showStartInterview =
+    !isDeletedSession
+    && state === "topic_defined"
+    && turns.length === 0
+    && !submitting
+    && streamingMessage === null;
+  const showChatComposer = !isDeletedSession && !showStartInterview;
 
   const openLatestScript = async () => {
     if (!sessionId) return;
@@ -898,7 +912,7 @@ export function ChatPage({
               ) : null}
             </div>
 
-            {turns.length === 0 && state === "topic_defined" && !isDeletedSession && (
+            {showStartInterview && (
               <div className="py-8">
                 <button
                   onClick={handleStart}
@@ -1066,46 +1080,45 @@ export function ChatPage({
         {showChatComposer && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-20 select-none">
             <div className="flex flex-col gap-2.5 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl p-3 shadow-[0_24px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.02)] focus-within:border-accent-amber/25 focus-within:shadow-[0_24px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(242,191,87,0.05)] transition-all duration-300">
-              <div className="flex items-end gap-3.5">
-                <div
-                  ref={composerInputRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onInput={(e) => setInputValue(e.currentTarget.innerText)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      // Block send while any chat action is in flight; drafts may still be typed.
-                      if (submitting) return;
-                      e.preventDefault();
-                      handleSubmit();
-                    }
-                  }}
-                  onPaste={handlePaste}
-                  className="flex-1 bg-transparent border-none focus:ring-0 overflow-y-auto text-[14px] text-primary placeholder:text-outline/75 py-1.5 px-2 max-h-[160px] min-h-[38px] outline-none leading-relaxed composer-editable select-text text-left"
-                  data-placeholder="输入你的想法... (Shift+Enter 换行，Enter 发送)"
-                />
+              <div
+                ref={composerInputRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={(e) => setInputValue(e.currentTarget.innerText)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    // Block send while any chat action is in flight; drafts may still be typed.
+                    if (submitting) return;
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
+                onPaste={handlePaste}
+                className="w-full bg-transparent border-none focus:ring-0 overflow-y-auto text-[14px] text-primary placeholder:text-outline/75 py-1.5 px-2 max-h-[160px] min-h-[38px] outline-none leading-relaxed composer-editable select-text text-left"
+                data-placeholder="输入你的想法... (Shift+Enter 换行，Enter 发送)"
+              />
 
-                <div className="flex items-center gap-1.5 shrink-0 mb-0.5">
-                  <button
-                    onClick={() => void handleGenerateScript()}
-                    disabled={submitting || !hasUserTurns}
-                    className="px-3.5 py-2 text-secondary hover:text-accent-amber hover:bg-accent-amber/8 border border-transparent hover:border-accent-amber/20 rounded-xl text-[12px] font-semibold transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent"
-                  >
-                    生成脚本
-                  </button>
-                  <span
-                    title="Voice input coming soon"
-                    className="p-2 text-secondary/50 rounded-xl cursor-not-allowed hover:bg-surface-container-high/60 shrink-0"
-                  >
-                    <Mic className="w-4 h-4" />
-                  </span>
+              <div className="flex items-center justify-between gap-2 px-0.5">
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateScript()}
+                  disabled={submitting || !hasUserTurns}
+                  className="px-3 py-1.5 text-secondary hover:text-accent-amber hover:bg-accent-amber/8 border border-transparent hover:border-accent-amber/20 rounded-xl text-[12px] font-semibold transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent"
+                >
+                  生成脚本
+                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <ComposerModelPicker
+                    disabled={submitting}
+                    onConfigChange={() => void ensureLlmReady()}
+                  />
                   {replyStreaming ? (
                     <button
                       type="button"
                       onClick={handleStopReply}
                       title="停止生成"
                       aria-label="停止生成"
-                      className="p-2 bg-on-surface/90 text-background hover:scale-105 active:scale-95 rounded-xl transition-all duration-200"
+                      className="p-2 bg-on-surface/90 text-background hover:scale-105 active:scale-95 rounded-full transition-all duration-200"
                     >
                       <Square className="w-3.5 h-3.5 fill-current" />
                     </button>
@@ -1114,18 +1127,12 @@ export function ChatPage({
                       type="button"
                       onClick={handleSubmit}
                       disabled={!inputValue.trim() || submitting}
-                      className="p-2 theme-accent-gradient text-on-primary hover:scale-105 active:scale-95 rounded-xl transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"
+                      className="p-2 theme-accent-gradient text-on-primary hover:scale-105 active:scale-95 rounded-full transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"
                     >
                       <Send className="w-4 h-4 text-on-primary" />
                     </button>
                   )}
                 </div>
-              </div>
-
-              <div className="flex justify-between items-center px-2">
-                <p className="text-[10px] text-secondary/70 tracking-wide">
-                  The Archivist is listening. You can type or record thoughts.
-                </p>
               </div>
             </div>
           </div>
