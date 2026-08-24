@@ -55,13 +55,19 @@ export function EpisodeAudioDock({
     if (!hasPreview && activeTrack === "preview" && hasAudio) setActiveTrack("episode");
   }, [activeTrack, hasAudio, hasPreview]);
 
-  const activeRequest = workbench.generating ? workbench.audioRequestState : workbench.previewRequestState;
+  const activeRequest = workbench.generating
+    ? workbench.audioRequestState
+    : workbench.previewing
+      ? workbench.previewRequestState
+      : null;
+  const isCancelling = workbench.generating && workbench.audioRequestState?.phase === "cancelling";
   const canPreview = readiness.scriptReady
     && readiness.voiceReady
     && readiness.ttsReady
     && !sourceOutOfDate
     && !workbench.generating;
   const showGenerate = !hasAudio || audioOutOfDate;
+  const generationFailed = workbench.audioRequestState?.phase === "failed" || Boolean(workbench.audioError);
 
   return (
     <>
@@ -71,17 +77,25 @@ export function EpisodeAudioDock({
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-accent-amber">
             {workbench.generating || workbench.previewing
               ? <Loader2 className="h-4 w-4 animate-spin" />
+              : generationFailed
+                ? <AlertTriangle className="h-4 w-4 text-red-500" />
               : audioOutOfDate
                 ? <AlertTriangle className="h-4 w-4" />
                 : <FileAudio className="h-4 w-4" />}
           </span>
           <div className="min-w-0">
-            <p className="text-xs font-bold text-primary">{status.label}</p>
+            <p className="text-xs font-bold text-primary">
+              {isCancelling ? "Cancelling render" : status.label}
+            </p>
             <p className="mt-0.5 truncate text-[10px] text-secondary">
               {workbench.generating
-                ? workbench.audioRequestState?.message || "Rendering episode audio…"
+                ? isCancelling
+                  ? "Stopping the current render…"
+                  : workbench.audioRequestState?.message || "Rendering episode audio…"
                 : workbench.previewing
                   ? workbench.previewRequestState?.message || "Rendering preview…"
+                  : generationFailed
+                    ? workbench.audioError || workbench.audioRequestState?.message || "Generation failed."
                   : audioOutOfDate
                     ? audioOutOfDateReason || "The current audio is from an earlier version."
                     : hasAudio
@@ -162,9 +176,10 @@ export function EpisodeAudioDock({
             <button
               type="button"
               onClick={() => void workbench.handleCancelAudio()}
-              className="inline-flex h-11 items-center justify-center rounded-xl border border-outline px-4 text-xs font-semibold text-primary hover:bg-primary/5"
+              disabled={isCancelling}
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-outline px-4 text-xs font-semibold text-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Cancel render
+              {isCancelling ? "Cancelling…" : "Cancel render"}
             </button>
           ) : sourceOutOfDate ? (
             <button

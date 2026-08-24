@@ -23,7 +23,7 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - 内部 Speech Director 为精确的脚本 hash 生成版本化、provider-neutral 的 Speech Plan，包含稳定分段、结构化停顿、重音、发音和表达指导，但主 UI 不暴露这些工程概念。
 - 以脚本为核心的 Episode Workspace 支持编辑、上下文内 Voice 与 Delivery 选择、短片段试听、完整音频生成、非破坏式更新、播放和导出。
 - Voice Studio 支持内置和用户创建的 Speaker Reference、最长 10 分钟的样本上传/录音、资产试听和 reference 管理；已有 Voice 直接在 Episode 内选择。
-- 支持本地 MLX TTS 模型 Adapter，也支持 OpenAI-compatible 远程 provider。本地默认 VoxCPM2 8-bit，同时保留 MOSS-TTS Local v1.5 与 Qwen3-TTS Base 作为对比路径。
+- 支持本地 MLX TTS 模型 Adapter，也支持 OpenAI-compatible 远程 provider。本地默认 VoxCPM2 4-bit，同时保留 VoxCPM2 8-bit、MOSS-TTS Local v1.5 与 Qwen3-TTS Base 作为对比路径。
 - 通过 Render Manifest 装配 WAV，显式处理停顿、格式/响度一致性、渲染血缘和可复用分段音频资产。
 - Models 页面支持本地模型存储、下载、迁移、重置和默认本地语音模型选择。
 - Mock LLM/TTS provider 可用于无付费 API、无本地模型权重的 smoke test。
@@ -187,7 +187,7 @@ cd ../..
 默认模型目标：
 
 ```text
-mlx-community/VoxCPM2-8bit
+mlx-community/VoxCPM2-4bit
 ```
 
 下载模型权重到用户自有目录：
@@ -198,7 +198,7 @@ uv run --with huggingface_hub --with tqdm \
   --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
-通用下载脚本默认下载 VoxCPM2 8-bit。下载对比模型时显式传入已登记的仓库，例如：
+通用下载脚本默认下载 VoxCPM2 4-bit。下载对比模型时显式传入已登记的仓库，例如：
 
 ```bash
 uv run --with huggingface_hub --with tqdm \
@@ -221,7 +221,8 @@ Local MLX 路径受 runtime 能力门控。选择它之前务必先检查：
 
 | 模型 | 定位 |
 | --- | --- |
-| `mlx-community/VoxCPM2-8bit` | 推荐默认；同时支持 Speaker Reference 克隆与风格/韵律 instruction。 |
+| `mlx-community/VoxCPM2-4bit` | 推荐默认（包括 16 GB Mac）；同时支持 Speaker Reference 克隆与风格/韵律 instruction。 |
+| `mlx-community/VoxCPM2-8bit` | 面向至少 24 GB 统一内存 Mac 的高内存 VoxCPM2 对比版本。 |
 | `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5` | 面向高内存 Mac 的长篇与显式停顿对比。 |
 | `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit` | 不带 style instruction 的高质量克隆 baseline。 |
 | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` | 不带 style instruction、速度更快且内存更低的克隆 baseline。 |
@@ -239,10 +240,12 @@ Local MLX 路径受 runtime 能力门控。选择它之前务必先检查：
 ```bash
 ./scripts/dev/run-python-core.sh \
   --configure-tts-provider local_mlx \
-  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/VoxCPM2-8bit"
+  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/VoxCPM2-4bit"
 ```
 
 本地模型目录必须包含真实 MLX 导出和 `.safetensors` 权重。占位目录可用于测试，但不能作为可执行模型包。
+
+Aodcast 会为 VoxCPM2 使用低内存 provider 策略：把文本限制为较短的合成分段，采用模型卡推荐的 7 个 CFM steps，限制异常情况下的音频 patch 数，并在每段之间清理 MLX allocator cache。渲染过程中模型权重仍保持热加载；切换模型时仍只保留一个 worker 进程。
 
 #### 在桌面应用中管理模型存储
 

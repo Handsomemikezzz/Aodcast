@@ -56,7 +56,7 @@ type Notice = {
   actionModelName?: string;
 };
 
-const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-8bit";
+const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-4bit";
 
 function resolvedTtsModel(config: TTSProviderConfig | null): string {
   const raw = config?.model?.trim() ?? "";

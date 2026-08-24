@@ -995,10 +995,34 @@ class HttpRuntimeTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["data"]["task_state"]["phase"], "cancelling")
+        # No live worker → cancel finalizes immediately instead of sticking on cancelling.
+        self.assertEqual(payload["data"]["task_state"]["phase"], "cancelled")
         self.assertEqual(payload["data"]["task_state"]["run_token"], "token-abc")
         self.assertEqual(payload["data"]["request_state"]["run_token"], "token-abc")
-        self.assertTrue(self.request_state_store.is_cancel_requested(task_id, run_token="token-abc"))
+        self.assertFalse(self.request_state_store.is_cancel_requested(task_id, run_token="token-abc"))
+        loaded = self.request_state_store.load(task_id)
+        assert loaded is not None
+        self.assertEqual(loaded["phase"], "cancelled")
+
+    def test_show_task_state_finalizes_orphaned_running_render(self) -> None:
+        task_id = "render_audio:session-orphan:script-abc"
+        self.request_state_store.save(
+            task_id,
+            {
+                "operation": "render_audio",
+                "phase": "running",
+                "progress_percent": 55.0,
+                "message": "Rendering speech segment 13 / 43...",
+                "run_token": "token-orphan",
+            },
+        )
+
+        status, _, payload = self.request_json("GET", f"/api/v1/tasks/{task_id}")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["task_state"]["phase"], "failed")
+        self.assertIn("no longer running", str(payload["data"]["task_state"]["message"]).lower())
 
     def test_cancel_task_rejects_stale_run_token(self) -> None:
         task_id = "render_audio:session-123:script-abc"

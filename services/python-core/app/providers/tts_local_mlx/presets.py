@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-8bit"
+DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-4bit"
 
 # Remote repository ids accepted by the local runtime. Local directories are
 # identified from their config.json instead, so copied or relocated models do

@@ -192,7 +192,15 @@ export function useScriptWorkbenchAudio({
       activeTaskRef.current = null;
       setGenerating(false);
       setAffectedSegmentIds([]);
-      if (state.phase === "succeeded") void refreshRenderedAudio();
+      if (state.phase === "succeeded") {
+        setAudioError(null);
+        void refreshRenderedAudio();
+      } else if (state.phase === "failed") {
+        setAudioError(state.message || "Audio rendering failed.");
+      } else if (state.phase === "cancelled") {
+        setAudioError(null);
+        setAudioMessage("Render cancelled.");
+      }
     } else {
       setGenerating(true);
     }
@@ -440,13 +448,31 @@ export function useScriptWorkbenchAudio({
     if (!handle) return;
     try {
       const state = await bridge.cancelTask(handle.taskId, handle.runToken);
-      setAudioRequestState(
+      const nextState =
         state ?? {
           ...buildRequestState("render_audio", "cancelling", "Cancellation requested."),
           task_id: handle.taskId,
           run_token: handle.runToken,
-        },
-      );
+        };
+      setAudioRequestState(nextState);
+      // Orphaned workers finalize to cancelled/failed immediately — clear the spinner now.
+      if (isTerminalRequestState(nextState)) {
+        stopTaskPolling();
+        activeTaskRef.current = null;
+        setGenerating(false);
+        setAffectedSegmentIds([]);
+        if (nextState.phase === "cancelled") {
+          setAudioError(null);
+          setAudioMessage("Render cancelled.");
+        } else if (nextState.phase === "failed") {
+          setAudioError(nextState.message || "Render failed.");
+        }
+        void refreshProject().catch(() => undefined);
+      } else {
+        setGenerating(true);
+        startTaskPolling();
+        pollOnce();
+      }
     } catch (err: unknown) {
       setAudioError(getErrorMessage(err, "Failed to request cancellation."));
     }

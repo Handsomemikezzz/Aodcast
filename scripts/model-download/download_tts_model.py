@@ -43,7 +43,7 @@ def _default_base_dir() -> Path:
 
 
 DEFAULT_BASE = _default_base_dir()
-DEFAULT_REPO = "mlx-community/VoxCPM2-8bit"
+DEFAULT_REPO = "mlx-community/VoxCPM2-4bit"
 PROGRESS_MARKER = "AODCAST_PROGRESS"
 
 

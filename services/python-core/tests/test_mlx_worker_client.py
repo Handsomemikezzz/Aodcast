@@ -12,7 +12,12 @@ from pathlib import Path
 
 from app.providers.tts_local_mlx.adapters.base import PreparedSegment
 from app.providers.tts_local_mlx.chunker import split_script_into_chunks
-from app.providers.tts_local_mlx.mlx_worker import MlxTtsWorker
+from app.providers.tts_local_mlx.mlx_worker import (
+    MlxTtsWorker,
+    _configure_mlx_allocator,
+    _release_mlx_inference_memory,
+)
+from app.providers.tts_local_mlx.model_spec import model_spec_from_config
 from app.providers.tts_local_mlx.worker_client import (
     MLXWorkerCancelled,
     MLXWorkerError,
@@ -174,6 +179,54 @@ class ChunkerTests(unittest.TestCase):
 
     def test_split_of_empty_script_returns_empty(self) -> None:
         self.assertEqual(split_script_into_chunks("   \n\n"), [])
+
+    def test_split_hard_bounds_delimiter_free_text(self) -> None:
+        text = "字" * 750
+        chunks = split_script_into_chunks(text)
+
+        self.assertTrue(all(len(chunk.text) <= 320 for chunk in chunks))
+        self.assertTrue(all(len(chunk.text) >= 28 for chunk in chunks))
+        self.assertEqual("".join(chunk.text for chunk in chunks), text)
+
+    def test_split_balances_max_plus_one_instead_of_leaving_micro_chunk(self) -> None:
+        chunks = split_script_into_chunks("字" * 321)
+
+        self.assertEqual([len(chunk.text) for chunk in chunks], [161, 160])
+
+
+class WorkerMemoryPolicyTests(unittest.TestCase):
+    class _FakeMX:
+        def __init__(self) -> None:
+            self.cache_limits: list[int] = []
+            self.clear_count = 0
+
+        def set_cache_limit(self, value: int) -> None:
+            self.cache_limits.append(value)
+
+        def clear_cache(self) -> None:
+            self.clear_count += 1
+
+    def test_voxcpm_configures_and_releases_bounded_allocator_cache(self) -> None:
+        mx = self._FakeMX()
+        spec = model_spec_from_config({"model_type": "voxcpm2"})
+
+        _configure_mlx_allocator(mx, spec)
+        _release_mlx_inference_memory(mx, spec)
+
+        self.assertEqual(mx.cache_limits, [256 * 1024**2])
+        self.assertEqual(mx.clear_count, 2)
+
+    def test_qwen_keeps_its_runtime_owned_memory_policy(self) -> None:
+        mx = self._FakeMX()
+        spec = model_spec_from_config(
+            {"model_type": "qwen3_tts", "tts_model_type": "base"}
+        )
+
+        _configure_mlx_allocator(mx, spec)
+        _release_mlx_inference_memory(mx, spec)
+
+        self.assertEqual(mx.cache_limits, [])
+        self.assertEqual(mx.clear_count, 0)
 
 
 class WorkerClientTests(unittest.TestCase):

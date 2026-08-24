@@ -37,16 +37,6 @@ class CatalogEntry:
 
 CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
-        "voxcpm2-8bit",
-        "VoxCPM2 8-bit",
-        "voice",
-        3.23 * 1024,
-        "mlx-community/VoxCPM2-8bit",
-        "voxcpm2",
-        "voxcpm2",
-        "Recommended default for controllable cloned-voice podcasts.",
-    ),
-    CatalogEntry(
         "voxcpm2-4bit",
         "VoxCPM2 4-bit",
         "voice",
@@ -54,7 +44,17 @@ CATALOG: tuple[CatalogEntry, ...] = (
         "mlx-community/VoxCPM2-4bit",
         "voxcpm2",
         "voxcpm2",
-        "Lower-memory VoxCPM2 option; compare quality before final export.",
+        "Recommended VoxCPM2 default, including on 16 GB Macs; compare quality before final export.",
+    ),
+    CatalogEntry(
+        "voxcpm2-8bit",
+        "VoxCPM2 8-bit",
+        "voice",
+        3.23 * 1024,
+        "mlx-community/VoxCPM2-8bit",
+        "voxcpm2",
+        "voxcpm2",
+        "Higher-memory VoxCPM2 option for Macs with at least 24 GB of unified memory.",
     ),
     CatalogEntry(
         "moss-tts-local-v1.5",

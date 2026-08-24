@@ -306,6 +306,78 @@ class RuntimeContext:
             self.memory_service.bootstrap()
         return self.memory_service
 
+    def is_task_worker_alive(self, task_id: str) -> bool:
+        with self.task_lock:
+            thread = self.active_tasks.get(task_id)
+            return thread is not None and thread.is_alive()
+
+    def reconcile_inactive_task(
+        self,
+        task_id: str,
+        *,
+        prefer_cancelled: bool = False,
+    ) -> dict[str, object] | None:
+        """Force a terminal phase when disk says active but no live worker remains.
+
+        Cooperative cancel alone leaves ``cancelling`` forever after OOM / crash.
+        Returns the terminal request_state when reconciliation happened, else None.
+        """
+        state = self.request_state_store.load(task_id)
+        if not isinstance(state, dict):
+            return None
+        phase = str(state.get("phase") or "").strip().lower()
+        if phase not in {"running", "cancelling"}:
+            return None
+        if self.is_task_worker_alive(task_id):
+            return None
+
+        with self.task_lock:
+            self.active_tasks.pop(task_id, None)
+
+        run_token = str(state.get("run_token") or "").strip()
+        cancel_requested = (
+            prefer_cancelled
+            or phase == "cancelling"
+            or self.request_state_store.is_cancel_requested(task_id, run_token=run_token)
+        )
+        operation = str(state.get("operation") or "task")
+        progress_percent = progress_from_request_state(state, default=0.0)
+        if cancel_requested:
+            terminal = build_request_state(
+                operation=operation,
+                phase="cancelled",
+                progress_percent=progress_percent,
+                message="Render cancelled.",
+                run_token=run_token or None,
+            )
+        else:
+            terminal = build_request_state(
+                operation=operation,
+                phase="failed",
+                progress_percent=progress_percent,
+                message=(
+                    "Render stopped unexpectedly. The worker is no longer running. "
+                    "Try generating again."
+                ),
+                run_token=run_token or None,
+            )
+        self.request_state_store.save(task_id, terminal)
+        self.request_state_store.clear_cancel_request(task_id, run_token=run_token)
+        self._release_session_for_render_task(task_id, message=str(terminal.get("message") or ""))
+        return terminal
+
+    def _release_session_for_render_task(self, task_id: str, *, message: str) -> None:
+        if not task_id.startswith("render_audio:"):
+            return
+        parts = task_id.split(":", 2)
+        if len(parts) < 2 or not parts[1].strip():
+            return
+        try:
+            self.store.release_stuck_audio_render(parts[1].strip(), message=message)
+        except Exception:
+            # Session may be missing; task state is still finalized for the UI.
+            return
+
     def start_render_audio(
         self,
         session_id: str,
@@ -349,6 +421,10 @@ class RuntimeContext:
                         run_token=str(existing_state.get("run_token") or ""),
                     )
 
+        # Orphaned running/cancelling marker after OOM or crash — clear before a new run.
+        self.reconcile_inactive_task(task_id)
+
+        with self.task_lock:
             run_token = uuid.uuid4().hex
 
             def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
@@ -487,6 +563,9 @@ class RuntimeContext:
                     run_token=str(existing_state.get("run_token") or ""),
                 )
 
+        self.reconcile_inactive_task(task_id)
+
+        with self.task_lock:
             run_token = uuid.uuid4().hex
 
             def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
@@ -1911,9 +1990,10 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         if self.command == "GET" and path.startswith("/api/v1/tasks/"):
             task_id = path.removeprefix("/api/v1/tasks/")
+            task_state = self.context.reconcile_inactive_task(task_id) or self.context.request_state_store.load(task_id)
             self._send_bridge_envelope(
                 success_envelope(
-                    {"task_id": task_id, "task_state": self.context.request_state_store.load(task_id)},
+                    {"task_id": task_id, "task_state": task_state},
                     operation="show_task_state",
                 ),
                 origin=origin,
@@ -1963,11 +2043,14 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 run_token=run_token,
             )
             self.context.request_state_store.save(task_id, cancelling_state)
+            # Dead/orphaned workers never observe cooperative cancel — finalize now.
+            finalized = self.context.reconcile_inactive_task(task_id, prefer_cancelled=True)
+            response_state = finalized or cancelling_state
             self._send_bridge_envelope(
                 success_envelope(
-                    {"task_id": task_id, "task_state": cancelling_state},
+                    {"task_id": task_id, "task_state": response_state},
                     operation="cancel_task",
-                    message="cancellation_requested",
+                    message="cancellation_completed" if finalized else "cancellation_requested",
                     run_token=run_token,
                 ),
                 origin=origin,
@@ -2787,6 +2870,17 @@ def serve_http(
         message="Download interrupted by a runtime restart. Retry to resume.",
         build_request_state=build_request_state,
     )
+    request_state_store.fail_orphaned_active_states(
+        prefix="render_audio:",
+        message="Render interrupted by a runtime restart. Try generating again.",
+        build_request_state=build_request_state,
+    )
+    for session in store.list_sessions():
+        if session.state == SessionState.AUDIO_RENDERING:
+            store.release_stuck_audio_render(
+                session.session_id,
+                message="Render interrupted by a runtime restart. Try generating again.",
+            )
 
     context = RuntimeContext(
         cwd=cwd,

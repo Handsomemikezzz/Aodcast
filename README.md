@@ -23,7 +23,7 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 - An internal Speech Director that creates a versioned, provider-neutral Speech Plan with stable segments, structured pauses, emphasis, pronunciation, and delivery guidance for the exact script hash without exposing those engineering concepts in the main UI.
 - A script-first Episode Workspace for editing, contextual Voice and Delivery selection, short passage previews, full audio rendering, non-destructive audio updates, playback, and export.
 - Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, asset previews, and reference management; existing voices are selected directly inside an episode.
-- Local MLX TTS model adapters on supported macOS machines, plus OpenAI-compatible remote providers. VoxCPM2 8-bit is the local default; MOSS-TTS Local v1.5 and Qwen3-TTS Base remain comparison paths.
+- Local MLX TTS model adapters on supported macOS machines, plus OpenAI-compatible remote providers. VoxCPM2 4-bit is the local default; VoxCPM2 8-bit, MOSS-TTS Local v1.5, and Qwen3-TTS Base remain comparison paths.
 - Manifest-driven WAV assembly with explicit pauses, consistent format/loudness, render lineage, and reusable per-segment audio assets.
 - Models page for local model storage, downloads, migration, reset, and default local voice model selection.
 - Mock LLM and TTS providers for local smoke testing without paid provider access.
@@ -187,7 +187,7 @@ This group pins `mlx-audio[tts]` to `0.4.6` so the model adapters and worker run
 Default model target:
 
 ```text
-mlx-community/VoxCPM2-8bit
+mlx-community/VoxCPM2-4bit
 ```
 
 Download model weights into a user-owned model directory:
@@ -198,7 +198,7 @@ uv run --with huggingface_hub --with tqdm \
   --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
 ```
 
-The generic downloader defaults to VoxCPM2 8-bit. Pass a registered repository explicitly to download a comparison model, for example:
+The generic downloader defaults to VoxCPM2 4-bit. Pass a registered repository explicitly to download a comparison model, for example:
 
 ```bash
 uv run --with huggingface_hub --with tqdm \
@@ -221,7 +221,8 @@ Current comparison set:
 
 | Model | Role |
 | --- | --- |
-| `mlx-community/VoxCPM2-8bit` | Recommended default; combines Speaker Reference cloning with style/prosody instructions. |
+| `mlx-community/VoxCPM2-4bit` | Recommended default, including on 16 GB Macs; combines Speaker Reference cloning with style/prosody instructions. |
+| `mlx-community/VoxCPM2-8bit` | Higher-memory VoxCPM2 comparison for Macs with at least 24 GB of unified memory. |
 | `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5` | High-memory long-form and explicit-pause comparison. |
 | `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit` | Higher-quality cloning baseline without style instruction. |
 | `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` | Faster, lower-memory cloning baseline without style instruction. |
@@ -239,10 +240,12 @@ Or point to an explicit local model directory:
 ```bash
 ./scripts/dev/run-python-core.sh \
   --configure-tts-provider local_mlx \
-  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/VoxCPM2-8bit"
+  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/VoxCPM2-4bit"
 ```
 
 A local model directory must contain a real MLX export, including `.safetensors` weights. Placeholder directories are useful for tests but are not executable model bundles.
+
+VoxCPM2 uses a lower-memory provider policy in Aodcast: text is bounded to short synthesis chunks, generation uses the model card's seven CFM steps, runaway audio-patch generation is capped, and the worker clears its MLX allocator cache between chunks. Model weights stay hot while a render is active, and switching models still replaces the single worker process.
 
 #### Manage model storage in the desktop app
 

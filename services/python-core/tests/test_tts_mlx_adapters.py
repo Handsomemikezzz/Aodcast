@@ -56,6 +56,27 @@ class MLXTTSAdapterTests(unittest.TestCase):
         self.assertNotIn("prompt_audio", kwargs)
         self.assertNotIn("prompt_text", kwargs)
 
+    def test_voxcpm_uses_bounded_generation_defaults(self) -> None:
+        adapter = VoxCPM2Adapter(model_spec_from_config({"model_type": "voxcpm2"}))
+
+        short_kwargs = adapter.generation_kwargs("短句。", AdapterRequest())
+        long_kwargs = adapter.generation_kwargs("长" * 300, AdapterRequest())
+
+        self.assertEqual(short_kwargs["inference_timesteps"], 7)
+        self.assertEqual(short_kwargs["cfg_value"], 2.0)
+        self.assertEqual(short_kwargs["max_tokens"], 64)
+        self.assertEqual(long_kwargs["max_tokens"], 600)
+
+    def test_voxcpm_further_bounds_provider_chunks(self) -> None:
+        adapter = VoxCPM2Adapter(model_spec_from_config({"model_type": "voxcpm2"}))
+        text = "长" * 280
+
+        prepared = adapter.prepare_synthesis(text, (), split_script_into_chunks)
+
+        self.assertGreater(len(prepared.segments), 1)
+        self.assertTrue(all(len(segment.text) <= 120 for segment in prepared.segments))
+        self.assertEqual("".join(segment.text for segment in prepared.segments), text)
+
     def test_voxcpm_ultimate_uses_same_audio_for_prompt_and_reference(self) -> None:
         adapter = VoxCPM2Adapter(model_spec_from_config({"model_type": "voxcpm2"}))
         kwargs = adapter.generation_kwargs(

@@ -151,42 +151,33 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
             )}
           </button>
 
-          {variant === "minimal" ? (
-            <div className="flex-1 flex flex-col gap-1 min-w-0">
-              <div className="flex items-center justify-between text-[10px] font-headline tracking-wide text-secondary/70 px-0.5">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-
-              <div className="relative w-full h-1 bg-surface-container-high rounded-full overflow-hidden">
-                <div
-                  className="h-full theme-accent-gradient transition-all duration-100 rounded-full"
-                  style={{ width: `${seekPercent}%` }}
-                />
-              </div>
+          <div className={cn("flex-1 flex flex-col min-w-0", variant === "minimal" ? "gap-1" : "gap-1.5")}>
+            <div
+              className={cn(
+                "flex items-center justify-between font-headline tracking-wide px-0.5",
+                variant === "minimal" ? "text-[10px] text-secondary/70" : "text-[11px] text-secondary/90",
+              )}
+            >
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
             </div>
-          ) : (
-            <div className="flex-1 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between text-[11px] font-headline tracking-wide text-secondary/90 px-0.5">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
 
-              <div className="relative group w-full flex items-center h-4">
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  value={currentTime}
-                  onChange={handleSeekChange}
-                  disabled={hasError || !src || duration === 0}
-                  aria-label="Seek audio"
-                  className="premium-slider w-full h-1"
-                  style={{ background: accentRangeBackground(seekPercent) }}
-                />
-              </div>
+            {/* Compact dock and full player share seek; volume stays full-only. */}
+            <div className={cn("relative w-full flex items-center", variant === "minimal" ? "h-3" : "h-4")}>
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                step={0.1}
+                value={currentTime}
+                onChange={handleSeekChange}
+                disabled={hasError || !src || duration === 0}
+                aria-label="Seek audio"
+                className="premium-slider w-full h-1"
+                style={{ background: accentRangeBackground(seekPercent) }}
+              />
             </div>
-          )}
+          </div>
 
           {variant === "full" && (
             <div className="flex items-center gap-2 group/volume shrink-0">

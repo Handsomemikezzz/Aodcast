@@ -34,6 +34,7 @@ near real time.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import queue
@@ -49,6 +50,7 @@ from typing import Any
 from app.providers.tts_local_mlx.adapters import adapter_for_model
 from app.providers.tts_local_mlx.adapters.base import AdapterRequest, PreparedSegment
 from app.providers.tts_local_mlx.model_spec import (
+    ModelFamily,
     ModelSpec,
     model_spec_from_loaded_model,
     resolve_model_spec,
@@ -65,6 +67,21 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
 
 
 _EMIT_LOCK = threading.Lock()
+_VOXCPM2_CACHE_LIMIT_BYTES = 256 * 1024**2
+
+
+def _configure_mlx_allocator(mx: Any, spec: ModelSpec) -> None:
+    if spec.family != ModelFamily.VOXCPM2:
+        return
+    mx.set_cache_limit(_VOXCPM2_CACHE_LIMIT_BYTES)
+    mx.clear_cache()
+
+
+def _release_mlx_inference_memory(mx: Any, spec: ModelSpec) -> None:
+    if spec.family != ModelFamily.VOXCPM2:
+        return
+    gc.collect()
+    mx.clear_cache()
 
 
 def _emit(event: dict[str, Any]) -> None:
@@ -100,9 +117,11 @@ class MlxTtsWorker:
         self._cancel_jobs: set[str] = set()
 
     def load_model(self) -> None:
+        import mlx.core as mx  # type: ignore
         from mlx_audio.tts.utils import load_model  # type: ignore
 
         expected_spec = resolve_model_spec(self.model_target)
+        _configure_mlx_allocator(mx, expected_spec)
         self._model = load_model(model_path=self.model_target)
         actual_spec = model_spec_from_loaded_model(self._model)
         validate_loaded_model_spec(expected_spec, actual_spec)
@@ -351,6 +370,39 @@ class MlxTtsWorker:
     ) -> RenderedSegment:
         import mlx.core as mx  # type: ignore
 
+        assert self._model_spec is not None
+        _release_mlx_inference_memory(mx, self._model_spec)
+        try:
+            return self._render_segment_file(
+                job_id=job_id,
+                index=index,
+                text=text,
+                options=options,
+                pause_after_ms=pause_after_ms,
+                output_dir=output_dir,
+                audio_write=audio_write,
+                np=np,
+                mx=mx,
+            )
+        finally:
+            # _render_segment_file's frame (and therefore its MLX arrays) is
+            # gone before this runs on success. This turns completed segment
+            # buffers into releasable cache before the next VoxCPM2 segment.
+            _release_mlx_inference_memory(mx, self._model_spec)
+
+    def _render_segment_file(
+        self,
+        *,
+        job_id: str,
+        index: int,
+        text: str,
+        options: AdapterRequest,
+        pause_after_ms: int,
+        output_dir: Path,
+        audio_write: Any,
+        np: Any,
+        mx: Any,
+    ) -> RenderedSegment:
         assert self._model is not None
         assert self._adapter is not None
         results = self._adapter.generate(self._model, text, options)

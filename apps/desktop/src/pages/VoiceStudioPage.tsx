@@ -21,7 +21,7 @@ import type {
   VoiceStylePreset,
 } from "../types";
 
-const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-8bit";
+const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-4bit";
 type PreviewTextMode = "standard" | "script_opening" | "custom";
 type ReferenceAudioSource = "upload" | "microphone" | "system";
 type ReferenceDialogMode = "create" | "edit";

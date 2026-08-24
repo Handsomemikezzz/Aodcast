@@ -23,7 +23,11 @@ class ScriptChunk:
     text: str
 
 
-def split_script_into_chunks(script: str) -> list[ScriptChunk]:
+def split_script_into_chunks(
+    script: str,
+    *,
+    soft_max_chars: int = _SOFT_MAX_CHUNK_CHARS,
+) -> list[ScriptChunk]:
     """Split a podcast script into sentence-level chunks ready for TTS.
 
     The split is intentionally conservative:
@@ -37,14 +41,33 @@ def split_script_into_chunks(script: str) -> list[ScriptChunk]:
       boundaries are implicit in the sentence ordering
     """
 
+    if soft_max_chars <= 0:
+        raise ValueError("soft_max_chars must be positive.")
+
     cleaned = script.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not cleaned:
         return []
 
     raw_sentences = _split_on_sentence_boundaries(cleaned)
     merged = _merge_short_sentences(raw_sentences)
-    final = _enforce_soft_max_length(merged)
+    final = _enforce_soft_max_length(merged, soft_max_chars=soft_max_chars)
     return [ScriptChunk(index=i, text=text) for i, text in enumerate(final) if text.strip()]
+
+
+def limit_script_chunks(
+    chunks: list[ScriptChunk],
+    *,
+    soft_max_chars: int,
+) -> list[ScriptChunk]:
+    """Further bound chunks for a model with a smaller safe context window."""
+
+    if soft_max_chars <= 0:
+        raise ValueError("soft_max_chars must be positive.")
+    texts = _enforce_soft_max_length(
+        [chunk.text for chunk in chunks],
+        soft_max_chars=soft_max_chars,
+    )
+    return [ScriptChunk(index=index, text=text) for index, text in enumerate(texts)]
 
 
 def _split_on_sentence_boundaries(text: str) -> list[str]:
@@ -90,31 +113,43 @@ def _merge_short_sentences(sentences: list[str]) -> list[str]:
     return merged
 
 
-def _enforce_soft_max_length(sentences: list[str]) -> list[str]:
+def _enforce_soft_max_length(
+    sentences: list[str],
+    *,
+    soft_max_chars: int,
+) -> list[str]:
     out: list[str] = []
     for sentence in sentences:
-        if len(sentence) <= _SOFT_MAX_CHUNK_CHARS:
+        if len(sentence) <= soft_max_chars:
             out.append(sentence)
             continue
-        out.extend(_wrap_long_sentence(sentence))
+        out.extend(_wrap_long_sentence(sentence, soft_max_chars=soft_max_chars))
     return out
 
 
-def _wrap_long_sentence(sentence: str) -> list[str]:
+def _wrap_long_sentence(sentence: str, *, soft_max_chars: int) -> list[str]:
     # Prefer splitting on commas, semicolons or whitespace to avoid cutting
-    # inside a word. We never split inside ASCII tokens because that would
-    # produce broken phonemes.
+    # inside a word. Pathological delimiter-free tokens still receive a hard
+    # bound because allowing them through defeats the worker's memory guard.
     tokens = re.split(r"([，,、:：\s])", sentence)
     chunks: list[str] = []
     current = ""
     for token in tokens:
         if not token:
             continue
-        if len(current) + len(token) > _SOFT_MAX_CHUNK_CHARS and current.strip():
+        if len(current) + len(token) > soft_max_chars and current.strip():
             chunks.append(current.strip())
             current = token.lstrip()
         else:
             current += token
+        while len(current) > soft_max_chars:
+            split_at = soft_max_chars
+            if len(current) <= soft_max_chars * 2:
+                # Balance the final two pieces instead of producing a 1-char
+                # tail from a max+1 delimiter-free token.
+                split_at = (len(current) + 1) // 2
+            chunks.append(current[:split_at].strip())
+            current = current[split_at:].lstrip()
     if current.strip():
         chunks.append(current.strip())
     return chunks or [sentence]

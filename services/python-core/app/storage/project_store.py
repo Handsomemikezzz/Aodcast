@@ -445,6 +445,21 @@ class ProjectStore:
             self.save_session(session)
             return session
 
+    def release_stuck_audio_render(self, session_id: str, *, message: str = "") -> SessionRecord:
+        """Clear a stuck audio_rendering session when no live worker owns the job.
+
+        Used after OOM / runtime restart / orphaned cancel so Generate can start again.
+        """
+        with self._project_guard(session_id):
+            session = self.load_session(session_id)
+            if session.state == SessionState.AUDIO_RENDERING:
+                # Prefer script_edited: audio was never published, script remains the source of truth.
+                session.transition(SessionState.SCRIPT_EDITED)
+            if message.strip():
+                session.record_error(message.strip())
+            self.save_session(session)
+            return session
+
     def publish_render(
         self,
         rendered: SessionProject,
