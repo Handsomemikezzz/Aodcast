@@ -13,6 +13,9 @@ Current MVP contracts:
 - `render-manifest.schema.json`
 - `speaker-reference.schema.json`
 - `tts-model-capability.schema.json`
+- `llm-provider-config.schema.json`
+- `llm-provider-status.schema.json`
+- `llm-auth-start.schema.json`
 - `bridge-request-state.schema.json`
 - `memory-entry.schema.json`
 - `memory-state.schema.json`

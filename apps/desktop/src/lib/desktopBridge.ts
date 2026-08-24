@@ -3,7 +3,9 @@ import {
   GenerationResult,
   InterviewTurnResult,
   LLMConfigPreflight,
+  LLMAuthStartResult,
   LLMProviderConfig,
+  LLMProviderStatus,
   MemoryEntry,
   MemoryOverview,
   MemoryUsageEvent,
@@ -124,6 +126,7 @@ export type ConfigureTTSInput = {
 export type ConfigureLLMInput = {
   provider: string;
   model: string;
+  reasoning_effort: string;
   base_url: string;
   api_key: string;
 };
@@ -210,6 +213,8 @@ export interface DesktopBridge {
   showTTSConfig(): Promise<TTSProviderConfig>;
   configureTTSProvider(input: ConfigureTTSInput): Promise<TTSProviderConfig>;
   testLLMConnection(input: ConfigureLLMInput): Promise<{ status: string; latency_ms: number; message: string }>;
+  showLLMProviderStatus(): Promise<LLMProviderStatus>;
+  startLLMProviderLogin(provider: "codex_subscription"): Promise<LLMAuthStartResult>;
   testTTSConnection(input: ConfigureTTSInput): Promise<{ status: string; latency_ms: number; message: string }>;
   listModelsStatus(): Promise<ModelStatus[]>;
   showModelStorage(): Promise<ModelStorageStatus>;

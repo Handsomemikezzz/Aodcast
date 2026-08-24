@@ -11,6 +11,38 @@ from app.domain.artifact import ArtifactRecord
 
 
 class BridgeRequestStateSchemaTests(unittest.TestCase):
+    def test_llm_provider_schemas_cover_codex_subscription_without_tokens(self) -> None:
+        schemas_dir = Path(__file__).resolve().parents[3] / "packages/shared-schemas"
+        config_schema = json.loads(
+            (schemas_dir / "llm-provider-config.schema.json").read_text(encoding="utf-8")
+        )
+        status_schema = json.loads(
+            (schemas_dir / "llm-provider-status.schema.json").read_text(encoding="utf-8")
+        )
+        auth_schema = json.loads(
+            (schemas_dir / "llm-auth-start.schema.json").read_text(encoding="utf-8")
+        )
+
+        Draft202012Validator(config_schema).validate(
+            {
+                "provider": "codex_subscription",
+                "model": "gpt-test",
+                "reasoning_effort": "high",
+                "base_url": "",
+                "api_key": "",
+            }
+        )
+        self.assertNotIn("access_token", status_schema["properties"])
+        self.assertNotIn("refresh_token", status_schema["properties"])
+        self.assertEqual(status_schema["properties"]["provider"]["const"], "codex_subscription")
+        Draft202012Validator(auth_schema).validate(
+            {
+                "provider": "codex_subscription",
+                "login_id": "login-1",
+                "auth_url": "https://chatgpt.com/auth/codex?state=test",
+            }
+        )
+
     def test_episode_source_schema_covers_markdown_lineage(self) -> None:
         schema_path = Path(__file__).resolve().parents[3] / "packages/shared-schemas/episode-source.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))

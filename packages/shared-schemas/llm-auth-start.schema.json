@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/llm-auth-start.schema.json",
+  "title": "LLMAuthStart",
+  "type": "object",
+  "required": ["provider", "login_id", "auth_url"],
+  "properties": {
+    "provider": { "const": "codex_subscription" },
+    "login_id": { "type": "string", "minLength": 1 },
+    "auth_url": {
+      "type": "string",
+      "pattern": "^https://(chatgpt\\.com|auth\\.openai\\.com)/"
+    }
+  },
+  "additionalProperties": false
+}

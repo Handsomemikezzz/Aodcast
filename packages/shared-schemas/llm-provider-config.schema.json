@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/llm-provider-config.schema.json",
+  "title": "LLMProviderConfig",
+  "type": "object",
+  "required": ["provider", "model", "reasoning_effort", "base_url", "api_key"],
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["mock", "openai_compatible", "codex_subscription"]
+    },
+    "model": { "type": "string" },
+    "reasoning_effort": {
+      "type": "string",
+      "enum": ["auto", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+    },
+    "base_url": { "type": "string" },
+    "api_key": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "provider": { "const": "codex_subscription" } },
+        "required": ["provider"]
+      },
+      "then": {
+        "properties": {
+          "base_url": { "maxLength": 0 },
+          "api_key": { "maxLength": 0 }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

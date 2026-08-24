@@ -20,3 +20,13 @@ export async function pickDirectory(title?: string): Promise<string | null> {
   const path = typeof result?.path === "string" ? result.path.trim() : "";
   return path || null;
 }
+
+export async function openExternalUrl(url: string): Promise<void> {
+  if (!url) return;
+  if (!isTauriRuntime()) {
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (!opened) throw new Error("The browser blocked the ChatGPT login window.");
+    return;
+  }
+  await invoke("open_external_url", { url });
+}

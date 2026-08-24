@@ -21,7 +21,9 @@ import type {
   GenerationResult,
   InterviewTurnResult,
   LLMConfigPreflight,
+  LLMAuthStartResult,
   LLMProviderConfig,
+  LLMProviderStatus,
   MemoryEntry,
   MemoryOverview,
   MemoryUsageEvent,
@@ -72,6 +74,8 @@ type BridgeShape<T> = {
   revisions?: ScriptRevisionRecord[];
   llm_config?: LLMProviderConfig;
   llm_preflight?: LLMConfigPreflight;
+  llm_provider_status?: LLMProviderStatus;
+  llm_auth?: LLMAuthStartResult;
   tts_capability?: TTSCapability;
   tts_config?: TTSProviderConfig;
   models?: ModelStatus[];
@@ -790,6 +794,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({
           provider: input.provider,
           model: input.model,
+          reasoning_effort: input.reasoning_effort,
           base_url: input.base_url,
           api_key: input.api_key,
         }),
@@ -827,10 +832,23 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({
           provider: input.provider,
           model: input.model,
+          reasoning_effort: input.reasoning_effort,
           base_url: input.base_url,
           api_key: input.api_key,
         }),
       });
+    },
+    async showLLMProviderStatus() {
+      const response = await callHttp<{}>("/api/v1/config/llm/status", { needsToken: true });
+      return response.llm_provider_status!;
+    },
+    async startLLMProviderLogin(provider: "codex_subscription") {
+      const response = await callHttp<{}>("/api/v1/config/llm/auth:start", {
+        method: "POST",
+        needsToken: true,
+        body: JSON.stringify({ provider }),
+      });
+      return response.llm_auth!;
     },
     async testTTSConnection(input: ConfigureTTSInput) {
       return callHttp<{ status: string; latency_ms: number; message: string }>("/api/v1/config/tts/test", {

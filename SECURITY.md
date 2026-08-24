@@ -23,3 +23,7 @@ Please include:
 Aodcast stores provider configuration locally for a local-first workflow. API keys entered by users are managed on the user's machine, and users are responsible for protecting their local environment, backups, shell history, screenshots, and project data directories.
 
 Do not commit `.local-data/`, `.env`, provider configuration files, generated audio, transcripts, or other user data.
+
+## ChatGPT subscription authentication
+
+The ChatGPT subscription provider communicates with the official local Codex app-server. Codex owns browser authentication, credential persistence, and token refresh. Aodcast must not read, copy, log, or return Codex access tokens, refresh tokens, `auth.json`, or browser cookies. Provider status and bridge payloads may contain only non-secret account labels, available model metadata, rate-limit summaries, login URLs, and generated content.

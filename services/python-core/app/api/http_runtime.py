@@ -66,6 +66,7 @@ from app.orchestration.memory_service import MemoryService
 from app.orchestration.script_generation import ScriptGenerationService
 from app.providers.llm.factory import validate_llm_provider
 from app.providers.llm.preflight import check_llm_config
+from app.providers.llm.codex_app_server import codex_provider_status, start_codex_login
 from app.providers.tts_api.factory import validate_tts_provider
 from app.providers.tts_local_mlx.presets import DEFAULT_LOCAL_TTS_MODEL
 from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
@@ -1579,6 +1580,28 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
+        if self.command == "GET" and path == "/api/v1/config/llm/status":
+            self._send_bridge_envelope(
+                success_envelope(
+                    {"llm_provider_status": codex_provider_status().to_dict()},
+                    operation="show_llm_provider_status",
+                ),
+                origin=origin,
+            )
+            return
+        if self.command == "POST" and path == "/api/v1/config/llm/auth:start":
+            provider = str(body.get("provider") or "").strip()
+            if provider != "codex_subscription":
+                raise ValueError("ChatGPT login is only supported for the codex_subscription provider.")
+            login = start_codex_login()
+            self._send_bridge_envelope(
+                success_envelope(
+                    {"llm_auth": login.to_dict()},
+                    operation="start_llm_provider_login",
+                ),
+                origin=origin,
+            )
+            return
         if self.command == "GET" and path == "/api/v1/config/llm/preflight":
             preflight = check_llm_config(self.context.config_store.load_llm_config())
             self._send_bridge_envelope(
@@ -1589,6 +1612,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if self.command == "POST" and path == "/api/v1/config/llm/test":
             provider = str(body.get("provider") or "").strip()
             model = str(body.get("model") or "").strip()
+            reasoning_effort = str(body.get("reasoning_effort") or "auto").strip().lower()
             base_url = str(body.get("base_url") or "").strip()
             api_key = str(body.get("api_key") or "").strip()
             if provider == "mock":
@@ -1634,6 +1658,66 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                         ),
                         origin=origin,
                     )
+                return
+            if provider == "codex_subscription":
+                provider_status = codex_provider_status()
+                if not provider_status.installed or not provider_status.authenticated:
+                    self._send_bridge_envelope(
+                        error_envelope(
+                            operation="test_llm_connection",
+                            code="llm_connection_failed",
+                            message=provider_status.message,
+                        ),
+                        origin=origin,
+                    )
+                    return
+                available_models = {item.id for item in provider_status.models}
+                if model and model not in available_models:
+                    self._send_bridge_envelope(
+                        error_envelope(
+                            operation="test_llm_connection",
+                            code="llm_connection_failed",
+                            message=f"Codex model '{model}' is not available for this ChatGPT account.",
+                        ),
+                        origin=origin,
+                    )
+                    return
+                selected_model = (
+                    next((item for item in provider_status.models if item.id == model), None)
+                    if model
+                    else next(
+                        (item for item in provider_status.models if item.is_default),
+                        provider_status.models[0] if provider_status.models else None,
+                    )
+                )
+                if (
+                    reasoning_effort != "auto"
+                    and selected_model is not None
+                    and reasoning_effort not in selected_model.supported_reasoning_efforts
+                ):
+                    self._send_bridge_envelope(
+                        error_envelope(
+                            operation="test_llm_connection",
+                            code="llm_connection_failed",
+                            message=(
+                                f"Reasoning effort '{reasoning_effort}' is not supported by "
+                                f"Codex model '{selected_model.id}'."
+                            ),
+                        ),
+                        origin=origin,
+                    )
+                    return
+                self._send_bridge_envelope(
+                    success_envelope(
+                        {
+                            "status": "success",
+                            "latency_ms": 0,
+                            "message": provider_status.message,
+                        },
+                        operation="test_llm_connection",
+                    ),
+                    origin=origin,
+                )
                 return
             raise ValueError(f"Unsupported provider '{provider}' for LLM connection testing.")
         if self.command == "POST" and path == "/api/v1/config/tts/test":
@@ -1720,10 +1804,17 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             llm_config.provider = provider
             if "model" in body:
                 llm_config.model = str(body.get("model") or "")
+            if "reasoning_effort" in body:
+                llm_config.reasoning_effort = (
+                    str(body.get("reasoning_effort") or "auto").strip().lower() or "auto"
+                )
             if "base_url" in body:
                 llm_config.base_url = str(body.get("base_url") or "")
             if "api_key" in body:
                 llm_config.api_key = str(body.get("api_key") or "")
+            if provider == "codex_subscription":
+                llm_config.base_url = ""
+                llm_config.api_key = ""
             path_obj = self.context.config_store.save_llm_config(llm_config)
             self._send_bridge_envelope(
                 success_envelope(
@@ -2522,6 +2613,10 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "delete_model"
         if path == "/api/v1/config/llm/test":
             return "test_llm_connection"
+        if path == "/api/v1/config/llm/auth:start":
+            return "start_llm_provider_login"
+        if path == "/api/v1/config/llm/status":
+            return "show_llm_provider_status"
         if path == "/api/v1/config/tts/test":
             return "test_tts_connection"
         if path == "/api/v1/config/llm/preflight":

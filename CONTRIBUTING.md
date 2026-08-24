@@ -11,6 +11,7 @@ Prerequisites:
 - `uv`
 - Node.js and `pnpm`
 - Rust and Cargo
+- Optional: the official Codex CLI for ChatGPT subscription-provider development
 
 Bootstrap from the repository root:
 

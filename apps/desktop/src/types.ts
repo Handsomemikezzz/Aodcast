@@ -458,8 +458,41 @@ export type TTSCapability = {
 export type LLMProviderConfig = {
   provider: string;
   model: string;
+  reasoning_effort: string;
   base_url: string;
   api_key: string;
+};
+
+export type LLMProviderModel = {
+  id: string;
+  display_name: string;
+  is_default: boolean;
+  default_reasoning_effort: string | null;
+  supported_reasoning_efforts: string[];
+};
+
+export type LLMProviderStatus = {
+  provider: "codex_subscription";
+  installed: boolean;
+  executable_path: string;
+  version: string;
+  authenticated: boolean;
+  auth_mode: string | null;
+  plan_type: string | null;
+  account_email: string | null;
+  models: LLMProviderModel[];
+  rate_limit: {
+    used_percent: number;
+    window_duration_minutes: number | null;
+    resets_at: number | null;
+  } | null;
+  message: string;
+};
+
+export type LLMAuthStartResult = {
+  provider: "codex_subscription";
+  login_id: string;
+  auth_url: string;
 };
 
 export type LLMConfigPreflight = {

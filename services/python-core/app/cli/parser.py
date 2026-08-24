@@ -149,12 +149,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--configure-llm-provider",
         default="",
-        help="Persist the active LLM provider name.",
+        help="Persist the active LLM provider name (mock, openai_compatible, or codex_subscription).",
     )
     parser.add_argument(
         "--llm-model",
         default=None,
         help="LLM model value for configuration updates.",
+    )
+    parser.add_argument(
+        "--llm-reasoning-effort",
+        default=None,
+        help="Codex reasoning effort (auto or a model-supported effort value).",
     )
     parser.add_argument(
         "--llm-base-url",

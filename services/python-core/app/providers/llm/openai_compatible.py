@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Iterator
 
@@ -36,6 +35,7 @@ from app.providers.llm.base import (
     SpeechPlanGenerationRequest,
     SpeechPlanGenerationResponse,
 )
+from app.providers.llm.json_utils import parse_candidates, parse_json_object, parse_selected_ids
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +102,7 @@ class OpenAICompatibleProvider:
             stream=False,
         )
         raw = (response.choices[0].message.content or "") if response.choices else ""
-        payload = _parse_object(raw)
+        payload = parse_json_object(raw)
         directives = payload.get("segments") if isinstance(payload, dict) else None
         if not isinstance(directives, list):
             raise ValueError("Speech Director returned invalid JSON: expected a segments array.")
@@ -188,7 +188,7 @@ class OpenAICompatibleProvider:
         content = ""
         if response.choices and response.choices[0].message:
             content = response.choices[0].message.content or ""
-        candidates = _parse_candidates(content)
+        candidates = parse_candidates(content)
         return MemoryExtractionResponse(
             candidates=candidates,
             provider_name=self.config.provider,
@@ -225,7 +225,7 @@ class OpenAICompatibleProvider:
         if response.choices and response.choices[0].message:
             content = response.choices[0].message.content or ""
         return MemoryRerankResponse(
-            selected_ids=_parse_selected_ids(content),
+            selected_ids=parse_selected_ids(content),
             provider_name=self.config.provider,
             model_name=self.config.model,
         )
@@ -254,7 +254,7 @@ class OpenAICompatibleProvider:
         content = ""
         if response.choices and response.choices[0].message:
             content = response.choices[0].message.content or ""
-        payload = _parse_object(content)
+        payload = parse_json_object(content)
         return MemoryMergeResponse(
             primary_id=str(payload.get("primary_id") or ""),
             name=str(payload.get("name") or ""),
@@ -299,7 +299,7 @@ class OpenAICompatibleProvider:
         except Exception:
             return _FALLBACK
         raw = (response.choices[0].message.content or "").strip() if response.choices else ""
-        payload = _parse_object(raw)
+        payload = parse_json_object(raw)
         action = str(payload.get("action") or "none").strip()
         if action not in _VALID_ACTIONS:
             action = "none"
@@ -310,60 +310,3 @@ class OpenAICompatibleProvider:
             provider_name=self.config.provider,
             model_name=self.config.model,
         )
-
-
-def _parse_candidates(content: str) -> list[dict[str, Any]]:
-    text = content.strip()
-    if not text:
-        return []
-    # Tolerate fenced JSON or leading/trailing prose around the object.
-    if "```" in text:
-        fence = text.split("```")
-        for segment in fence:
-            segment = segment.strip()
-            if segment.startswith("json"):
-                segment = segment[len("json"):].strip()
-            if segment.startswith("{"):
-                text = segment
-                break
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        return []
-    try:
-        payload = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return []
-    candidates = payload.get("candidates") if isinstance(payload, dict) else None
-    if not isinstance(candidates, list):
-        return []
-    return [item for item in candidates if isinstance(item, dict)]
-
-
-def _parse_selected_ids(content: str) -> list[str]:
-    text = content.strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        return []
-    try:
-        payload = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return []
-    selected = payload.get("selected_ids") if isinstance(payload, dict) else None
-    if not isinstance(selected, list):
-        return []
-    return [str(item) for item in selected if isinstance(item, (str, int))]
-
-
-def _parse_object(content: str) -> dict[str, Any]:
-    text = content.strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        return {}
-    try:
-        payload = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}

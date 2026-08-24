@@ -8,6 +8,7 @@ from typing import Any
 class LLMProviderConfig:
     provider: str = "openai_compatible"
     model: str = ""
+    reasoning_effort: str = "auto"
     base_url: str = ""
     api_key: str = ""
 
@@ -15,6 +16,7 @@ class LLMProviderConfig:
         return {
             "provider": self.provider,
             "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
             "base_url": self.base_url,
             "api_key": self.api_key,
         }
@@ -24,6 +26,7 @@ class LLMProviderConfig:
         return cls(
             provider=str(payload.get("provider", "openai_compatible")),
             model=str(payload.get("model", "")),
+            reasoning_effort=str(payload.get("reasoning_effort", "auto")).strip().lower() or "auto",
             base_url=str(payload.get("base_url", "")),
             api_key=str(payload.get("api_key", "")),
         )

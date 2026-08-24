@@ -37,6 +37,11 @@ from app.models_catalog import save_custom_model_storage_base
 from app.orchestration.audio_rendering import AudioRenderingService, VoicePreviewResult, VoiceRenderSettings
 from app.orchestration.interview_service import InterviewOrchestrator
 from app.orchestration.script_generation import ScriptGenerationService
+from app.providers.llm.codex_app_server import (
+    CodexLoginStart,
+    CodexModelInfo,
+    CodexProviderStatus,
+)
 from app.runtime.request_state_store import RequestStateStore
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
@@ -1092,6 +1097,117 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["data"]["status"], "success")
         self.assertEqual(payload["data"]["latency_ms"], 0)
+
+    @staticmethod
+    def _codex_status() -> CodexProviderStatus:
+        return CodexProviderStatus(
+            installed=True,
+            executable_path="/usr/local/bin/codex",
+            version="codex-cli test",
+            authenticated=True,
+            auth_mode="chatgpt",
+            plan_type="plus",
+            account_email="user@example.com",
+            models=(
+                CodexModelInfo(
+                    id="gpt-test",
+                    display_name="GPT Test",
+                    is_default=True,
+                    default_reasoning_effort="low",
+                    supported_reasoning_efforts=("low", "medium"),
+                ),
+            ),
+            rate_limit=None,
+            message="Connected to ChatGPT subscription (plus).",
+        )
+
+    def test_codex_subscription_status_route_returns_account_models(self) -> None:
+        with patch(
+            "app.api.http_runtime.codex_provider_status",
+            return_value=self._codex_status(),
+        ):
+            status, _, payload = self.request_json(
+                "GET",
+                "/api/v1/config/llm/status",
+                token="runtime-token",
+            )
+
+        self.assertEqual(status, 200)
+        data = payload["data"]["llm_provider_status"]
+        self.assertTrue(data["authenticated"])
+        self.assertEqual(data["plan_type"], "plus")
+        self.assertEqual(data["models"][0]["id"], "gpt-test")
+        self.assertNotIn("access_token", data)
+
+    def test_codex_subscription_login_route_returns_official_auth_url(self) -> None:
+        with patch(
+            "app.api.http_runtime.start_codex_login",
+            return_value=CodexLoginStart(
+                login_id="login-1",
+                auth_url="https://chatgpt.com/auth/codex?state=test",
+            ),
+        ):
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/config/llm/auth:start",
+                body={"provider": "codex_subscription"},
+                token="runtime-token",
+            )
+
+        self.assertEqual(status, 200)
+        auth = payload["data"]["llm_auth"]
+        self.assertEqual(auth["login_id"], "login-1")
+        self.assertTrue(auth["auth_url"].startswith("https://chatgpt.com/"))
+
+    def test_codex_connection_rejects_unsupported_reasoning_effort(self) -> None:
+        with patch(
+            "app.api.http_runtime.codex_provider_status",
+            return_value=self._codex_status(),
+        ):
+            status, _, payload = self.request_json(
+                "POST",
+                "/api/v1/config/llm/test",
+                body={
+                    "provider": "codex_subscription",
+                    "model": "gpt-test",
+                    "reasoning_effort": "ultra",
+                    "base_url": "",
+                    "api_key": "",
+                },
+                token="runtime-token",
+            )
+
+        self.assertEqual(status, 500)
+        self.assertFalse(payload["ok"])
+        self.assertIn("not supported", payload["error"]["message"])
+
+    def test_configuring_codex_subscription_clears_api_credentials(self) -> None:
+        self.config_store.save_llm_config(
+            LLMProviderConfig(
+                provider="openai_compatible",
+                model="gpt-api",
+                base_url="https://api.openai.com/v1",
+                api_key="secret-key",
+            )
+        )
+
+        status, _, payload = self.request_json(
+            "PUT",
+            "/api/v1/config/llm",
+            body={
+                "provider": "codex_subscription",
+                "model": "gpt-test",
+                "reasoning_effort": "high",
+            },
+            token="runtime-token",
+        )
+
+        self.assertEqual(status, 200)
+        config = payload["data"]["llm_config"]
+        self.assertEqual(config["provider"], "codex_subscription")
+        self.assertEqual(config["reasoning_effort"], "high")
+        self.assertEqual(config["base_url"], "")
+        self.assertEqual(config["api_key"], "")
 
 
     def test_audio_export_route_converts_to_wav(self) -> None:

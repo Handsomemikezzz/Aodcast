@@ -37,6 +37,61 @@ def check_llm_config(config: LLMProviderConfig) -> LLMConfigPreflight:
             supported_actions=LLM_DEPENDENT_ACTIONS,
             message="Language model setup is ready for interview and script generation.",
         )
+    if provider == "codex_subscription":
+        from app.providers.llm.codex_app_server import codex_provider_status
+
+        status = codex_provider_status()
+        missing_fields: list[str] = []
+        validation_message = ""
+        if not status.installed:
+            missing_fields.append("codex_cli")
+        elif not status.authenticated:
+            missing_fields.append("chatgpt_login")
+        available_models = {model.id for model in status.models}
+        if status.authenticated and not available_models:
+            missing_fields.append("model")
+        elif config.model.strip() and config.model.strip() not in available_models:
+            missing_fields.append("model")
+            validation_message = (
+                f"Codex model '{config.model.strip()}' is not available for the signed-in account."
+            )
+        requested_model = config.model.strip()
+        selected_model = (
+            next((model for model in status.models if model.id == requested_model), None)
+            if requested_model
+            else next(
+                (model for model in status.models if model.is_default),
+                status.models[0] if status.models else None,
+            )
+        )
+        reasoning_effort = config.reasoning_effort.strip().lower() or "auto"
+        if (
+            reasoning_effort != "auto"
+            and selected_model is not None
+            and reasoning_effort not in selected_model.supported_reasoning_efforts
+        ):
+            missing_fields.append("reasoning_effort")
+            supported = ", ".join(selected_model.supported_reasoning_efforts)
+            validation_message = (
+                f"Reasoning effort '{reasoning_effort}' is not supported by Codex model "
+                f"'{selected_model.id}'. Choose Auto or one of: {supported}."
+            )
+        if missing_fields:
+            return LLMConfigPreflight(
+                ready=False,
+                provider=provider,
+                missing_fields=tuple(missing_fields),
+                supported_actions=LLM_DEPENDENT_ACTIONS,
+                message=validation_message or status.message,
+            )
+        return LLMConfigPreflight(
+            ready=True,
+            provider=provider,
+            missing_fields=(),
+            supported_actions=LLM_DEPENDENT_ACTIONS,
+            message="ChatGPT subscription is ready for interview and script generation through Codex.",
+        )
+
     if provider != "openai_compatible":
         allowed = ", ".join(SUPPORTED_LLM_PROVIDERS)
         return LLMConfigPreflight(

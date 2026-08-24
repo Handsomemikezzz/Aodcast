@@ -10,6 +10,7 @@ fn main() {
             commands::ensure_http_runtime,
             commands::pick_directory,
             commands::reveal_in_finder,
+            commands::open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

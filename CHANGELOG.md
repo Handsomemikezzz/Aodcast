@@ -16,6 +16,7 @@ All notable changes to Aodcast will be documented in this file.
 - Generic `scripts/model-download/download_tts_model.py` model downloader, defaulting to VoxCPM2 8-bit.
 - Localhost HTTP runtime bridge between the Tauri/web UI and Python orchestration core.
 - Mock LLM provider path for smoke tests and development fallback.
+- ChatGPT subscription LLM provider through the official Codex app-server, including browser sign-in, dynamic account model discovery, streaming interview output, structured JSON generation, and Codex usage-window status.
 - Shared request-state contracts for long-running operations, script-scoped audio task ids, run-token-safe cancellation, and stale-poll rejection.
 
 ### Changed
@@ -37,3 +38,5 @@ All notable changes to Aodcast will be documented in this file.
 - This release is intended as a GitHub source-code alpha, not a polished packaged desktop app distribution.
 - Local MLX is the primary first-release TTS path and requires compatible macOS hardware/software plus model weights.
 - API keys are stored and managed locally by users at their own risk.
+- Codex owns ChatGPT OAuth credential storage and refresh; Aodcast does not copy OAuth tokens or silently fall back from subscription usage to API-key billing.
+- Codex subscription settings expose one global model-aware reasoning-effort selector; `Auto` uses the model default and explicit options are constrained by the live model catalog.

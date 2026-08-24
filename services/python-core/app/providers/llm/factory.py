@@ -4,7 +4,7 @@ from app.domain.provider_config import LLMProviderConfig
 from app.providers.llm.base import LLMProvider
 from app.providers.llm.mock_provider import MockLLMProvider
 
-SUPPORTED_LLM_PROVIDERS = ("mock", "openai_compatible")
+SUPPORTED_LLM_PROVIDERS = ("mock", "openai_compatible", "codex_subscription")
 
 
 def validate_llm_provider(provider: str) -> None:
@@ -21,4 +21,8 @@ def build_llm_provider(config: LLMProviderConfig) -> LLMProvider:
         from app.providers.llm.openai_compatible import OpenAICompatibleProvider
 
         return OpenAICompatibleProvider(config)
+    if config.provider == "codex_subscription":
+        from app.providers.llm.codex_app_server import CodexSubscriptionProvider
+
+        return CodexSubscriptionProvider(config)
     raise AssertionError("Validated provider should always match a supported LLM provider.")

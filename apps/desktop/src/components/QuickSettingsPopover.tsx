@@ -111,6 +111,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
         base_url: llmConfig.base_url,
         api_key: llmConfig.api_key,
         model: newModel,
+        reasoning_effort: llmConfig.reasoning_effort || "auto",
       });
       setLlmConfig(updated);
       setSaveSuccess("llm");

@@ -27,6 +27,7 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - 通过 Render Manifest 装配 WAV，显式处理停顿、格式/响度一致性、渲染血缘和可复用分段音频资产。
 - Models 页面支持本地模型存储、下载、迁移、重置和默认本地语音模型选择。
 - Mock LLM/TTS provider 可用于无付费 API、无本地模型权重的 smoke test。
+- 可通过官方本地 Codex app-server 使用 ChatGPT 订阅额度，支持浏览器登录、账户模型发现和 Codex 使用窗口展示。
 - 开发期本地数据默认存储在 `.local-data/`。
 
 ## 截图
@@ -111,6 +112,27 @@ Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
 ./scripts/dev/run-python-core.sh --check-llm-config
 ```
 
+### 通过 Codex 使用 ChatGPT 订阅
+
+安装官方 Codex CLI，然后在设置中选择 **ChatGPT subscription (via Codex)**：
+
+```bash
+npm install -g @openai/codex
+```
+
+Aodcast 会启动官方本地 `codex app-server`、打开 ChatGPT 浏览器登录，并发现该账户可用的模型。访谈、总结、脚本、Speech Plan 和记忆调用使用临时 Codex thread，消耗当前账户的 Codex 计划额度。Aodcast 不读取或保存 Codex access/refresh token，也不会静默回退到 API Key 计费。登录状态与同一台机器上的官方 Codex CLI 共享。
+
+设置中还提供一个作用于所有 Codex LLM 任务的全局 **Reasoning effort** 选择器。`Auto` 不发送 turn override，使用所选模型实时报告的默认值；显式档位来自该模型的 `supportedReasoningEfforts`。切换模型后，如果原档位不再受支持，会自动回到 `Auto`。更高强度通常会增加等待时间并更快消耗计划额度。
+
+账户已经通过 `codex login` 登录后，也可以只用 CLI 配置 provider：
+
+```bash
+./scripts/dev/run-python-core.sh \
+  --configure-llm-provider codex_subscription \
+  --llm-model "gpt-5.6-sol" \
+  --llm-reasoning-effort auto
+```
+
 ### OpenAI-Compatible Provider
 
 配置 OpenAI-compatible LLM provider：
@@ -137,7 +159,7 @@ Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
 
 ### 环境变量
 
-正常开发不强制要求 `.env`。`.env.example` 记录了 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE`、`HF_TOKEN`，以及用于让并行 worktree 的 Vite shell 指向独立本地 runtime 的 `VITE_AODCAST_RUNTIME_URL` 等可选变量。
+正常开发不强制要求 `.env`。`.env.example` 记录了 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE`、`HF_TOKEN`，以及用于让并行 worktree 的 Vite shell 指向独立本地 runtime 的 `VITE_AODCAST_RUNTIME_URL` 等可选变量。如果 Codex 不在 `PATH`、`/opt/homebrew/bin` 或 `/usr/local/bin`，请把 `AODCAST_CODEX_BIN` 设置为官方 Codex 可执行文件的绝对路径。
 
 ### 导出 MP3
 
@@ -333,6 +355,8 @@ Aodcast 是本地优先应用。开发期间，生成的 session、导入来源�
 该目录已被 Git 忽略，不应提交。
 
 API key 作为本地用户配置保存。Aodcast 目前没有 macOS Keychain 或专用密钥保险库。请保护本地配置文件、shell history、日志、截图、备份、同步目录、生成 transcript 和生成音频。
+
+使用 ChatGPT 订阅时，OAuth 存储和 token 刷新由 Codex 自己管理。Aodcast 只接收账户连接状态、计划标签、模型元数据、额度摘要和生成结果；OAuth token 与浏览器 Cookie 不会进入 Aodcast 配置或 bridge payload。
 
 导入的 Markdown 快照保存在 `.local-data/sessions/<session-id>/source.json`。生成脚本时，规范化文章、生成偏好以及后续来源讨论会发送给用户配置的 LLM provider；如果使用远程 provider，这些内容会离开本机并受相应 provider 条款约束。导入来源不会被转换成 transcript turn，也不会写入 Aodcast 长期记忆；只有用户后续主动输入的对话 turn 在启用记忆时可能成为记忆候选。
 

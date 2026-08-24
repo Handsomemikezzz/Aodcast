@@ -27,6 +27,7 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 - Manifest-driven WAV assembly with explicit pauses, consistent format/loudness, render lineage, and reusable per-segment audio assets.
 - Models page for local model storage, downloads, migration, reset, and default local voice model selection.
 - Mock LLM and TTS providers for local smoke testing without paid provider access.
+- ChatGPT subscription LLM access through the official local Codex app-server, with browser sign-in, account model discovery, and Codex usage-window reporting.
 - Local-first development storage under `.local-data/`.
 
 ## Screenshots
@@ -111,6 +112,27 @@ Check whether the saved LLM configuration is ready for interview and script gene
 ./scripts/dev/run-python-core.sh --check-llm-config
 ```
 
+### ChatGPT Subscription Through Codex
+
+Install the official Codex CLI, then select **ChatGPT subscription (via Codex)** in Settings:
+
+```bash
+npm install -g @openai/codex
+```
+
+Aodcast starts the official local `codex app-server`, opens the ChatGPT browser sign-in flow, and discovers models available to that account. Interview, summary, script, Speech Plan, and memory calls use ephemeral Codex threads and consume the signed-in account's Codex plan allowance. Aodcast never reads or stores Codex access or refresh tokens and never silently falls back to API-key billing. The sign-in is shared with the official Codex CLI on the same machine.
+
+Settings also exposes one global **Reasoning effort** selector for every Codex-backed LLM task. `Auto` omits the turn override and uses the selected model's reported default. Explicit choices are populated from that model's live `supportedReasoningEfforts`; switching models resets an unsupported saved choice to `Auto`. Higher effort can increase response time and consume the plan allowance faster.
+
+For CLI-only configuration after the account is already signed in with `codex login`:
+
+```bash
+./scripts/dev/run-python-core.sh \
+  --configure-llm-provider codex_subscription \
+  --llm-model "gpt-5.6-sol" \
+  --llm-reasoning-effort auto
+```
+
 ### OpenAI-Compatible Providers
 
 Configure an OpenAI-compatible LLM provider:
@@ -137,7 +159,7 @@ Configure an OpenAI-compatible TTS provider:
 
 ### Environment Variables
 
-Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, `HF_TOKEN`, and `VITE_AODCAST_RUNTIME_URL` for pointing a parallel worktree's Vite shell at its own local runtime.
+Aodcast does not require a `.env` file for normal development. `.env.example` documents optional helper variables such as `AODCAST_HF_MODEL_BASE`, `HF_HUB_CACHE`, `HF_TOKEN`, and `VITE_AODCAST_RUNTIME_URL` for pointing a parallel worktree's Vite shell at its own local runtime. If Codex is installed outside `PATH`, `/opt/homebrew/bin`, or `/usr/local/bin`, set `AODCAST_CODEX_BIN` to the absolute official Codex executable path.
 
 ### Exporting MP3
 
@@ -333,6 +355,8 @@ Aodcast is local-first. During development, generated sessions, imported source 
 This directory is ignored by Git and must not be committed.
 
 API keys are stored as local user-managed configuration. Aodcast does not currently provide macOS Keychain integration or a dedicated secrets vault. Protect local config files, shell history, logs, screenshots, backups, synced folders, generated transcripts, and generated audio.
+
+For ChatGPT subscription access, Codex owns OAuth storage and token refresh. Aodcast receives only account status, plan labels, model metadata, rate-limit summaries, and the generated model output; OAuth tokens and browser cookies are never copied into Aodcast configuration or bridge payloads.
 
 Imported Markdown is snapshotted under `.local-data/sessions/<session-id>/source.json`. Script generation sends the normalized article, generation preferences, and any supplemental source discussion to the configured LLM provider. When that provider is remote, this content leaves the device and is handled under the provider's terms. Imported source text is not converted into transcript turns and is never written into Aodcast long-term memory; only later user-authored conversation turns may be eligible for memory when memory is enabled.
 

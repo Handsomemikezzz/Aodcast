@@ -33,6 +33,8 @@ class HttpRuntimeSecurityPrepTests(unittest.TestCase):
                 ("PUT", "/api/v1/config/llm"),
                 ("GET", "/api/v1/config/llm/preflight"),
                 ("POST", "/api/v1/config/llm/test"),
+                ("GET", "/api/v1/config/llm/status"),
+                ("POST", "/api/v1/config/llm/auth:start"),
                 ("GET", "/api/v1/config/tts"),
                 ("PUT", "/api/v1/config/tts"),
                 ("POST", "/api/v1/config/tts/test"),

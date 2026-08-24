@@ -358,10 +358,15 @@ def run(argv: list[str] | None = None) -> int:
             llm_config.provider = args.configure_llm_provider
             if args.llm_model is not None:
                 llm_config.model = args.llm_model
+            if args.llm_reasoning_effort is not None:
+                llm_config.reasoning_effort = args.llm_reasoning_effort.strip().lower() or "auto"
             if args.llm_base_url is not None:
                 llm_config.base_url = args.llm_base_url
             if args.llm_api_key is not None:
                 llm_config.api_key = args.llm_api_key
+            if args.configure_llm_provider == "codex_subscription":
+                llm_config.base_url = ""
+                llm_config.api_key = ""
             path = config_store.save_llm_config(llm_config)
             return output_payload(args, {"path": str(path), "llm_config": llm_config.to_dict()})
 

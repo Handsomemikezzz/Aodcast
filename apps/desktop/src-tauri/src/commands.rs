@@ -285,6 +285,56 @@ pub fn reveal_in_finder(path: String) -> Result<Value, BridgeError> {
 }
 
 #[tauri::command]
+pub fn open_external_url(url: String) -> Result<Value, BridgeError> {
+    let trimmed = url.trim();
+    let allowed = trimmed.starts_with("https://chatgpt.com/")
+        || trimmed.starts_with("https://auth.openai.com/");
+    if !allowed {
+        return Err(BridgeError::with_details(
+            "external_url_rejected",
+            "Only official ChatGPT authentication URLs may be opened.",
+            json!({}),
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open")
+        .arg(trimmed)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("rundll32")
+        .arg("url.dll,FileProtocolHandler")
+        .arg(trimmed)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let status = Command::new("xdg-open")
+        .arg(trimmed)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    match status {
+        Ok(status) if status.success() => Ok(json!({ "ok": true })),
+        Ok(status) => Err(BridgeError::with_details(
+            "external_url_open_failed",
+            format!("Browser launcher exited with status {status}"),
+            json!({}),
+        )),
+        Err(error) => Err(BridgeError::with_details(
+            "external_url_open_failed",
+            format!("Failed to open the browser: {error}"),
+            json!({}),
+        )),
+    }
+}
+
+#[tauri::command]
 pub fn pick_directory(title: Option<String>) -> Result<Value, BridgeError> {
     #[cfg(target_os = "macos")]
     {
