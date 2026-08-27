@@ -445,11 +445,10 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           buffer = buffer.slice(separatorIndex + 2);
           const reachedFinalEvent = flushEvent(eventChunk);
           if (reachedFinalEvent) {
-            try {
-              await reader.cancel();
-            } catch {
-              /* ignore */
-            }
+            // The final SSE payload completes the application protocol. Some
+            // WebView stream implementations delay reader.cancel(), so cleanup
+            // must not hold the caller in its Stop state after the result exists.
+            void reader.cancel().catch(() => undefined);
             break readLoop;
           }
           separatorIndex = buffer.indexOf("\n\n");

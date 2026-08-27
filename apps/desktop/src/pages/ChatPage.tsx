@@ -309,47 +309,61 @@ export function ChatPage({
     setSubmitting(true);
     setError(null);
 
+    // Render the sent turn and assistant placeholder before the preflight request.
+    // The first visible response to Send should not wait on a network round trip.
+    const previousTranscript = project
+      ? {
+          session_id: project.transcript?.session_id ?? project.session.session_id,
+          turns: [...(project.transcript?.turns ?? [])],
+        }
+      : null;
+    const previousSessionState = project?.session.state;
+    const optimisticTurn: TranscriptTurn = {
+      speaker: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
+
+    setStreamingMessage("");
+    setInputValue("");
+    optimisticTranscriptRef.current = previousTranscript;
+    setProject((prev) => {
+      if (!prev) return prev;
+      const newTranscript: TranscriptRecord = {
+        session_id: prev.transcript?.session_id ?? prev.session.session_id,
+        turns: [...(prev.transcript?.turns ?? []), optimisticTurn],
+      };
+      // Leave topic_defined immediately so the composer dock stays mounted
+      // while the first streamed reply is still in flight.
+      const nextSession =
+        prev.session.state === "topic_defined"
+          ? { ...prev.session, state: "interview_in_progress" as const }
+          : prev.session;
+      return { ...prev, session: nextSession, transcript: newTranscript };
+    });
+
     try {
       const ready = await ensureLlmReady();
-      if (!ready) return;
-
-      setReplyStreaming(true);
-
-      const previousTranscript = project
-        ? {
-            session_id: project.transcript?.session_id ?? project.session.session_id,
-            turns: [...(project.transcript?.turns ?? [])],
-          }
-        : null;
-      const optimisticTurn: TranscriptTurn = {
-        speaker: "user",
-        content,
-        created_at: new Date().toISOString(),
-      };
-
-      setStreamingMessage("");
-      setInputValue("");
-      // Do not drive chat composer with long-task request_state chrome.
-
-      optimisticTranscriptRef.current = previousTranscript;
-      setProject((prev) => {
-        if (!prev) return prev;
-        const newTranscript: TranscriptRecord = {
-          session_id: prev.transcript?.session_id ?? prev.session.session_id,
-          turns: [...(prev.transcript?.turns ?? []), optimisticTurn],
-        };
-        // Leave topic_defined immediately so the composer/Stop dock stays mounted
-        // while the first streamed reply is still in flight.
-        const nextSession =
-          prev.session.state === "topic_defined"
-            ? { ...prev.session, state: "interview_in_progress" as const }
-            : prev.session;
-        return { ...prev, session: nextSession, transcript: newTranscript };
-      });
+      if (!ready) {
+        setProject((prev) => (
+          prev && previousTranscript
+            ? {
+                ...prev,
+                session: previousSessionState
+                  ? { ...prev.session, state: previousSessionState }
+                  : prev.session,
+                transcript: previousTranscript,
+              }
+            : prev
+        ));
+        setInputValue(content);
+        return;
+      }
 
       replyStreamAbortRef.current?.abort();
       const replyAbort = new AbortController();
       replyStreamAbortRef.current = replyAbort;
+      setReplyStreaming(true);
 
       const result = await bridge.submitReplyStream(
         sessionId,
@@ -370,7 +384,10 @@ export function ChatPage({
         ),
       );
       optimisticTranscriptRef.current = null;
-      await refreshWorkspace();
+      // The SSE final payload is already the source of truth for this turn.
+      // Refresh navigation/history in the background so a slow ancillary request
+      // cannot keep the composer stuck on its Stop state.
+      void Promise.allSettled([loadHistory(), onRefresh()]);
     } catch (err) {
       // Stop generation: keep user turn, drop partial assistant, sync from server.
       if (isAbortError(err)) {
@@ -383,7 +400,17 @@ export function ChatPage({
       setError(getErrorMessage(err, "Failed to submit reply."));
       const rollbackTranscript = optimisticTranscriptRef.current;
       if (rollbackTranscript) {
-        setProject((prev) => (prev ? { ...prev, transcript: rollbackTranscript } : prev));
+        setProject((prev) => (
+          prev
+            ? {
+                ...prev,
+                session: previousSessionState
+                  ? { ...prev.session, state: previousSessionState }
+                  : prev.session,
+                transcript: rollbackTranscript,
+              }
+            : prev
+        ));
       }
       // Prefer an in-progress draft over restoring the already-sent text.
       setInputValue((prev) => (prev.trim() ? prev : content));
@@ -1127,9 +1154,15 @@ export function ChatPage({
                       type="button"
                       onClick={handleSubmit}
                       disabled={!inputValue.trim() || submitting}
+                      title={submitting ? "正在处理" : "发送"}
+                      aria-label={submitting ? "正在处理" : "发送"}
                       className="p-2 theme-accent-gradient text-on-primary hover:scale-105 active:scale-95 rounded-full transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"
                     >
-                      <Send className="w-4 h-4 text-on-primary" />
+                      {submitting ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-on-primary" />
+                      ) : (
+                        <Send className="w-4 h-4 text-on-primary" />
+                      )}
                     </button>
                   )}
                 </div>

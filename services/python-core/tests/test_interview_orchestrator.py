@@ -3,14 +3,18 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from app.config import AppConfig
 from app.domain.project import SessionProject
 from app.domain.provider_config import LLMProviderConfig
 from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker
-from app.orchestration.interview_service import InterviewOrchestrator
-from app.orchestration.interview_service import InterviewTurnResult
+from app.orchestration.interview_service import (
+    InterviewOrchestrator,
+    InterviewTurnResult,
+    _dispatch_memory_action,
+)
 from app.orchestration.readiness import MIN_USER_TURNS_FOR_SCRIPT_OFFER
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
@@ -29,6 +33,19 @@ READY_ZH = (
 
 
 class InterviewOrchestratorTests(unittest.TestCase):
+    def test_plain_reply_skips_memory_action_work(self) -> None:
+        memory_service = Mock()
+
+        result = _dispatch_memory_action(
+            memory_service,
+            "session-1",
+            "turn-1",
+            "I opened the editor and then got distracted by another app.",
+        )
+
+        self.assertEqual(result, ("none", []))
+        self.assertEqual(memory_service.mock_calls, [])
+
     def build_orchestrator(self) -> tuple[ProjectStore, InterviewOrchestrator]:
         self.temp_dir = tempfile.TemporaryDirectory()
         config = AppConfig.from_cwd(Path(self.temp_dir.name))

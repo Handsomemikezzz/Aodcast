@@ -156,13 +156,11 @@ class InterviewTurnResult:
 
 def _dispatch_memory_action(
     memory_service: "MemoryService",
-    config_store: ConfigStore,
     session_id: str,
     turn_id: str,
     content: str,
-    session: "SessionRecord",
 ) -> tuple[str | None, list]:
-    """§10.3–10.5: Classify user intent and execute the corresponding memory action.
+    """Handle explicit memory instructions without blocking on an LLM call.
 
     Returns (action_label, candidate_list):
     - action_label: one of "remember", "correct", "forget_candidates", "none", or None
@@ -171,15 +169,12 @@ def _dispatch_memory_action(
     Execution order:
       1. Deterministic forget markers  → §10.4
       2. Deterministic correction markers → §10.3
-      3. Deterministic remember markers  → §10.2 (already handled, just label)
-      4. Optional LLM classify_memory_action → §10.5 (fallback to none on error)
+      3. Deterministic remember markers  → §10.2
 
-    Deletions are NEVER applied solely by model output; candidates are surfaced to
-    the frontend which confirms via bridge.deleteMemory / bridge.supersedeMemory.
+    Ambiguous deletions are surfaced to the frontend for confirmation through
+    bridge.deleteMemory / bridge.supersedeMemory.
     """
     from app.orchestration.memory_service import ExplicitMemoryRejected
-    from app.providers.llm.base import MemoryActionRequest
-    from app.providers.llm.factory import build_llm_provider
 
     # §10.4: Forget — deterministic detection takes priority.
     if detect_explicit_forget(content):
@@ -212,8 +207,7 @@ def _dispatch_memory_action(
             return "correct", [c.to_dict() for c in candidates]
         return "correct", []
 
-    # §10.2: Remember — already persisted if detect_explicit_remember fired;
-    # still classify for the UI label.
+    # §10.2: Remember — enqueue the explicit instruction and surface its UI label.
     if detect_explicit_remember(content):
         try:
             memory_service.remember_explicit(
@@ -222,57 +216,6 @@ def _dispatch_memory_action(
         except ExplicitMemoryRejected:
             pass
         return "remember", []
-
-    # §10.5: No deterministic hit — fall back to optional LLM classifier.
-    try:
-        from app.orchestration.prompts.memory import build_memory_action_plan
-
-        existing_names = [e.name for e in memory_service.list_memories()]
-        action_plan = build_memory_action_plan(
-            user_message=content,
-            candidate_names=existing_names,
-        )
-        llm_config = config_store.load_llm_config()
-        provider = build_llm_provider(llm_config)
-        result = provider.classify_memory_action(
-            MemoryActionRequest(
-                user_message=content,
-                candidate_names=existing_names,
-                prompt_plan=action_plan,
-            )
-        )
-        if result.action == "remember":
-            try:
-                memory_service.remember_explicit(
-                    session_id, source_turn_id=turn_id, raw_intent=content
-                )
-            except ExplicitMemoryRejected:
-                pass
-            return "remember", []
-        if result.action == "correct":
-            subject = result.subject or content
-            candidates = memory_service.find_forget_candidates(subject)
-            target_id = candidates[0].id if len(candidates) == 1 else ""
-            try:
-                memory_service.apply_correction(
-                    session_id,
-                    source_turn_id=turn_id,
-                    raw_intent=content,
-                    target_id=target_id,
-                )
-            except ExplicitMemoryRejected:
-                pass
-            return "correct", [c.to_dict() for c in candidates] if len(candidates) > 1 else []
-        if result.action == "forget_candidates":
-            subject = result.subject or content
-            candidates = memory_service.find_forget_candidates(subject)
-            if len(candidates) == 1:
-                memory_service.delete_memory(candidates[0].id)
-                return "none", []
-            if candidates:
-                return "forget_candidates", [c.to_dict() for c in candidates]
-    except Exception:
-        pass
 
     return "none", []
 
@@ -445,11 +388,9 @@ class InterviewOrchestrator:
             try:
                 detected_action, action_candidates = _dispatch_memory_action(
                     self.memory_service,
-                    self.config_store,
                     session_id,
                     user_turn.turn_id,
                     content,
-                    project.session,
                 )
             except Exception:
                 pass
