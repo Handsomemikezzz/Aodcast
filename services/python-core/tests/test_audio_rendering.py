@@ -32,7 +32,7 @@ class AudioRenderingTests(unittest.TestCase):
         artifacts.bootstrap()
         configs.save_llm_config(LLMProviderConfig(provider="mock"))
         configs.save_tts_config(
-            TTSProviderConfig(provider="local_mlx", model="mlx-community/VoxCPM2-8bit", audio_format="wav")
+            TTSProviderConfig(provider="local_http", model="mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit", audio_format="wav")
         )
         fake = SineWaveTTSProvider()
         for target in (
@@ -93,7 +93,7 @@ class AudioRenderingTests(unittest.TestCase):
         before = store.load_project_for_script(session_id, script_id)
 
         preview = service.render_voice_preview(
-            VoiceRenderSettings(preview_text="这是一句临时试听文本。", style_id="story")
+            VoiceRenderSettings(preview_text="这是一句临时试听文本。")
         )
         after = store.load_project_for_script(session_id, script_id)
 
@@ -105,7 +105,7 @@ class AudioRenderingTests(unittest.TestCase):
     def test_local_final_render_requires_speaker_reference_when_requested(self) -> None:
         temp, store, configs, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)
-        configs.save_tts_config(TTSProviderConfig(provider="local_mlx", model="mlx-community/VoxCPM2-8bit"))
+        configs.save_tts_config(TTSProviderConfig(provider="local_http", model="mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit"))
         session_id, script_id = self.seed_project(store)
 
         with self.assertRaisesRegex(ValueError, "speaker reference"):
@@ -114,6 +114,16 @@ class AudioRenderingTests(unittest.TestCase):
                 script_id=script_id,
                 require_speaker_reference=True,
             )
+
+    def test_local_override_validates_delivery_before_saving_preferences(self) -> None:
+        temp, store, configs, _, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        configs.save_tts_config(TTSProviderConfig(provider="openai_compatible", base_url="https://example.com/v1"))
+        session_id, script_id = self.seed_project(store)
+        for settings in (VoiceRenderSettings(speed=1.1), VoiceRenderSettings(style_id="story"), VoiceRenderSettings(audio_format="mp3")):
+            with self.assertRaisesRegex(ValueError, "仅支持"):
+                service.render_audio(session_id, script_id=script_id, override_provider="local_http", settings=settings)
+        self.assertFalse(store.load_project_for_script(session_id, script_id).artifact.voice_settings)
 
 
 if __name__ == "__main__":

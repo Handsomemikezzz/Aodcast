@@ -25,12 +25,6 @@ from app.providers.llm.factory import build_llm_provider
 from app.storage.config_store import ConfigStore
 
 
-_SENTENCE_ENDS = frozenset("。！？!?；;")
-_CLOSING_PUNCTUATION = frozenset("\"'”’」』】）)]")
-_MIN_SEGMENT_CHARS = 18
-_MAX_SEGMENT_CHARS = 280
-
-
 @dataclass(frozen=True, slots=True)
 class RawSpeechSegment:
     text: str
@@ -118,21 +112,10 @@ def split_script_for_speech(script_text: str) -> list[RawSpeechSegment]:
         cursor = match.end()
     _append_trimmed_span(text, cursor, len(text), paragraphs)
 
-    output: list[RawSpeechSegment] = []
-    for paragraph_start, paragraph_end in paragraphs:
-        spans = _sentence_spans(text, paragraph_start, paragraph_end)
-        spans = _merge_short_spans(text, spans)
-        spans = _split_long_spans(text, spans)
-        for index, (start, end) in enumerate(spans):
-            output.append(
-                RawSpeechSegment(
-                    text=text[start:end].strip(),
-                    start=start,
-                    end=end,
-                    paragraph_end=index == len(spans) - 1,
-                )
-            )
-    return output
+    return [
+        RawSpeechSegment(text=text[start:end], start=start, end=end, paragraph_end=True)
+        for start, end in paragraphs
+    ]
 
 
 def _append_trimmed_span(text: str, start: int, end: int, output: list[tuple[int, int]]) -> None:
@@ -142,65 +125,6 @@ def _append_trimmed_span(text: str, start: int, end: int, output: list[tuple[int
         end -= 1
     if end > start:
         output.append((start, end))
-
-
-def _sentence_spans(text: str, start: int, end: int) -> list[tuple[int, int]]:
-    spans: list[tuple[int, int]] = []
-    sentence_start = start
-    index = start
-    while index < end:
-        character = text[index]
-        boundary = character in _SENTENCE_ENDS
-        if character == "…":
-            while index + 1 < end and text[index + 1] == "…":
-                index += 1
-            boundary = True
-        if boundary:
-            boundary_end = index + 1
-            while boundary_end < end and text[boundary_end] in _CLOSING_PUNCTUATION:
-                boundary_end += 1
-            _append_trimmed_span(text, sentence_start, boundary_end, spans)
-            sentence_start = boundary_end
-            index = boundary_end
-            continue
-        index += 1
-    _append_trimmed_span(text, sentence_start, end, spans)
-    return spans
-
-
-def _merge_short_spans(text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    if len(spans) <= 1:
-        return spans
-    merged: list[tuple[int, int]] = []
-    for span in spans:
-        length = len(text[span[0] : span[1]].strip())
-        if merged and length < _MIN_SEGMENT_CHARS:
-            previous = merged.pop()
-            merged.append((previous[0], span[1]))
-        else:
-            merged.append(span)
-    if len(merged) > 1 and len(text[merged[0][0] : merged[0][1]].strip()) < _MIN_SEGMENT_CHARS:
-        first, second = merged[0], merged[1]
-        merged[:2] = [(first[0], second[1])]
-    return merged
-
-
-def _split_long_spans(text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    output: list[tuple[int, int]] = []
-    preferred_breaks = frozenset("，,、：: \n")
-    for start, end in spans:
-        cursor = start
-        while end - cursor > _MAX_SEGMENT_CHARS:
-            limit = cursor + _MAX_SEGMENT_CHARS
-            split = limit
-            for index in range(limit - 1, cursor + _MIN_SEGMENT_CHARS, -1):
-                if text[index] in preferred_breaks:
-                    split = index + 1
-                    break
-            _append_trimmed_span(text, cursor, split, output)
-            cursor = split
-        _append_trimmed_span(text, cursor, end, output)
-    return output
 
 
 def default_pause_after_ms(segment: RawSpeechSegment) -> int:

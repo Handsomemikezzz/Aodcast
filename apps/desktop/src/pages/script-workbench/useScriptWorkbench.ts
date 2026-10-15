@@ -9,6 +9,7 @@ import type {
   SpeakerReference,
   TTSCapability,
   TTSProviderConfig,
+  VoicePreset,
   VoiceRenderSettings,
   VoiceStylePreset,
 } from "../../types";
@@ -34,12 +35,15 @@ export type UseScriptWorkbenchResult = {
   ttsConfig: TTSProviderConfig | null;
   speakerReferences: SpeakerReference[];
   voiceStyles: VoiceStylePreset[];
+  voicePresets: VoicePreset[];
+  selectedPresetVoiceId: string;
+  setSelectedPresetVoiceId: (value: string) => void;
   models: ModelStatus[];
   selectedModelId: string;
   setSelectedModelId: (value: string) => void;
   voiceSelectionError: string | null;
-  selectedEngine: "local_mlx" | "cloud";
-  setSelectedEngine: (value: "local_mlx" | "cloud") => void;
+  selectedEngine: "local_http" | "cloud";
+  setSelectedEngine: (value: "local_http" | "cloud") => void;
   selectedStyleId: string;
   setSelectedStyleId: (value: string) => void;
   deliverySpeed: number;
@@ -228,6 +232,9 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     ttsConfig: data.ttsConfig,
     speakerReferences: data.speakerReferences,
     voiceStyles: data.voiceStyles,
+    voicePresets: data.voicePresets,
+    selectedPresetVoiceId: data.selectedPresetVoiceId,
+    setSelectedPresetVoiceId: data.setSelectedPresetVoiceId,
     models: data.models,
     selectedModelId: data.selectedModelId,
     setSelectedModelId: data.setSelectedModelId,

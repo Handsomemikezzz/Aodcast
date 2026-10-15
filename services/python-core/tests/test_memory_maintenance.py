@@ -11,12 +11,9 @@ from app.domain.memory import (
     MemoryEvidence,
     MemoryOrigin,
     MemoryType,
-    PendingJob,
     PendingJobKind,
 )
 from app.domain.provider_config import LLMProviderConfig
-from app.domain.session import SessionRecord
-from app.domain.transcript import Speaker, TranscriptRecord
 from app.orchestration.memory_maintenance import MemoryMaintenance
 from app.orchestration.memory_service import MemoryService
 from app.storage.config_store import ConfigStore

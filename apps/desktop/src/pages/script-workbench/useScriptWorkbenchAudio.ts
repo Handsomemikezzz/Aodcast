@@ -34,7 +34,7 @@ type UseScriptWorkbenchAudioArgs = {
   refreshProject: () => Promise<SessionProject>;
   project: SessionProject | null;
   setProject: (project: SessionProject) => void;
-  selectedEngine: "local_mlx" | "cloud";
+  selectedEngine: "local_http" | "cloud";
   cloudProvider: string;
   selectedModelId: string;
   voiceSettings: VoiceRenderSettings;
@@ -308,19 +308,14 @@ export function useScriptWorkbenchAudio({
     let renderProject = project;
     const renderSpeakerReference = renderProject?.artifact?.script_artifacts?.[scriptId]?.speaker_reference
       ?? renderProject?.artifact?.speaker_reference;
-    if (selectedEngine === "local_mlx" && !selectedModelId) {
-      setAudioError("请先选择一个已安装的本地语音模型。");
+    if (selectedEngine === "local_http" && !selectedModelId) {
+      setAudioError("请先选择服务当前使用的语音模型。");
       setAudioMessage(null);
       setAudioRequestState(null);
       return null;
     }
-    if (selectedEngine === "local_mlx" && !renderSpeakerReference?.speaker_reference_id) {
-      setAudioError("Choose a voice in this episode before generating audio.");
-      setAudioMessage(null);
-      setAudioRequestState(null);
-      return null;
-    }
-    if (renderSpeakerReference?.speaker_reference_id) {
+
+    if (selectedEngine !== "local_http" && renderSpeakerReference?.speaker_reference_id) {
       renderProject = await bridge.selectSpeakerReference(sessionId, scriptId, renderSpeakerReference.speaker_reference_id);
       setProject(renderProject);
     }
@@ -336,11 +331,11 @@ export function useScriptWorkbenchAudio({
       setAudioRequestState(buildRequestState("render_audio", "running", "Preparing speech plan..."));
       setGenerating(true);
       const result = await bridge.renderAudio(sessionId, {
-        providerOverride: selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider,
-        modelId: selectedEngine === "local_mlx" ? selectedModelId : undefined,
+        providerOverride: selectedEngine === "local_http" ? "local_http" : cloudProvider,
+        modelId: selectedEngine === "local_http" ? selectedModelId : undefined,
         scriptId,
         voiceSettings,
-        requireSpeakerReference: selectedEngine === "local_mlx",
+        requireSpeakerReference: false,
       });
       beginTask(result);
       await onRefresh();
@@ -362,12 +357,12 @@ export function useScriptWorkbenchAudio({
       setPreviewError("Add some script text before previewing.");
       return;
     }
-    if (!speakerReference?.speaker_reference_id) {
+    if (selectedEngine !== "local_http" && !speakerReference?.speaker_reference_id) {
       setPreviewError("Choose a voice before previewing this passage.");
       return;
     }
-    if (selectedEngine === "local_mlx" && !selectedModelId) {
-      setPreviewError("Choose an installed voice model before previewing.");
+    if (selectedEngine === "local_http" && !selectedModelId) {
+      setPreviewError("Choose the active service model before previewing.");
       return;
     }
 
@@ -385,9 +380,9 @@ export function useScriptWorkbenchAudio({
         {
           sessionId,
           scriptId,
-          providerOverride: selectedEngine === "local_mlx" ? "local_mlx" : cloudProvider,
-          modelId: selectedEngine === "local_mlx" ? selectedModelId : undefined,
-          speakerReferenceId: speakerReference.speaker_reference_id,
+          providerOverride: selectedEngine === "local_http" ? "local_http" : cloudProvider,
+          modelId: selectedEngine === "local_http" ? selectedModelId : undefined,
+          speakerReferenceId: selectedEngine === "local_http" ? undefined : speakerReference?.speaker_reference_id,
           onState: (state) => {
             if (isCurrentRequest()) setPreviewRequestState(state);
           },

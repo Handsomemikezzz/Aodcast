@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPreviewExcerpt, deriveAudioFreshness, resolveGlobalCtaKind } from "./studioWorkflow";
+import { buildPreviewExcerpt, deriveAudioFreshness, deriveEpisodeRenderReadiness, resolveGlobalCtaKind } from "./studioWorkflow";
 
 describe("studio workflow helpers", () => {
   it("marks audio out of date when the current script has unsaved edits", () => {
@@ -107,5 +107,25 @@ describe("studio workflow helpers", () => {
       source: "paragraph",
       label: "Current paragraph",
     });
+  });
+});
+
+
+describe("HTTP speech readiness", () => {
+  it("uses the service preset without requiring a speaker reference", () => {
+    expect(deriveEpisodeRenderReadiness({
+      scriptReady: true,
+      hasSelectedVoice: false,
+      selectedEngine: "local_http",
+      selectedModelId: "qwen-customvoice",
+      capability: { provider: "local_http", runtime: "http", available: true, reasons: [], current_model: "qwen-customvoice", model_source: "http_service" },
+      ttsConfig: null,
+    })).toEqual({ scriptReady: true, voiceReady: true, ttsReady: true, ready: true });
+  });
+  it("blocks synthesis when the local speech service is unavailable", () => {
+    expect(deriveEpisodeRenderReadiness({
+      scriptReady: true, hasSelectedVoice: false, selectedEngine: "local_http",
+      selectedModelId: "qwen-customvoice", capability: null, ttsConfig: null,
+    }).ready).toBe(false);
   });
 });

@@ -58,7 +58,7 @@ class RequestStateStoreTests(unittest.TestCase):
         self.assertEqual(state["phase"], "cancelling")
 
     def test_concurrent_save_does_not_raise_tempfile_races(self) -> None:
-        task_id = "download_model:test"
+        task_id = "render_audio:test"
         failures: list[Exception] = []
 
         def worker(worker_id: int) -> None:
@@ -67,7 +67,7 @@ class RequestStateStoreTests(unittest.TestCase):
                     self.store.save(
                         task_id,
                         {
-                            "operation": "download_model",
+                            "operation": "render_audio",
                             "phase": "running",
                             "progress_percent": float((worker_id + step) % 100),
                             "message": f"worker-{worker_id}",
@@ -209,23 +209,23 @@ class RequestStateStoreTests(unittest.TestCase):
         self.assertIsNotNone(self.store.load(running_preview))
         self.assertIsNotNone(self.store.load(other_task))
 
-    def test_fail_orphaned_active_states_marks_running_downloads_failed(self) -> None:
+    def test_fail_orphaned_active_states_marks_running_renders_failed(self) -> None:
         from app.api.bridge_envelope import build_request_state
 
-        task_id = "download_model:voxcpm2-8bit"
+        task_id = "render_audio:session:script"
         self.store.save(
             task_id,
             build_request_state(
-                operation="download_model",
+                operation="render_audio",
                 phase="running",
                 progress_percent=65.0,
-                message="Downloading...",
+                message="Rendering...",
             ),
         )
         self.store.save(
-            "download_model:done",
+            "render_audio:done",
             build_request_state(
-                operation="download_model",
+                operation="render_audio",
                 phase="succeeded",
                 progress_percent=100.0,
                 message="ready",
@@ -233,8 +233,8 @@ class RequestStateStoreTests(unittest.TestCase):
         )
 
         failed = self.store.fail_orphaned_active_states(
-            prefix="download_model:",
-            message="Download interrupted by a runtime restart. Retry to resume.",
+            prefix="render_audio:",
+            message="Render interrupted by a runtime restart. Retry to resume.",
             build_request_state=build_request_state,
         )
 
@@ -243,7 +243,7 @@ class RequestStateStoreTests(unittest.TestCase):
         assert state is not None
         self.assertEqual(state["phase"], "failed")
         self.assertIn("runtime restart", str(state["message"]))
-        self.assertEqual(self.store.load("download_model:done")["phase"], "succeeded")
+        self.assertEqual(self.store.load("render_audio:done")["phase"], "succeeded")
 
 
 if __name__ == "__main__":

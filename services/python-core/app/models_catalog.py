@@ -1,25 +1,15 @@
-"""Voice-generation model catalog + status from TTS config."""
+"""Speech service presets and readiness; model weights belong to the service."""
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
-import signal
-import subprocess
-import sys
-import threading
-import time
-from collections import deque
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
-from app.providers.tts_local_mlx.capabilities import capability_contract_for_model
-from app.providers.tts_local_mlx.model_spec import resolve_model_spec
-from app.runtime.task_cancellation import TaskCancellationRequested
-from app.domain.tts_config import TTSProviderConfig
+from app.domain.tts_config import DEFAULT_LOCAL_TTS_MODEL, KOKORO_TTS_MODEL, TTSProviderConfig
+from app.providers.local_speech.capabilities import (
+    capability_contract_for_model,
+    detect_local_speech_capability,
+)
 from app.storage.config_store import ConfigStore
 
 
@@ -27,557 +17,52 @@ from app.storage.config_store import ConfigStore
 class CatalogEntry:
     model_name: str
     display_name: str
-    category: str  # "voice"
-    size_mb: float
-    hf_repo_id: str | None
-    family: str
-    variant: str
+    hf_repo_id: str
     recommendation: str
 
 
-CATALOG: tuple[CatalogEntry, ...] = (
+CATALOG = (
     CatalogEntry(
-        "voxcpm2-4bit",
-        "VoxCPM2 4-bit",
-        "voice",
-        2.30 * 1024,
-        "mlx-community/VoxCPM2-4bit",
-        "voxcpm2",
-        "voxcpm2",
-        "Recommended VoxCPM2 default, including on 16 GB Macs; compare quality before final export.",
+        DEFAULT_LOCAL_TTS_MODEL,
+        "Qwen3 TTS 0.6B CustomVoice (8-bit)",
+        DEFAULT_LOCAL_TTS_MODEL,
+        "Default Chinese preset voice. The speech service manages this model.",
     ),
     CatalogEntry(
-        "voxcpm2-8bit",
-        "VoxCPM2 8-bit",
-        "voice",
-        3.23 * 1024,
-        "mlx-community/VoxCPM2-8bit",
-        "voxcpm2",
-        "voxcpm2",
-        "Higher-memory VoxCPM2 option for Macs with at least 24 GB of unified memory.",
-    ),
-    CatalogEntry(
-        "moss-tts-local-v1.5",
-        "MOSS-TTS Local Transformer v1.5",
-        "voice",
-        8.0 * 1024,
-        "OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5",
-        "moss_tts",
-        "local",
-        "Long-form and explicit-pause benchmark for high-memory Macs.",
-    ),
-    CatalogEntry(
-        "qwen-tts-1.7B",
-        "Qwen TTS 1.7B",
-        "voice",
-        4.5 * 1024,
-        "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
-        "qwen3_tts",
-        "base",
-        "Higher-quality voice-cloning baseline without style instruction.",
-    ),
-    CatalogEntry(
-        "qwen-tts-0.6B",
-        "Qwen TTS 0.6B",
-        "voice",
-        1.5 * 1024,
-        "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
-        "qwen3_tts",
-        "base",
-        "Fast, lower-memory voice-cloning baseline.",
+        KOKORO_TTS_MODEL,
+        "Kokoro 82M",
+        KOKORO_TTS_MODEL,
+        "Lightweight alternative; select it in the speech service configuration.",
     ),
 )
-
-_BY_NAME: dict[str, CatalogEntry] = {e.model_name: e for e in CATALOG}
-DOWNLOAD_STALL_TIMEOUT_SECONDS = 180.0
 
 
 def resolve_voice_model_id(model_id: str) -> str:
     cleaned = model_id.strip()
-    entry = _BY_NAME.get(cleaned)
-    if entry is not None and entry.hf_repo_id:
-        return entry.hf_repo_id
     if any(entry.hf_repo_id == cleaned for entry in CATALOG):
         return cleaned
-    raise ValueError(f"Unknown local TTS model '{model_id}'.")
-
-
-def voice_model_is_downloaded(cwd: Path, model_id: str, config_store: ConfigStore) -> bool:
-    repo_id = resolve_voice_model_id(model_id)
-    model_dir = expected_voice_model_dir(cwd, repo_id, config_store)
-    return (
-        model_dir.is_dir()
-        and (model_dir / "config.json").is_file()
-        and any(model_dir.glob("*.safetensors"))
-    )
-
-
-def _storage_config_file(config_store: ConfigStore) -> Path:
-    return config_store.config_dir / "model-storage.json"
-
-
-def _base_default_download_base(cwd: Path) -> Path:
-    env = os.environ.get("AODCAST_HF_MODEL_BASE")
-    if env:
-        return Path(env)
-    hf_env = os.environ.get("HF_HUB_CACHE")
-    if hf_env:
-        return Path(hf_env)
-    try:
-        from huggingface_hub import constants as hf_constants
-
-        return Path(hf_constants.HF_HUB_CACHE)
-    except Exception:
-        return cwd / "models"
-
-
-def _load_custom_model_storage_base(config_store: ConfigStore) -> Path | None:
-    path = _storage_config_file(config_store)
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    custom = str(payload.get("custom_base") or "").strip()
-    if not custom:
-        return None
-    return Path(custom)
-
-
-def save_custom_model_storage_base(config_store: ConfigStore, base: Path) -> Path:
-    resolved = base.expanduser().resolve()
-    path = _storage_config_file(config_store)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"custom_base": str(resolved)}, indent=2, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
-    return path
-
-
-def _clear_custom_model_storage_base(config_store: ConfigStore) -> None:
-    path = _storage_config_file(config_store)
-    if path.exists():
-        path.unlink()
-
-
-def _default_download_base(cwd: Path, config_store: ConfigStore | None = None) -> Path:
-    if config_store is not None:
-        custom = _load_custom_model_storage_base(config_store)
-        if custom is not None:
-            return custom
-    return _base_default_download_base(cwd)
-
-
-def _download_subprocess_env() -> dict[str, str]:
-    env = dict(os.environ)
-    env["PYTHONUNBUFFERED"] = "1"
-    # hf_xet can stall indefinitely behind local proxy/VPN setups after the UI
-    # has already advanced to its heartbeat cap. The direct HTTP path is slower
-    # but more predictable for first-run desktop model downloads.
-    env["HF_HUB_DISABLE_XET"] = "1"
-    return env
-
-
-def _safe_tree_size(path: Path) -> int:
-    if not path.exists():
-        return 0
-    total = 0
-    try:
-        for item in path.rglob("*"):
-            if item.is_file():
-                try:
-                    total += item.stat().st_size
-                except OSError:
-                    continue
-    except OSError:
-        return total
-    return total
-
-
-def find_external_download_pids(repo_id: str, *, exclude_pids: set[int] | None = None) -> list[int]:
-    """Return PIDs of download_tts_model.py processes for repo_id (e.g. orphans after restart)."""
-
-    excluded = exclude_pids or set()
-    marker = f"--repo-id {repo_id}"
-    try:
-        output = subprocess.check_output(["ps", "-ax", "-o", "pid=,command="], text=True)
-    except (OSError, subprocess.SubprocessError):
-        return []
-    found: list[int] = []
-    for line in output.splitlines():
-        text = line.strip()
-        if not text or "download_tts_model.py" not in text or marker not in text:
-            continue
-        pid_text, _, _command = text.partition(" ")
-        try:
-            pid = int(pid_text)
-        except ValueError:
-            continue
-        if pid in excluded or pid == os.getpid():
-            continue
-        found.append(pid)
-    return found
-
-
-def stop_download_process(proc: subprocess.Popen[str], *, force: bool = False) -> None:
-    """Stop a download child and its process group so runtime restarts leave no orphans."""
-
-    if proc.poll() is not None:
-        return
-    sig = signal.SIGKILL if force else signal.SIGTERM
-    pid = proc.pid
-    if pid is None:
-        return
-    try:
-        # start_new_session=True puts the child in its own group; kill the group.
-        os.killpg(pid, sig)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            if force:
-                proc.kill()
-            else:
-                proc.terminate()
-        except ProcessLookupError:
-            return
-    try:
-        proc.wait(timeout=2.0)
-    except subprocess.TimeoutExpired:
-        if force:
-            return
-        stop_download_process(proc, force=True)
-
-
-def model_storage_status(config_store: ConfigStore, cwd: Path) -> dict[str, object]:
-    default_base = _base_default_download_base(cwd).expanduser().resolve()
-    custom_base = _load_custom_model_storage_base(config_store)
-    current_base = (custom_base or default_base).expanduser().resolve()
-    return {
-        "current_base": str(current_base),
-        "default_base": str(default_base),
-        "custom_base": str(custom_base.expanduser().resolve()) if custom_base is not None else "",
-        "is_custom": custom_base is not None,
-        "exists": current_base.exists(),
-    }
-
-
-def expected_voice_model_dir(cwd: Path, hf_repo_id: str, config_store: ConfigStore | None = None) -> Path:
-    tail = hf_repo_id.rstrip("/").split("/")[-1]
-    return _default_download_base(cwd, config_store) / tail
-
-
-def _voice_active(entry: CatalogEntry, cap_d: dict[str, object]) -> bool:
-    if not entry.hf_repo_id:
-        return False
-    resolved = str(cap_d.get("resolved_model") or "").rstrip("/")
-    repo = entry.hf_repo_id.rstrip("/")
-    model_path = str(cap_d.get("model_path") or "")
-    if cap_d.get("model_source") == "huggingface_repo" and resolved == repo:
-        return True
-    if cap_d.get("model_source") == "local_path" and model_path and bool(cap_d.get("model_path_exists")):
-        try:
-            configured = resolve_model_spec(model_path)
-            expected = resolve_model_spec(entry.hf_repo_id)
-        except ValueError:
-            return False
-        return configured.family == expected.family and configured.variant == expected.variant
-    return False
-
-
-def _model_capability(entry: CatalogEntry) -> dict[str, object]:
-    assert entry.hf_repo_id is not None
-    spec = resolve_model_spec(entry.hf_repo_id)
-    return capability_contract_for_model(entry.hf_repo_id, spec).to_dict()
+    raise ValueError(f"Unknown speech service TTS model '{model_id}'.")
 
 
 def build_models_status(config_store: ConfigStore, cwd: Path) -> list[dict[str, object]]:
-    tts_config = config_store.load_tts_config()
-    cap = detect_local_mlx_capability(tts_config)
-    cap_d = cap.to_dict()
-    out: list[dict[str, object]] = []
-    for entry in CATALOG:
-        downloaded = False
-        loaded = False
-        active = False
-        available = False
-        unavailable_reason = ""
-        if entry.category == "voice" and entry.hf_repo_id:
-            entry_config = TTSProviderConfig.from_dict(tts_config.to_dict())
-            entry_config.provider = "local_mlx"
-            entry_config.model = entry.hf_repo_id
-            entry_config.local_model_path = ""
-            entry_capability = detect_local_mlx_capability(entry_config).to_dict()
-            available = bool(entry_capability.get("available"))
-            unavailable_reason = " ".join(str(item) for item in entry_capability.get("reasons", []))
-            expected_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
-            on_disk = (
-                expected_dir.is_dir()
-                and (expected_dir / "config.json").is_file()
-                and any(expected_dir.glob("*.safetensors"))
-            )
-            downloaded = bool(on_disk)
-            active = _voice_active(entry, cap_d)
-            loaded = bool(downloaded and available and active)
-        out.append(
-            {
-                "model_name": entry.model_name,
-                "display_name": entry.display_name,
-                "category": entry.category,
-                "hf_repo_id": entry.hf_repo_id,
-                "family": entry.family,
-                "variant": entry.variant,
-                "recommendation": entry.recommendation,
-                "downloaded": downloaded,
-                "downloading": False,
-                "size_mb": entry.size_mb,
-                "loaded": loaded,
-                "active": active,
-                "resident": False,
-                "available": available,
-                "unavailable_reason": unavailable_reason,
-                "capability": _model_capability(entry),
-            }
-        )
-    return out
-
-
-def download_voice_model(
-    cwd: Path,
-    model_name: str,
-    *,
-    config_store: ConfigStore | None = None,
-    on_output_line: Callable[[str], None] | None = None,
-    should_cancel: Callable[[], bool] | None = None,
-    on_process_started: Callable[[subprocess.Popen[str]], None] | None = None,
-    on_process_finished: Callable[[subprocess.Popen[str]], None] | None = None,
-) -> dict[str, object]:
-    entry = _BY_NAME.get(model_name)
-    if entry is None or entry.category != "voice" or not entry.hf_repo_id:
-        raise ValueError(f"Unknown or non-downloadable model: {model_name}")
-    script = cwd / "scripts" / "model-download" / "download_tts_model.py"
-    if not script.is_file():
-        raise FileNotFoundError(f"Download script not found: {script}")
-    base = _default_download_base(cwd, config_store)
-    out_dir = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store)
-    base.mkdir(parents=True, exist_ok=True)
-    external_pids = find_external_download_pids(entry.hf_repo_id)
-    if external_pids:
-        raise RuntimeError(
-            f"A download for {entry.hf_repo_id} is already running (pid {external_pids[0]}). "
-            "Wait for it to finish, then refresh Models — do not start a second download."
-        )
-    cmd = [
-        sys.executable,
-        str(script),
-        "--repo-id",
-        entry.hf_repo_id,
-        "--base-dir",
-        str(base),
+    config = config_store.load_tts_config()
+    service_config = config if config.provider == "local_http" else TTSProviderConfig()
+    capability = detect_local_speech_capability(service_config).to_dict()
+    available = bool(capability.get("available"))
+    service_model = str(capability.get("current_model") or "")
+    reasons = " ".join(str(reason) for reason in capability.get("reasons", []))
+    return [
+        {
+            "model_name": entry.model_name,
+            "display_name": entry.display_name,
+            "hf_repo_id": entry.hf_repo_id,
+            "provider": "local_http",
+            "recommendation": entry.recommendation,
+            "active": config.provider == "local_http" and config.model == entry.hf_repo_id,
+            "available": available,
+            "ready": available and service_model == entry.hf_repo_id,
+            "unavailable_reason": reasons,
+            "capabilities": capability_contract_for_model(entry.hf_repo_id).to_dict(),
+        }
+        for entry in CATALOG
     ]
-    # Own process group so cancel/shutdown can kill the whole download tree.
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(cwd),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        env=_download_subprocess_env(),
-        start_new_session=True,
-    )
-    if on_process_started is not None:
-        on_process_started(proc)
-    tail_lines: deque[str] = deque(maxlen=40)
-    stream = proc.stdout
-    reader_done = threading.Event()
-    activity_lock = threading.Lock()
-    last_activity_at = time.monotonic()
-    last_observed_size = _safe_tree_size(out_dir)
-
-    def read_output() -> None:
-        nonlocal last_activity_at
-        if stream is None:
-            reader_done.set()
-            return
-        try:
-            for raw_line in stream:
-                line = raw_line.rstrip()
-                if not line:
-                    continue
-                with activity_lock:
-                    last_activity_at = time.monotonic()
-                tail_lines.append(line)
-                if on_output_line is not None:
-                    on_output_line(line)
-        finally:
-            reader_done.set()
-
-    reader_thread = threading.Thread(target=read_output, daemon=True)
-    reader_thread.start()
-
-    cancelled = False
-    stalled = False
-    last_size_check_at = 0.0
-    try:
-        while proc.poll() is None:
-            if should_cancel is not None and should_cancel():
-                cancelled = True
-                stop_download_process(proc)
-                break
-            now = time.monotonic()
-            if now - last_size_check_at >= 2.0:
-                current_size = _safe_tree_size(out_dir)
-                if current_size != last_observed_size:
-                    last_observed_size = current_size
-                    with activity_lock:
-                        last_activity_at = now
-                last_size_check_at = now
-            with activity_lock:
-                idle_seconds = now - last_activity_at
-            if DOWNLOAD_STALL_TIMEOUT_SECONDS > 0 and idle_seconds >= DOWNLOAD_STALL_TIMEOUT_SECONDS:
-                stalled = True
-                stop_download_process(proc)
-                break
-            time.sleep(0.2)
-
-        if proc.poll() is None:
-            proc.wait()
-        reader_done.wait(timeout=2.0)
-        reader_thread.join(timeout=2.0)
-        if cancelled:
-            raise TaskCancellationRequested(f"Download cancelled for {model_name}.")
-        if stalled:
-            raise RuntimeError(
-                f"Download stalled for {model_name}: no output or file growth for "
-                f"{int(DOWNLOAD_STALL_TIMEOUT_SECONDS)} seconds. Please retry the download."
-            )
-        if proc.returncode != 0:
-            msg = "\n".join(tail_lines).strip() or "download failed"
-            raise RuntimeError(msg)
-        return {"message": "ok", "path": str(out_dir.resolve())}
-    finally:
-        if on_process_finished is not None:
-            on_process_finished(proc)
-
-
-def delete_voice_model(cwd: Path, model_name: str, config_store: ConfigStore | None = None) -> dict[str, object]:
-    entry = _BY_NAME.get(model_name)
-    if entry is None or entry.category != "voice" or not entry.hf_repo_id:
-        raise ValueError(f"Unknown or non-removable model: {model_name}")
-    target = expected_voice_model_dir(cwd, entry.hf_repo_id, config_store).resolve()
-    base = _default_download_base(cwd, config_store).resolve()
-    try:
-        target.relative_to(base)
-    except ValueError as exc:
-        raise ValueError(f"Refusing to delete outside model base: {target}") from exc
-    if not target.is_dir():
-        raise FileNotFoundError(f"Model directory not found: {target}")
-    shutil.rmtree(target)
-    return {"message": "deleted", "path": str(target)}
-
-
-def _directory_size(path: Path) -> int:
-    if not path.exists():
-        return 0
-    total = 0
-    for item in path.rglob("*"):
-        if item.is_file():
-            total += item.stat().st_size
-    return total
-
-
-def _copytree_with_progress(
-    source: Path,
-    destination: Path,
-    *,
-    total_bytes: int,
-    copied_so_far: int,
-    on_progress: Callable[[int, int, str], None] | None,
-    should_cancel: Callable[[], bool] | None,
-) -> int:
-    destination.mkdir(parents=True, exist_ok=True)
-    for item in source.iterdir():
-        if should_cancel is not None and should_cancel():
-            raise TaskCancellationRequested("Model storage migration cancelled.")
-        target = destination / item.name
-        if item.is_dir():
-            copied_so_far = _copytree_with_progress(
-                item,
-                target,
-                total_bytes=total_bytes,
-                copied_so_far=copied_so_far,
-                on_progress=on_progress,
-                should_cancel=should_cancel,
-            )
-            continue
-        size = item.stat().st_size
-        shutil.copy2(item, target)
-        copied_so_far += size
-        if on_progress is not None:
-            on_progress(copied_so_far, total_bytes, item.name)
-    return copied_so_far
-
-
-def migrate_model_storage(
-    config_store: ConfigStore,
-    cwd: Path,
-    destination: Path,
-    *,
-    on_progress: Callable[[int, int, str], None] | None = None,
-    should_cancel: Callable[[], bool] | None = None,
-) -> dict[str, object]:
-    source_base = _default_download_base(cwd, config_store).expanduser().resolve()
-    dest_base = destination.expanduser().resolve()
-    if source_base == dest_base:
-        raise ValueError("Destination is already the current model storage directory.")
-    try:
-        dest_base.relative_to(source_base)
-    except ValueError:
-        pass
-    else:
-        raise ValueError("Destination cannot be inside the current model storage directory.")
-
-    dest_base.mkdir(parents=True, exist_ok=True)
-    model_dirs: list[tuple[Path, Path]] = []
-    for entry in CATALOG:
-        if entry.category != "voice" or not entry.hf_repo_id:
-            continue
-        source = source_base / entry.hf_repo_id.rstrip("/").split("/")[-1]
-        if source.is_dir():
-            model_dirs.append((source, dest_base / source.name))
-
-    total_bytes = sum(_directory_size(source) for source, _ in model_dirs)
-    copied = 0
-    moved = 0
-    for source, target in model_dirs:
-        if should_cancel is not None and should_cancel():
-            raise TaskCancellationRequested("Model storage migration cancelled.")
-        if target.exists():
-            shutil.rmtree(target)
-        copied = _copytree_with_progress(
-            source,
-            target,
-            total_bytes=max(total_bytes, 1),
-            copied_so_far=copied,
-            on_progress=on_progress,
-            should_cancel=should_cancel,
-        )
-        shutil.rmtree(source)
-        moved += 1
-        if on_progress is not None:
-            on_progress(copied, max(total_bytes, 1), source.name)
-
-    save_custom_model_storage_base(config_store, dest_base)
-    return {
-        "message": "migrated",
-        "source": str(source_base),
-        "destination": str(dest_base),
-        "moved": moved,
-        "total_bytes": total_bytes,
-    }
-
-
-def reset_model_storage(config_store: ConfigStore, cwd: Path) -> dict[str, object]:
-    _clear_custom_model_storage_base(config_store)
-    return model_storage_status(config_store, cwd)

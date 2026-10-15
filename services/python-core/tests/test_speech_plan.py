@@ -42,10 +42,10 @@ class SpeechPlanTests(unittest.TestCase):
 
     def test_context_window_rerenders_b_c_d_and_handles_edges(self) -> None:
         spans = split_script_for_speech(
-            "第一段内容已经足够完整，可以独立表达一个清楚的判断。"
-            "第二段内容同样足够完整，继续解释这个判断为什么重要。"
-            "第三段继续说明问题，并且加入一个可以被听众记住的细节。"
-            "第四段给出一个足够具体的例子，让抽象内容变得容易理解。"
+            "第一段内容已经足够完整，可以独立表达一个清楚的判断。\n\n"
+            "第二段内容同样足够完整，继续解释这个判断为什么重要。\n\n"
+            "第三段继续说明问题，并且加入一个可以被听众记住的细节。\n\n"
+            "第四段给出一个足够具体的例子，让抽象内容变得容易理解。\n\n"
             "第五段负责克制地收尾，并为听众保留一点继续思考的空间。"
         )
         self.assertEqual(len(spans), 5)
@@ -56,11 +56,12 @@ class SpeechPlanTests(unittest.TestCase):
         self.assertTrue(segments[0].paragraph_end)
         self.assertTrue(segments[1].paragraph_end)
 
-    def test_pathological_long_paragraph_is_split_into_renderable_segments(self) -> None:
-        segments = split_script_for_speech("这是一个很长的分句，" * 80)
-
-        self.assertGreater(len(segments), 1)
-        self.assertTrue(all(len(item.text) <= 280 for item in segments))
+    def test_long_paragraph_is_submitted_intact_to_speech_service(self) -> None:
+        text = "这是一个很长的分句，" * 120
+        segments = split_script_for_speech(text)
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0].text, text)
+        self.assertGreater(len(segments[0].text), 1000)
 
     def test_ambiguous_anchors_and_overlapping_pronunciations_are_not_applied(self) -> None:
         text = "OpenAI 很重要，OpenAI 也需要被准确读出。"
@@ -80,7 +81,7 @@ class SpeechPlanTests(unittest.TestCase):
         self.assertEqual(segment.breaks, ())
         self.assertEqual(segment.pronunciations, ())
 
-        unique_text = "OpenAI 很重要。"
+        unique_text = "OpenAI 很重要。\n\n"
         unique_segment = build_speech_segment(
             "script-id",
             0,

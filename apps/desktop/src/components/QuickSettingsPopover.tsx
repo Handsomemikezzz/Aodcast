@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SlidersHorizontal, Sparkles, Volume2, Check, Loader2, ChevronDown } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
@@ -136,9 +136,6 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
         api_key: ttsConfig.api_key,
         voice: newVoice,
         audio_format: ttsConfig.audio_format,
-        local_runtime: ttsConfig.local_runtime,
-        local_model_path: ttsConfig.local_model_path,
-        local_ref_audio_path: ttsConfig.local_ref_audio_path,
       });
       setTTSConfig(updated);
       setSaveSuccess("tts");
@@ -152,7 +149,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
   };
 
   const presetModels = getPresetModels();
-  const ttsUsesLocal = ttsConfig?.provider === "local_mlx";
+  const ttsUsesLocal = ttsConfig?.provider === "local_http";
 
   return (
     <div className={cn("relative z-30 inline-block", className)} ref={popoverRef}>
@@ -240,7 +237,7 @@ export function QuickSettingsPopover({ className, onConfigChange }: QuickSetting
 
                     {ttsUsesLocal ? (
                       <div className="px-3 py-2 rounded-lg bg-accent-amber/5 border border-accent-amber/10 text-[10px] leading-relaxed text-accent-amber/90">
-                        Local Qwen MLX synthesis is active. Voices are scoped per-script.
+                        本机 HTTP 服务已配置。预设音色在设置中修改，不支持参考音频克隆。
                       </div>
                     ) : (
                       <div className="relative">

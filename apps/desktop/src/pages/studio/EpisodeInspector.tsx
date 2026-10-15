@@ -63,7 +63,8 @@ export function EpisodeInspector({
   const selectedReferenceId = scriptArtifact?.speaker_reference?.speaker_reference_id
     || workbench.project?.artifact?.speaker_reference?.speaker_reference_id
     || "";
-  const selectedVoiceLabel = selectedSpeakerReferenceLabel(workbench.project, scriptId) || "Choose a voice";
+  const localHttp = workbench.selectedEngine === "local_http";
+  const selectedVoiceLabel = localHttp ? workbench.voiceSettings.voice_name || workbench.voiceSettings.voice_id : selectedSpeakerReferenceLabel(workbench.project, scriptId) || "Choose a voice";
   const returnPath = `/studio/${workbench.project?.session.session_id ?? ""}/${scriptId}`;
   const voiceLibraryPath = `/voice-studio/${workbench.project?.session.session_id ?? ""}/${scriptId}?returnTo=${encodeURIComponent(returnPath)}`;
 
@@ -159,6 +160,19 @@ export function EpisodeInspector({
             </p>
           </div>
         </div>
+        {localHttp ? (
+          <label className="mt-3 block text-xs text-secondary">服务预设音色
+            <select value={workbench.selectedPresetVoiceId}
+              onChange={(event) => workbench.setSelectedPresetVoiceId(event.target.value)}
+              disabled={workbench.generating}
+              className="mt-1.5 h-11 w-full rounded-xl border border-outline bg-surface-container-low px-3 text-xs text-primary disabled:opacity-45">
+              {!workbench.voicePresets.some((voice) => voice.voice_id === workbench.selectedPresetVoiceId) && (
+                <option value={workbench.selectedPresetVoiceId}>{workbench.selectedPresetVoiceId}</option>
+              )}
+              {workbench.voicePresets.map((voice) => <option key={voice.voice_id} value={voice.voice_id}>{voice.name}</option>)}
+            </select>
+          </label>
+        ) : (
         <button
           type="button"
           onClick={() => setVoicePickerOpen((open) => !open)}
@@ -168,8 +182,9 @@ export function EpisodeInspector({
           Change voice
           <ChevronDown className={cn("h-4 w-4 transition-transform", voicePickerOpen && "rotate-180")} />
         </button>
+        )}
 
-        {voicePickerOpen ? (
+        {voicePickerOpen && !localHttp ? (
           <div className="mt-2 space-y-3 rounded-2xl border border-outline bg-background/55 p-2.5">
             {renderReferenceGroup("Recent", recentReferences)}
             {renderReferenceGroup("Your voices", yourReferences)}
@@ -199,9 +214,9 @@ export function EpisodeInspector({
         <label htmlFor="episode-delivery-style" className="mt-3 block text-xs font-medium text-primary">Style</label>
         <select
           id="episode-delivery-style"
-          value={workbench.selectedStyleId}
+          value={localHttp ? "natural" : workbench.selectedStyleId}
           onChange={(event) => workbench.setSelectedStyleId(event.target.value)}
-          disabled={workbench.generating}
+          disabled={workbench.generating || localHttp}
           className="mt-1.5 h-11 w-full rounded-xl border border-outline bg-surface-container-low px-3 text-xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
         >
           {!workbench.voiceStyles.length ? <option value="natural">Natural</option> : null}
@@ -212,7 +227,7 @@ export function EpisodeInspector({
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <label htmlFor="episode-delivery-speed" className="text-xs font-medium text-primary">Speed</label>
-          <span className="text-xs font-semibold tabular-nums text-secondary">{workbench.deliverySpeed.toFixed(2)}×</span>
+          <span className="text-xs font-semibold tabular-nums text-secondary">{(localHttp ? 1 : workbench.deliverySpeed).toFixed(2)}×</span>
         </div>
         <input
           id="episode-delivery-speed"
@@ -220,12 +235,12 @@ export function EpisodeInspector({
           min="0.8"
           max="1.2"
           step="0.05"
-          value={workbench.deliverySpeed}
+          value={localHttp ? 1 : workbench.deliverySpeed}
           onChange={(event) => workbench.setDeliverySpeed(Number(event.target.value))}
-          disabled={workbench.generating}
+          disabled={workbench.generating || localHttp}
           className="premium-slider mt-2 w-full disabled:opacity-45"
         />
-        <p className="mt-2 text-[11px] leading-5 text-secondary">Used for the next preview and full render.</p>
+        <p className="mt-2 text-[11px] leading-5 text-secondary">{localHttp ? "本机服务仅支持自然风格和 1.0× 语速；克隆与参考音频不可用。" : "Used for the next preview and full render."}</p>
       </section>
 
       <section className="border-b border-outline px-4 py-4">
@@ -261,10 +276,10 @@ export function EpisodeInspector({
         {!readiness.ttsReady ? (
           <button
             type="button"
-            onClick={() => workbench.navigate(workbench.selectedEngine === "local_mlx" ? "/models" : "/settings")}
+            onClick={() => workbench.navigate(workbench.selectedEngine === "local_http" ? "/models" : "/settings")}
             className="mt-3 h-10 rounded-xl border border-outline px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary/5"
           >
-            {workbench.selectedEngine === "local_mlx" ? "Open Models" : "Open Settings"}
+            {workbench.selectedEngine === "local_http" ? "Open Models" : "Open Settings"}
           </button>
         ) : null}
       </section>
@@ -277,7 +292,7 @@ export function EpisodeInspector({
         <div className="mt-3 space-y-3">
           <div className="grid grid-cols-2 gap-2" role="group" aria-label="Voice engine">
             {([
-              ["local_mlx", Cpu, "Local"],
+              ["local_http", Cpu, "Local"],
               ["cloud", Cloud, "Cloud"],
             ] as const).map(([engine, Icon, label]) => (
               <button
@@ -296,19 +311,19 @@ export function EpisodeInspector({
               </button>
             ))}
           </div>
-          {workbench.selectedEngine === "local_mlx" ? (
+          {workbench.selectedEngine === "local_http" ? (
             <div>
               <label htmlFor="episode-render-model" className="text-[11px] font-medium text-secondary">Model</label>
               <select
                 id="episode-render-model"
                 value={workbench.selectedModelId}
                 onChange={(event) => workbench.setSelectedModelId(event.target.value)}
-                disabled={workbench.generating}
+                disabled
                 className="mt-1.5 h-11 w-full rounded-xl border border-outline bg-surface-container-low px-3 text-xs font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
               >
-                <option value="">Choose installed model</option>
+                <option value="">Service model</option>
                 {workbench.models
-                  .filter((model) => model.downloaded && model.available !== false)
+                  .filter((model) => model.ready === true && model.available !== false)
                   .map((model) => (
                     <option key={model.model_name} value={model.hf_repo_id || model.model_name}>{model.display_name}</option>
                   ))}

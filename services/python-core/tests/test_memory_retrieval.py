@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.domain.memory import MemoryEntry, MemoryEvidence, MemoryOrigin, MemoryType
+from app.domain.memory import MemoryEntry, MemoryEvidence, MemoryType
 from app.orchestration.memory_retrieval import MemoryRetrieval, RetrievalQuery
 from app.storage.memory_file_store import MemoryFileStore
 

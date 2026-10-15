@@ -8,7 +8,6 @@ fn main() {
         .manage(commands::DesktopRuntimeState::default())
         .invoke_handler(tauri::generate_handler![
             commands::ensure_http_runtime,
-            commands::pick_directory,
             commands::reveal_in_finder,
             commands::open_external_url,
         ])

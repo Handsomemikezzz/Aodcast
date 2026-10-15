@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.providers.audio_utils import synthesize_sine_wave_bytes
+from tests.audio_utils import synthesize_sine_wave_bytes
 from app.providers.tts_api.base import TTSGenerationRequest, TTSGenerationResponse
 
 

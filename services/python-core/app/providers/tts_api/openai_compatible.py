@@ -24,7 +24,7 @@ class OpenAICompatibleTTSProvider:
             "model": self.config.model,
             "voice": self.config.voice or request.voice,
             "input": request.script_text,
-            "format": self.config.audio_format or request.audio_format,
+            "response_format": self.config.audio_format or request.audio_format,
         }
         if request.speed != 1.0:
             payload["speed"] = request.speed
@@ -37,7 +37,7 @@ class OpenAICompatibleTTSProvider:
             },
             method="POST",
         )
-        with urllib_request.urlopen(req, timeout=30) as response:
+        with urllib_request.urlopen(req, timeout=1800) as response:
             audio_bytes = response.read()
 
         return TTSGenerationResponse(

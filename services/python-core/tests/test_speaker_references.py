@@ -8,7 +8,7 @@ import wave
 from pathlib import Path
 
 from app.config import AppConfig
-from app.providers.audio_utils import synthesize_sine_wave_bytes
+from tests.audio_utils import synthesize_sine_wave_bytes
 from app.domain.common import sha256_bytes
 from app.storage.artifact_store import ArtifactStore
 from app.storage.speaker_reference_store import SpeakerReferenceStore

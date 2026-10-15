@@ -1,159 +1,60 @@
 from __future__ import annotations
 
-import io
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.models_catalog import (
-    CATALOG,
-    build_models_status,
-    download_voice_model,
-    expected_voice_model_dir,
-    migrate_model_storage,
-    model_storage_status,
-    reset_model_storage,
-    save_custom_model_storage_base,
-)
+from app.domain.tts_config import DEFAULT_LOCAL_TTS_MODEL, KOKORO_TTS_MODEL, TTSProviderConfig
+from app.models_catalog import CATALOG, build_models_status, resolve_voice_model_id
 from app.storage.config_store import ConfigStore
 
 
 class ModelsCatalogTests(unittest.TestCase):
-    def test_catalog_contains_default_and_benchmark_model_families(self) -> None:
-        names = [e.model_name for e in CATALOG]
-        self.assertIn("voxcpm2-8bit", names)
-        self.assertIn("moss-tts-local-v1.5", names)
-        self.assertIn("qwen-tts-1.7B", names)
-        self.assertIn("qwen-tts-0.6B", names)
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.cwd = Path(self.directory.name)
+        self.store = ConfigStore(self.cwd / "config")
+        self.store.bootstrap()
+        self.store.save_tts_config(TTSProviderConfig(provider="local_http"))
 
-    def test_list_models_status_returns_all_entries(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            config_dir = cwd / "config"
-            config_dir.mkdir()
-            store = ConfigStore(config_dir)
-            store.bootstrap()
-            save_custom_model_storage_base(store, cwd / "isolated-models")
-            rows = build_models_status(store, cwd)
-            self.assertEqual(len(rows), len(CATALOG))
-            self.assertTrue(all("model_name" in r and "downloaded" in r for r in rows))
-            self.assertTrue(all("capability" in row for row in rows))
-            self.assertTrue(all(row["downloaded"] is False for row in rows))
+    def tearDown(self) -> None:
+        self.directory.cleanup()
 
-    def test_expected_voice_dir_naming(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            d = expected_voice_model_dir(cwd, "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit")
-            self.assertTrue(str(d).endswith("Qwen3-TTS-12Hz-0.6B-Base-8bit"))
+    def test_catalog_lists_only_service_models(self) -> None:
+        self.assertEqual([entry.hf_repo_id for entry in CATALOG], [DEFAULT_LOCAL_TTS_MODEL, KOKORO_TTS_MODEL])
+        self.assertEqual(resolve_voice_model_id(DEFAULT_LOCAL_TTS_MODEL), DEFAULT_LOCAL_TTS_MODEL)
+        with self.assertRaises(ValueError):
+            resolve_voice_model_id("unknown-model")
 
-    def test_download_voice_model_disables_xet_for_subprocess(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            script = cwd / "scripts" / "model-download" / "download_tts_model.py"
-            script.parent.mkdir(parents=True)
-            script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
-            captured_env: dict[str, str] = {}
-            captured_kwargs: dict[str, object] = {}
+    def status(self, available: bool, current_model: str) -> list[dict[str, object]]:
+        capability = SimpleNamespace(to_dict=lambda: {
+            "available": available,
+            "current_model": current_model,
+            "reasons": [] if available else ["Start the speech service."],
+        })
+        with patch("app.models_catalog.detect_local_speech_capability", return_value=capability):
+            return build_models_status(self.store, self.cwd)
 
-            class FakeProcess:
-                stdout = io.StringIO("")
-                returncode = 0
-                pid = 4242
+    def test_ready_tracks_service_health_and_configured_model(self) -> None:
+        rows = self.status(True, DEFAULT_LOCAL_TTS_MODEL)
+        self.assertTrue(rows[0]["ready"])
+        self.assertTrue(rows[0]["active"])
+        self.assertFalse(rows[1]["ready"])
+        self.assertTrue(all(row["provider"] == "local_http" and "capabilities" in row for row in rows))
+        self.assertTrue(all(not {"downloaded", "downloading", "path", "size_mb"}.intersection(row) for row in rows))
+        self.assertFalse((self.cwd / "models").exists())
 
-                def poll(self) -> int:
-                    return 0
+    def test_unreachable_service_has_no_ready_models(self) -> None:
+        rows = self.status(False, DEFAULT_LOCAL_TTS_MODEL)
+        self.assertTrue(all(not row["ready"] for row in rows))
+        self.assertIn("Start the speech service", str(rows[0]["unavailable_reason"]))
 
-                def wait(self, _timeout: float | None = None) -> int:
-                    return 0
-
-            def fake_popen(*args: object, **kwargs: object) -> FakeProcess:
-                captured_env.update(kwargs.get("env") or {})
-                captured_kwargs.update(kwargs)
-                return FakeProcess()
-
-            with (
-                patch("app.models_catalog.subprocess.Popen", side_effect=fake_popen),
-                patch("app.models_catalog.find_external_download_pids", return_value=[]),
-            ):
-                result = download_voice_model(cwd, "qwen-tts-0.6B")
-
-            self.assertEqual(result["message"], "ok")
-            self.assertEqual(captured_env["HF_HUB_DISABLE_XET"], "1")
-            self.assertEqual(captured_env["PYTHONUNBUFFERED"], "1")
-            self.assertTrue(captured_kwargs.get("start_new_session"))
-
-    def test_download_voice_model_refuses_when_external_download_exists(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            script = cwd / "scripts" / "model-download" / "download_tts_model.py"
-            script.parent.mkdir(parents=True)
-            script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
-            with patch("app.models_catalog.find_external_download_pids", return_value=[81821]):
-                with self.assertRaisesRegex(RuntimeError, "already running"):
-                    download_voice_model(cwd, "voxcpm2-8bit")
-
-    @patch.dict("os.environ", {"AODCAST_HF_MODEL_BASE": "", "HF_HUB_CACHE": ""}, clear=False)
-    def test_storage_status_reports_custom_base(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            store = ConfigStore(cwd / "config")
-            store.bootstrap()
-            custom = cwd / "external-models"
-            save_custom_model_storage_base(store, custom)
-
-            status = model_storage_status(store, cwd)
-
-            self.assertEqual(status["current_base"], str(custom.resolve()))
-            self.assertEqual(status["custom_base"], str(custom.resolve()))
-            self.assertTrue(status["is_custom"])
-
-    @patch.dict("os.environ", {"AODCAST_HF_MODEL_BASE": "", "HF_HUB_CACHE": ""}, clear=False)
-    def test_reset_storage_clears_custom_base(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            store = ConfigStore(cwd / "config")
-            store.bootstrap()
-            save_custom_model_storage_base(store, cwd / "custom")
-
-            status = reset_model_storage(store, cwd)
-
-            self.assertFalse(status["is_custom"])
-            self.assertEqual(status["custom_base"], "")
-
-    @patch.dict("os.environ", {"AODCAST_HF_MODEL_BASE": "", "HF_HUB_CACHE": ""}, clear=False)
-    def test_migrate_model_storage_moves_catalog_dirs_and_sets_custom_base(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            store = ConfigStore(cwd / "config")
-            store.bootstrap()
-            source_base = cwd / "source-models"
-            save_custom_model_storage_base(store, source_base)
-            entry = CATALOG[0]
-            source_dir = expected_voice_model_dir(cwd, entry.hf_repo_id or "", store)
-            source_dir.mkdir(parents=True)
-            (source_dir / "model.safetensors").write_text("weights", encoding="utf-8")
-            destination = cwd / "new-models"
-
-            result = migrate_model_storage(store, cwd, destination)
-
-            moved_path = destination / source_dir.name / "model.safetensors"
-            self.assertTrue(moved_path.exists())
-            self.assertFalse(source_dir.exists())
-            self.assertEqual(result["moved"], 1)
-            self.assertEqual(model_storage_status(store, cwd)["current_base"], str(destination.resolve()))
-
-    @patch.dict("os.environ", {"AODCAST_HF_MODEL_BASE": "", "HF_HUB_CACHE": ""}, clear=False)
-    def test_migrate_model_storage_rejects_destination_inside_source(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp)
-            store = ConfigStore(cwd / "config")
-            store.bootstrap()
-            save_custom_model_storage_base(store, cwd / "source-models")
-            source = Path(str(model_storage_status(store, cwd)["current_base"]))
-
-            with self.assertRaises(ValueError):
-                migrate_model_storage(store, cwd, source / "nested")
+    def test_service_model_change_does_not_claim_other_model_is_ready(self) -> None:
+        rows = self.status(True, KOKORO_TTS_MODEL)
+        self.assertFalse(rows[0]["ready"])
+        self.assertTrue(rows[1]["ready"])
 
 
 if __name__ == "__main__":

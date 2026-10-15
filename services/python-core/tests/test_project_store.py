@@ -220,7 +220,7 @@ class ProjectStoreTests(unittest.TestCase):
                 session_id=session.session_id,
                 transcript_path="exports/transcript.txt",
                 audio_path="exports/audio.wav",
-                provider="local_mlx",
+                provider="local_http",
             )
 
             store.save_project(

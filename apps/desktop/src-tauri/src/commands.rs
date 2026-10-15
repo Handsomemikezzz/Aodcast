@@ -15,7 +15,7 @@ const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 8765;
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
 const READY_POLL_INTERVAL: Duration = Duration::from_millis(200);
-const REQUIRED_RUNTIME_ROUTE: &str = "/api/v1/models/storage";
+const REQUIRED_RUNTIME_ROUTE: &str = "/api/v1/voice-studio/presets";
 
 #[derive(Default)]
 pub struct DesktopRuntimeState {
@@ -122,7 +122,10 @@ fn spawn_runtime_process(repo_root: &Path) -> Result<Child, BridgeError> {
     if !script_path.exists() {
         return Err(BridgeError::new(
             "python_runtime_script_missing",
-            format!("Python runner script was not found at {}", script_path.display()),
+            format!(
+                "Python runner script was not found at {}",
+                script_path.display()
+            ),
         ));
     }
 
@@ -152,19 +155,19 @@ fn spawn_runtime_process(repo_root: &Path) -> Result<Child, BridgeError> {
 fn wait_for_runtime_ready(child: &mut Child) -> Result<(), BridgeError> {
     let started = Instant::now();
     while started.elapsed() < READY_TIMEOUT {
-      if healthz_ready() && runtime_contract_ready() {
-          return Ok(());
-      }
-      if let Ok(Some(status)) = child.try_wait() {
-          return Err(BridgeError::with_details(
-              "python_runtime_exited_early",
-              format!("HTTP runtime exited before becoming ready: {status}"),
-              json!({
-                  "status": status.code(),
-              }),
-          ));
-      }
-      sleep(READY_POLL_INTERVAL);
+        if healthz_ready() && runtime_contract_ready() {
+            return Ok(());
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(BridgeError::with_details(
+                "python_runtime_exited_early",
+                format!("HTTP runtime exited before becoming ready: {status}"),
+                json!({
+                    "status": status.code(),
+                }),
+            ));
+        }
+        sleep(READY_POLL_INTERVAL);
     }
 
     Err(BridgeError::new(
@@ -192,10 +195,12 @@ pub fn ensure_http_runtime(state: State<'_, DesktopRuntimeState>) -> Result<Valu
     }
 
     let repo_root = repo_root()?;
-    let mut guard = state
-        .child
-        .lock()
-        .map_err(|_| BridgeError::new("python_runtime_lock_failed", "Failed to lock runtime state."))?;
+    let mut guard = state.child.lock().map_err(|_| {
+        BridgeError::new(
+            "python_runtime_lock_failed",
+            "Failed to lock runtime state.",
+        )
+    })?;
 
     if let Some(existing_child) = guard.as_mut() {
         match existing_child.try_wait() {
@@ -331,55 +336,5 @@ pub fn open_external_url(url: String) -> Result<Value, BridgeError> {
             format!("Failed to open the browser: {error}"),
             json!({}),
         )),
-    }
-}
-
-#[tauri::command]
-pub fn pick_directory(title: Option<String>) -> Result<Value, BridgeError> {
-    #[cfg(target_os = "macos")]
-    {
-        let prompt = title
-            .unwrap_or_else(|| "Choose a model storage folder".to_string())
-            .replace('"', "\\\"");
-        let script = format!(
-            "POSIX path of (choose folder with prompt \"{}\")",
-            prompt
-        );
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(script)
-            .output()
-            .map_err(|error| {
-                BridgeError::with_details(
-                    "pick_directory_failed",
-                    format!("Failed to open directory picker: {error}"),
-                    json!({}),
-                )
-            })?;
-
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(json!({ "path": path }));
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("User canceled") || output.status.code() == Some(1) {
-            return Ok(json!({ "path": Value::Null }));
-        }
-
-        return Err(BridgeError::with_details(
-            "pick_directory_failed",
-            format!("Directory picker exited with status {}", output.status),
-            json!({ "stderr": stderr.trim() }),
-        ));
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = title;
-        Err(BridgeError::new(
-            "pick_directory_unsupported",
-            "Directory picker is only implemented for the macOS desktop shell.",
-        ))
     }
 }

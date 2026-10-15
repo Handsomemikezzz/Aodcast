@@ -20,12 +20,11 @@ from app.domain.render_manifest import (
 )
 from app.domain.speech_plan import SpeechBreak as PlannedBreak, SpeechPlan, SpeechSegment
 from app.domain.voice_studio import resolve_style_preset
+from app.domain.tts_config import TTSProviderConfig
 from app.orchestration.audio_assembly import PodcastAudioAssembler
 from app.orchestration.speech_director import SpeechDirectorService
 from app.providers.tts_api.base import SpeechBreak, TTSGenerationRequest, TTSGenerationResponse
 from app.providers.tts_api.factory import build_tts_provider
-from app.providers.tts_local_mlx.capabilities import SupportLevel, capabilities_for_model
-from app.providers.tts_local_mlx.model_spec import resolve_model_spec
 from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
@@ -166,16 +165,18 @@ class PodcastRenderingPipeline:
             raise ValueError("Select a speaker reference before generating podcast audio.")
 
         tts_config = self.config_store.load_tts_config()
+        if override_provider == "local_http" and tts_config.provider != "local_http":
+            tts_config = TTSProviderConfig()
         if override_provider:
             tts_config.provider = override_provider
         if override_model:
             tts_config.model = override_model
-            tts_config.local_model_path = ""
         tts_config.audio_format = "wav"
         provider = build_tts_provider(tts_config)
-        local_capabilities = None
-        if tts_config.provider == "local_mlx":
-            local_capabilities = capabilities_for_model(resolve_model_spec(override_model or tts_config.local_model_path or tts_config.model))
+        if tts_config.provider == "local_http" and speaker_reference:
+            raise ValueError("本机语音服务仅支持预设音色，不支持 Speaker Reference 克隆。")
+        if tts_config.provider == "local_http" and settings.style_id != "natural":
+            raise ValueError("本机语音服务不支持风格指令，请选择自然讲述。")
 
         render_id = uuid4().hex
         parent = project.render_manifest if target_segment_id else None
@@ -194,7 +195,6 @@ class PodcastRenderingPipeline:
         provider_name = tts_config.provider
         model_name = override_model or tts_config.model
         adapter_version = "tts-api-v1"
-        previous_context: tuple[str, str] | None = None
         assembler = PodcastAudioAssembler(AssemblySpec(target_rms_dbfs=-19.0))
         try:
             for position, segment in enumerate(plan.segments):
@@ -205,7 +205,6 @@ class PodcastRenderingPipeline:
                         raise ValueError("A segment outside the regeneration window changed; generate the full podcast again.")
                     self._verified_segment_audio(previous)
                     rendered.append(previous)
-                    previous_context = (previous.audio_path, _apply_pronunciations(segment)[0])
                     continue
                 start_percent = 10.0 + 72.0 * position / max(1, len(plan.segments))
                 self._notify(
@@ -222,8 +221,6 @@ class PodcastRenderingPipeline:
                     segment=segment,
                     settings=settings,
                     speaker_reference=speaker_reference,
-                    local_capabilities=local_capabilities,
-                    previous_context=previous_context,
                     should_cancel=should_cancel,
                 )
                 provider_name = response.provider_name
@@ -251,7 +248,6 @@ class PodcastRenderingPipeline:
                         seed=None,
                     )
                 )
-                previous_context = (str(audio_path), _apply_pronunciations(segment)[0])
             rendered.sort(key=lambda item: item.position)
             self._raise_if_cancelled(should_cancel)
             self._notify(on_progress, 86.0, "Assembling pauses, loudness, and segment boundaries...")
@@ -351,21 +347,19 @@ class PodcastRenderingPipeline:
         segment: SpeechSegment,
         settings: PodcastRenderSettings,
         speaker_reference: dict[str, str] | None,
-        local_capabilities: Any,
-        previous_context: tuple[str, str] | None,
         should_cancel: Callable[[], bool] | None,
     ) -> TTSGenerationResponse:
         provider_text, provider_breaks = _apply_pronunciations(segment)
-        style_prompt = ""
-        if local_capabilities is None or local_capabilities.style_instruction != SupportLevel.UNSUPPORTED:
-            style_prompt = _delivery_prompt(segment, settings.style_prompt)
+        style_prompt = "" if provider_name == "local_http" else _delivery_prompt(segment, settings.style_prompt)
         reference_audio = speaker_reference["audio_path"] if speaker_reference else ""
         reference_text = speaker_reference["reference_text"] if speaker_reference else ""
-        context_audio = ""
-        context_text = ""
-        if provider_name == "local_mlx" and previous_context is not None:
-            context_audio, context_text = previous_context
-        if provider_name != "local_mlx" and provider_breaks:
+        if provider_name == "local_http" and provider_breaks:
+            # Natural punctuation approximates editorial pauses; exact durations
+            # are explicitly unsupported by this service's capability contract.
+            for item in reversed(provider_breaks):
+                provider_text = provider_text[:item.offset] + "，" + provider_text[item.offset:]
+            provider_breaks = ()
+        if provider_name != "local_http" and provider_breaks:
             return self._render_remote_break_units(
                 provider=provider,
                 session_id=session_id,
@@ -389,8 +383,6 @@ class PodcastRenderingPipeline:
                 language=settings.language,
                 reference_audio_path=reference_audio,
                 reference_text=reference_text,
-                context_audio_path=context_audio,
-                context_text=context_text,
                 voice_lock_id=speaker_reference["speaker_reference_id"] if speaker_reference else "",
                 breaks=tuple(SpeechBreak(item.offset, item.duration_ms) for item in provider_breaks),
                 clone_mode="auto",

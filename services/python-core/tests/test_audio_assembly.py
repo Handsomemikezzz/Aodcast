@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from app.domain.render_manifest import AssemblySpec
 from app.orchestration.audio_assembly import PodcastAudioAssembler
-from app.providers.audio_utils import synthesize_sine_wave_bytes
+from tests.audio_utils import synthesize_sine_wave_bytes
 
 
 class AudioAssemblyTests(unittest.TestCase):

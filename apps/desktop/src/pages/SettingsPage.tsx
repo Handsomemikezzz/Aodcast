@@ -4,13 +4,10 @@ import {
   ChevronDown,
   Loader2,
   Sparkles,
-  SlidersHorizontal,
   Volume2,
   Check,
   AlertCircle,
   Activity,
-  ArrowRight,
-  HelpCircle,
   RotateCw
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -40,9 +37,6 @@ type TTSForm = {
   api_key: string;
   voice: string;
   audio_format: string;
-  local_runtime: string;
-  local_model_path: string;
-  local_ref_audio_path: string;
 };
 
 type LLMPreset = {
@@ -149,9 +143,6 @@ function toTTSForm(config: TTSProviderConfig): TTSForm {
     api_key: config.api_key,
     voice: config.voice,
     audio_format: config.audio_format,
-    local_runtime: config.local_runtime,
-    local_model_path: config.local_model_path,
-    local_ref_audio_path: config.local_ref_audio_path,
   };
 }
 
@@ -168,15 +159,12 @@ export function SettingsPage() {
   });
 
   const [ttsForm, setTtsForm] = useState<TTSForm>({
-    provider: "local_mlx",
-    model: "",
-    base_url: "",
+    provider: "local_http",
+    model: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+    base_url: "http://127.0.0.1:8090/v1",
     api_key: "",
-    voice: "alloy",
+    voice: "默认中文音色",
     audio_format: "wav",
-    local_runtime: "mlx",
-    local_model_path: "",
-    local_ref_audio_path: "",
   });
 
   // UI state managers
@@ -188,7 +176,6 @@ export function SettingsPage() {
   const [savedFlashLlm, setSavedFlashLlm] = useState(false);
   const [savedFlashTts, setSavedFlashTts] = useState(false);
   const [requestState, setRequestState] = useState<RequestState | null>(null);
-  const [advancedTtsOpen, setAdvancedTtsOpen] = useState(false);
 
   // Connection testing states
   const [testingLlm, setTestingLlm] = useState(false);
@@ -418,9 +405,6 @@ export function SettingsPage() {
         api_key: ttsForm.api_key,
         voice: ttsForm.voice,
         audio_format: ttsForm.audio_format,
-        local_runtime: ttsForm.local_runtime,
-        local_model_path: ttsForm.local_model_path,
-        local_ref_audio_path: ttsForm.local_ref_audio_path,
       });
       setTtsTestResult({ success: true, message: res.message });
     } catch (e) {
@@ -489,9 +473,6 @@ export function SettingsPage() {
         api_key: ttsForm.api_key,
         voice: ttsForm.voice,
         audio_format: ttsForm.audio_format,
-        local_runtime: ttsForm.local_runtime,
-        local_model_path: ttsForm.local_model_path,
-        local_ref_audio_path: ttsForm.local_ref_audio_path,
       });
       setTtsForm(toTTSForm(next));
       setRequestState({
@@ -525,7 +506,7 @@ export function SettingsPage() {
   const selectedCodexModel = llmProviderStatus?.models.find(
     (model) => model.id === llmForm.model,
   ) ?? null;
-  const ttsUsesLocalModels = ttsForm.provider === "local_mlx";
+  const ttsUsesLocalModels = ttsForm.provider === "local_http";
 
   return (
     <motion.div
@@ -933,186 +914,43 @@ export function SettingsPage() {
                   <div className="relative">
                     <select
                       value={ttsForm.provider}
-                      onChange={(e) => updateTts("provider", e.target.value)}
+                      onChange={(e) => {
+                        const local = e.target.value === "local_http";
+                        setTtsForm((current) => ({ ...current, provider: e.target.value,
+                          ...(local ? { model: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit", base_url: "http://127.0.0.1:8090/v1", voice: "默认中文音色", audio_format: "wav" } : {}) }));
+                      }}
                       className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all appearance-none cursor-pointer"
                     >
-                      <option value="local_mlx">Local · MLX on this Mac (Primary)</option>
+                      <option value="local_http">Local · HTTP speech service</option>
                       <option value="openai_compatible">Remote API · OpenAI-compatible Cloud</option>
                     </select>
                     <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
                   </div>
                 </label>
 
-                {/* Local MLX Guide Card */}
                 {ttsUsesLocalModels && (
-                  <div className="rounded-xl border border-accent-amber/20 bg-accent-amber/5 p-4 space-y-3 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-accent-amber/5 blur-2xl rounded-full" />
-                    <p className="text-xs font-semibold text-accent-amber">Local Voice Model Engine</p>
-                    <p className="text-xs leading-relaxed text-secondary">
-                      Download VoxCPM2, MOSS, or Qwen baseline models and manage local model storage in the dedicated Models Center.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => navigate("/models")}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-accent-amber/35 px-3.5 py-1.5 text-xs font-semibold text-accent-amber hover:bg-accent-amber/10 transition-all"
-                    >
-                      Open Models Center
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="rounded-xl border border-outline p-4 text-xs leading-6 text-secondary">
+                    本机语音服务独立运行于 127.0.0.1:8090；请先启动 service.sh。
+                    模型切换由服务的 .env 管理，Aodcast 不下载模型。支持预设音色和 WAV，不支持克隆、风格或变速。
+                    <button type="button" onClick={() => navigate("/models")} className="block text-accent-amber">查看服务状态</button>
                   </div>
                 )}
-
-                {/* Remote API Settings */}
-                {!ttsUsesLocalModels && (
-                  <div className="space-y-4 pt-1">
-                    <label className="block">
-                      <span className="text-xs font-semibold text-on-surface-variant mb-2 block">Cloud TTS Model</span>
-                      <input
-                        type="text"
-                        autoComplete="off"
-                        placeholder="e.g. tts-1, tts-1-hd"
-                        value={ttsForm.model}
-                        onChange={(e) => updateTts("model", e.target.value)}
-                        className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-xs font-semibold text-on-surface-variant mb-2 block">Base URL</span>
-                      <input
-                        type="url"
-                        autoComplete="off"
-                        placeholder="https://api.openai.com/v1"
-                        value={ttsForm.base_url}
-                        onChange={(e) => updateTts("base_url", e.target.value)}
-                        className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-xs font-semibold text-on-surface-variant mb-2 block">API key</span>
-                      <input
-                        type="password"
-                        autoComplete="off"
-                        placeholder="Paste your cloud TTS provider API key here"
-                        value={ttsForm.api_key}
-                        onChange={(e) => updateTts("api_key", e.target.value)}
-                        className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all font-mono"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="text-xs font-semibold text-on-surface-variant mb-2 block">Voice</span>
-                      <input
-                        type="text"
-                        autoComplete="off"
-                        placeholder="e.g. alloy, echo, shimmer"
-                        value={ttsForm.voice}
-                        onChange={(e) => updateTts("voice", e.target.value)}
-                        className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all"
-                      />
-                    </label>
-                  </div>
-                )}
-
-                {/* Predefined Audio Format Select */}
-                <label className="block">
-                  <span className="text-xs font-semibold text-on-surface-variant mb-2 block">Audio format</span>
-                  <div className="relative">
-                    <select
-                      value={ttsForm.audio_format}
-                      onChange={(e) => updateTts("audio_format", e.target.value)}
-                      className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="wav">wav (Recommended · Lossless Safety)</option>
-                      <option value="mp3">mp3 (Compressed · Broad Compatibility)</option>
-                      <option value="m4a">m4a (Compressed AAC)</option>
-                    </select>
-                    <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
-                  </div>
-                  <p className="mt-2 text-[11px] text-secondary leading-normal">
-                    WAV is highly recommended for Qwen MLX voice synthesis to ensure no audio chunk decoding stretches. Cloud endpoints support MP3.
-                  </p>
+                {([['model', 'Model'], ['base_url', 'Base URL'], ['api_key', 'API key'], ['voice', 'Voice']] as const).map(([field, label]) => (
+                  <label key={field} className="block">
+                    <span className="mb-2 block text-xs font-semibold text-secondary">{label}</span>
+                    <input type={field === 'api_key' ? 'password' : 'text'} autoComplete="off"
+                      value={ttsForm[field]} onChange={(e) => updateTts(field, e.target.value)}
+                      className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-sm text-primary" />
+                  </label>
+                ))}
+                <label className="block text-xs text-secondary">Audio format
+                  <select value={ttsForm.audio_format} disabled={ttsUsesLocalModels}
+                    onChange={(e) => updateTts('audio_format', e.target.value)}
+                    className="ml-3 rounded-lg border border-outline bg-surface-container-high p-2">
+                    <option value="wav">WAV</option>
+                    {!ttsUsesLocalModels && <option value="mp3">MP3</option>}
+                  </select>
                 </label>
-
-                {/* Advanced TTS Parameters */}
-                <div className="rounded-xl border border-outline bg-surface-container-low overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setAdvancedTtsOpen((v) => !v)}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-container-low/60 transition-all"
-                  >
-                    <span className="inline-flex items-center gap-2 text-xs font-semibold text-secondary">
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      Advanced TTS parameters
-                    </span>
-                    <ChevronDown className={cn("h-4 w-4 text-secondary transition-transform duration-200", advancedTtsOpen && "rotate-180")} />
-                  </button>
-
-                  <AnimatePresence>
-                    {advancedTtsOpen && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden border-t border-outline bg-surface-container-low/60"
-                      >
-                        <div className="space-y-4 p-4">
-                          {ttsUsesLocalModels && (
-                            <label className="block">
-                              <span className="text-xs font-semibold text-secondary mb-2 block">Raw local model repo id</span>
-                              <input
-                                type="text"
-                                autoComplete="off"
-                                placeholder="mlx-community/Qwen3-TTS-..."
-                                value={ttsForm.model}
-                                onChange={(e) => updateTts("model", e.target.value)}
-                                className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50"
-                              />
-                              <p className="mt-1 text-[10px] text-secondary">Configure downloads primarily inside Models Center.</p>
-                            </label>
-                          )}
-
-                          <label className="block">
-                            <span className="text-xs font-semibold text-secondary mb-2 block">Local runtime</span>
-                            <input
-                              type="text"
-                              autoComplete="off"
-                              placeholder="mlx"
-                              value={ttsForm.local_runtime}
-                              onChange={(e) => updateTts("local_runtime", e.target.value)}
-                              className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50"
-                            />
-                          </label>
-
-                          <label className="block">
-                            <span className="text-xs font-semibold text-secondary mb-2 block">Local model path override</span>
-                            <input
-                              type="text"
-                              autoComplete="off"
-                              placeholder="/absolute/path/to/model (optional)"
-                              value={ttsForm.local_model_path}
-                              onChange={(e) => updateTts("local_model_path", e.target.value)}
-                              className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50"
-                            />
-                          </label>
-
-                          <label className="block">
-                            <span className="text-xs font-semibold text-secondary mb-2 block">Local ref audio path</span>
-                            <input
-                              type="text"
-                              autoComplete="off"
-                              placeholder="/absolute/path/to/ref.wav (optional)"
-                              value={ttsForm.local_ref_audio_path}
-                              onChange={(e) => updateTts("local_ref_audio_path", e.target.value)}
-                              className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50"
-                            />
-                          </label>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
               </div>
 
               {/* Dynamic TTS Verification Feedback */}

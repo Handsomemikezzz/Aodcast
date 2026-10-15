@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aodcast.dev/schemas/tts-provider-config.schema.json",
+  "title": "TTSProviderConfig",
+  "type": "object",
+  "required": [
+    "provider",
+    "model",
+    "base_url",
+    "api_key",
+    "voice",
+    "audio_format"
+  ],
+  "properties": {
+    "provider": {
+      "enum": [
+        "local_http",
+        "openai_compatible"
+      ],
+      "default": "local_http"
+    },
+    "model": {
+      "type": "string",
+      "default": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit"
+    },
+    "base_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:8090/v1"
+    },
+    "api_key": {
+      "type": "string",
+      "default": ""
+    },
+    "voice": {
+      "type": "string",
+      "default": "默认中文音色"
+    },
+    "audio_format": {
+      "type": "string",
+      "default": "wav"
+    }
+  },
+  "additionalProperties": false
+}

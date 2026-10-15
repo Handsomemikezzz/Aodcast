@@ -30,25 +30,26 @@ export function deriveEpisodeRenderReadiness({
 }: {
   scriptReady: boolean;
   hasSelectedVoice: boolean;
-  selectedEngine: "local_mlx" | "cloud";
+  selectedEngine: "local_http" | "cloud";
   selectedModelId: string;
   capability: TTSCapability | null;
   ttsConfig: TTSProviderConfig | null;
 }): EpisodeRenderReadiness {
-  const ttsReady = selectedEngine === "local_mlx"
+  const ttsReady = selectedEngine === "local_http"
     ? Boolean(selectedModelId && capability?.available)
     : Boolean(
         ttsConfig?.provider
-        && ttsConfig.provider !== "local_mlx"
+        && ttsConfig.provider !== "local_http"
         && ttsConfig.model
         && ttsConfig.base_url
         && ttsConfig.api_key
       );
+  const voiceReady = selectedEngine === "local_http" || hasSelectedVoice;
   return {
     scriptReady,
-    voiceReady: hasSelectedVoice,
+    voiceReady,
     ttsReady,
-    ready: scriptReady && hasSelectedVoice && ttsReady,
+    ready: scriptReady && voiceReady && ttsReady,
   };
 }
 

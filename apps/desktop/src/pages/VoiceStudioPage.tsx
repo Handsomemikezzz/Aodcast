@@ -8,6 +8,7 @@ import type { LongTaskHandle } from "../lib/desktopBridge";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { getErrorMessage } from "../lib/requestState";
+import { readySpeechModel } from "../lib/voiceSettings";
 import { cn } from "../lib/utils";
 import type {
   ModelStatus,
@@ -21,7 +22,7 @@ import type {
   VoiceStylePreset,
 } from "../types";
 
-const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/VoxCPM2-4bit";
+const DEFAULT_LOCAL_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit";
 type PreviewTextMode = "standard" | "script_opening" | "custom";
 type ReferenceAudioSource = "upload" | "microphone" | "system";
 type ReferenceDialogMode = "create" | "edit";
@@ -107,7 +108,7 @@ export function VoiceStudioPage() {
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
   const scriptBoundMode = Boolean(routeSessionId && routeScriptId);
-  const canApplyReferenceToScript = Boolean(selectedSessionId && selectedScriptId);
+  const canApplyReferenceToScript = Boolean(selectedSessionId && selectedScriptId && ttsConfig?.provider !== "local_http");
   const scriptTitle = (project?.script as { title?: string } | undefined)?.title || selectedSession?.session.topic || "当前脚本";
   const scriptText = scriptBoundMode ? project?.script?.final?.trim() || project?.script?.draft?.trim() || "" : "";
   const scriptOpening = scriptOpeningText(scriptText);
@@ -125,43 +126,27 @@ export function VoiceStudioPage() {
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
   const selectedStyle = styles.find((style) => style.style_id === selectedStyleId) ?? styles[0];
   const resolvedModel = resolvedTtsModel(ttsConfig);
-  const currentModel = models.find((model) => model.hf_repo_id === resolvedModel);
-  const localPathConfigured = Boolean(ttsConfig?.local_model_path?.trim());
-  const isLocalEngine = ttsConfig?.provider === "local_mlx";
-  const localCatalogModelInstalled = Boolean(currentModel?.downloaded);
-  const localPathReady = Boolean(localPathConfigured && ttsCapability?.model_path_exists && ttsCapability?.available);
-  const localEngineReady = Boolean(ttsConfig) && (!isLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
-  const previewUsesLocalEngine = providerOverride ? providerOverride === "local_mlx" : isLocalEngine;
-  const previewEngineReady = Boolean(ttsConfig) && (!previewUsesLocalEngine || (localPathConfigured ? localPathReady : Boolean(localCatalogModelInstalled && ttsCapability?.available)));
+  const currentModel = ttsConfig?.provider === "local_http" ? readySpeechModel(models, resolvedModel) : undefined;
+  const isLocalEngine = ttsConfig?.provider === "local_http";
+  const localEngineReady = Boolean(ttsConfig) && (!isLocalEngine || Boolean(ttsCapability?.available && currentModel));
+  const previewEngineReady = localEngineReady;
   const engineLabel = isLocalEngine
-    ? `Local MLX · ${localPathConfigured ? "Custom local path" : currentModel?.display_name ?? shortRepoName(resolvedModel)}`
-    : ttsConfig?.provider
-      ? `${ttsConfig.provider} · ${ttsConfig.model || "default model"}`
-      : "Loading engine...";
-  const engineStatus = !ttsConfig
-    ? "Loading"
-    : !isLocalEngine
-      ? "Cloud / remote"
-      : localEngineReady
-        ? "Ready"
-        : localPathConfigured && !ttsCapability?.model_path_exists
-          ? "Model path missing"
-          : !localPathConfigured && !localCatalogModelInstalled
-            ? "Model not installed"
-            : "Runtime unavailable";
+    ? `Local HTTP · ${currentModel?.display_name ?? shortRepoName(resolvedModel)}`
+    : `${ttsConfig?.provider || "Loading"} · ${ttsConfig?.model || ""}`;
+  const engineStatus = !ttsConfig ? "Loading" : localEngineReady ? "Ready" : "Service unavailable";
 
   const settings: VoiceRenderSettings = useMemo(
     () => ({
-      voice_id: selectedVoiceId,
+      voice_id: isLocalEngine ? ttsConfig?.voice || "默认中文音色" : selectedVoiceId,
       voice_name: selectedVoice?.name ?? "",
-      style_id: selectedStyleId,
+      style_id: isLocalEngine ? "natural" : selectedStyleId,
       style_name: selectedStyle?.name ?? "",
-      speed,
+      speed: isLocalEngine ? 1 : speed,
       language,
       audio_format: audioFormat,
       preview_text: effectivePreviewText,
     }),
-    [audioFormat, effectivePreviewText, language, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
+    [audioFormat, effectivePreviewText, language, selectedStyle?.name, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed, isLocalEngine, ttsConfig?.voice],
   );
 
   const currentPreviewKey = useMemo(
@@ -171,7 +156,7 @@ export function VoiceStudioPage() {
       voiceName: selectedVoice?.name ?? "",
       text: effectivePreviewText,
       style: selectedStyleId,
-      speed,
+      speed: isLocalEngine ? 1 : speed,
       language,
       audioFormat,
       providerOverride,
@@ -342,7 +327,7 @@ export function VoiceStudioPage() {
   }, [clearPreviewState, currentPreviewKey, previewKey, previewPath, previewRequestState, previewSrc]);
 
   const handlePreview = async () => {
-    if (!selectedReferenceId) {
+    if (!isLocalEngine && !selectedReferenceId) {
       setError("请先从音色库选择一个音色，再生成试听。");
       return;
     }
@@ -382,7 +367,8 @@ export function VoiceStudioPage() {
         sessionId: requestSessionId,
         scriptId: requestScriptId,
         providerOverride,
-        speakerReferenceId: requestReferenceId,
+        modelId: isLocalEngine ? currentModel?.hf_repo_id || currentModel?.model_name : undefined,
+        speakerReferenceId: isLocalEngine ? undefined : requestReferenceId,
       });
       if (!isCurrentPreviewRequest()) return;
       setPreviewRequestState(result.request_state ?? null);
@@ -513,7 +499,7 @@ export function VoiceStudioPage() {
             navigate(returnTo);
           }
         } else {
-          setMessage(`已创建「${reference.name}」。打开脚本后可以选用这个音色。`);
+          setMessage(isLocalEngine ? `已保存「${reference.name}」。本机服务不支持参考音频克隆。` : `已创建「${reference.name}」。打开脚本后可以选用这个音色。`);
         }
       } catch (err) {
         setError(getErrorMessage(err, "Failed to create speaker reference."));
@@ -551,7 +537,7 @@ export function VoiceStudioPage() {
       }
       const reference = await bridge.updateSpeakerReference(editingReferenceId, patch);
       await refreshSpeakerReferences();
-      if (selectedSessionId && selectedScriptId && speakerReference?.speaker_reference_id === reference.speaker_reference_id) {
+      if (!isLocalEngine && selectedSessionId && selectedScriptId && speakerReference?.speaker_reference_id === reference.speaker_reference_id) {
         const updated = await bridge.selectSpeakerReference(selectedSessionId, selectedScriptId, reference.speaker_reference_id);
         setProject(updated);
       }
@@ -756,7 +742,7 @@ export function VoiceStudioPage() {
                           <button
                             type="button"
                             onClick={() => void handleSelectSpeakerReference(reference)}
-                            disabled={isSelected}
+                            disabled={isSelected || isLocalEngine}
                             className={cn(
                               "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer",
                               isSelected
@@ -764,7 +750,7 @@ export function VoiceStudioPage() {
                                 : "border-outline bg-surface-container-high/60 text-primary hover:bg-surface-container-high",
                             )}
                           >
-                            {isSelected ? "已用于当前脚本" : "用于当前脚本"}
+                            {isLocalEngine ? "本机服务不支持参考音频克隆" : isSelected ? "已用于当前脚本" : "用于当前脚本"}
                           </button>
                         ) : (
                           <span className="rounded-lg border border-outline bg-surface-container-high/40 px-3 py-1.5 text-xs font-medium text-secondary">
@@ -790,14 +776,14 @@ export function VoiceStudioPage() {
               <section className="rounded-xl border border-outline bg-surface-container-low p-4">
                 <h2 className="text-[11px] font-semibold uppercase tracking-wider text-secondary">试听设置</h2>
                 <p className="mt-2 text-sm font-semibold text-primary">
-                  {selectedReference?.name ?? "未选择音色"}
+                  {isLocalEngine ? ttsConfig?.voice || "默认中文音色" : selectedReference?.name ?? "未选择音色"}
                   <span className="mx-1.5 text-secondary/40 font-normal">·</span>
-                  {selectedStyle?.name ?? "默认风格"}
+                  {isLocalEngine ? "自然风格" : selectedStyle?.name ?? "默认风格"}
                   <span className="mx-1.5 text-secondary/40 font-normal">·</span>
-                  <span className="text-accent-amber">{speed.toFixed(1)}x</span>
+                  <span className="text-accent-amber">{(isLocalEngine ? 1 : speed).toFixed(1)}x</span>
                 </p>
                 <p className="mt-1 text-xs text-secondary">
-                  {selectedReference ? "风格和语速仅用于本次试听，不会写入音色参考。" : "请先为当前脚本选用一个音色。"}
+                  {isLocalEngine ? "本机服务使用设置中的预设音色，固定自然风格和正常语速；不支持参考音频克隆。" : selectedReference ? "风格和语速仅用于本次试听，不会写入音色参考。" : "请先为当前脚本选用一个音色。"}
                 </p>
               </section>
 
@@ -814,9 +800,9 @@ export function VoiceStudioPage() {
                     onClick={() => void handlePreview()}
                     disabled={
                       previewing ||
-                      !selectedVoice ||
-                      !selectedStyle ||
-                      !selectedReferenceId ||
+                      (!isLocalEngine && !selectedVoice) ||
+                      (!isLocalEngine && !selectedStyle) ||
+                      (!isLocalEngine && !selectedReferenceId) ||
                       !previewEngineReady
                     }
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-accent-amber px-3.5 py-2 text-xs font-bold text-on-primary hover:bg-accent-amber/90 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer shrink-0"
@@ -864,7 +850,7 @@ export function VoiceStudioPage() {
                   <span className="font-semibold text-accent-amber">当前试音文本：</span>
                   {effectivePreviewText ? `${effectivePreviewText.slice(0, 80)}${effectivePreviewText.length > 80 ? "…" : ""}` : "系统标准试音句"}
                 </p>
-                {!selectedReferenceId ? (
+                {!isLocalEngine && !selectedReferenceId ? (
                   <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-300 font-medium">请先为当前脚本选用一个音色。</p>
                 ) : null}
                 {previewRequestState && previewRequestState.phase !== "succeeded" ? (
@@ -894,7 +880,7 @@ export function VoiceStudioPage() {
                     </button>
                   </div>
                 ) : null}
-                {selectedReference ? (
+                {selectedReference && !isLocalEngine ? (
                   <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-700 dark:text-emerald-200/90 leading-relaxed flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
                     <p>已选择「{selectedReference.name}」。试听和单集工作区音频生成都会使用这份音色参考。</p>

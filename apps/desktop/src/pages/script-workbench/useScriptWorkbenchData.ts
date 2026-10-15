@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DesktopBridge } from "../../lib/desktopBridge";
 import { getErrorMessage } from "../../lib/requestState";
-import { resolveProjectVoiceSettings } from "../../lib/voiceSettings";
+import { readySpeechModel, resolveProjectVoiceSettings } from "../../lib/voiceSettings";
 import type {
   ModelStatus,
   SessionProject,
   SpeakerReference,
   TTSCapability,
   TTSProviderConfig,
+  VoicePreset,
   VoiceRenderSettings,
   VoiceStylePreset,
 } from "../../types";
@@ -26,11 +27,13 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const [capability, setCapability] = useState<TTSCapability | null>(null);
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
   const [speakerReferences, setSpeakerReferences] = useState<SpeakerReference[]>([]);
+  const [voicePresets, setVoicePresets] = useState<VoicePreset[]>([]);
+  const [selectedPresetVoiceId, setSelectedPresetVoiceId] = useState("warm_narrator");
   const [voiceStyles, setVoiceStyles] = useState<VoiceStylePreset[]>([]);
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [voiceSelectionError, setVoiceSelectionError] = useState<string | null>(null);
-  const [selectedEngine, setSelectedEngine] = useState<"local_mlx" | "cloud">("cloud");
+  const [selectedEngine, setSelectedEngine] = useState<"local_http" | "cloud">("cloud");
   const [selectedStyleId, setSelectedStyleId] = useState("natural");
   const [deliverySpeed, setDeliverySpeed] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -52,6 +55,7 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     setSpeakerReferences(loadedReferences);
     setModels(loadedModels);
     setVoiceStyles(voiceCatalog.styles);
+    setVoicePresets(voiceCatalog.voices);
   };
 
   const refreshWorkspace = async () => {
@@ -81,28 +85,24 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   }, [bridge, sessionId, scriptId]);
 
   useEffect(() => {
-    const defaultEngine = ttsConfig?.provider === "local_mlx" ? "local_mlx" : capability?.available ? "local_mlx" : "cloud";
+    const defaultEngine = ttsConfig?.provider === "local_http" ? "local_http" : "cloud";
     setSelectedEngine(defaultEngine);
   }, [capability?.available, ttsConfig?.provider]);
 
   useEffect(() => {
     const configured = ttsConfig?.model?.trim() || "";
     const rendered = project?.render_manifest?.pipeline.find((stage) => stage.stage === "speech_synthesis")?.model || "";
-    const firstReady = models.find((model) => model.downloaded && model.available !== false)?.hf_repo_id
-      ?? models.find((model) => model.downloaded && model.available !== false)?.model_name
-      ?? "";
-    const modelIsReady = (modelId: string) => models.some(
-      (model) => (model.hf_repo_id === modelId || model.model_name === modelId)
-        && model.downloaded
-        && model.available !== false,
-    );
     setSelectedModelId((current) => {
-      if (current && modelIsReady(current)) return current;
-      return modelIsReady(configured) ? configured : modelIsReady(rendered) ? rendered : firstReady;
+      const model = readySpeechModel(models, current, configured, rendered);
+      return model?.hf_repo_id || model?.model_name || "";
     });
   }, [models, project?.render_manifest?.render_id, ttsConfig?.model]);
 
   const savedVoiceSettings = resolveProjectVoiceSettings(project, scriptId);
+
+  useEffect(() => {
+    setSelectedPresetVoiceId(savedVoiceSettings.voice_id);
+  }, [scriptId, savedVoiceSettings.voice_id]);
 
   useEffect(() => {
     setSelectedStyleId(savedVoiceSettings.style_id || "natural");
@@ -111,11 +111,11 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
 
   const cloudProvider = useMemo(() => {
     const configuredProvider = ttsConfig?.provider?.trim();
-    if (configuredProvider && configuredProvider !== "local_mlx") {
+    if (configuredProvider && configuredProvider !== "local_http") {
       return configuredProvider;
     }
-    return capability?.fallback_provider || "openai_compatible";
-  }, [capability?.fallback_provider, ttsConfig?.provider]);
+    return "openai_compatible";
+  }, [ttsConfig?.provider]);
 
   const serverScript = project?.script?.final || project?.script?.draft || "";
   const isScriptDeleted = Boolean(project?.script?.deleted_at);
@@ -131,11 +131,12 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     const selectedStyle = voiceStyles.find((style) => style.style_id === selectedStyleId);
     return {
       ...savedVoiceSettings,
-      style_id: selectedStyleId || "natural",
-      style_name: selectedStyle?.name || savedVoiceSettings.style_name || "Natural",
-      speed: deliverySpeed,
+      ...(selectedEngine === "local_http" ? { voice_id: selectedPresetVoiceId, voice_name: voicePresets.find((voice) => voice.voice_id === selectedPresetVoiceId)?.name || selectedPresetVoiceId, audio_format: "wav" } : {}),
+      style_id: selectedEngine === "local_http" ? "natural" : selectedStyleId || "natural",
+      style_name: selectedEngine === "local_http" ? "Natural" : selectedStyle?.name || savedVoiceSettings.style_name || "Natural",
+      speed: selectedEngine === "local_http" ? 1 : deliverySpeed,
     };
-  }, [deliverySpeed, savedVoiceSettings, selectedStyleId, voiceStyles]);
+  }, [deliverySpeed, savedVoiceSettings, selectedStyleId, voiceStyles, selectedEngine, selectedPresetVoiceId, voicePresets]);
 
   const handleSelectSpeakerReference = async (referenceId: string) => {
     const selectedScriptId = project?.script?.script_id || scriptId;
@@ -159,6 +160,9 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     ttsConfig,
     speakerReferences,
     voiceStyles,
+    voicePresets,
+    selectedPresetVoiceId,
+    setSelectedPresetVoiceId,
     models,
     selectedModelId,
     setSelectedModelId,

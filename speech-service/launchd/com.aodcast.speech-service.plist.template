@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.aodcast.speech-service</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@@PYTHON@@</string>
+    <string>-u</string>
+    <string>-m</string>
+    <string>speech_server</string>
+  </array>
+  <key>WorkingDirectory</key><string>@@ROOT@@</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>@@PATH@@</string>
+    <key>HOST</key><string>@@HOST@@</string>
+    <key>PORT</key><string>@@PORT@@</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>15</integer>
+  <key>ExitTimeOut</key><integer>120</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>@@LOG@@</string>
+  <key>StandardErrorPath</key><string>@@ERROR_LOG@@</string>
+</dict>
+</plist>

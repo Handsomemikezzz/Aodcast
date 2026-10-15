@@ -9,7 +9,6 @@ import {
   MemoryEntry,
   MemoryOverview,
   MemoryUsageEvent,
-  ModelStorageStatus,
   ModelStatus,
   RequestState,
   ScriptRecord,
@@ -118,9 +117,6 @@ export type ConfigureTTSInput = {
   api_key: string;
   voice: string;
   audio_format: string;
-  local_runtime: string;
-  local_model_path: string;
-  local_ref_audio_path: string;
 };
 
 export type ConfigureLLMInput = {
@@ -205,7 +201,7 @@ export interface DesktopBridge {
   listScriptRevisions(sessionId: string, scriptId: string): Promise<ScriptRevisionRecord[]>;
   /** Replace the current script contents with a saved revision. */
   rollbackScriptRevision(sessionId: string, scriptId: string, revisionId: string): Promise<SessionProject>;
-  /** Report whether local MLX TTS is available on this machine and why/why not. */
+  /** Report whether the independent local speech HTTP service is reachable. */
   getLocalTTSCapability(): Promise<TTSCapability>;
   showLLMConfig(): Promise<LLMProviderConfig>;
   checkLLMConfig(): Promise<LLMConfigPreflight>;
@@ -217,12 +213,6 @@ export interface DesktopBridge {
   startLLMProviderLogin(provider: "codex_subscription"): Promise<LLMAuthStartResult>;
   testTTSConnection(input: ConfigureTTSInput): Promise<{ status: string; latency_ms: number; message: string }>;
   listModelsStatus(): Promise<ModelStatus[]>;
-  showModelStorage(): Promise<ModelStorageStatus>;
-  migrateModelStorage(destination: string): Promise<{ message: string; task_id?: string; request_state?: RequestState }>;
-  resetModelStorage(): Promise<ModelStorageStatus>;
-  /** Start a long-running voice model download and return its task metadata. */
-  downloadModel(modelName: string): Promise<{ message: string; path?: string; task_id?: string; request_state?: RequestState }>;
-  deleteModel(modelName: string): Promise<{ message: string; path?: string }>;
   /** Poll the latest persisted request state for a long-running task. */
   showTaskState(taskId: string): Promise<RequestState | null>;
   /** Request cooperative cancellation for a long-running task. */

@@ -10,6 +10,7 @@ from app.domain.common import sha256_text
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
 from app.domain.speaker_reference import SpeakerReference
+from app.domain.tts_config import TTSProviderConfig
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, clamp_speed, resolve_style_preset, resolve_voice_preset
 from app.orchestration.podcast_rendering import (
     PodcastRenderProgress,
@@ -19,8 +20,6 @@ from app.orchestration.podcast_rendering import (
 )
 from app.providers.tts_api.base import TTSGenerationRequest
 from app.providers.tts_api.factory import build_tts_provider
-from app.providers.tts_local_mlx.capabilities import SupportLevel, capabilities_for_model
-from app.providers.tts_local_mlx.model_spec import resolve_model_spec
 from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
@@ -118,6 +117,17 @@ class AudioRenderingService:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.script is None:
             raise ValueError("Cannot render audio without a script record.")
+        provider_name = override_provider or self.config_store.load_tts_config().provider
+        if settings is not None and provider_name == "local_http" and not require_speaker_reference:
+            _validate_local_settings(self._normalize_settings(settings))
+            # An explicit preset selection replaces any old cloning selection.
+            # Persist it before capturing the publication preconditions.
+            project = self.save_voice_settings(session_id, settings, script_id=script_id)
+            if project.artifact and project.artifact.speaker_reference:
+                project.artifact = self.store.update_script_audio_preferences(
+                    session_id, project.script.script_id,
+                    speaker_reference=None, replace_speaker_reference=True,
+                )
         artifact = project.artifact or ArtifactRecord(
             session_id=session_id,
             transcript_path=f"sessions/{session_id}/transcript.json",
@@ -290,10 +300,15 @@ class AudioRenderingService:
     ) -> SessionProject:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         normalized = self._normalize_settings(settings)
+        local_preset = self.config_store.load_tts_config().provider == "local_http"
+        if local_preset:
+            _validate_local_settings(normalized)
         artifact = self.store.update_script_audio_preferences(
             session_id,
             project.script.script_id if project.script is not None else "",
             voice_settings=self._settings_to_dict(normalized),
+            speaker_reference=None,
+            replace_speaker_reference=local_preset,
         )
         project.artifact = artifact
         return project
@@ -328,42 +343,27 @@ class AudioRenderingService:
     ) -> VoicePreviewResult:
         normalized = self._normalize_settings(settings)
         tts_config = self.config_store.load_tts_config()
+        if override_provider == "local_http" and tts_config.provider != "local_http":
+            tts_config = TTSProviderConfig()
         if override_provider:
             tts_config.provider = override_provider
         if override_model:
             tts_config.model = override_model
-            tts_config.local_model_path = ""
         tts_config.voice = self._provider_voice_for(normalized, tts_config.provider)
         tts_config.audio_format = normalized.audio_format or tts_config.audio_format
         provider = build_tts_provider(tts_config)
         style = resolve_style_preset(normalized.style_id)
         request_speed = normalized.speed
         style_prompt = style.prompt
-        if tts_config.provider == "local_mlx":
-            spec = resolve_model_spec(tts_config.local_model_path or tts_config.model)
-            capabilities = capabilities_for_model(spec)
-            if capabilities.speed_control == SupportLevel.UNSUPPORTED:
-                request_speed = 1.0
-            if capabilities.style_instruction == SupportLevel.UNSUPPORTED:
-                style_prompt = ""
+        if tts_config.provider == "local_http":
+            _validate_local_settings(normalized)
+            if speaker_reference:
+                raise ValueError("本机语音服务仅支持预设音色，不支持 Speaker Reference 克隆。")
+            style_prompt = ""
         preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
-        resolved_reference: dict[str, object] = {}
-        if tts_config.provider == "local_mlx" and speaker_reference:
-            audio_path = str(speaker_reference.get("audio_path") or "")
-            if audio_path:
-                self._validate_reference_audio_path(audio_path)
-                resolved_reference = dict(speaker_reference)
-
         def raise_if_cancelled() -> None:
             if should_cancel is not None and should_cancel():
                 raise TaskCancellationRequested("Voice preview rendering cancelled.")
-
-        def forward_provider_event(event: Any) -> None:
-            if on_progress is None:
-                return
-            snapshot = _translate_provider_event(event)
-            if snapshot is not None:
-                on_progress(snapshot)
 
         request = TTSGenerationRequest(
             session_id="voice-preview",
@@ -374,13 +374,7 @@ class AudioRenderingService:
             style_id=normalized.style_id,
             style_prompt=style_prompt,
             language=normalized.language,
-            reference_audio_path=str(resolved_reference.get("audio_path") or ""),
-            reference_text=str(
-                resolved_reference.get("reference_text") or ""
-            ),
-            voice_lock_id=str(resolved_reference.get("speaker_reference_id") or ""),
             should_cancel=should_cancel,
-            on_progress=forward_provider_event,
         )
         raise_if_cancelled()
         if on_progress is not None:
@@ -476,8 +470,8 @@ class AudioRenderingService:
         )
 
     def _provider_voice_for(self, settings: VoiceRenderSettings, provider: str = "") -> str:
-        if provider == "local_mlx":
-            return _local_mlx_voice_for(settings.voice_id, settings.language)
+        if provider == "local_http":
+            return settings.voice_id
         return resolve_voice_preset(settings.voice_id).provider_voice
 
     def _settings_to_dict(self, settings: VoiceRenderSettings) -> dict[str, object]:
@@ -561,8 +555,6 @@ class AudioRenderingService:
             except (OSError, ValueError):
                 continue
 
-_PROVIDER_RENDER_WINDOW = (10.0, 90.0)
-
 _PRESERVED_SESSION_STATES = {
     SessionState.TOPIC_DEFINED,
     SessionState.INTERVIEW_IN_PROGRESS,
@@ -581,45 +573,6 @@ def _resolve_post_render_state(previous_state: SessionState) -> SessionState:
     return SessionState.COMPLETED
 
 
-def _translate_provider_event(event: Any) -> AudioRenderProgress | None:
-    """Convert a provider-specific progress event into a task snapshot.
-
-    We currently understand the :class:`ChunkProgressEvent` emitted by the
-    local MLX runner; other providers that do not emit progress produce no
-    snapshot and the heartbeat / phase markers drive the UI instead.
-    """
-
-    phase = getattr(event, "phase", None)
-    index = getattr(event, "index", None)
-    total = getattr(event, "total", None)
-    if not isinstance(phase, str) or not isinstance(index, int) or not isinstance(total, int):
-        return None
-    if total <= 0:
-        return None
-
-    start, end = _PROVIDER_RENDER_WINDOW
-    span = max(end - start, 0.1)
-
-    if phase == "chunk_started":
-        fraction = index / total
-        message = f"Synthesizing chunk {index + 1} / {total}"
-    elif phase == "chunk_done":
-        completed = index + 1
-        fraction = completed / total
-        message = f"Rendered chunk {completed} / {total}"
-    else:
-        return None
-
-    fraction = max(0.0, min(1.0, fraction))
-    percent = start + span * fraction
-    return AudioRenderProgress(
-        percent=percent,
-        message=message,
-        chunk_index=index + 1,
-        chunks_total=total,
-    )
-
-
 def _audio_progress(progress: PodcastRenderProgress) -> AudioRenderProgress:
     return AudioRenderProgress(
         percent=progress.percent,
@@ -629,28 +582,9 @@ def _audio_progress(progress: PodcastRenderProgress) -> AudioRenderProgress:
     )
 
 
-_LOCAL_MLX_CHINESE_VOICES = {
-    "warm_narrator": "Vivian",
-    "news_anchor": "Serena",
-    "casual_chat": "Dylan",
-    "deep_story": "Uncle_Fu",
-    "bright_energy": "Eric",
-}
-
-_LOCAL_MLX_ENGLISH_VOICES = {
-    "warm_narrator": "Ryan",
-    "news_anchor": "Ryan",
-    "casual_chat": "Aiden",
-    "deep_story": "Ryan",
-    "bright_energy": "Aiden",
-}
-
-
-def _local_mlx_voice_for(voice_id: str, language: str) -> str:
-    language_key = language.strip().lower().replace("_", "-")
-    if language_key.startswith("en"):
-        return _LOCAL_MLX_ENGLISH_VOICES.get(voice_id, "Ryan")
-    return _LOCAL_MLX_CHINESE_VOICES.get(voice_id, "Vivian")
+def _validate_local_settings(settings: VoiceRenderSettings) -> None:
+    if settings.speed != 1.0 or settings.style_id != "natural" or settings.audio_format != "wav":
+        raise ValueError("本机语音服务仅支持自然讲述、正常语速和 WAV 输出。")
 
 
 def _is_allowed_speaker_reference_path(target: Path, data_dir: Path) -> bool:

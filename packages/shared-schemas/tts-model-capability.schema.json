@@ -29,7 +29,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["macos_apple_silicon", "nvidia_cuda", "remote_api"]
+        "enum": ["macos_apple_silicon", "nvidia_cuda", "remote_api", "http_client"]
       }
     },
     "languages": {

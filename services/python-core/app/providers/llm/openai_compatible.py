@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Iterator
 
 from openai import OpenAI
 

@@ -18,7 +18,6 @@ from app.orchestration.prompts.registry import (
     PROMPT_VERSION,
     CachePolicy,
     PromptPlan,
-    PromptPlanMetadata,
     PromptSection,
     assemble_plan,
 )

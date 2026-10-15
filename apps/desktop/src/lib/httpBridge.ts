@@ -27,7 +27,6 @@ import type {
   MemoryEntry,
   MemoryOverview,
   MemoryUsageEvent,
-  ModelStorageStatus,
   ModelStatus,
   RequestState,
   RuntimeInfo,
@@ -81,7 +80,6 @@ type BridgeShape<T> = {
   models?: ModelStatus[];
   speaker_references?: SpeakerReference[];
   speaker_reference?: SpeakerReference;
-  model_storage?: ModelStorageStatus;
   request_state?: RequestState;
   task_state?: RequestState | null;
   task_id?: string;
@@ -805,7 +803,6 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       return response.tts_config!;
     },
     async configureTTSProvider(input: ConfigureTTSInput) {
-      const shouldClearLocalModelPath = input.local_model_path.trim() === "";
       const response = await callHttp<{}>("/api/v1/config/tts", {
         method: "PUT",
         needsToken: true,
@@ -816,10 +813,6 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           api_key: input.api_key,
           voice: input.voice,
           audio_format: input.audio_format,
-          local_runtime: input.local_runtime,
-          local_model_path: shouldClearLocalModelPath ? null : input.local_model_path,
-          local_ref_audio_path: input.local_ref_audio_path,
-          clear_local_model_path: shouldClearLocalModelPath,
         }),
       });
       return response.tts_config!;
@@ -860,61 +853,12 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           api_key: input.api_key,
           voice: input.voice,
           audio_format: input.audio_format,
-          local_runtime: input.local_runtime,
-          local_model_path: input.local_model_path,
-          local_ref_audio_path: input.local_ref_audio_path,
         }),
       });
     },
     async listModelsStatus() {
       const response = await callHttp<{}>("/api/v1/models");
       return response.models ?? [];
-    },
-    async showModelStorage() {
-      const response = await callHttp<{}>("/api/v1/models/storage");
-      if (!response.model_storage) throw new Error("Model storage response was missing storage details.");
-      return response.model_storage;
-    },
-    async migrateModelStorage(destination: string) {
-      const response = await callHttp<{}>("/api/v1/models/storage:migrate", {
-        method: "POST",
-        body: JSON.stringify({ destination }),
-      });
-      return {
-        message: typeof response.message === "string" ? response.message : "Migrating model storage...",
-        task_id: typeof response.task_id === "string" ? response.task_id : undefined,
-        request_state: asRequestState(response.request_state) ?? undefined,
-      };
-    },
-    async resetModelStorage() {
-      const response = await callHttp<{}>("/api/v1/models/storage:reset", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      if (!response.model_storage) throw new Error("Model storage response was missing storage details.");
-      return response.model_storage;
-    },
-    async downloadModel(modelName: string) {
-      const response = await callHttp<{}>(`/api/v1/models/${encodeURIComponent(modelName)}:download`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      return {
-        message: typeof response.message === "string" ? response.message : "ok",
-        path: typeof response.path === "string" ? response.path : undefined,
-        task_id: typeof response.task_id === "string" ? response.task_id : undefined,
-        request_state: asRequestState(response.request_state) ?? undefined,
-      };
-    },
-    async deleteModel(modelName: string) {
-      const response = await callHttp<{}>(`/api/v1/models/${encodeURIComponent(modelName)}:delete`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      return {
-        message: typeof response.message === "string" ? response.message : "ok",
-        path: typeof response.path === "string" ? response.path : undefined,
-      };
     },
     async showTaskState(taskId: string) {
       const response = await callHttp<{}>(`/api/v1/tasks/${encodeURIComponent(taskId)}`);

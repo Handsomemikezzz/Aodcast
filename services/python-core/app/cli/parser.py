@@ -225,11 +225,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Audio format for TTS output, for example wav or mp3.",
     )
     parser.add_argument(
-        "--tts-local-runtime",
-        default=None,
-        help="Local runtime identifier, currently mlx on macOS.",
-    )
-    parser.add_argument(
         "--show-tts-config",
         action="store_true",
         help="Print the persisted TTS configuration.",
@@ -242,37 +237,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--show-local-tts-capability",
         action="store_true",
-        help="Print the current local MLX TTS capability report.",
+        help="Print the current local HTTP speech service capability report.",
     )
     parser.add_argument(
         "--list-models-status",
         action="store_true",
-        help="List local voice models (Voicebox-aligned ids) with install status.",
-    )
-    parser.add_argument(
-        "--show-model-storage",
-        action="store_true",
-        help="Show local model storage directory status.",
-    )
-    parser.add_argument(
-        "--migrate-model-storage",
-        default="",
-        help="Migrate downloaded local model directories to a new parent directory.",
-    )
-    parser.add_argument(
-        "--reset-model-storage",
-        action="store_true",
-        help="Reset local model storage to the default base directory.",
-    )
-    parser.add_argument(
-        "--download-model",
-        default="",
-        help="Download a catalog voice model (e.g. qwen-tts-0.6B). Uses scripts/model-download/.",
-    )
-    parser.add_argument(
-        "--delete-model",
-        default="",
-        help="Delete a voice model directory under AODCAST_HF_MODEL_BASE or HF_HUB_CACHE.",
+        help="List speech service models and readiness status.",
     )
     parser.add_argument(
         "--show-task-state",
@@ -283,15 +253,5 @@ def build_parser() -> argparse.ArgumentParser:
         "--cancel-task",
         default="",
         help="Request cancellation for a long-running task id.",
-    )
-    parser.add_argument(
-        "--tts-local-model-path",
-        default=None,
-        help="Local model path for MLX TTS configuration updates.",
-    )
-    parser.add_argument(
-        "--clear-tts-local-model-path",
-        action="store_true",
-        help="Clear the configured local model path for MLX TTS.",
     )
     return parser

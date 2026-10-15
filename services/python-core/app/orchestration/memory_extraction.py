@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.domain.memory import MemoryEntry, MemoryOrigin, MemoryEvidence
+from app.domain.memory import MemoryEntry, MemoryOrigin
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.orchestration.prompts.memory import build_memory_extraction_plan
 from app.providers.llm.base import MemoryExtractionRequest

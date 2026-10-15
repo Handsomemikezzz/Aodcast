@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import threading
 import time
 import types
+from types import SimpleNamespace
 import unittest
 import uuid
 import wave
@@ -33,7 +35,7 @@ from app.domain.provider_config import LLMProviderConfig
 from app.domain.project import SessionProject
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
-from app.models_catalog import save_custom_model_storage_base
+from app.domain.tts_config import DEFAULT_LOCAL_TTS_MODEL
 from app.orchestration.audio_rendering import AudioRenderingService, VoicePreviewResult, VoiceRenderSettings
 from app.orchestration.interview_service import InterviewOrchestrator
 from app.orchestration.script_generation import ScriptGenerationService
@@ -50,6 +52,20 @@ from app.storage.speaker_reference_store import SpeakerReferenceStore
 
 
 class HttpRuntimeTests(unittest.TestCase):
+    def test_desktop_readiness_probe_is_available_without_auth_or_speech_service(self) -> None:
+        repo_root = Path(__file__).resolve().parents[3]
+        source = (repo_root / "apps/desktop/src-tauri/src/commands.rs").read_text()
+        match = re.search(r'const REQUIRED_RUNTIME_ROUTE: &str = "([^\"]+)";', source)
+        self.assertIsNotNone(match)
+        with patch(
+            "app.providers.local_speech.client.LocalSpeechClient.health",
+            side_effect=AssertionError("Desktop startup must not require the speech service"),
+        ):
+            status, _, payload = self.request_json("GET", match.group(1))
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["data"]["voices"])
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.cwd = Path(self.temp_dir.name)
@@ -121,8 +137,9 @@ class HttpRuntimeTests(unittest.TestCase):
                 raw = response.read().decode("utf-8")
                 return response.status, dict(response.headers.items()), json.loads(raw)
         except urllib_error.HTTPError as exc:
-            raw = exc.read().decode("utf-8")
-            return exc.code, dict(exc.headers.items()), json.loads(raw)
+            with exc:
+                raw = exc.read().decode("utf-8")
+                return exc.code, dict(exc.headers.items()), json.loads(raw)
 
     def request_bytes(
         self,
@@ -183,8 +200,9 @@ class HttpRuntimeTests(unittest.TestCase):
                 raw = response.read().decode("utf-8")
                 return response.status, dict(response.headers.items()), json.loads(raw)
         except urllib_error.HTTPError as exc:
-            raw = exc.read().decode("utf-8")
-            return exc.code, dict(exc.headers.items()), json.loads(raw)
+            with exc:
+                raw = exc.read().decode("utf-8")
+                return exc.code, dict(exc.headers.items()), json.loads(raw)
 
     def silent_wav_bytes(self, *, seconds: float, sample_rate: int = 24_000) -> bytes:
         path = self.cwd / f"silent-{uuid.uuid4().hex}.wav"
@@ -513,7 +531,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(data["missing_fields"], [])
         self.assertIn("ready", data["message"].lower())
 
-    def test_configure_tts_persists_local_ref_audio_path(self) -> None:
+    def test_configure_tts_persists_http_service_fields(self) -> None:
         status, _, bootstrap = self.request_json(
             "POST",
             "/api/v1/runtime/bootstrap",
@@ -527,61 +545,56 @@ class HttpRuntimeTests(unittest.TestCase):
             "/api/v1/config/tts",
             token=token,
             body={
-                "provider": "local_mlx",
-                "model": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
-                "local_runtime": "mlx",
-                "local_model_path": "/tmp/model",
-                "local_ref_audio_path": "/tmp/ref.wav",
+                "provider": "local_http",
+                "model": DEFAULT_LOCAL_TTS_MODEL,
+                "base_url": "http://127.0.0.1:8090/v1",
+                "voice": "默认中文音色",
+                "audio_format": "wav",
             },
         )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["data"]["tts_config"]["local_ref_audio_path"], "/tmp/ref.wav")
+        config = payload["data"]["tts_config"]
+        self.assertEqual(config["base_url"], "http://127.0.0.1:8090/v1")
+        self.assertEqual(config["voice"], "默认中文音色")
+        self.assertEqual(set(config), {"provider", "model", "base_url", "api_key", "voice", "audio_format"})
 
-    def test_model_storage_status_route(self) -> None:
-        status, _, payload = self.request_json("GET", "/api/v1/models/storage")
 
+
+
+    def test_tts_connection_checks_submitted_service_endpoint(self) -> None:
+        capability = SimpleNamespace(available=True, reasons=())
+        with patch("app.api.http_runtime.detect_local_speech_capability", return_value=capability) as detect:
+            status, _, payload = self.request_json("POST", "/api/v1/config/tts/test", token="runtime-token", body={
+                "provider": "local_http", "model": DEFAULT_LOCAL_TTS_MODEL,
+                "base_url": "http://127.0.0.1:8091/v1", "voice": "默认中文音色",
+            })
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["data"]["request_state"]["operation"], "show_model_storage")
-        storage = payload["data"]["model_storage"]
-        self.assertIn("current_base", storage)
-        self.assertFalse(storage["is_custom"])
+        self.assertEqual(detect.call_args.args[0].base_url, "http://127.0.0.1:8091/v1")
 
-    def test_model_storage_reset_route(self) -> None:
-        status, _, payload = self.request_json("POST", "/api/v1/models/storage:reset", body={})
+    def test_unreachable_tts_service_surfaces_actionable_message(self) -> None:
+        capability = SimpleNamespace(available=False, reasons=("Start speech-service on port 8090.",))
+        with patch("app.api.http_runtime.detect_local_speech_capability", return_value=capability):
+            _, _, payload = self.request_json("POST", "/api/v1/config/tts/test", token="runtime-token", body={"provider": "local_http"})
+        self.assertFalse(payload["ok"])
+        self.assertIn("Start speech-service", payload["error"]["message"])
+        self.assertEqual(payload["request_state"]["operation"], "test_tts_connection")
 
-        self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["data"]["request_state"]["operation"], "reset_model_storage")
-        self.assertIn("model_storage", payload["data"])
-
-    def test_model_storage_migrate_route_persists_task_state(self) -> None:
-        save_custom_model_storage_base(self.config_store, self.cwd / "source-models")
-        destination = self.cwd / "migrated-models"
-
-        status, _, payload = self.request_json(
-            "POST",
-            "/api/v1/models/storage:migrate",
-            body={"destination": str(destination)},
-        )
-
-        self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["data"]["request_state"]["operation"], "migrate_model_storage")
-        task_id = str(payload["data"]["task_id"])
-        self.assertEqual(task_id, "migrate_model_storage")
-        task_state: dict[str, object] | None = None
-        for _ in range(50):
-            state_status, _, state_payload = self.request_json("GET", f"/api/v1/tasks/{task_id}")
-            self.assertEqual(state_status, 200)
-            task_state = state_payload["data"]["task_state"]  # type: ignore[assignment]
-            if isinstance(task_state, dict) and task_state.get("phase") == "succeeded":
-                break
-            time.sleep(0.05)
-        assert isinstance(task_state, dict)
-        self.assertEqual(task_state["phase"], "succeeded")
+    def test_removed_model_weight_management_routes_are_unknown(self) -> None:
+        for method, path in [
+            ("GET", "/api/v1/models/storage"),
+            ("POST", "/api/v1/models/storage:migrate"),
+            ("POST", "/api/v1/models/storage:reset"),
+            ("POST", "/api/v1/models/unused:download"),
+            ("POST", "/api/v1/models/unused:delete"),
+        ]:
+            with self.subTest(path=path):
+                status, _, payload = self.request_json(method, path, token="runtime-token", body={} if method == "POST" else None)
+                self.assertEqual(status, 400)
+                self.assertFalse(payload["ok"])
+                self.assertIn("Unknown route", payload["error"]["message"])
 
     def test_runtime_bootstrap_nonce_is_single_use(self) -> None:
         status, _, first = self.request_json(
@@ -613,7 +626,7 @@ class HttpRuntimeTests(unittest.TestCase):
             status, _, payload = self.request_json(
                 "POST",
                 "/api/v1/sessions/session-123/audio:render",
-                body={"provider_override": "local_mlx", "model_id": "voxcpm2-8bit"},
+                body={"provider_override": "local_http", "model_id": DEFAULT_LOCAL_TTS_MODEL},
             )
 
         self.assertEqual(status, 200)
@@ -622,8 +635,8 @@ class HttpRuntimeTests(unittest.TestCase):
             self.context,
             "session-123",
             script_id="",
-            override_provider="local_mlx",
-            override_model="mlx-community/VoxCPM2-8bit",
+            override_provider="local_http",
+            override_model=DEFAULT_LOCAL_TTS_MODEL,
             settings=None,
             require_speaker_reference=False,
         )
@@ -758,7 +771,7 @@ class HttpRuntimeTests(unittest.TestCase):
                     "voice_name": "Warm Narrator",
                     "style_id": "natural",
                     "style_name": "Natural",
-                    "speed": 1.2,
+                    "speed": 1.0,
                     "preview_text": "自定义试音文本。",
                 },
             )
@@ -850,8 +863,8 @@ class HttpRuntimeTests(unittest.TestCase):
             self.context.audio_rendering,
             "render_voice_preview_with_cancellation",
             return_value=VoicePreviewResult(
-                provider="local_mlx",
-                model="mlx-voice",
+                provider="local_http",
+                model=DEFAULT_LOCAL_TTS_MODEL,
                 audio_path=str(preview_audio),
                 settings=settings,
             ),

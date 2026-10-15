@@ -43,3 +43,25 @@ describe("HTTP reply streaming", () => {
     expect(cancelStarted).toBe(true);
   });
 });
+
+describe("HTTP speech provider configuration", () => {
+  it("sends only the external service contract", async () => {
+    const config = {
+      provider: "local_http", model: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+      base_url: "http://127.0.0.1:8090/v1", api_key: "", voice: "默认中文音色", audio_format: "wav",
+    };
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/runtime/bootstrap")) {
+        return new Response(JSON.stringify({ ok: true, data: { token: "test-token" } }));
+      }
+      expect(String(url)).toBe("http://127.0.0.1:8765/api/v1/config/tts");
+      expect(init?.method).toBe("PUT");
+      expect(JSON.parse(String(init?.body))).toEqual(config);
+      return new Response(JSON.stringify({ ok: true, data: { tts_config: config } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await createHttpBridge({ baseUrl: "http://127.0.0.1:8765" }).configureTTSProvider(config);
+    expect(result).toEqual(config);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

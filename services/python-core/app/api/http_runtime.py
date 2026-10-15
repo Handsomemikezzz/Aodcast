@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import signal
-import subprocess
 import tempfile
 import threading
 import time
@@ -46,20 +45,11 @@ from app.domain.project import SessionProject
 from app.domain.session import CreationMode, SessionRecord, SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, STYLE_PRESETS, VOICE_PRESETS
-from app.models_catalog import (
-    build_models_status,
-    delete_voice_model,
-    download_voice_model,
-    migrate_model_storage,
-    model_storage_status,
-    reset_model_storage,
-    resolve_voice_model_id,
-    stop_download_process,
-    voice_model_is_downloaded,
-)
+from app.models_catalog import DEFAULT_LOCAL_TTS_MODEL, build_models_status, resolve_voice_model_id
 from app.orchestration.audio_rendering import (
     AudioRenderingService,
     AudioRenderProgress,
+    VoiceRenderSettings,
 )
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.memory_service import MemoryService
@@ -68,8 +58,8 @@ from app.providers.llm.factory import validate_llm_provider
 from app.providers.llm.preflight import check_llm_config
 from app.providers.llm.codex_app_server import codex_provider_status, start_codex_login
 from app.providers.tts_api.factory import validate_tts_provider
-from app.providers.tts_local_mlx.presets import DEFAULT_LOCAL_TTS_MODEL
-from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
+from app.domain.tts_config import TTSProviderConfig
+from app.providers.local_speech.capabilities import detect_local_speech_capability
 from app.runtime.long_task_state import LongTaskStateManager
 from app.runtime.request_state_store import RequestStateStore
 from app.runtime.task_cancellation import TaskCancellationRequested
@@ -79,7 +69,6 @@ from app.storage.project_store import ProjectStore
 from app.storage.speaker_reference_store import SpeakerReferenceStore
 
 _BOOTSTRAP_TTL_SECONDS = 300.0
-DOWNLOAD_PROGRESS_MARKER = "AODCAST_PROGRESS"
 TASK_TERMINAL_PHASES = {"succeeded", "failed", "cancelled"}
 _DEFAULT_ALLOWED_ORIGINS = frozenset(
     {
@@ -112,11 +101,9 @@ class MultipartFile:
     content: bytes
 
 
-
 def _normalize_error_message(exc: Exception, *, fallback: str) -> str:
     message = str(exc).strip()
     return message or fallback
-
 
 
 def create_project(topic: str, intent: str) -> SessionProject:
@@ -200,7 +187,6 @@ class RuntimeContext:
     allowed_origins: frozenset[str] = field(default_factory=frozenset)
     task_lock: threading.Lock = field(default_factory=threading.Lock)
     active_tasks: dict[str, threading.Thread] = field(default_factory=dict)
-    active_download_processes: dict[str, subprocess.Popen[str]] = field(default_factory=dict)
     bootstrap_nonce_used: bool = False
     speaker_reference_store: SpeakerReferenceStore | None = None
     memory_service: MemoryService | None = None
@@ -212,50 +198,7 @@ class RuntimeContext:
             "build_token": self.runtime_build_token,
         }
 
-    def register_download_process(self, task_id: str, proc: subprocess.Popen[str]) -> None:
-        with self.task_lock:
-            self.active_download_processes[task_id] = proc
 
-    def unregister_download_process(self, task_id: str, proc: subprocess.Popen[str]) -> None:
-        with self.task_lock:
-            current = self.active_download_processes.get(task_id)
-            if current is proc:
-                self.active_download_processes.pop(task_id, None)
-
-    def shutdown_download_processes(self, *, mark_failed: bool = True) -> None:
-        """Kill tracked download process groups and clear sticky running markers.
-
-        Download children use ``start_new_session=True``, so killing only the
-        runtime PID leaves orphans. Runtime stop paths (SIGTERM/SIGINT/finally)
-        must call this so ownership stays with the HTTP process.
-        """
-
-        with self.task_lock:
-            procs = list(self.active_download_processes.items())
-            self.active_download_processes.clear()
-        for task_id, proc in procs:
-            stop_download_process(proc)
-            if not mark_failed:
-                continue
-            existing = self.request_state_store.load(task_id)
-            phase = ""
-            if isinstance(existing, dict):
-                phase = str(existing.get("phase") or "").strip().lower()
-            if phase not in {"running", "cancelling"}:
-                continue
-            self.request_state_store.save(
-                task_id,
-                build_request_state(
-                    operation=str(existing.get("operation") or "download_model"),
-                    phase="failed",
-                    progress_percent=progress_from_request_state(existing, default=5.0),
-                    message=(
-                        "Download interrupted because the runtime stopped. "
-                        "Retry the download to resume."
-                    ),
-                    run_token=str(existing.get("run_token") or "") or None,
-                ),
-            )
 
     def get_allowed_origin(self, origin: str | None) -> str | None:
         if not origin:
@@ -396,8 +339,6 @@ class RuntimeContext:
         if project.script.is_deleted():
             raise ValueError("Script is deleted. Restore it before continuing.")
         script_id = project.script.script_id
-        if override_model and not voice_model_is_downloaded(self.cwd, override_model, self.config_store):
-            raise ValueError("The selected local TTS model is not downloaded. Install it from Models first.")
         task_id = f"render_audio:{session_id}:{script_id}"
         with self.task_lock:
             existing_thread = self.active_tasks.get(task_id)
@@ -670,8 +611,6 @@ class RuntimeContext:
             prefix="render_voice_preview:",
             max_age_seconds=6 * 60 * 60,
         )
-        if override_model and not voice_model_is_downloaded(self.cwd, override_model, self.config_store):
-            raise ValueError("The selected local TTS model is not downloaded. Install it from Models first.")
         run_token = uuid.uuid4().hex
         task_id = f"render_voice_preview:{run_token}"
         def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
@@ -797,229 +736,6 @@ class RuntimeContext:
             envelope["data"]["request_state"] = started_state  # type: ignore[index]
         return envelope
 
-    def start_download_model(self, model_name: str) -> dict[str, object]:
-        task_id = f"download_model:{model_name}"
-        existing_state = self.request_state_store.load(task_id)
-        with self.task_lock:
-            existing_thread = self.active_tasks.get(task_id)
-            if existing_thread is not None and existing_thread.is_alive() and isinstance(existing_state, dict):
-                return success_envelope(
-                    {"message": f"Downloading model {model_name}...", "task_id": task_id},
-                    operation="download_model",
-                    message=str(existing_state.get("message") or f"Downloading model {model_name}..."),
-                    phase=str(existing_state.get("phase") or "running"),
-                    progress_percent=progress_from_request_state(existing_state, default=5.0),
-                )
-
-            # Runtime restart can leave a running marker with no live worker.
-            if isinstance(existing_state, dict):
-                stale_phase = str(existing_state.get("phase") or "").strip().lower()
-                if stale_phase in {"running", "cancelling"}:
-                    self.request_state_store.save(
-                        task_id,
-                        build_request_state(
-                            operation="download_model",
-                            phase="failed",
-                            progress_percent=progress_from_request_state(existing_state, default=5.0),
-                            message=(
-                                f"Previous download for {model_name} was interrupted by a runtime restart. "
-                                "Retry the download to resume."
-                            ),
-                        ),
-                    )
-
-            progress = LongTaskStateManager(
-                request_state_store=self.request_state_store,
-                task_id=task_id,
-                operation="download_model",
-                build_request_state=build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
-            )
-            self.request_state_store.clear_cancel_request(task_id)
-            progress.start(progress_percent=5.0, message=f"Downloading model {model_name}...")
-
-            def worker() -> None:
-                heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
-                    start_percent=5.0,
-                    max_percent=65.0,
-                    step_percent=0.8,
-                    interval_seconds=1.2,
-                    message=f"Downloading model {model_name}...",
-                )
-
-                progress_pattern = __import__("re").compile(rf"{DOWNLOAD_PROGRESS_MARKER}\s+(\d{{1,3}})")
-
-                def on_download_output_line(line: str) -> None:
-                    match = progress_pattern.search(line)
-                    if match is None:
-                        return
-                    parsed = int(match.group(1))
-                    progress.update_running(
-                        float(max(5, min(95, parsed))),
-                        f"Downloading model {model_name}... {parsed}%",
-                        max_percent=95.0,
-                    )
-
-                try:
-                    download_voice_model(
-                        self.cwd,
-                        model_name,
-                        config_store=self.config_store,
-                        on_output_line=on_download_output_line,
-                        should_cancel=progress.should_cancel,
-                        on_process_started=lambda proc: self.register_download_process(task_id, proc),
-                        on_process_finished=lambda proc: self.unregister_download_process(task_id, proc),
-                    )
-                except TaskCancellationRequested as exc:
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    self.raise_task_cancelled(
-                        progress,
-                        task_id=task_id,
-                        operation="download_model",
-                        message=str(exc),
-                        default_progress=5.0,
-                    )
-                except Exception as exc:  # pragma: no cover - exercised by integration tests
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    if self.request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
-                        self.raise_task_cancelled(
-                            progress,
-                            task_id=task_id,
-                            operation="download_model",
-                            message=f"Model {model_name} download cancelled.",
-                            default_progress=5.0,
-                            source_error=exc,
-                        )
-                    self.fail_task(
-                        progress,
-                        task_id=task_id,
-                        message=str(exc),
-                        fallback_message=f"Model {model_name} download failed.",
-                    )
-                else:
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    self.complete_task_success(
-                        progress,
-                        task_id=task_id,
-                        operation="download_model",
-                        finalizing_progress=98.0,
-                        finalizing_message=f"Finalizing model {model_name}...",
-                        success_message=f"Model {model_name} is ready.",
-                        fallback_failure_message=f"Unable to finalize download state for {model_name}.",
-                        cancellation_message=f"Model {model_name} download cancelled.",
-                    )
-                finally:
-                    with self.task_lock:
-                        self.active_tasks.pop(task_id, None)
-
-            thread = threading.Thread(target=worker, name=task_id, daemon=True)
-            self.active_tasks[task_id] = thread
-            thread.start()
-
-        started_state = self.request_state_store.load(task_id)
-        return success_envelope(
-            {"message": f"Downloading model {model_name}...", "task_id": task_id},
-            operation="download_model",
-            message=str((started_state or {}).get("message") or f"Downloading model {model_name}..."),
-            phase=str((started_state or {}).get("phase") or "running"),
-            progress_percent=progress_from_request_state(started_state, default=5.0),
-        )
-
-    def start_migrate_model_storage(self, destination: str) -> dict[str, object]:
-        if not destination.strip():
-            raise ValueError("Field 'destination' is required.")
-        destination_path = Path(destination).expanduser()
-        task_id = "migrate_model_storage"
-        existing_state = self.request_state_store.load(task_id)
-        with self.task_lock:
-            existing_thread = self.active_tasks.get(task_id)
-            if existing_thread is not None and existing_thread.is_alive() and isinstance(existing_state, dict):
-                return success_envelope(
-                    {"message": "Migrating model storage...", "task_id": task_id},
-                    operation="migrate_model_storage",
-                    message=str(existing_state.get("message") or "Migrating model storage..."),
-                    phase=str(existing_state.get("phase") or "running"),
-                    progress_percent=progress_from_request_state(existing_state, default=5.0),
-                )
-
-            progress = LongTaskStateManager(
-                request_state_store=self.request_state_store,
-                task_id=task_id,
-                operation="migrate_model_storage",
-                build_request_state=build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id),
-            )
-            self.request_state_store.clear_cancel_request(task_id)
-            progress.start(progress_percent=5.0, message="Preparing model storage migration...")
-
-            def worker() -> None:
-                def on_progress(current: int, total: int, filename: str) -> None:
-                    percent = 5.0 if total <= 0 else 5.0 + min(90.0, (current / total) * 90.0)
-                    progress.update_running(
-                        percent,
-                        f"Migrating model storage... {filename}",
-                        max_percent=95.0,
-                    )
-
-                try:
-                    migrate_model_storage(
-                        self.config_store,
-                        self.cwd,
-                        destination_path,
-                        on_progress=on_progress,
-                        should_cancel=progress.should_cancel,
-                    )
-                except TaskCancellationRequested as exc:
-                    self.raise_task_cancelled(
-                        progress,
-                        task_id=task_id,
-                        operation="migrate_model_storage",
-                        message=str(exc),
-                        default_progress=5.0,
-                    )
-                except Exception as exc:  # pragma: no cover - exercised by integration tests
-                    if self.request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
-                        self.raise_task_cancelled(
-                            progress,
-                            task_id=task_id,
-                            operation="migrate_model_storage",
-                            message="Model storage migration cancelled.",
-                            default_progress=5.0,
-                            source_error=exc,
-                        )
-                    self.fail_task(
-                        progress,
-                        task_id=task_id,
-                        message=_normalize_error_message(exc, fallback="Model storage migration failed."),
-                        fallback_message="Model storage migration failed.",
-                    )
-                else:
-                    self.complete_task_success(
-                        progress,
-                        task_id=task_id,
-                        operation="migrate_model_storage",
-                        finalizing_progress=98.0,
-                        finalizing_message="Finalizing model storage migration...",
-                        success_message=f"Model storage migrated to {destination_path.expanduser().resolve()}.",
-                        fallback_failure_message="Unable to finalize model storage migration.",
-                        cancellation_message="Model storage migration cancelled.",
-                    )
-                finally:
-                    with self.task_lock:
-                        self.active_tasks.pop(task_id, None)
-
-            thread = threading.Thread(target=worker, name=task_id, daemon=True)
-            self.active_tasks[task_id] = thread
-            thread.start()
-
-        started_state = self.request_state_store.load(task_id)
-        return success_envelope(
-            {"message": "Migrating model storage...", "task_id": task_id},
-            operation="migrate_model_storage",
-            message=str((started_state or {}).get("message") or "Migrating model storage..."),
-            phase=str((started_state or {}).get("phase") or "running"),
-            progress_percent=progress_from_request_state(started_state, default=5.0),
-        )
 
     def raise_task_cancelled(
         self,
@@ -1522,7 +1238,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             self._send_bridge_envelope(self.context.ensure_bootstrap_token(nonce), origin=origin)
             return
         if self.command == "GET" and path == "/api/v1/runtime/tts/local-capability":
-            capability = detect_local_mlx_capability(self.context.config_store.load_tts_config()).to_dict()
+            capability = detect_local_speech_capability(self.context.config_store.load_tts_config()).to_dict()
             self._send_bridge_envelope(success_envelope({"tts_capability": capability}, operation="show_local_tts_capability"), origin=origin)
             return
         if path == "/api/v1/memory" or path.startswith("/api/v1/memory/") or path.startswith("/api/v1/memory:"):
@@ -1804,14 +1520,18 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             model = str(body.get("model") or "").strip()
             base_url = str(body.get("base_url") or "").strip()
             api_key = str(body.get("api_key") or "").strip()
-            voice = str(body.get("voice") or "alloy").strip()
+            voice = str(body.get("voice") or ("默认中文音色" if provider == "local_http" else "alloy")).strip()
             audio_format = str(body.get("audio_format") or "wav").strip()
-            if provider == "local_mlx":
-                capability = detect_local_mlx_capability(self.context.config_store.load_tts_config())
+            if provider == "local_http":
+                capability = detect_local_speech_capability(TTSProviderConfig.from_dict({
+                    "provider": provider, "model": model or DEFAULT_LOCAL_TTS_MODEL,
+                    "base_url": base_url or "http://127.0.0.1:8090/v1", "voice": voice,
+                    "api_key": api_key, "audio_format": audio_format,
+                }))
                 if capability.available:
                     self._send_bridge_envelope(
                         success_envelope(
-                            {"status": "success", "latency_ms": 0, "message": "Local MLX runtime is healthy."},
+                            {"status": "success", "latency_ms": 0, "message": "Local speech service is healthy."},
                             operation="test_tts_connection"
                         ),
                         origin=origin,
@@ -1821,7 +1541,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                         error_envelope(
                             operation="test_tts_connection",
                             code="tts_connection_failed",
-                            message=f"Local MLX is unavailable: {' '.join(capability.reasons)}",
+                            message=f"Local speech service is unavailable: {' '.join(capability.reasons)}",
                         ),
                         origin=origin,
                     )
@@ -1918,11 +1638,11 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             tts_config.provider = provider
             if "model" in body:
                 model_value = str(body.get("model") or "")
-                if provider == "local_mlx" and model_value == "":
+                if provider == "local_http" and model_value == "":
                     tts_config.model = DEFAULT_LOCAL_TTS_MODEL
                 else:
                     tts_config.model = model_value
-            elif provider == "local_mlx" and tts_config.model in {"", "mock-voice"}:
+            elif provider == "local_http" and tts_config.model in {"", "mock-voice"}:
                 tts_config.model = DEFAULT_LOCAL_TTS_MODEL
             if "base_url" in body:
                 tts_config.base_url = str(body.get("base_url") or "")
@@ -1932,14 +1652,6 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 tts_config.voice = str(body.get("voice") or "")
             if "audio_format" in body:
                 tts_config.audio_format = str(body.get("audio_format") or "")
-            if "local_runtime" in body:
-                tts_config.local_runtime = str(body.get("local_runtime") or "")
-            if body.get("clear_local_model_path"):
-                tts_config.local_model_path = ""
-            elif "local_model_path" in body:
-                tts_config.local_model_path = str(body.get("local_model_path") or "")
-            if "local_ref_audio_path" in body:
-                tts_config.local_ref_audio_path = str(body.get("local_ref_audio_path") or "")
             path_obj = self.context.config_store.save_tts_config(tts_config)
             self._send_bridge_envelope(
                 success_envelope(
@@ -1952,39 +1664,6 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         if self.command == "GET" and path == "/api/v1/models":
             self._send_bridge_envelope(
                 success_envelope({"models": build_models_status(self.context.config_store, self.context.cwd)}, operation="list_models_status"),
-                origin=origin,
-            )
-            return
-        if self.command == "GET" and path == "/api/v1/models/storage":
-            self._send_bridge_envelope(
-                success_envelope(
-                    {"model_storage": model_storage_status(self.context.config_store, self.context.cwd)},
-                    operation="show_model_storage",
-                ),
-                origin=origin,
-            )
-            return
-        if self.command == "POST" and path == "/api/v1/models/storage:migrate":
-            destination = str(body.get("destination") or "").strip()
-            self._send_bridge_envelope(self.context.start_migrate_model_storage(destination), origin=origin)
-            return
-        if self.command == "POST" and path == "/api/v1/models/storage:reset":
-            self._send_bridge_envelope(
-                success_envelope(
-                    {"model_storage": reset_model_storage(self.context.config_store, self.context.cwd)},
-                    operation="reset_model_storage",
-                ),
-                origin=origin,
-            )
-            return
-        if self.command == "POST" and path.startswith("/api/v1/models/") and path.endswith(":download"):
-            model_name = path.removeprefix("/api/v1/models/").removesuffix(":download")
-            self._send_bridge_envelope(self.context.start_download_model(model_name), origin=origin)
-            return
-        if self.command == "POST" and path.startswith("/api/v1/models/") and path.endswith(":delete"):
-            model_name = path.removeprefix("/api/v1/models/").removesuffix(":delete")
-            self._send_bridge_envelope(
-                success_envelope(delete_voice_model(self.context.cwd, model_name, self.context.config_store), operation="delete_model"),
                 origin=origin,
             )
             return
@@ -2058,7 +1737,6 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         if self.command == "POST" and path == "/admin/shutdown":
             self._send_json(HTTPStatus.OK, {"ok": True, "status": "shutting_down"}, origin=origin)
-            self.context.shutdown_download_processes()
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
             
@@ -2684,16 +2362,6 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "cancel_task"
         if path.startswith("/api/v1/tasks/"):
             return "show_task_state"
-        if path == "/api/v1/models/storage":
-            return "show_model_storage"
-        if path == "/api/v1/models/storage:migrate":
-            return "migrate_model_storage"
-        if path == "/api/v1/models/storage:reset":
-            return "reset_model_storage"
-        if path.startswith("/api/v1/models/") and path.endswith(":download"):
-            return "download_model"
-        if path.startswith("/api/v1/models/") and path.endswith(":delete"):
-            return "delete_model"
         if path == "/api/v1/config/llm/test":
             return "test_llm_connection"
         if path == "/api/v1/config/llm/auth:start":
@@ -2806,11 +2474,7 @@ def install_runtime_stop_handlers(
     *,
     on_stop: Callable[[], None],
 ) -> Callable[[], None]:
-    """Install SIGTERM/SIGINT handlers so hard kills still reclaim download children.
-
-    Default SIGTERM exits without running ``finally``, which is the root cause of
-    orphaned ``download_tts_model.py`` processes after ``run-dev-all`` restarts.
-    """
+    """Install SIGTERM/SIGINT handlers for orderly HTTP runtime shutdown."""
 
     previous_term = signal.getsignal(signal.SIGTERM)
     previous_int = signal.getsignal(signal.SIGINT)
@@ -2866,11 +2530,6 @@ def serve_http(
     request_state_store.bootstrap()
     memory_service.bootstrap()
     request_state_store.fail_orphaned_active_states(
-        prefix="download_model:",
-        message="Download interrupted by a runtime restart. Retry to resume.",
-        build_request_state=build_request_state,
-    )
-    request_state_store.fail_orphaned_active_states(
         prefix="render_audio:",
         message="Render interrupted by a runtime restart. Try generating again.",
         build_request_state=build_request_state,
@@ -2912,8 +2571,6 @@ def serve_http(
             if stop_started:
                 return
             stop_started = True
-        # Reclaim download process groups before the runtime PID disappears.
-        context.shutdown_download_processes()
         threading.Thread(target=server.shutdown, daemon=True, name="runtime-stop").start()
 
     restore_signals = install_runtime_stop_handlers(on_stop=request_stop)
@@ -2935,7 +2592,6 @@ def serve_http(
         request_stop()
     finally:
         restore_signals()
-        context.shutdown_download_processes()
         memory_service.shutdown()
         server.server_close()
     return 0

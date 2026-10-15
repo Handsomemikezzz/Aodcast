@@ -30,3 +30,5 @@ voicebox
 
 # Local model weights and downloads
 /models/
+
+.ruff_cache/

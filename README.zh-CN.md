@@ -10,7 +10,7 @@
 
 Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个文本想法或现有 Markdown 文章转成单人播客脚本和最终音频。
 
-应用由 Tauri 桌面壳和本地 Python HTTP runtime 组成。它会引导用户完成访谈、生成可编辑的脚本快照、选择可复用的 Speaker Reference 和语音模型，并通过本地或远程语音 provider 渲染最终音频。
+应用由 Tauri 桌面壳和本地 Python HTTP runtime 组成，引导用户完成访谈、生成可编辑的脚本快照，并通过本地或远程语音 provider 渲染最终音频。本机合成使用仓库内置 `speech-service` 提供的预设音色，服务以独立进程运行；Speaker Reference 仍可作为参考音频资产管理，不代表本机服务支持克隆。
 
 > 当前状态：源码级 alpha。Aodcast 可用于本地开发和验证，但还不是经过完整加固的桌面发行版。Provider key 和生成内容存储在本机；目前没有 macOS Keychain 或专用密钥保险库集成。
 
@@ -23,10 +23,10 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - 内部 Speech Director 为精确的脚本 hash 生成版本化、provider-neutral 的 Speech Plan，包含稳定分段、结构化停顿、重音、发音和表达指导，但主 UI 不暴露这些工程概念。
 - 以脚本为核心的 Episode Workspace 支持编辑、上下文内 Voice 与 Delivery 选择、短片段试听、完整音频生成、非破坏式更新、播放和导出。
 - Voice Studio 支持内置和用户创建的 Speaker Reference、最长 10 分钟的样本上传/录音、资产试听和 reference 管理；已有 Voice 直接在 Episode 内选择。
-- 支持本地 MLX TTS 模型 Adapter，也支持 OpenAI-compatible 远程 provider。本地默认 VoxCPM2 4-bit，同时保留 VoxCPM2 8-bit、MOSS-TTS Local v1.5 与 Qwen3-TTS Base 作为对比路径。
+- 仓库内置原生 TTS/ASR `speech-service`，由轻量级 `local_http` 客户端调用，同时支持 OpenAI-compatible 远程 TTS provider。模型加载与下载由服务的独立进程和环境负责。
 - 通过 Render Manifest 装配 WAV，显式处理停顿、格式/响度一致性、渲染血缘和可复用分段音频资产。
-- Models 页面支持本地模型存储、下载、迁移、重置和默认本地语音模型选择。
-- Mock LLM provider 可用于无付费 API 的访谈与脚本 smoke test；音频渲染仍需本地 MLX 模型或已配置的远程 TTS provider。
+- Models 页面展示本机语音服务状态，以及服务报告的当前模型。
+- Mock LLM provider 可用于无付费 API 的访谈与脚本 smoke test；音频渲染仍需运行中的本机语音服务或已配置的远程 TTS provider。
 - 可通过官方本地 Codex app-server 使用 ChatGPT 订阅额度，支持浏览器登录、账户模型发现和 Codex 使用窗口展示。
 - 开发期本地数据默认存储在 `.local-data/`。
 
@@ -38,23 +38,18 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 
 ![Episodes 列表](images/episodes.png)
 
-### Models
-
-下载、迁移并管理本地 MLX TTS 语音模型。
-
-![Models 模型管理](images/models.png)
-
 后续如需更新截图：运行 `./scripts/dev/run-dev-all.sh`，截取当前界面，以稳定文件名保存到 `images/`，并同步更新 `README.md` 与 `README.zh-CN.md`。请勿包含 API key、本地路径、私人 prompt 或用户数据。
 
 ## 环境要求
 
-- macOS，用于运行桌面应用
-- Python 3.13+
+- Apple Silicon macOS，用于运行桌面应用和 MLX 语音服务
+- 编排核心使用 Python 3.13+，`speech-service` 使用 Python 3.12，由 `uv` 分别管理
 - `uv`
 - Node.js
 - `pnpm`
 - Rust 和 Cargo
-- `curl`、`lsof` 和 `pgrep`，用于开发启动脚本
+- `curl` 和 `lsof`，用于开发启动脚本
+- FFmpeg，用于内置语音服务及可选 MP3 导出（`brew install ffmpeg`）
 
 检查本机工具链：
 
@@ -67,9 +62,12 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 在仓库根目录执行：
 
 ```bash
-cd services/python-core
-uv venv .venv
-uv pip install --python .venv/bin/python -e .
+cd speech-service
+uv sync --frozen
+cp .env.example .env
+
+cd ../services/python-core
+uv sync --extra test
 
 cd ../../apps/desktop
 pnpm install
@@ -78,18 +76,48 @@ cd ../..
 ./scripts/dev/run-dev-all.sh
 ```
 
-`run-dev-all.sh` 会在 `127.0.0.1:8765` 启动 Python runtime，清理过期开发服务状态，并启动 Tauri 桌面应用。Vite Web 服务地址是 `http://localhost:1420`。
+`run-dev-all.sh` 先启动 `speech-service`，等待 `http://127.0.0.1:8090/health` 就绪，再启动 `127.0.0.1:8765` 上的 Python runtime，最后启动 Tauri 桌面壳和 `http://localhost:1420` 上的 Vite。浏览器版 `./scripts/dev/run-web-with-runtime.sh` 采用相同顺序。健康检查不预热模型；首次合成或识别时才加载权重。
+
+### 日常启动与关闭
+
+安装依赖后，在仓库根目录执行一行命令：
+
+```bash
+./scripts/dev/run-dev-all.sh
+```
+
+本机目录布局为 `AudioS/Aodcast/`，语音服务位于 `Aodcast/speech-service/`。项目也可放在其他位置；启动器根据仓库位置解析路径。
+
+直接执行 `pnpm --dir apps/desktop tauri:dev` 时，也会先检查并启动语音服务，再启动 Web 外壳。
+
+在启动器终端按 `Ctrl+C`，停止开发版应用及该启动器管理的 runtime；明确复用的独立 runtime 会保留。共享语音进程继续供其他客户端使用，需要显式关闭：
+
+```bash
+./speech-service/service.sh stop
+```
+
+手动管理语音时，执行 `./speech-service/service.sh start|stop|restart|status|logs`（选择其中一个动作）。`start` 安装并启用当前用户的 LaunchAgent `com.aodcast.speech-service`（包括登录自启），`stop` 禁用它；日志位于 `~/Library/Logs/Aodcast/speech-service/`。关闭 Aodcast 不会关闭语音服务。空闲卸载会释放模型权重，HTTP 进程仍保持运行。
+
+| 组件 | 地址 | 职责与检查 |
+| --- | --- | --- |
+| Aodcast 界面 | 开发模式 `http://localhost:1420` | Tauri + Vite，由终端启动器运行 |
+| Aodcast Python runtime | `http://127.0.0.1:8765` | 访谈、脚本、任务、音频资产；`GET /healthz` |
+| 内置语音服务 | `http://127.0.0.1:8090` | TTS/ASR 模型及 GPU 内存；`GET /health` |
+
+```bash
+curl --fail http://127.0.0.1:8765/healthz
+curl --fail http://127.0.0.1:8090/health
+```
+
+首次请求前或空闲卸载后，语音健康状态中的 `loaded: false` 是正常现象。Models 页面显示服务实际配置的模型及可用状态；编排 UI 不负责安装或切换模型权重。
 
 ## 第一次 Smoke Test
 
-建议先使用 mock LLM provider。这样无需付费 API 就能验证访谈与脚本主流程。音频渲染使用本地 MLX 引擎，因此渲染前需要安装 `local-mlx` 可选依赖组，并在 Models 中下载语音模型：
+建议先使用 mock LLM provider，无需付费 API 即可验证访谈与脚本主流程。在仓库根目录执行：
 
 ```bash
-cd services/python-core
-uv pip install --python .venv/bin/python -e '.[local-mlx]'
-cd ../..
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
+./scripts/dev/run-python-core.sh --configure-tts-provider local_http
 ./scripts/dev/run-python-core.sh --create-demo-session
 ./scripts/dev/run-dev-all.sh
 ```
@@ -106,7 +134,7 @@ Provider 设置保存在本机 `.local-data/` 下，不应纳入版本控制。
 
 ```bash
 ./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx
+./scripts/dev/run-python-core.sh --configure-tts-provider local_http
 ```
 
 检查当前 LLM 配置是否可用于访谈和脚本生成：
@@ -162,7 +190,7 @@ Aodcast 会启动官方本地 `codex app-server`、打开 ChatGPT 浏览器登�
 
 ### 环境变量
 
-正常开发不强制要求 `.env`。`.env.example` 记录了 `AODCAST_HF_MODEL_BASE`、`HF_HUB_CACHE`、`HF_TOKEN`，以及用于让并行 worktree 的 Vite shell 指向独立本地 runtime 的 `VITE_AODCAST_RUNTIME_URL` 等可选变量。如果 Codex 不在 `PATH`、`/opt/homebrew/bin` 或 `/usr/local/bin`，请把 `AODCAST_CODEX_BIN` 设置为官方 Codex 可执行文件的绝对路径。
+正常开发不强制要求 `.env`。`.env.example` 记录了用于让并行 worktree 的 Vite shell 指向独立本地 runtime 的 `VITE_AODCAST_RUNTIME_URL`。`AODCAST_SPEECH_URL` 在 provider 未保存 base URL 时提供默认语音地址；已保存的 `--tts-base-url` 优先。该变量需在启动应用前通过 `export` 传入进程，Python core 不会自动读取 `.env`。语音模型及可选的 Hugging Face 镜像、token、缓存配置放在 `speech-service/.env`，由语音服务自行读取；权重仍在仓库外的 Hugging Face 缓存中，不提交到 Git。如果 Codex 不在 `PATH`、`/opt/homebrew/bin` 或 `/usr/local/bin`，请把 `AODCAST_CODEX_BIN` 设置为官方 Codex 可执行文件的绝对路径。
 
 ### 导出 MP3
 
@@ -172,125 +200,72 @@ Aodcast 会启动官方本地 `codex app-server`、打开 ChatGPT 浏览器登�
 - Finder 会打开该 MP3，随后可手动上传小宇宙或其他平台。
 - Aodcast 不保存平台凭据、不直接上传、不生成 RSS，也不维护远端发布状态。
 
-### Local MLX TTS
+### 内置本机语音服务
 
-Local MLX TTS 是首发能力之一，面向支持的 macOS 机器做本地语音生成；更推荐 Apple Silicon，并预留足够磁盘和统一内存。
+Aodcast 默认 TTS provider 为 `local_http`，通过 `httpx` 调用仓库内置的 macOS 原生 `speech-service`，地址为 `http://127.0.0.1:8090/v1`。服务源码随仓库发布，推理仍运行在独立进程和 Python 3.12 `.venv` 中；编排核心使用独立 Python 3.13+ 环境，不导入推理库。配置和内存限制见[服务说明](speech-service/README.md)。
 
-安装可选依赖：
-
-```bash
-cd services/python-core
-uv venv .venv
-uv pip install --python .venv/bin/python -e '.[local-mlx]'
-cd ../..
-```
-
-该依赖组将 `mlx-audio[tts]` 固定为 `0.4.6`，保证模型 Adapter 与 worker 使用经过验证的 TTS API。
-
-默认模型目标：
-
-```text
-mlx-community/VoxCPM2-4bit
-```
-
-下载模型权重到用户自有目录：
+桌面和 Web 启动器会自动启动语音。也可从仓库根目录单独管理：
 
 ```bash
-uv run --with huggingface_hub --with tqdm \
-  scripts/model-download/download_tts_model.py \
-  --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
+./speech-service/service.sh start
+curl http://127.0.0.1:8090/health
 ```
 
-通用下载脚本默认下载 VoxCPM2 4-bit。下载对比模型时显式传入已登记的仓库，例如：
+回到 Aodcast 项目根目录配置：
 
 ```bash
-uv run --with huggingface_hub --with tqdm \
-  scripts/model-download/download_tts_model.py \
-  --repo-id OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5 \
-  --base-dir "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}"
-```
-
-如果仓库需要认证，可传 `--token` 或在本地设置 `HF_TOKEN`。不要提交 token。
-
-Local MLX 路径受 runtime 能力门控。选择它之前务必先检查：
-
-```bash
+./scripts/dev/run-python-core.sh \
+  --configure-tts-provider local_http \
+  --tts-base-url http://127.0.0.1:8090/v1 \
+  --tts-voice "默认中文音色" \
+  --tts-audio-format wav
 ./scripts/dev/run-python-core.sh --show-local-tts-capability
 ```
 
-能力报告是 source of truth，会检查平台、Python 环境、MLX import、模型路径和 bootstrap 行为。每个 Adapter 还会把功能标记为 `native`、`approximated` 或 `unsupported`；runtime 会使用这些声明，但主 Episode UI 不暴露 provider capability 术语。
-
-当前对比集合：
-
-| 模型 | 定位 |
+| 请求 | 契约 |
 | --- | --- |
-| `mlx-community/VoxCPM2-4bit` | 推荐默认（包括 16 GB Mac）；同时支持 Speaker Reference 克隆与风格/韵律 instruction。 |
-| `mlx-community/VoxCPM2-8bit` | 面向至少 24 GB 统一内存 Mac 的高内存 VoxCPM2 对比版本。 |
-| `OpenMOSS-Team/MOSS-TTS-Local-Transformer-v1.5` | 面向高内存 Mac 的长篇与显式停顿对比。 |
-| `mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit` | 不带 style instruction 的高质量克隆 baseline。 |
-| `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` | 不带 style instruction、速度更快且内存更低的克隆 baseline。 |
+| `POST /v1/audio/speech` | JSON 包含 `input`、`voice` 和 `response_format: "wav"`；返回 PCM WAV 字节。`默认中文音色` 使用服务默认音色。 |
+| `POST /v1/audio/transcriptions` | Multipart `file` 上传（WAV、MP3、M4A）；JSON 返回 `text`。 |
+| `GET /health` | 已加载模型状态与进程内存。 |
 
-配置 repo-id 模式的 Local MLX：
+服务默认模型为 `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit`（TTS）和 `mlx-community/Qwen3-ASR-0.6B-8bit`（ASR）。若使用 `mlx-community/Kokoro-82M-bf16`，请修改 `speech-service/.env` 中的 `TTS_MODEL`、`TTS_VOICE=zf_xiaobei`、`TTS_LANGUAGE=z`，运行 `(cd speech-service && uv sync --frozen --extra kokoro)`，然后 `./speech-service/service.sh restart`。可选的 `HF_ENDPOINT=https://hf-mirror.com` 也配置在服务环境中。编排核心不再提供模型下载器、权重路径设置或模型目录迁移；模型获取与缓存由内置服务负责。
 
-```bash
-./scripts/dev/run-python-core.sh \
-  --configure-tts-provider local_mlx \
-  --clear-tts-local-model-path
+Aodcast 完整传递自然段，包括超过 1,000 字的段落。防 OOM 切片、串行 GPU 推理、静音裁剪、交叉淡化、缓存清理与空闲模型卸载均由语音服务负责。Aodcast 保留 Speech Plan、不可变自然段音频和 Render Manifest，用于节目装配与局部重生成；这些是编辑发布资产。HTTP 客户端读取超时为 1,800 秒，连接超时为 5 秒。服务未启动时会明确提示运行 `./speech-service/service.sh start`。
+
+#### Python 语音识别
+
+在 `services/python-core` 执行 `uv sync --extra test` 后：
+
+```python
+from app.providers.local_speech.client import LocalSpeechClient
+
+client = LocalSpeechClient()
+text = client.transcribe("/absolute/path/to/audio.wav", language="zh")
+print(text)
 ```
 
-或显式指定本地模型目录：
+ASR 是新增的 Python 客户端能力，尚未形成麦克风输入或字幕编辑 UI 流程。
+
+#### 能力与限制
+
+- 当前本机服务支持预设音色、WAV 输出、正常语速（`1.0`）及语音识别。
+- 不支持音色克隆、风格指令、精确 Speech Plan 停顿或前文音频条件，遇到这些请求必须明确反馈能力限制。请使用自然标点调整节奏；标点不等于精确停顿契约。
+- Voice Studio 继续管理参考音频资产，支持最长 10 分钟且附匹配文本的上传或录音。这些资产不能通过 `local_http` 克隆为音色，请选择受支持的预设音色。
+- 首次请求可能因加载或下载模型较慢。空闲卸载释放模型权重与缓存，但常驻服务进程仍占用内存。
+- 完整节目渲染仍保存编辑用 Speech Plan、生成自然段 WAV，并装配发布 `podcast.wav`。MP3 仍通过可选 FFmpeg 转换导出。
+- `.mp4` 仅作为 Speaker Reference 音频容器输入并规范化为 WAV；Aodcast 不生成视频 MP4。
+
+#### 真实模型联调复跑
+
+在 `services/python-core` 执行真实 TTS→ASR 闭环及 1246 字播客管线验证：
 
 ```bash
-./scripts/dev/run-python-core.sh \
-  --configure-tts-provider local_mlx \
-  --tts-local-model-path "${HF_HUB_CACHE:-$HOME/.cache/huggingface/hub}/VoxCPM2-4bit"
+uv run --extra test python ../../scripts/verification/verify-local-speech.py
 ```
 
-本地模型目录必须包含真实 MLX 导出和 `.safetensors` 权重。占位目录可用于测试，但不能作为可执行模型包。
+脚本会在新的 `.local-data/speech-verification/<timestamp>/` 目录保存 WAV、`results.json` 和每秒内存采样 `memory.jsonl`。语音模型使用真实推理，只有编辑规划使用确定性的 mock LLM；通过识别长音频结束语检查是否截断。
 
-Aodcast 会为 VoxCPM2 使用低内存 provider 策略：把文本限制为较短的合成分段，采用模型卡推荐的 7 个 CFM steps，限制异常情况下的音频 patch 数，并在每段之间清理 MLX allocator cache。渲染过程中模型权重仍保持热加载；切换模型时仍只保留一个 worker 进程。
-
-#### 在桌面应用中管理模型存储
-
-桌面端 **Models** 页面是管理本地模型文件的首选方式：
-
-- 显示当前模型存储目录
-- 可在 Tauri shell 中用 Finder 打开该目录
-- 可修改存储目录并迁移已有 Aodcast 模型目录
-- 可重置回默认 cache base
-- 显示内联下载进度和可恢复的错误信息
-
-为提升本地代理/VPN 环境下的首次下载可靠性，Aodcast 在应用内管理的 Hugging Face 下载中会禁用 Xet 传输路径，改用直接 HTTP 下载器。
-
-应用会把自定义模型 base 写入本地配置。重置存储会清除这项应用设置；`AODCAST_HF_MODEL_BASE` 或 `HF_HUB_CACHE` 等环境变量仍会影响计算出的默认 base。
-
-CLI 等价命令：
-
-```bash
-./scripts/dev/run-python-core.sh --show-model-storage
-./scripts/dev/run-python-core.sh --migrate-model-storage /path/to/aodcast-models
-./scripts/dev/run-python-core.sh --reset-model-storage
-```
-
-#### 用渲染验证
-
-如果只想验证音频路径，可配合 mock LLM：
-
-```bash
-./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --create-demo-session
-./scripts/dev/run-python-core.sh --configure-tts-provider local_mlx --clear-tts-local-model-path
-./scripts/dev/run-python-core.sh --render-audio <session-id>
-```
-
-#### Local MLX 说明与限制
-
-- 首次渲染可能较慢，因为 worker 需要加载模型。
-- 完整渲染会先创建 Speech Plan，为每个分段生成 WAV 资产，再根据 Render Manifest 装配最终 `podcast.wav`。
-- Voice Studio 预览渲染是 pollable long task。预览是临时资产；脚本的克隆来源由所选的持久化 Speaker Reference 决定。
-- 当所选模型声明原生支持 Speaker Reference 时可进行音色克隆。用户上传或录制的音频最长 10 分钟，并且必须提供匹配的参考文本。
-- MOSS 的 pause marker 只由 Adapter 根据 Speech Plan 的结构化 break 临时生成，绝不会写入脚本正文。
-- `.mp4` 仅作为 Speaker Reference 音频容器输入，随后会规范化为 WAV；Aodcast 不生成视频 MP4。
+2026-10-15 的 16 GiB Apple M4 实测：首次 TTS 含加载耗时 51.00 秒，得到 9.04 秒短音频；ASR 用 9.20 秒识别回正文，规整字符错误率为 0%；1246 字完整自然段耗时 207.94 秒，得到 266.31 秒音频，服务端完成 11 个切片。服务 RSS 峰值为 2.07 GiB、Metal 分配峰值为 6.68 GiB，两种口径不能相加。这是此前解耦验收时的实测，并非本次迁移的新基准或性能保证；原始产物见[验收报告](SPEECH_DECOUPLING_REPORT.md)。
 
 ## 开发命令
 
@@ -325,8 +300,9 @@ Python 测试：
 
 ```bash
 cd services/python-core
-uv pip install --python .venv/bin/python -e '.[test]'
-.venv/bin/python -m unittest discover -s tests -v
+uv sync --extra test
+uv run ruff check .
+uv run python -m unittest discover -s tests -v
 ```
 
 仓库 hygiene 检查：
@@ -338,9 +314,10 @@ uv pip install --python .venv/bin/python -e '.[test]'
 ## 仓库结构
 
 - `apps/desktop`：Tauri UI、React 路由、桌面命令和前端 bridge。
+- `speech-service`：内置 MLX TTS/ASR HTTP 服务、独立 Python 3.12 环境和 launchd 管理脚本。
 - `services/python-core`：访谈编排、脚本生成、provider 分发、本地存储、artifact 和 HTTP runtime。
 - `packages/shared-schemas`：前后端共享 contract schema。
-- `scripts`：开发、维护和模型下载脚本。
+- `scripts`：开发和维护辅助脚本。
 - `docs`：被 Git 忽略的本地草稿目录（例如 `tmp.md`、`plan.md`）；人读安装说明见 README；Agent 约束见 AGENTS.md。
 
 常用文档：
@@ -377,11 +354,11 @@ Aodcast 当前聚焦本地优先的单人播客创作：
 - 输入：文本主题，或每个 episode 一个本地/粘贴的 Markdown 来源
 - 输出：单人播客脚本 + Episode Workspace 渲染的最终音频
 - LLM：Mock、OpenAI-compatible，或通过 Codex 使用 ChatGPT 订阅
-- 说话者身份：每个脚本选择一个 provider-neutral Speaker Reference
-- TTS：本地 MLX 多模型 Adapter 为首发主路径，同时支持远程 API provider
+- 本机说话者身份：每个脚本选择预设音色；Speaker Reference 音频资产独立管理
+- TTS：独立进程运行的内置 HTTP `speech-service`，或远程 API provider
 - 记忆：文件原生、仅本地的跨 Episode 长期用户记忆
 
-当前不包含：语音转文本输入、多主持人格式、强制云端后端依赖。
+Python 语音客户端也支持文件识别。语音转文本 UI 输入、多主持人格式、强制云端后端依赖仍不在当前范围内。
 
 应用可以服务常见音频后缀，并通过本地解码器或 `ffprobe` 校验上传的 Speaker Reference 时长。压缩音频导出依赖本机转换工具。真正的视频 MP4 输出不在当前范围内。
 
@@ -403,7 +380,7 @@ Podcast Editor 保持脚本为纯口播正文，同时优化听觉结构、句�
 
 ### Desktop bridge 与长任务
 
-UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频渲染、音色预览、模型迁移/下载等）会持久化可轮询的 `request_state`，暴露进度，支持取消，并用 `run_token` 避免重入后的陈旧 UI 状态。完整渲染与上下文窗口重生成共享脚本级 task id `render_audio:<session_id>:<script_id>`；取消请求必须携带本次 run token，因此不同脚本不会互相冲突。有状态的其他长任务应串行执行，除非明确在测并发。
+UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频渲染、音色预览等）会持久化可轮询的 `request_state`，暴露进度，支持取消，并用 `run_token` 避免重入后的陈旧 UI 状态。完整渲染与上下文窗口重生成共享脚本级 task id `render_audio:<session_id>:<script_id>`；取消请求必须携带本次 run token，因此不同脚本不会互相冲突。有状态的其他长任务应串行执行，除非明确在测并发。
 
 ### Episode Workspace 与 Voice Studio
 
@@ -411,21 +388,21 @@ UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频�
 - 完整渲染会保存不可变的分段 WAV 与 Render Manifest，再装配 manifest 指向的最终 WAV；MP3 是该最终成片旁的按需导出。
 - Preview 优先使用选中文字，其次使用当前段落或稿件开头，生成一次性试听音频，不会替换当前 Episode 成片。
 - 修改脚本、Source、Voice 或 Delivery 后，旧音频仍可播放，并显示 `Audio needs update`，直到新成片成功发布。
-- Voice Studio 负责可复用 Speaker Reference 资产；Speaker Reference 只定义“谁在说”。Episode 内直接选择已有 reference，创建与克隆仍在 Voice Studio 完成。
+- Voice Studio 负责可复用 Speaker Reference 资产。本机 HTTP 渲染使用 Episode 的预设音色。完整渲染时明确选择本机预设，会解除旧克隆选择，不删除参考音频源文件或历史 Render Manifest；本机试听不发送参考音频。
 - 内置 reference 音频当前位于 `services/python-core/app/assets/speaker-references/`（纳入版本控制）。用户 metadata 位于 `.local-data/speaker-references/`；上传或录制的音频会规范化为不可变的 48 kHz、单声道、16-bit PCM WAV，并保存到 `.local-data/exports/_speaker_references/`。创建时必须提供匹配的参考文本；系统音频捕获尚不可用。
-- Episode Workspace 可在 Advanced 中为下一次完整生成选择已下载且可用的本地模型；生成的 manifest 会冻结该模型和 Adapter pipeline。Speech Plan 与上下文窗口重生成合同保留在内部，不进入主 UI。
+- 本机语音服务决定并加载当前模型；Aodcast 在每份 manifest 中记录所选 provider 和 pipeline。Speech Plan 与上下文窗口重生成合同保留在内部，不进入主 UI。
 - Artifact 音频播放在 Web 与 Tauri 中都走 localhost HTTP 路由 `/api/v1/artifacts/audio`。
 - Reveal in Finder 等 Tauri-only 助手不在 HTTP `DesktopBridge` 接口中。
 
-### Local MLX runtime
+### 本机语音职责边界
 
-Local MLX TTS 运行在持久 worker 子进程中；模型在 worker 生命周期内只加载一次，不要把一次性 CLI 生成当作生产路径。VoxCPM2、MOSS 与 Qwen 请求分别经过 family-specific Adapter，provider-neutral orchestration 不持久化任何模型标记。装配阶段把所有分段解码为统一 WAV 格式，每段只做一次边缘淡化；插入计划静音之前，仅根据可听样本匹配 RMS 电平，并对 master 施加 sample-peak 上限，最后写出 `podcast.wav`。以 `./scripts/dev/run-python-core.sh` 与 `--show-local-tts-capability` 为能力门控依据（部分环境即使 import 看似正常，原生 MLX bootstrap 仍可能失败）。应用内 Hugging Face 下载禁用 Xet（`HF_HUB_DISABLE_XET=1`）。
+Aodcast 编排核心不包含语音模型 worker 或进程内推理。`LocalSpeechClient` 保持同步 TTS provider 契约，内部执行可取消的 HTTP 请求。内置 `speech-service` 进程负责模型加载、GPU 并发、推理切片及 ASR 解码。请求间保持固定预设音色；不会把参考音频或先前生成的音频作为克隆或连续性条件发送。
 
-选中 Speaker Reference 后，每个语音分段都会持续把这份不可变引用作为音色身份锚点。VoxCPM2 还可以把上一段音频及其准确文本作为独立的连续性上下文；无法同时组合身份与连续性的模型会保留选中的 Speaker Reference，不再递归地把生成分段当成新的音色来源。
+Aodcast 的 manifest 装配把自然段 WAV 规范化为统一格式，每段做一次边缘淡化，根据可听样本匹配 RMS 电平，插入编辑停顿，限制 sample peak，最终写出 `podcast.wav`。这一步是节目发布装配，服务内部另外负责推理切片间的交叉淡化。
 
 ### 开发运维
 
-- `./scripts/dev/run-dev-all.sh` 默认重启 `8765` 上的 Python runtime；只有需要进程连续性时才用 `--reuse-runtime`。
+- `./scripts/dev/run-dev-all.sh` 先启动语音并等待健康检查，再默认重启 `8765` 上的 Python runtime；只有需要进程连续性时才用 `--reuse-runtime`。
 - 音频渲染排障：先看 `/healthz` runtime 元数据，再看 `.local-data/runtime/request-state/*`，最后才查前端 `run_token` 过滤。
 - CLI 写后读应串行（`start-interview`、`reply-session`、`generate-script`、`render-audio`、configure/show）；并行读写可能读到陈旧状态。
 - 桌面打包验证用 `pnpm --dir apps/desktop tauri:build`（不要在 `--` 后追加 cargo 风格参数）。非交互 DMG 依赖 `CI=true` 跳过 Finder AppleScript 样式。
@@ -446,3 +423,5 @@ Local MLX TTS 运行在持久 worker 子进程中；模型在 worker 生命周�
 ## License
 
 Aodcast 使用 [MIT License](LICENSE)。
+
+真实模型联调结果、完整删除清单、内存实测与复跑脚本见[《解耦与清理验收报告》](SPEECH_DECOUPLING_REPORT.md)。

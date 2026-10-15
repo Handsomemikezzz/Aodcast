@@ -1,4 +1,4 @@
-import type { SessionProject, SpeakerReference, VoiceRenderSettings } from "../types";
+import type { ModelStatus, SessionProject, SpeakerReference, VoiceRenderSettings } from "../types";
 
 const BUILT_IN_SPEAKER_REFERENCE_LABELS: Record<string, string> = {
   builtin_clear_broadcast: "清晰播报型",
@@ -54,4 +54,14 @@ export function selectedSpeakerReferenceLabel(
   if (!reference?.speaker_reference_id) return "";
   if (reference.name.trim()) return reference.name.trim();
   return BUILT_IN_SPEAKER_REFERENCE_LABELS[reference.speaker_reference_id] || "已选择音色";
+}
+
+
+export function readySpeechModel(models: ModelStatus[], ...preferredIds: string[]): ModelStatus | undefined {
+  const ready = models.filter((model) => model.ready === true && model.available !== false);
+  for (const id of preferredIds) {
+    const match = ready.find((model) => model.hf_repo_id === id || model.model_name === id);
+    if (match) return match;
+  }
+  return ready[0];
 }

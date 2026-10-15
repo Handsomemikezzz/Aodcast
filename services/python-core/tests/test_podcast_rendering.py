@@ -13,7 +13,7 @@ from app.domain.provider_config import LLMProviderConfig
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
 from app.domain.tts_config import TTSProviderConfig
-from app.providers.audio_utils import synthesize_sine_wave_bytes
+from tests.audio_utils import synthesize_sine_wave_bytes
 from app.providers.tts_api.base import TTSGenerationResponse
 from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
 from app.storage.artifact_store import ArtifactStore
@@ -34,7 +34,7 @@ class PodcastRenderingTests(unittest.TestCase):
         artifacts.bootstrap()
         configs.save_llm_config(LLMProviderConfig(provider="mock"))
         configs.save_tts_config(
-            TTSProviderConfig(provider="local_mlx", model="mlx-community/VoxCPM2-8bit", audio_format="wav")
+            TTSProviderConfig(provider="local_http", model="mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit", audio_format="wav")
         )
         fake = SineWaveTTSProvider()
         for target in (
@@ -52,10 +52,10 @@ class PodcastRenderingTests(unittest.TestCase):
         script = ScriptRecord(
             session_id=session.session_id,
             final=(
-                "第一段内容已经足够完整，可以独立表达一个清楚的判断。"
-                "第二段内容同样足够完整，继续解释这个判断为什么重要。"
-                "第三段继续说明问题，并且加入一个可以被听众记住的细节。"
-                "第四段给出一个足够具体的例子，让抽象内容变得容易理解。"
+                "第一段内容已经足够完整，可以独立表达一个清楚的判断。\n\n"
+                "第二段内容同样足够完整，继续解释这个判断为什么重要。\n\n"
+                "第三段继续说明问题，并且加入一个可以被听众记住的细节。\n\n"
+                "第四段给出一个足够具体的例子，让抽象内容变得容易理解。\n\n"
                 "第五段负责克制地收尾，并为听众保留一点继续思考的空间。"
             ),
         )
@@ -259,14 +259,14 @@ class PodcastRenderingTests(unittest.TestCase):
         assert after.render_manifest
         self.assertEqual(after.render_manifest.render_id, parent_render_id)
 
-    def test_local_segments_without_speaker_reference_use_previous_audio_as_context(self) -> None:
+    def test_local_paragraphs_never_send_audio_conditioning(self) -> None:
         temp, store, configs, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
         configs.save_tts_config(
             TTSProviderConfig(
-                provider="local_mlx",
-                model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+                provider="local_http",
+                model="mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
                 audio_format="wav",
             )
         )
@@ -278,8 +278,8 @@ class PodcastRenderingTests(unittest.TestCase):
                 return TTSGenerationResponse(
                     audio_bytes=synthesize_sine_wave_bytes(1),
                     file_extension="wav",
-                    provider_name="local_mlx",
-                    model_name="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+                    provider_name="local_http",
+                    model_name="mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
                     adapter_version="speech-plan-v2",
                     sample_rate_hz=22_050,
                     channels=1,
@@ -294,100 +294,45 @@ class PodcastRenderingTests(unittest.TestCase):
         self.assertGreater(len(requests), 1)
         self.assertEqual(requests[0].reference_audio_path, "")
         self.assertEqual(requests[0].context_audio_path, "")
-        for previous, current in zip(requests, requests[1:]):
+        for current in requests:
             self.assertEqual(current.reference_audio_path, "")
-            self.assertTrue(Path(current.context_audio_path).is_file())
-            self.assertEqual(current.context_text, previous.script_text)
+            self.assertEqual(current.context_audio_path, "")
+            self.assertEqual(current.context_text, "")
             self.assertEqual(current.clone_mode, "auto")
 
-    def test_voxcpm_keeps_original_speaker_reference_for_every_segment(self) -> None:
+    def test_local_service_rejects_speaker_reference_instead_of_silently_ignoring_it(self) -> None:
         temp, store, _, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
-        reference = self.attach_speaker_reference(
-            Path(temp.name),
-            store,
-            session_id,
-            script_id,
-        )
-        requests = []
-
-        class CapturingProvider:
-            def synthesize(self, request):
-                requests.append(request)
-                return TTSGenerationResponse(
-                    audio_bytes=synthesize_sine_wave_bytes(1),
-                    file_extension="wav",
-                    provider_name="local_mlx",
-                    model_name="mlx-community/VoxCPM2-8bit",
-                    adapter_version="speech-plan-v2",
-                    sample_rate_hz=48_000,
-                    channels=1,
-                )
-
-        with patch(
-            "app.orchestration.podcast_rendering.build_tts_provider",
-            return_value=CapturingProvider(),
-        ):
+        self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
+        with self.assertRaisesRegex(ValueError, "不支持.*克隆"):
             service.render_audio(session_id, script_id=script_id)
 
-        self.assertGreater(len(requests), 1)
-        for request in requests:
-            self.assertEqual(request.reference_audio_path, reference["audio_path"])
-            self.assertEqual(request.reference_text, reference["reference_text"])
-            self.assertEqual(request.voice_lock_id, reference["speaker_reference_id"])
-        self.assertEqual(requests[0].context_audio_path, "")
-        for previous, current in zip(requests, requests[1:]):
-            self.assertTrue(Path(current.context_audio_path).is_file())
-            self.assertEqual(current.context_text, previous.script_text)
-            self.assertNotEqual(current.context_audio_path, reference["audio_path"])
-
-    def test_qwen_keeps_speaker_reference_separate_from_previous_context(self) -> None:
-        temp, store, configs, _, service = self.build_environment()
+    def test_explicit_preset_render_releases_old_reference_binding(self) -> None:
+        temp, store, _, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
-        reference = self.attach_speaker_reference(
-            Path(temp.name),
-            store,
-            session_id,
-            script_id,
-        )
-        configs.save_tts_config(
-            TTSProviderConfig(
-                provider="local_mlx",
-                model="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
-                audio_format="wav",
-            )
-        )
-        requests = []
+        reference = self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
+        rendered = service.render_audio(session_id, script_id=script_id, settings=VoiceRenderSettings())
+        self.assertIsNone(rendered.project.render_manifest.speaker_reference)
+        self.assertIsNone(store.load_project_for_script(session_id, script_id).artifact.speaker_reference)
+        self.assertTrue(Path(reference["audio_path"]).is_file())
 
-        class CapturingProvider:
-            def synthesize(self, request):
-                requests.append(request)
-                return TTSGenerationResponse(
-                    audio_bytes=synthesize_sine_wave_bytes(1),
-                    file_extension="wav",
-                    provider_name="local_mlx",
-                    model_name="mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
-                    adapter_version="speech-plan-v2",
-                    sample_rate_hz=24_000,
-                    channels=1,
-                )
+    def test_local_override_uses_service_url_instead_of_saved_cloud_url(self) -> None:
+        temp, store, configs, _, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        configs.save_tts_config(TTSProviderConfig(provider="openai_compatible", base_url="https://example.com/v1", api_key="example"))
+        session_id, script_id = self.seed_project(store)
+        self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
+        captured = []
 
-        with patch(
-            "app.orchestration.podcast_rendering.build_tts_provider",
-            return_value=CapturingProvider(),
-        ):
-            service.render_audio(session_id, script_id=script_id)
+        def build(config):
+            captured.append(config)
+            return SineWaveTTSProvider()
 
-        self.assertGreater(len(requests), 1)
-        for request in requests:
-            self.assertEqual(request.reference_audio_path, reference["audio_path"])
-            self.assertEqual(request.reference_text, reference["reference_text"])
-        self.assertEqual(requests[0].context_audio_path, "")
-        for previous, current in zip(requests, requests[1:]):
-            self.assertTrue(Path(current.context_audio_path).is_file())
-            self.assertEqual(current.context_text, previous.script_text)
+        with patch("app.orchestration.podcast_rendering.build_tts_provider", side_effect=build):
+            service.render_audio(session_id, script_id=script_id, override_provider="local_http", settings=VoiceRenderSettings())
+        self.assertEqual(captured[0].base_url, "http://127.0.0.1:8090/v1")
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ Current cross-boundary contracts:
 - `render-manifest.schema.json`
 - `speaker-reference.schema.json`
 - `tts-model-capability.schema.json`
+- `tts-provider-config.schema.json`
 - `llm-provider-config.schema.json`
 - `llm-provider-status.schema.json`
 - `llm-auth-start.schema.json`
@@ -28,3 +29,5 @@ Rules:
 - keep `SpeakerReference` provider-neutral; model and delivery controls belong to render and speech-plan contracts
 - use `native`, `approximated`, or `unsupported` model capability levels instead of silently dropping speech-plan controls
 - treat schema edits as coordination points for multi-agent work
+
+`TTSProviderConfig` selects `local_http` (default `http://127.0.0.1:8090/v1`) or `openai_compatible`. Model loading, downloads, and weight paths belong to the bundled `speech-service` HTTP process and its isolated Python 3.12 environment. Its source lives in this repository; the orchestration core only uses HTTP. Local service requests support preset voices and WAV; speaker cloning, reference conditioning, style, and speed are unsupported.

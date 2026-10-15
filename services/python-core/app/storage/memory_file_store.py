@@ -12,7 +12,6 @@ from app.domain.common import is_within_days_since, utc_now_iso
 from app.domain.memory import (
     ForgetFingerprint,
     MemoryEntry,
-    MemoryEvidence,
     MemoryOrigin,
     MemorySettings,
     MemoryState,

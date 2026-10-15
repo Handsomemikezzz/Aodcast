@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import uuid
 from pathlib import Path
@@ -27,28 +26,18 @@ from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, STYLE_PRESETS, VOICE_
 from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
 from app.orchestration.script_generation import ScriptGenerationService
-from app.models_catalog import (
-    build_models_status,
-    delete_voice_model,
-    download_voice_model,
-    migrate_model_storage,
-    model_storage_status,
-    reset_model_storage,
-)
+from app.models_catalog import DEFAULT_LOCAL_TTS_MODEL, build_models_status
 from app.providers.llm.factory import validate_llm_provider
 from app.providers.llm.preflight import check_llm_config
 from app.providers.tts_api.factory import validate_tts_provider
 from app.runtime.long_task_state import LongTaskStateManager
-from app.providers.tts_local_mlx.runtime import detect_local_mlx_capability
-from app.providers.tts_local_mlx.presets import DEFAULT_LOCAL_TTS_MODEL
+from app.providers.local_speech.capabilities import detect_local_speech_capability
 from app.runtime.request_state_store import RequestStateStore
 from app.runtime.task_cancellation import TaskCancellationRequested
 from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 from app.storage.speaker_reference_store import SpeakerReferenceStore
-
-DOWNLOAD_PROGRESS_MARKER = "AODCAST_PROGRESS"
 
 TASK_TERMINAL_PHASES = {"succeeded", "failed", "cancelled"}
 
@@ -64,7 +53,6 @@ class BridgeTaskCancelledError(RuntimeError):
         super().__init__(message)
         self.operation = operation
         self.progress_percent = progress_percent
-
 
 
 def create_project(topic: str, intent: str, *, demo: bool = False) -> SessionProject:
@@ -101,7 +89,6 @@ def ensure_script_is_active(project: SessionProject) -> None:
         raise ValueError("Cannot continue without a script record.")
     if project.script.is_deleted():
         raise ValueError("Script is deleted. Restore it before continuing.")
-
 
 
 def load_final_script_text(args: argparse.Namespace) -> str:
@@ -165,22 +152,11 @@ def infer_operation(args: argparse.Namespace) -> str:
         return "show_local_tts_capability"
     if args.list_models_status:
         return "list_models_status"
-    if args.show_model_storage:
-        return "show_model_storage"
-    if args.migrate_model_storage.strip():
-        return "migrate_model_storage"
-    if args.reset_model_storage:
-        return "reset_model_storage"
-    if args.download_model.strip():
-        return "download_model"
-    if args.delete_model.strip():
-        return "delete_model"
     if args.show_task_state.strip():
         return "show_task_state"
     if args.cancel_task.strip():
         return "cancel_task"
     return "bridge_ping"
-
 
 
 def output_payload(
@@ -218,6 +194,7 @@ def output_error(
         progress_percent=progress_percent,
         message=message,
     )
+    print(json.dumps({"error": {"code": code, "message": message, "details": details or {}}, "request_state": request_state}))
     print(message, file=sys.stderr)
     return 1
 
@@ -375,11 +352,11 @@ def run(argv: list[str] | None = None) -> int:
             tts_config = config_store.load_tts_config()
             tts_config.provider = args.configure_tts_provider
             if args.tts_model is not None:
-                if args.configure_tts_provider == "local_mlx" and args.tts_model.strip() == "":
+                if args.configure_tts_provider == "local_http" and args.tts_model.strip() == "":
                     tts_config.model = DEFAULT_LOCAL_TTS_MODEL
                 else:
                     tts_config.model = args.tts_model
-            elif args.configure_tts_provider == "local_mlx" and tts_config.model in {"", "mock-voice"}:
+            elif args.configure_tts_provider == "local_http" and tts_config.model in {"", "mock-voice"}:
                 tts_config.model = DEFAULT_LOCAL_TTS_MODEL
             if args.tts_base_url is not None:
                 tts_config.base_url = args.tts_base_url
@@ -389,12 +366,6 @@ def run(argv: list[str] | None = None) -> int:
                 tts_config.voice = args.tts_voice
             if args.tts_audio_format is not None:
                 tts_config.audio_format = args.tts_audio_format
-            if args.tts_local_runtime is not None:
-                tts_config.local_runtime = args.tts_local_runtime
-            if args.clear_tts_local_model_path:
-                tts_config.local_model_path = ""
-            if args.tts_local_model_path is not None:
-                tts_config.local_model_path = args.tts_local_model_path
             path = config_store.save_tts_config(tts_config)
             return output_payload(args, {"path": str(path), "tts_config": tts_config.to_dict()})
 
@@ -414,172 +385,9 @@ def run(argv: list[str] | None = None) -> int:
             models = build_models_status(config_store, Path(args.cwd))
             return output_payload(args, {"models": models})
 
-        if args.show_model_storage:
-            return output_payload(
-                args,
-                {"model_storage": model_storage_status(config_store, Path(args.cwd))},
-            )
 
-        if args.reset_model_storage:
-            return output_payload(
-                args,
-                {"model_storage": reset_model_storage(config_store, Path(args.cwd))},
-            )
 
-        if args.migrate_model_storage.strip():
-            destination = args.migrate_model_storage.strip()
-            task_id = "migrate_model_storage"
-            progress = LongTaskStateManager(
-                request_state_store=request_state_store,
-                task_id=task_id,
-                operation="migrate_model_storage",
-                build_request_state=build_request_state,
-                should_cancel=lambda: request_state_store.is_cancel_requested(task_id),
-            )
-            request_state_store.clear_cancel_request(task_id)
-            progress.start(progress_percent=5.0, message="Preparing model storage migration...")
 
-            def on_migration_progress(current: int, total: int, filename: str) -> None:
-                percent = 5.0 if total <= 0 else 5.0 + min(90.0, (current / total) * 90.0)
-                progress.update_running(
-                    percent,
-                    f"Migrating model storage... {filename}",
-                    max_percent=95.0,
-                )
-
-            try:
-                result = migrate_model_storage(
-                    config_store,
-                    Path(args.cwd),
-                    Path(destination),
-                    on_progress=on_migration_progress,
-                    should_cancel=progress.should_cancel,
-                )
-            except TaskCancellationRequested as exc:
-                cancel_progress = progress.current_progress(default=5.0)
-                progress.save_cancelled(progress_percent=cancel_progress, message=str(exc))
-                request_state_store.clear_cancel_request(task_id)
-                raise BridgeTaskCancelledError(
-                    str(exc),
-                    operation="migrate_model_storage",
-                    progress_percent=cancel_progress,
-                ) from exc
-            except Exception as exc:
-                progress.save_failed(message=str(exc) or "Model storage migration failed.")
-                request_state_store.clear_cancel_request(task_id)
-                raise
-            progress.save_finalizing(
-                progress_percent=98.0,
-                message="Finalizing model storage migration...",
-            )
-            progress.save_succeeded(message=f"Model storage migrated to {Path(destination).expanduser().resolve()}.")
-            request_state_store.clear_cancel_request(task_id)
-            payload = dict(result)
-            payload["task_id"] = task_id
-            return output_payload(args, payload)
-
-        if args.download_model.strip():
-            model_name = args.download_model.strip()
-            task_id = f"download_model:{model_name}"
-            progress = LongTaskStateManager(
-                request_state_store=request_state_store,
-                task_id=task_id,
-                operation="download_model",
-                build_request_state=build_request_state,
-                should_cancel=lambda: request_state_store.is_cancel_requested(task_id),
-            )
-            request_state_store.clear_cancel_request(task_id)
-            progress_pattern = re.compile(rf"{re.escape(DOWNLOAD_PROGRESS_MARKER)}\s+(\d{{1,3}})")
-
-            progress.start(progress_percent=5.0, message=f"Downloading model {model_name}...")
-            heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
-                start_percent=5.0,
-                max_percent=95.0,
-                step_percent=1.5,
-                interval_seconds=1.2,
-                message=f"Downloading model {model_name}...",
-            )
-
-            def raise_download_cancelled(
-                message: str,
-                *,
-                default_progress: float,
-                source_error: Exception | None = None,
-            ) -> None:
-                cancel_progress = progress.current_progress(default=default_progress)
-                progress.save_cancelled(progress_percent=cancel_progress, message=message)
-                request_state_store.clear_cancel_request(task_id)
-                if source_error is None:
-                    raise BridgeTaskCancelledError(
-                        message,
-                        operation="download_model",
-                        progress_percent=cancel_progress,
-                    )
-                raise BridgeTaskCancelledError(
-                    message,
-                    operation="download_model",
-                    progress_percent=cancel_progress,
-                ) from source_error
-
-            def fail_download(message: str) -> None:
-                progress.save_failed(message=message)
-                request_state_store.clear_cancel_request(task_id)
-
-            def on_download_output_line(line: str) -> None:
-                match = progress_pattern.search(line)
-                if match is None:
-                    return
-                parsed = int(match.group(1))
-                progress.update_running(
-                    float(max(5, min(95, parsed))),
-                    f"Downloading model {model_name}... {parsed}%",
-                    max_percent=95.0,
-                )
-            try:
-                result = download_voice_model(
-                    Path(args.cwd),
-                    model_name,
-                    config_store=config_store,
-                    on_output_line=on_download_output_line,
-                    should_cancel=progress.should_cancel,
-                )
-            except TaskCancellationRequested as exc:
-                progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                raise_download_cancelled(str(exc), default_progress=5.0)
-            except Exception as exc:
-                progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                if request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
-                    raise_download_cancelled(
-                        f"Model {model_name} download cancelled.",
-                        default_progress=5.0,
-                        source_error=exc,
-                    )
-                fail_download(str(exc))
-                raise
-            progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-            progress.save_finalizing(
-                progress_percent=98.0,
-                message=f"Finalizing model {model_name}...",
-            )
-            saved_succeeded = progress.save_succeeded(message=f"Model {model_name} is ready.")
-            if not saved_succeeded and (
-                request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling"
-            ):
-                raise_download_cancelled(
-                    f"Model {model_name} download cancelled.",
-                    default_progress=98.0,
-                )
-            if not saved_succeeded:
-                fail_download(f"Unable to finalize download state for {model_name}.")
-                raise RuntimeError(f"Unable to finalize download state for {model_name}.")
-            request_state_store.clear_cancel_request(task_id)
-            payload = dict(result)
-            payload["task_id"] = task_id
-            return output_payload(args, payload)
-
-        if args.delete_model.strip():
-            result = delete_voice_model(Path(args.cwd), args.delete_model.strip(), config_store)
-            return output_payload(args, result)
 
         if args.show_task_state.strip():
             task_id = args.show_task_state.strip()
@@ -628,7 +436,7 @@ def run(argv: list[str] | None = None) -> int:
             )
 
         if args.show_local_tts_capability:
-            capability = detect_local_mlx_capability(config_store.load_tts_config()).to_dict()
+            capability = detect_local_speech_capability(config_store.load_tts_config()).to_dict()
             return output_payload(args, {"tts_capability": capability})
 
         if args.list_voice_presets:

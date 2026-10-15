@@ -7,7 +7,6 @@ runtime_pid=""
 started_runtime=0
 force_restart=1
 reuse_runtime=0
-download_helper_script="$repo_root/scripts/model-download/download_tts_model.py"
 
 usage() {
   echo "Usage: ./scripts/dev/run-dev-all.sh [--restart-runtime|--reuse-runtime]" >&2
@@ -30,27 +29,6 @@ port_pids() {
   lsof -ti "tcp:$1" 2>/dev/null || true
 }
 
-# Download children use their own session; SIGKILL of the runtime can still leave
-# them behind. Reap by script path as a belt-and-suspenders after stopping 8765.
-reap_model_download_helpers() {
-  local pids
-  pids="$(pgrep -f "$download_helper_script" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true)"
-  [[ -z "$pids" ]] && return
-
-  echo "Stopping orphaned model downloads (pid: $pids) ..."
-  kill ${=pids} >/dev/null 2>&1 || true
-  for _ in {1..30}; do
-    pids="$(pgrep -f "$download_helper_script" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true)"
-    [[ -z "$pids" ]] && return
-    sleep 0.1
-  done
-
-  pids="$(pgrep -f "$download_helper_script" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' || true)"
-  if [[ -n "$pids" ]]; then
-    echo "Model downloads still running; sending SIGKILL (pid: $pids) ..." >&2
-    kill -9 ${=pids} >/dev/null 2>&1 || true
-  fi
-}
 
 stop_port() {
   local port="$1"
@@ -59,7 +37,6 @@ stop_port() {
   [[ -z "$pids" ]] && return
 
   echo "Stopping $label on port $port (pid: $pids) ..."
-  # SIGTERM lets python-core's stop handler reclaim download process groups.
   kill ${=pids} >/dev/null 2>&1 || true
   for _ in {1..50}; do
     [[ -z "$(port_pids "$port")" ]] && break
@@ -72,9 +49,6 @@ stop_port() {
     kill -9 ${=pids} >/dev/null 2>&1 || true
   fi
 
-  if [[ "$port" == "8765" ]]; then
-    reap_model_download_helpers
-  fi
 }
 
 cleanup() {
@@ -88,7 +62,6 @@ cleanup() {
       kill -9 "$runtime_pid" >/dev/null 2>&1 || true
     fi
   fi
-  reap_model_download_helpers
 }
 
 for arg in "$@"; do
@@ -103,7 +76,8 @@ trap cleanup EXIT INT TERM
 require_cmd cargo
 require_cmd curl
 require_cmd lsof
-require_cmd pgrep
+
+"$repo_root/scripts/dev/ensure-speech-service.sh"
 
 echo "Checking backend runtime at 127.0.0.1:8765 ..."
 [[ "$force_restart" -eq 1 ]] && stop_port 8765 "backend runtime"

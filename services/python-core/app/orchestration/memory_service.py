@@ -9,7 +9,6 @@ from app.domain.memory import (
     MemoryState,
     PendingJob,
     PendingJobKind,
-    WorkerStatus,
 )
 from app.domain.session import SessionRecord
 from app.domain.transcript import Speaker
@@ -287,7 +286,6 @@ class MemoryService:
         (recency / use-count).  The caller decides whether to auto-delete (single
         result) or surface a disambiguation panel (multiple results).
         """
-        from app.domain.memory import MemoryEntry
 
         query = query.strip()
         if not query:

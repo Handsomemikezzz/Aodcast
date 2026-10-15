@@ -438,21 +438,11 @@ export type VoicePreviewResult = BridgeResultMeta & {
 export type TTSCapability = {
   provider: string;
   runtime: string;
-  platform: string;
-  architecture: string;
-  mlx_installed: boolean;
-  mlx_audio_installed: boolean;
-  model_path_configured: boolean;
-  model_path_exists: boolean;
   available: boolean;
   reasons: string[];
-  model_path: string;
+  current_model: string;
   model_source: string;
-  resolved_model: string;
-  model_family: string;
-  model_variant: string;
-  model_type: string;
-  fallback_provider: string;
+  fallback_provider?: string;
 };
 
 export type LLMProviderConfig = {
@@ -510,9 +500,6 @@ export type TTSProviderConfig = {
   api_key: string;
   voice: string;
   audio_format: string;
-  local_runtime: string;
-  local_model_path: string;
-  local_ref_audio_path: string;
 };
 
 export type TTSModelSupportLevel = "native" | "approximated" | "unsupported";
@@ -523,7 +510,7 @@ export type TTSModelCapability = {
   model: string;
   runtime: string;
   adapter_version: string;
-  platforms: Array<"macos_apple_silicon" | "nvidia_cuda" | "remote_api">;
+  platforms: Array<"macos_apple_silicon" | "nvidia_cuda" | "remote_api" | "http_client">;
   languages: string[];
   reference_audio_formats: string[];
   output_audio_formats: string[];
@@ -547,32 +534,17 @@ export type TTSModelCapability = {
   };
 };
 
-/** Voice-generation model row from python-core `--list-models-status`. */
+/** Speech models managed by the independent HTTP service. */
 export type ModelStatus = {
   model_name: string;
   display_name: string;
-  category: "voice";
   hf_repo_id?: string;
-  family?: string;
-  variant?: string;
+  provider?: string;
   recommendation?: string;
-  downloaded: boolean;
-  downloading: boolean;
-  size_mb?: number;
-  loaded: boolean;
-  active?: boolean;
-  resident?: boolean;
   available?: boolean;
-  unavailable_reason?: string;
-  capability?: TTSModelCapability;
-};
-
-export type ModelStorageStatus = {
-  current_base: string;
-  default_base: string;
-  custom_base: string;
-  is_custom: boolean;
-  exists: boolean;
+  active?: boolean;
+  ready?: boolean;
+  capabilities?: TTSModelCapability;
 };
 
 export type MemoryType = "profile" | "experience" | "viewpoint" | "preference";

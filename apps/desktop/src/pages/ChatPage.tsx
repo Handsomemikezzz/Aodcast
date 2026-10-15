@@ -57,7 +57,7 @@ export function ChatPage({
   const [inputValue, setInputValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [requestState, setRequestState] = useState<RequestState | null>(null);
+  const [, setRequestState] = useState<RequestState | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyProjects, setHistoryProjects] = useState<SessionProject[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");

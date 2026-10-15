@@ -9,6 +9,41 @@ on:
       - 'feature/**'
 
 jobs:
+  speech-service:
+    name: Verify isolated speech service (no model downloads)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install audio codecs
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsndfile1
+
+      - name: Install speech service test environment
+        working-directory: speech-service
+        run: uv sync --frozen --group dev
+
+      - name: Speech service lint
+        working-directory: speech-service
+        run: uv run --frozen ruff check .
+
+      - name: Speech service unit and HTTP tests
+        working-directory: speech-service
+        run: uv run --frozen python -m pytest -q
+
   verify:
     name: Verify source alpha
     runs-on: macos-latest
@@ -53,6 +88,9 @@ jobs:
         working-directory: services/python-core
         run: .venv/bin/python -m unittest discover -s tests -v
 
+      - name: Startup lifecycle contracts
+        run: python3 scripts/verification/test-startup-lifecycle.py
+
       - name: Desktop typecheck
         working-directory: apps/desktop
         run: pnpm check
@@ -70,4 +108,5 @@ jobs:
         run: cargo check
 
       - name: Repository hygiene
-        run: ./scripts/maintenance/run-repo-hygiene-check.sh
+        # The separate Python 3.12 job covers speech without native MLX or model weights.
+        run: ./scripts/maintenance/run-repo-hygiene-check.sh --skip-speech-checks
