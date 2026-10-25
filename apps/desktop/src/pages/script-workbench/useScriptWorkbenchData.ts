@@ -28,14 +28,16 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const [ttsConfig, setTtsConfig] = useState<TTSProviderConfig | null>(null);
   const [speakerReferences, setSpeakerReferences] = useState<SpeakerReference[]>([]);
   const [voicePresets, setVoicePresets] = useState<VoicePreset[]>([]);
-  const [selectedPresetVoiceId, setSelectedPresetVoiceId] = useState("warm_narrator");
+  // Selection overrides stay null until the user changes them, so the first loaded render already
+  // reflects the saved voice and configured engine instead of transient defaults.
+  const [presetVoiceOverride, setSelectedPresetVoiceId] = useState<string | null>(null);
   const [voiceStyles, setVoiceStyles] = useState<VoiceStylePreset[]>([]);
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [voiceSelectionError, setVoiceSelectionError] = useState<string | null>(null);
-  const [selectedEngine, setSelectedEngine] = useState<"local_http" | "cloud">("cloud");
-  const [selectedStyleId, setSelectedStyleId] = useState("natural");
-  const [deliverySpeed, setDeliverySpeed] = useState(1);
+  const [engineOverride, setSelectedEngine] = useState<"local_http" | "cloud" | null>(null);
+  const [styleOverride, setSelectedStyleId] = useState<string | null>(null);
+  const [speedOverride, setDeliverySpeed] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
 
@@ -84,9 +86,10 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     void loadWorkspace();
   }, [bridge, sessionId, scriptId]);
 
+  const selectedEngine = engineOverride ?? (ttsConfig?.provider === "local_http" ? "local_http" : "cloud");
+
   useEffect(() => {
-    const defaultEngine = ttsConfig?.provider === "local_http" ? "local_http" : "cloud";
-    setSelectedEngine(defaultEngine);
+    setSelectedEngine(null);
   }, [capability?.available, ttsConfig?.provider]);
 
   useEffect(() => {
@@ -100,13 +103,17 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
 
   const savedVoiceSettings = resolveProjectVoiceSettings(project, scriptId);
 
+  const selectedPresetVoiceId = presetVoiceOverride ?? savedVoiceSettings.voice_id;
+  const selectedStyleId = styleOverride ?? (savedVoiceSettings.style_id || "natural");
+  const deliverySpeed = speedOverride ?? (savedVoiceSettings.speed || 1);
+
   useEffect(() => {
-    setSelectedPresetVoiceId(savedVoiceSettings.voice_id);
+    setSelectedPresetVoiceId(null);
   }, [scriptId, savedVoiceSettings.voice_id]);
 
   useEffect(() => {
-    setSelectedStyleId(savedVoiceSettings.style_id || "natural");
-    setDeliverySpeed(savedVoiceSettings.speed || 1);
+    setSelectedStyleId(null);
+    setDeliverySpeed(null);
   }, [scriptId, savedVoiceSettings.speed, savedVoiceSettings.style_id]);
 
   const cloudProvider = useMemo(() => {

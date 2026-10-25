@@ -174,9 +174,9 @@ class PodcastRenderingPipeline:
         tts_config.audio_format = "wav"
         provider = build_tts_provider(tts_config)
         if tts_config.provider == "local_http" and speaker_reference:
-            raise ValueError("本机语音服务仅支持预设音色，不支持 Speaker Reference 克隆。")
+            raise ValueError("The local speech service supports preset voices only; Speaker Reference cloning is unavailable.")
         if tts_config.provider == "local_http" and settings.style_id != "natural":
-            raise ValueError("本机语音服务不支持风格指令，请选择自然讲述。")
+            raise ValueError("The local speech service does not support style instructions; choose Natural.")
 
         render_id = uuid4().hex
         parent = project.render_manifest if target_segment_id else None

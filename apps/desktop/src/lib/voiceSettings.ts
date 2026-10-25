@@ -1,8 +1,8 @@
 import type { ModelStatus, SessionProject, SpeakerReference, VoiceRenderSettings } from "../types";
 
 const BUILT_IN_SPEAKER_REFERENCE_LABELS: Record<string, string> = {
-  builtin_clear_broadcast: "清晰播报型",
-  builtin_warm_knowledge: "温和知识型",
+  builtin_clear_broadcast: "Clear broadcaster",
+  builtin_warm_knowledge: "Warm explainer",
 };
 
 /** Built-in profiles removed from the app but still returned by stale runtimes. */
@@ -15,9 +15,9 @@ export function filterActiveSpeakerReferences(references: SpeakerReference[]): S
 export function defaultVoiceRenderSettings(): VoiceRenderSettings {
   return {
     voice_id: "warm_narrator",
-    voice_name: "温和叙述者",
+    voice_name: "Warm narrator",
     style_id: "natural",
-    style_name: "自然讲述",
+    style_name: "Natural",
     speed: 1.0,
     language: "zh",
     audio_format: "wav",
@@ -53,7 +53,7 @@ export function selectedSpeakerReferenceLabel(
     : project?.artifact?.speaker_reference;
   if (!reference?.speaker_reference_id) return "";
   if (reference.name.trim()) return reference.name.trim();
-  return BUILT_IN_SPEAKER_REFERENCE_LABELS[reference.speaker_reference_id] || "已选择音色";
+  return BUILT_IN_SPEAKER_REFERENCE_LABELS[reference.speaker_reference_id] || "Selected voice";
 }
 
 

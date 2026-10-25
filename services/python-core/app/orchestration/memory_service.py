@@ -227,11 +227,11 @@ class MemoryService:
         forbidden = detect_forbidden(raw_intent)
         if forbidden:
             raise ExplicitMemoryRejected(
-                "无法保存包含敏感秘密的信息（如密码、密钥、支付凭据、证件号或精确住址）。"
+                "Information containing secrets (passwords, keys, payment details, ID numbers, or exact addresses) cannot be saved."
             )
         state = self.store.load_state()
         if not state.settings.writing_enabled:
-            raise ExplicitMemoryRejected("记忆记录当前已关闭。")
+            raise ExplicitMemoryRejected("Memory recording is turned off.")
         self.store.enqueue(
             PendingJob(
                 kind=PendingJobKind.NORMALIZE_EXPLICIT_MEMORY,
@@ -262,11 +262,11 @@ class MemoryService:
         forbidden = detect_forbidden(raw_intent)
         if forbidden:
             raise ExplicitMemoryRejected(
-                "无法保存包含敏感秘密的信息（如密码、密钥、支付凭据、证件号或精确住址）。"
+                "Information containing secrets (passwords, keys, payment details, ID numbers, or exact addresses) cannot be saved."
             )
         state = self.store.load_state()
         if not state.settings.writing_enabled:
-            raise ExplicitMemoryRejected("记忆记录当前已关闭。")
+            raise ExplicitMemoryRejected("Memory recording is turned off.")
         self.store.enqueue(
             PendingJob(
                 kind=PendingJobKind.APPLY_CORRECTION,

@@ -120,13 +120,12 @@ function normalizeSpeakerReference(reference?: SpeakerReference | null) {
   };
 }
 
+// Display names are labels, not render inputs, so renaming a preset never marks audio stale.
 function normalizeVoiceSettings(settings?: VoiceRenderSettings) {
   if (!settings) return null;
   return {
     voice_id: settings.voice_id ?? "",
-    voice_name: settings.voice_name ?? "",
     style_id: settings.style_id ?? "",
-    style_name: settings.style_name ?? "",
     speed: settings.speed ?? null,
     language: settings.language ?? "",
     audio_format: settings.audio_format ?? "",
@@ -145,6 +144,19 @@ export function buildVoiceFreshnessKey(
       currentSettings ?? scriptArtifact?.voice_settings ?? project?.artifact?.voice_settings,
     ),
   });
+}
+
+/**
+ * Voice key that existing audio is compared against when it is first seen: the settings saved
+ * with the script, or the current selection for projects that never saved any.
+ */
+export function savedVoiceFreshnessKey(
+  project: SessionProject | null,
+  scriptId: string,
+  currentKey: string,
+): string {
+  const saved = project?.artifact?.script_artifacts?.[scriptId]?.voice_settings ?? project?.artifact?.voice_settings;
+  return saved ? buildVoiceFreshnessKey(project, scriptId) : currentKey;
 }
 
 export type PreviewExcerpt = {

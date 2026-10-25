@@ -1,22 +1,22 @@
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, Loader2, RefreshCw, Sparkles, Trash2, Wand2, AlertCircle } from "lucide-react";
+import { AlertCircle, ChevronDown, Loader2, Wand2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 import type { ScriptIssue } from "./spokenScriptTypes";
 
 function issueTone(level: ScriptIssue["level"]): string {
-  if (level === "blocking") return "text-red-300";
-  if (level === "warning") return "text-amber-200";
-  return "text-secondary/80";
+  if (level === "blocking") return "text-red-700 dark:text-red-300";
+  if (level === "warning") return "text-amber-700 dark:text-amber-200";
+  return "text-secondary";
 }
 
 function statusTone(workbench: UseScriptWorkbenchResult): string {
-  if (workbench.scriptCheck.blockingCount > 0) return "text-red-300";
-  if (workbench.scriptCheck.warningCount > 0) return "text-amber-200";
-  return "text-emerald-300";
+  if (workbench.scriptCheck.blockingCount > 0) return "text-red-700 dark:text-red-300";
+  if (workbench.scriptCheck.warningCount > 0) return "text-amber-700 dark:text-amber-200";
+  return "text-emerald-700 dark:text-emerald-300";
 }
 
-function AutosaveChip({
+function SaveState({
   saving,
   isDirty,
   editorError,
@@ -29,14 +29,10 @@ function AutosaveChip({
 }) {
   if (editorError) {
     return (
-      <span className="autosave-chip autosave-chip-error flex items-center gap-1">
-        <AlertCircle className="w-3 h-3" />
+      <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-300">
+        <AlertCircle className="h-3 w-3" />
         Save failed
-        <button
-          type="button"
-          onClick={onRetry}
-          className="ml-1 underline underline-offset-2 cursor-pointer hover:no-underline"
-        >
+        <button type="button" onClick={onRetry} className="underline underline-offset-2 hover:no-underline">
           Retry
         </button>
       </span>
@@ -44,25 +40,13 @@ function AutosaveChip({
   }
   if (saving) {
     return (
-      <span className="autosave-chip autosave-chip-saving flex items-center gap-1">
-        <Loader2 className="w-3 h-3 animate-spin" />
-        Saving...
+      <span className="inline-flex items-center gap-1">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Saving…
       </span>
     );
   }
-  if (isDirty) {
-    return (
-      <span className="autosave-chip autosave-chip-dirty flex items-center gap-1">
-        Unsaved changes
-      </span>
-    );
-  }
-  return (
-    <span className="autosave-chip autosave-chip-saved flex items-center gap-1">
-      <CheckCircle2 className="w-3 h-3" />
-      Saved
-    </span>
-  );
+  return <span>{isDirty ? "Unsaved changes" : "Saved"}</span>;
 }
 
 export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchResult }) {
@@ -71,133 +55,84 @@ export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchR
   const visibleIssues = workbench.scriptCheck.issues.filter((issue) => issue.level !== "info");
   const infoIssues = workbench.scriptCheck.issues.filter((issue) => issue.level === "info");
   const showIssuePanel = issuesExpanded && workbench.scriptCheck.issues.length > 0;
+  const locked = workbench.isScriptDeleted || workbench.isSessionDeleted;
 
   return (
-    <section className="flex min-w-0 min-h-0 flex-col gap-5 overflow-hidden h-full">
-      <div className="rounded-[28px] border border-outline bg-surface-container backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-full">
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 border-b border-outline px-5 py-3 shrink-0 text-xs text-secondary/80 font-medium select-none">
-          <Sparkles className="h-3.5 w-3.5 text-accent-amber" />
-          Edit the words your listeners will hear
-        </div>
+    <section className="flex h-full min-h-0 min-w-0 flex-col">
+      <textarea
+        ref={workbench.textareaRef}
+        value={workbench.script}
+        onChange={(event) => workbench.setScript(event.target.value)}
+        disabled={locked}
+        spellCheck={false}
+        placeholder="Write the narration for this episode."
+        aria-label="Episode script"
+        className="min-h-0 flex-1 w-full resize-none bg-transparent px-[max(1.5rem,calc((100%-44rem)/2))] py-8 text-[16px] leading-[2rem] text-primary outline-none placeholder:text-secondary/50 disabled:opacity-40 mac-scrollbar"
+      />
 
-        <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4 mac-scrollbar">
-          <textarea
-            ref={workbench.textareaRef}
-            value={workbench.script}
-            onChange={(event) => workbench.setScript(event.target.value)}
-            disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
-            spellCheck={false}
-            placeholder="Write the narration for this episode."
-            aria-label="Episode script"
-            className="min-h-[480px] w-full resize-none rounded-[20px] border border-outline bg-surface-container-low px-6 py-6 text-[16px] leading-[2.1rem] tracking-[0.01em] text-primary outline-none transition-all placeholder:text-secondary/50 focus:border-accent-amber/30 focus:bg-background focus:shadow-[0_0_24px_rgba(242,191,87,0.03)] disabled:opacity-40"
-          />
-        </div>
-
-        {/* Status bar */}
-        <div className="border-t border-outline px-5 py-3 shrink-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-secondary/80 font-medium">
-            {/* Left: checks + stats + autosave */}
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => setIssuesExpanded((expanded) => !expanded)}
-                className={cn(
-                  "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-1 font-bold transition-all cursor-pointer text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
-                  workbench.scriptCheck.blockingCount > 0
-                    ? "border-red-500/20 bg-red-500/10 text-red-200 hover:bg-red-500/15"
-                    : workbench.scriptCheck.warningCount > 0
-                      ? "border-amber-500/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/15"
-                      : "border-emerald-500/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15",
-                )}
-              >
-                <span className={statusTone(workbench)}>{workbench.scriptCheck.statusLabel}</span>
-                <ChevronDown className={cn("h-3 w-3 transition-transform", issuesExpanded && "rotate-180")} />
-              </button>
-              <span className="text-[11px]">{workbench.wordCount} words</span>
-              <span className="text-primary/10">/</span>
-              <span className="text-[11px]">{workbench.estMinutes} spoken</span>
-              <span className="text-primary/10">/</span>
-              <AutosaveChip
-                saving={workbench.saving}
-                isDirty={workbench.isDirty}
-                editorError={workbench.editorError}
-                onRetry={() => void workbench.handleSave()}
-              />
-            </div>
-
-            {/* Right: actions */}
-            <div className="flex items-center gap-2">
-              {workbench.scriptCheck.hasCleanableIssues ? (
-                <button
-                  type="button"
-                  onClick={workbench.handleOpenCleanupPreview}
-                  disabled={workbench.isScriptDeleted || workbench.isSessionDeleted}
-                  className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-accent-amber/20 bg-accent-amber/10 px-3 py-1 text-[11px] font-bold text-accent-amber hover:bg-accent-amber/15 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <Wand2 className="h-3 w-3" />
-                  Clean all
-                </button>
-              ) : null}
-              {workbench.editorRequestState?.phase === "running" ? (
-                <span className="mr-1 text-secondary/60 animate-pulse text-[11px]">
-                  {workbench.editorRequestState.message}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() =>
-                  workbench.runWithUnsavedCheck(async () => {
-                    await workbench.reload();
-                  })
-                }
-                className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-outline bg-surface-container-low px-3 py-1 text-[11px] font-bold text-secondary hover:text-primary hover:bg-primary/8 hover:border-accent-amber/20 active:scale-[0.98] transition-all cursor-pointer"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={() => workbench.setDialogState({ kind: "delete-script" })}
-                disabled={
-                  workbench.isScriptDeleted ||
-                  workbench.isSessionDeleted ||
-                  workbench.busyAction === "delete-script"
-                }
-                className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-red-500/10 bg-red-500/5 px-3 py-1 text-[11px] font-bold text-red-300 hover:text-red-200 hover:bg-red-500/10 hover:border-red-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Trash2 className="h-3 w-3" />
-                Trash
-              </button>
-            </div>
-          </div>
-
-          {showIssuePanel ? (
-            <div className="mt-3 space-y-3 rounded-2xl border border-outline bg-surface-container-low p-3.5">
-              {visibleIssues.length ? (
-                <ul className="space-y-2">
-                  {visibleIssues.map((issue) => (
-                    <li key={issue.id} className={cn("text-sm leading-relaxed", issueTone(issue.level))}>
-                      {issue.line ? `Line ${issue.line}: ` : ""}
-                      {issue.message}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-emerald-200">Ready for TTS. No blocking issues or cleanup suggestions.</p>
-              )}
-              {infoIssues.length ? (
-                <div className="border-t border-outline pt-3">
-                  {infoIssues.map((issue) => (
-                    <p key={issue.id} className="text-xs text-secondary/70">
-                      {issue.message}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
+      {showIssuePanel ? (
+        <div className="mx-4 mb-2 max-h-48 shrink-0 space-y-2 overflow-y-auto rounded-xl border border-outline bg-surface-container-low p-3 mac-scrollbar">
+          {visibleIssues.length ? (
+            <ul className="space-y-1.5">
+              {visibleIssues.map((issue) => (
+                <li key={issue.id} className={cn("text-[13px] leading-relaxed", issueTone(issue.level))}>
+                  {issue.line ? `Line ${issue.line}: ` : ""}
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] text-emerald-700 dark:text-emerald-300">Ready for speech. Nothing to fix.</p>
+          )}
+          {infoIssues.length ? (
+            <div className="border-t border-outline pt-2">
+              {infoIssues.map((issue) => (
+                <p key={issue.id} className="text-xs text-secondary">
+                  {issue.message}
+                </p>
+              ))}
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      <div className="flex h-10 shrink-0 items-center gap-3 border-t border-outline px-4 text-[12px] text-secondary">
+        <button
+          type="button"
+          onClick={() => setIssuesExpanded((expanded) => !expanded)}
+          aria-expanded={issuesExpanded}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md font-medium hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
+            statusTone(workbench),
+          )}
+        >
+          {workbench.scriptCheck.statusLabel}
+          <ChevronDown className={cn("h-3 w-3 transition-transform", issuesExpanded && "rotate-180")} />
+        </button>
+        <span className="tabular-nums">
+          {workbench.wordCount} words · {workbench.estMinutes} spoken
+        </span>
+        <SaveState
+          saving={workbench.saving}
+          isDirty={workbench.isDirty}
+          editorError={workbench.editorError}
+          onRetry={() => void workbench.handleSave()}
+        />
+        <div className="flex-1" />
+        {workbench.editorRequestState?.phase === "running" ? (
+          <span className="animate-pulse">{workbench.editorRequestState.message}</span>
+        ) : null}
+        {workbench.scriptCheck.hasCleanableIssues ? (
+          <button
+            type="button"
+            onClick={workbench.handleOpenCleanupPreview}
+            disabled={locked}
+            className="inline-flex h-7 items-center gap-1 rounded-md px-2 font-medium text-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            Clean up
+          </button>
+        ) : null}
       </div>
     </section>
   );

@@ -44,7 +44,7 @@ export function PendingAttachmentTray({
             type="button"
             onClick={() => onRemove(item.localId)}
             disabled={disabled}
-            aria-label={`移除 ${item.name}`}
+            aria-label={`Remove ${item.name}`}
             className="absolute top-1 right-1 rounded-full bg-background/85 p-0.5 text-secondary hover:text-primary shadow-sm disabled:opacity-40"
           >
             <X className="w-3 h-3" />

@@ -72,28 +72,28 @@ class LocalSpeechClient:
                     response = executor.submit(lambda: asyncio.run(perform())).result()
         except httpx.ConnectError as exc:
             raise LocalSpeechError(
-                f"无法连接本机语音服务 {self.base_url}。请在 Aodcast 仓库根目录运行 "
-                "./speech-service/service.sh start，再重试。"
+                f"Cannot reach the local speech service at {self.base_url}. From the Aodcast repository root, run "
+                "./speech-service/service.sh start, then try again."
             ) from exc
         except httpx.TimeoutException as exc:
             raise LocalSpeechError(
-                "本机语音服务请求超时；首次调用可能仍在下载模型。请检查服务日志及 GPU 排队状态。"
+                "The local speech service timed out. The first request may still be downloading the model; check the service logs and GPU queue."
             ) from exc
         except httpx.HTTPError as exc:
-            raise LocalSpeechError(f"本机语音服务连接中断：{exc}") from exc
+            raise LocalSpeechError(f"Lost connection to the local speech service: {exc}") from exc
         if response.is_error:
             try:
                 message = response.json()["error"]["message"]
             except (ValueError, KeyError, TypeError):
                 message = response.text[:300]
-            raise LocalSpeechError(f"本机语音服务返回 HTTP {response.status_code}：{message}")
+            raise LocalSpeechError(f"The local speech service returned HTTP {response.status_code}: {message}")
         return response
 
     def health(self) -> dict[str, Any]:
         response = self._request("GET", self.base_url.removesuffix("/v1") + "/health", timeout=5)
         payload = response.json()
         if not isinstance(payload, dict) or "models" not in payload:
-            raise LocalSpeechError("本机语音服务返回了无效的健康状态。")
+            raise LocalSpeechError("The local speech service returned an invalid health status.")
         return payload
 
     def synthesize(
@@ -123,7 +123,7 @@ class LocalSpeechClient:
                 if wav.getnframes() == 0 or wav.getsampwidth() != 2:
                     raise ValueError("Expected non-empty PCM16 WAV audio.")
         except (wave.Error, EOFError) as exc:
-            raise LocalSpeechError("本机语音服务未返回有效 WAV 音频。") from exc
+            raise LocalSpeechError("The local speech service did not return valid WAV audio.") from exc
         return audio
 
     def transcribe(self, path: str | Path, language: str | None = None) -> str:
@@ -140,5 +140,5 @@ class LocalSpeechClient:
             )
         result = response.json()
         if not isinstance(result, dict) or not isinstance(result.get("text"), str):
-            raise LocalSpeechError("本机语音服务未返回有效识别文本。")
+            raise LocalSpeechError("The local speech service did not return a valid transcription.")
         return result["text"]

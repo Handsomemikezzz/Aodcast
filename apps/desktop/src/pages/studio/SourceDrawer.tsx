@@ -139,7 +139,7 @@ export function SourceDrawer({
               type="button"
               disabled={generatingScript || replacing}
               onClick={() => void handleGenerateScript()}
-              className="col-span-2 flex h-11 items-center justify-center gap-2 rounded-xl theme-accent-gradient px-4 text-xs font-semibold text-on-primary transition-opacity disabled:opacity-50"
+              className="col-span-2 flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-background transition-opacity disabled:opacity-50"
             >
               {generatingScript ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               {generatingScript ? "Generating new script…" : "Generate new script from v" + source.version}

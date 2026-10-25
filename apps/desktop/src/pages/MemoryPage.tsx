@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import {
-  AlertTriangle,
-  Brain,
-  History,
-  Loader2,
-  Lock,
-  Sparkles,
-  Trash2,
-  Wand2,
-} from "lucide-react";
+import { AlertTriangle, ChevronDown, Loader2, Lock, Trash2, Wand2 } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { OverflowMenu } from "../components/OverflowMenu";
+import { cn } from "../lib/utils";
 import { getErrorMessage } from "../lib/requestState";
 import type { MemoryEntry, MemoryOverview, MemoryType, MemoryUsageEvent } from "../types";
 
@@ -56,21 +48,14 @@ function Toggle({
 
 function TypeBadge({ entry }: { entry: MemoryEntry }) {
   return (
-    <div className="flex items-center gap-1.5 shrink-0">
-      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-accent-amber/10 border border-accent-amber/20 text-accent-amber">
-        {entry.type}
-      </span>
-      {entry.origin === "explicit" && (
-        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-primary/8 border border-outline text-secondary">
-          explicit
+    <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-secondary">
+      <span className="capitalize">{entry.type}</span>
+      {entry.origin === "explicit" ? <span>· Saved on request</span> : null}
+      {entry.sensitive ? (
+        <span className="inline-flex items-center gap-0.5 text-amber-700 dark:text-amber-300">
+          · <Lock className="h-3 w-3" /> Sensitive
         </span>
-      )}
-      {entry.sensitive && (
-        <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-amber-500/10 border border-amber-500/25 text-amber-600 dark:text-amber-400">
-          <Lock className="w-2.5 h-2.5" />
-          sensitive
-        </span>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -84,74 +69,61 @@ function MemoryCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="rounded-xl border border-outline bg-surface-container-low overflow-hidden">
-      <div className="flex items-start gap-3 px-4 py-3">
+    <li className="group">
+      <div className="flex items-start gap-2 px-4 py-3">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
           className="min-w-0 flex-1 text-left"
         >
-          <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center justify-between gap-3">
             <p className="font-medium text-[14px] text-primary truncate">{entry.name}</p>
             <TypeBadge entry={entry} />
           </div>
-          <p className="text-[12px] text-secondary leading-relaxed">{entry.description}</p>
+          <p className="mt-0.5 text-[12px] text-secondary leading-relaxed">{entry.description}</p>
         </button>
         <button
           type="button"
           aria-label={`Delete memory ${entry.name}`}
+          title="Delete"
           onClick={() => onDelete(entry)}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-red-500/10 hover:text-red-400"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:text-red-300"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
       {expanded && (
-        <div className="border-t border-outline bg-surface/40 px-4 py-3 space-y-3">
+        <div className="space-y-3 px-4 pb-4">
           {entry.sensitive ? (
-            <p className="text-[12px] text-amber-600 dark:text-amber-400">
-              Sensitive memory — body shown locally only.
-            </p>
+            <p className="text-[12px] text-amber-700 dark:text-amber-300">Sensitive — the full text is only shown on this device.</p>
           ) : null}
           {entry.body ? (
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-secondary/70 mb-1">Memory</p>
-              <p className="text-[13px] text-primary leading-relaxed whitespace-pre-wrap">{entry.body}</p>
-            </div>
+            <p className="text-[13px] text-primary leading-relaxed whitespace-pre-wrap">{entry.body}</p>
           ) : null}
           {entry.keywords && entry.keywords.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {entry.keywords.map((kw) => (
-                <span key={kw} className="px-2 py-0.5 rounded-md text-[10px] bg-primary/5 border border-outline text-secondary">
-                  {kw}
-                </span>
+            <p className="text-[12px] text-secondary">{entry.keywords.join(" · ")}</p>
+          ) : null}
+          {entry.evidence && entry.evidence.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-[12px] font-medium text-secondary">From your words ({entry.source_count})</p>
+              {entry.evidence.map((ev, i) => (
+                <blockquote
+                  key={`${ev.turn_id}-${i}`}
+                  className="border-l-2 border-outline pl-2.5 text-[12px] text-secondary"
+                >
+                  “{ev.quote}”
+                </blockquote>
               ))}
             </div>
           ) : null}
-          {entry.evidence && entry.evidence.length > 0 ? (
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-secondary/70 mb-1">
-                Evidence ({entry.source_count})
-              </p>
-              <div className="space-y-1.5">
-                {entry.evidence.map((ev, i) => (
-                  <blockquote
-                    key={`${ev.turn_id}-${i}`}
-                    className="border-l-2 border-accent-amber/30 pl-2.5 text-[12px] text-secondary italic"
-                  >
-                    "{ev.quote}"
-                  </blockquote>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <p className="text-[10px] text-secondary/60">
+          <p className="text-[11px] text-secondary">
             Used {entry.use_count} time{entry.use_count === 1 ? "" : "s"}
             {entry.last_used_at ? ` · last ${new Date(entry.last_used_at).toLocaleDateString()}` : ""}
           </p>
         </div>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -264,7 +236,7 @@ export function MemoryPage() {
     if (!worker) return "";
     if (worker.status === "error") return worker.last_error || "Background update failed";
     if (worker.status === "running") return "Updating…";
-    return "Idle";
+    return "Up to date";
   }, [worker]);
 
   if (loading) {
@@ -276,41 +248,36 @@ export function MemoryPage() {
     );
   }
 
+  const toggleRowClass = "flex items-center justify-between gap-3 py-3";
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="flex flex-col h-full w-full overflow-y-auto px-6 lg:px-12 py-8 mac-scrollbar"
-      >
-        <div className="max-w-2xl mx-auto w-full">
-          <div className="mb-6 border-b border-outline pb-6">
-            <div className="flex items-center gap-2.5 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-amber/10 border border-accent-amber/20">
-                <Brain className="w-4 h-4 text-accent-amber" />
-              </div>
-              <h1 className="text-2xl font-headline font-bold text-primary">Memory</h1>
-            </div>
-            <p className="text-secondary text-sm">
-              Reusable knowledge from your own words, saved locally to keep interviews and scripts consistent across episodes.
-            </p>
+      <div className="flex flex-col h-full w-full overflow-y-auto px-6 lg:px-10 py-8 mac-scrollbar">
+        <div className="max-w-3xl mx-auto w-full">
+          <div className="mb-1 flex items-center justify-between gap-4">
+            <h1 className="text-2xl font-headline font-semibold text-primary">Memory</h1>
+            {entries.length > 0 ? (
+              <OverflowMenu
+                label="More memory actions"
+                items={[{ label: "Clear all memory", icon: Trash2, danger: true, onSelect: () => setConfirmClear(true) }]}
+              />
+            ) : null}
           </div>
+          <p className="mb-6 text-sm text-secondary">
+            Reusable facts from your own words, kept on this device so interviews and scripts stay consistent.
+          </p>
 
           {error ? (
-            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               {error}
             </div>
           ) : null}
 
           {needsFirstRun ? (
-            <div className="mb-6 rounded-xl border border-accent-amber/25 bg-accent-amber/8 p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-accent-amber" />
-                <p className="font-semibold text-primary">Enable long-term memory</p>
-              </div>
-              <ul className="text-[13px] text-secondary leading-relaxed space-y-1 mb-4 list-disc pl-5">
+            <div className="mb-6 rounded-xl border border-outline p-5">
+              <p className="font-semibold text-primary">Turn on long-term memory?</p>
+              <ul className="mt-2 mb-4 list-disc space-y-1 pl-5 text-[13px] leading-relaxed text-secondary">
                 <li>Memory is stored only on this machine.</li>
-                <li>Aodcast automatically saves information that is reusable across episodes.</li>
+                <li>Aodcast saves information you share that is reusable across episodes.</li>
                 <li>You can view, delete, or clear it at any time, and turn it off globally or per episode.</li>
                 <li>Secrets like passwords, API keys, and payment details are never saved.</li>
               </ul>
@@ -318,18 +285,18 @@ export function MemoryPage() {
                 type="button"
                 onClick={() => void handleAcknowledge()}
                 disabled={busy}
-                className="inline-flex items-center gap-2 rounded-xl bg-accent-amber px-4 py-2 text-sm font-bold text-on-primary hover:bg-accent-amber/90 transition-colors disabled:opacity-50 cursor-pointer"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-50"
               >
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                Enable memory
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Turn on memory
               </button>
             </div>
           ) : (
-            <div className="mb-6 rounded-xl border border-outline bg-surface-container-low p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
+            <div className="mb-6 divide-y divide-outline border-y border-outline">
+              <div className={toggleRowClass}>
                 <div>
-                  <p className="text-[13px] font-medium text-primary">Automatically record memory</p>
-                  <p className="text-[11px] text-secondary/70">Extract reusable knowledge from new conversations.</p>
+                  <p className="text-[13px] font-medium text-primary">Learn from new conversations</p>
+                  <p className="text-[12px] text-secondary">Save reusable facts from what you say in interviews.</p>
                 </div>
                 <Toggle
                   checked={Boolean(settings?.writing_enabled)}
@@ -337,10 +304,10 @@ export function MemoryPage() {
                   onChange={(next) => void handleToggle("writing", next)}
                 />
               </div>
-              <div className="flex items-center justify-between gap-3 border-t border-outline pt-3">
+              <div className={toggleRowClass}>
                 <div>
                   <p className="text-[13px] font-medium text-primary">Use memory</p>
-                  <p className="text-[11px] text-secondary/70">Apply memory during interviews and script generation.</p>
+                  <p className="text-[12px] text-secondary">Bring saved facts into interviews and script generation.</p>
                 </div>
                 <Toggle
                   checked={Boolean(settings?.usage_enabled)}
@@ -348,55 +315,48 @@ export function MemoryPage() {
                   onChange={(next) => void handleToggle("usage", next)}
                 />
               </div>
-              <div className="flex items-center justify-between gap-3 border-t border-outline pt-3 text-[11px] text-secondary/70">
+              <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-[12px] text-secondary">
                 <span className="flex items-center gap-1.5">
-                  {worker?.status === "error" ? (
-                    <AlertTriangle className="w-3 h-3 text-amber-500" />
-                  ) : null}
-                  Background: {workerLabel}
+                  {worker?.status === "error" ? <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> : null}
+                  {overview?.entry_count ?? 0} memories · {workerLabel}
                   {overview && overview.pending_job_count > 0 ? ` · ${overview.pending_job_count} queued` : ""}
-                </span>
-                <span>{overview?.entry_count ?? 0} memories</span>
-              </div>
-              <div className="flex items-center justify-between gap-3 border-t border-outline pt-3">
-                <span className="text-[11px] text-secondary/70">
                   {settings?.last_maintenance_at
-                    ? `上次整理 ${new Date(settings.last_maintenance_at).toLocaleString()}`
-                    : "尚未整理"}
+                    ? ` · Tidied ${new Date(settings.last_maintenance_at).toLocaleString()}`
+                    : ""}
                 </span>
                 <button
                   type="button"
                   onClick={() => void handleMaintain()}
                   disabled={maintaining || busy}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-outline px-2.5 py-1 text-[11px] font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
+                  title="Merge duplicates and remove stale memories"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
                 >
-                  {maintaining ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                  整理记忆
+                  {maintaining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  Tidy up
                 </button>
               </div>
             </div>
           )}
 
-          {/* Search + type filter */}
-          <div className="flex flex-col gap-3 mb-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search memories…"
-              className="w-full rounded-lg border border-outline bg-surface-container-low px-3 py-2 text-[13px] text-primary placeholder:text-outline outline-none focus:border-accent-amber/30"
+              aria-label="Search memories"
+              className="h-9 w-full rounded-lg border border-outline bg-transparent px-3 text-[13px] text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25 sm:flex-1"
             />
-            <div className="flex flex-wrap gap-1.5">
+            <div className="inline-flex shrink-0 rounded-lg border border-outline p-0.5" role="group" aria-label="Filter by type">
               {TYPE_TABS.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
                   onClick={() => setTypeFilter(tab.key)}
-                  className={
-                    "px-3 py-1 rounded-lg text-[12px] font-medium transition-colors cursor-pointer border " +
-                    (typeFilter === tab.key
-                      ? "bg-accent-amber/10 border-accent-amber/25 text-accent-amber"
-                      : "border-transparent text-secondary hover:bg-primary/5 hover:text-primary")
-                  }
+                  aria-pressed={typeFilter === tab.key}
+                  className={cn(
+                    "h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors",
+                    typeFilter === tab.key ? "bg-primary/[0.07] text-primary" : "text-secondary hover:text-primary",
+                  )}
                 >
                   {tab.label}
                 </button>
@@ -404,71 +364,58 @@ export function MemoryPage() {
             </div>
           </div>
 
-          {/* Entries */}
-          <div className="space-y-2.5">
-            {entries.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-outline bg-surface/30 p-8 text-center text-secondary text-sm">
-                {search || typeFilter !== "all"
-                  ? "No memories match this filter."
-                  : "No memories yet. They form automatically as you talk through episodes."}
-              </div>
-            ) : (
-              entries.map((entry) => (
+          {entries.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-outline p-8 text-center text-secondary text-sm">
+              {search || typeFilter !== "all"
+                ? "No memories match this filter."
+                : "No memories yet. They form as you talk through episodes."}
+            </div>
+          ) : (
+            <ul className="divide-y divide-outline rounded-xl border border-outline">
+              {entries.map((entry) => (
                 <MemoryCard key={entry.id} entry={entry} onDelete={setDeleteTarget} />
-              ))
-            )}
-          </div>
+              ))}
+            </ul>
+          )}
 
-          {/* Recently used */}
-          {usage.length > 0 ? (
-            <div className="mt-8">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-secondary/70 mb-2">Recently used</p>
-              <div className="rounded-xl border border-outline bg-surface-container-low divide-y divide-outline-variant overflow-hidden">
-                {usage.slice(0, 10).map((event, i) => (
-                  <div key={`${event.session_id}-${i}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[12px]">
-                    <span className="text-primary truncate">{event.session_topic || "Untitled"}</span>
-                    <span className="text-secondary/60 shrink-0">
-                      {event.memory_ids.length} memor{event.memory_ids.length === 1 ? "y" : "ies"} · {event.operation}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Recently superseded */}
-          {superseded.length > 0 ? (
-            <div className="mt-8">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-secondary/70 mb-2 flex items-center gap-1.5">
-                <History className="w-3 h-3" />
-                最近被替代
-              </p>
-              <div className="rounded-xl border border-outline bg-surface-container-low divide-y divide-outline-variant overflow-hidden">
-                {superseded.slice(0, 10).map((entry) => (
-                  <div key={entry.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[12px]">
-                    <span className="text-secondary truncate">{entry.name}</span>
-                    <span className="text-secondary/60 shrink-0 capitalize">{entry.type}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Clear all */}
-          {entries.length > 0 ? (
-            <div className="mt-8 border-t border-outline pt-5">
-              <button
-                type="button"
-                onClick={() => setConfirmClear(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/8 px-3 py-2 text-[13px] font-medium text-red-400 hover:bg-red-500/15 transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Clear all memory
-              </button>
-            </div>
+          {usage.length > 0 || superseded.length > 0 ? (
+            <details className="group mt-6">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[13px] text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
+                History
+                <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              {usage.length > 0 ? (
+                <>
+                  <p className="mt-3 mb-1.5 text-[12px] font-medium text-secondary">Recently used</p>
+                  <ul className="divide-y divide-outline rounded-xl border border-outline">
+                    {usage.slice(0, 10).map((event, i) => (
+                      <li key={`${event.session_id}-${i}`} className="flex items-center justify-between gap-3 px-4 py-2 text-[12px]">
+                        <span className="text-primary truncate">{event.session_topic || "Untitled"}</span>
+                        <span className="text-secondary shrink-0">
+                          {event.memory_ids.length} memor{event.memory_ids.length === 1 ? "y" : "ies"} · {event.operation}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              {superseded.length > 0 ? (
+                <>
+                  <p className="mt-4 mb-1.5 text-[12px] font-medium text-secondary">Replaced by newer memories</p>
+                  <ul className="divide-y divide-outline rounded-xl border border-outline">
+                    {superseded.slice(0, 10).map((entry) => (
+                      <li key={entry.id} className="flex items-center justify-between gap-3 px-4 py-2 text-[12px]">
+                        <span className="text-secondary truncate">{entry.name}</span>
+                        <span className="text-secondary shrink-0 capitalize">{entry.type}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </details>
           ) : null}
         </div>
-      </motion.div>
+      </div>
 
       <ConfirmDialog
         open={deleteTarget !== null}

@@ -24,12 +24,14 @@ class EpisodeWorkspaceSourceTests(unittest.TestCase):
 
     def test_workspace_header_uses_product_status_without_stepper(self) -> None:
         source = STUDIO_HEADER_PATH.read_text(encoding="utf-8")
+        dock_source = EPISODE_AUDIO_DOCK_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("EpisodeProductStatus", source)
+        self.assertIn("EpisodeProductStatus", dock_source)
         self.assertIn("Back to Episodes", source)
         self.assertIn("Conversation", source)
         self.assertNotIn("WorkflowStepper", source)
         self.assertNotIn("sessionStateLabel", source)
+        self.assertNotIn("sessionStateLabel", dock_source)
 
     def test_episode_inspector_selects_speaker_references_and_models_inline(self) -> None:
         source = EPISODE_INSPECTOR_PATH.read_text(encoding="utf-8")
@@ -38,8 +40,9 @@ class EpisodeWorkspaceSourceTests(unittest.TestCase):
         self.assertIn("Change voice", source)
         self.assertIn("filterActiveSpeakerReferences", source)
         self.assertIn("handleSelectSpeakerReference", source)
-        self.assertIn("episode-render-model", source)
-        self.assertIn("Advanced audio settings", source)
+        self.assertIn('aria-label="Voice engine"', source)
+        self.assertIn("setSelectedEngine", source)
+        self.assertIn("Advanced", source)
         self.assertIn("listSpeakerReferences", data_source)
         self.assertIn("selectSpeakerReference", data_source)
 
@@ -47,8 +50,8 @@ class EpisodeWorkspaceSourceTests(unittest.TestCase):
         source = EPISODE_AUDIO_DOCK_PATH.read_text(encoding="utf-8")
 
         self.assertIn("Preview", source)
-        self.assertIn("Generate Audio", source)
-        self.assertIn("Update Audio", source)
+        self.assertIn("Generate audio", source)
+        self.assertIn("Update audio", source)
         self.assertIn("AudioPlayer", source)
         self.assertIn("handleExportMp3", source)
 

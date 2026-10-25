@@ -1,15 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  ChevronDown,
-  Loader2,
-  Sparkles,
-  Volume2,
-  Check,
-  AlertCircle,
-  Activity,
-  RotateCw
-} from "lucide-react";
+import { Loader2, Check, AlertCircle, RotateCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useBridge } from "../lib/BridgeContext";
 import { LLMProviderConfig, LLMProviderStatus, RequestState, TTSProviderConfig } from "../types";
@@ -175,7 +165,7 @@ export function SettingsPage() {
   
   const [savedFlashLlm, setSavedFlashLlm] = useState(false);
   const [savedFlashTts, setSavedFlashTts] = useState(false);
-  const [requestState, setRequestState] = useState<RequestState | null>(null);
+  const [, setRequestState] = useState<RequestState | null>(null);
 
   // Connection testing states
   const [testingLlm, setTestingLlm] = useState(false);
@@ -508,545 +498,395 @@ export function SettingsPage() {
   ) ?? null;
   const ttsUsesLocalModels = ttsForm.provider === "local_http";
 
+  const inputClass =
+    "h-9 w-full rounded-lg border border-outline bg-transparent px-3 text-[13px] text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25 disabled:opacity-50";
+  const labelClass = "mb-1.5 block text-[13px] font-medium text-primary";
+  const primaryButtonClass =
+    "inline-flex h-9 items-center rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-40";
+  const secondaryButtonClass =
+    "inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-40";
+
+  const renderTestResult = (result: { success: boolean; message: string } | null) =>
+    result ? (
+      <p
+        role="status"
+        className={cn(
+          "flex items-start gap-2 text-[13px] leading-relaxed",
+          result.success ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300",
+        )}
+      >
+        {result.success ? <Check className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+        <span className="select-all">{result.message}</span>
+      </p>
+    ) : null;
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="h-full overflow-y-auto px-6 lg:px-12 py-8 bg-background text-on-surface mac-scrollbar"
-    >
-      <div className="max-w-2xl mx-auto space-y-8">
-        
-        {/* Modern Glassmorphic Header */}
-        <header className="relative p-6 rounded-2xl border border-outline bg-surface-container-low/60 backdrop-blur-xl shadow-2xl overflow-hidden">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-accent-amber/5 blur-3xl rounded-full" />
-          <h1 className="text-2xl font-headline font-bold text-primary tracking-wide">Settings</h1>
-          <p className="text-secondary text-[13px] mt-2 leading-relaxed">
-            Connect a ChatGPT subscription or configure an API endpoint, then choose Text-to-Speech voices. Aodcast never reads Codex OAuth tokens.
-          </p>
-        </header>
+    <div className="h-full overflow-y-auto px-6 py-8 lg:px-10 mac-scrollbar">
+      <div className="mx-auto w-full max-w-2xl">
+        <h1 className="text-2xl font-headline font-semibold text-primary">Settings</h1>
+        <p className="mt-1 text-sm text-secondary">
+          Choose the language model that runs interviews and scripts, and the speech engine that reads them.
+        </p>
+
+        {error ? (
+          <div role="alert" className="mt-6 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] text-red-700 dark:text-red-300">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : null}
 
         {loading ? (
-          <div className="py-24 flex flex-col items-center justify-center gap-3 text-secondary">
-            <Loader2 className="w-6 h-6 animate-spin text-accent-amber" />
-            <span className="text-xs font-medium tracking-wide uppercase">Loading Configuration…</span>
+          <div className="flex items-center gap-2 py-16 text-sm text-secondary">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading settings…
           </div>
         ) : (
-          <div className="space-y-8">
+          <>
+            <section className="mt-8 space-y-5 border-t border-outline pt-6">
+              <h2 className="text-[15px] font-semibold text-primary">Language model</h2>
 
-            {/* SECTION 1: LLM CONFIGURATION */}
-            <section className="p-6 rounded-2xl border border-outline bg-surface-container-low/50 backdrop-blur-xl shadow-xl space-y-6 relative">
-              <div className="flex items-center border-b border-outline pb-4">
-                <div className="flex items-center gap-2.5 text-accent-amber">
-                  <Sparkles className="w-5 h-5" />
-                  <h2 className="text-sm font-semibold tracking-wider uppercase font-headline">Language Model (LLM)</h2>
-                </div>
-              </div>
+              <label className="block">
+                <span className={labelClass}>Provider</span>
+                <select value={selectedLlmPreset} onChange={(e) => handlePresetChange(e.target.value)} className={inputClass}>
+                  {LLM_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.name}</option>
+                  ))}
+                </select>
+              </label>
 
-              <div className="space-y-5">
-                {/* Provider Preset Dropdown */}
-                <label className="block">
-                  <span className="text-xs font-semibold text-on-surface-variant mb-2 block">Service Provider</span>
-                  <div className="relative">
-                    <select
-                      value={selectedLlmPreset}
-                      onChange={(e) => handlePresetChange(e.target.value)}
-                      className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all appearance-none cursor-pointer"
+              {isCodexSubscription && (
+                <div className="space-y-3 rounded-xl border border-outline p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 text-[13px]">
+                      <p className="font-medium text-primary">
+                        {llmProviderStatus?.authenticated
+                          ? `ChatGPT ${llmProviderStatus.plan_type || "connected"}`
+                          : llmProviderStatus?.installed === false
+                            ? "Codex CLI not installed"
+                            : "ChatGPT not connected"}
+                      </p>
+                      <p className="mt-0.5 truncate text-[12px] text-secondary">
+                        {[
+                          llmProviderStatus?.account_email,
+                          llmProviderStatus?.installed ? `Codex ${llmProviderStatus.version || "installed"}` : null,
+                        ].filter(Boolean).join(" · ") || "Checking the local Codex installation…"}
+                      </p>
+                    </div>
+                    {loadingLlmProviderStatus ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-secondary" />
+                    ) : llmProviderStatus?.authenticated ? (
+                      <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    )}
+                  </div>
+
+                  {llmProviderStatus?.rate_limit && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[12px] text-secondary">
+                        <span>Codex usage window</span>
+                        <span>{Math.round(llmProviderStatus.rate_limit.used_percent)}% used</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-primary/10">
+                        <div
+                          className="h-full rounded-full bg-accent-amber transition-[width]"
+                          style={{ width: `${Math.min(100, llmProviderStatus.rate_limit.used_percent)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[12px] leading-relaxed text-secondary">
+                    Uses the ChatGPT account signed in to the official Codex CLI and its plan allowance — never API billing.
+                    Aodcast doesn't read or store Codex tokens.
+                  </p>
+                  {!llmProviderStatus?.installed && !loadingLlmProviderStatus && (
+                    <code className="block rounded-lg bg-primary/5 px-3 py-2 font-mono text-[12px] text-primary select-all">
+                      npm install -g @openai/codex
+                    </code>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-1">
+                    {!llmProviderStatus?.authenticated && (
+                      <button
+                        type="button"
+                        onClick={() => void handleStartCodexLogin()}
+                        disabled={!llmProviderStatus?.installed || startingLlmLogin || llmLoginPending}
+                        className={primaryButtonClass}
+                      >
+                        {startingLlmLogin || llmLoginPending ? "Waiting for ChatGPT…" : "Connect ChatGPT"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void refreshLlmProviderStatus()}
+                      disabled={loadingLlmProviderStatus}
+                      className={secondaryButtonClass}
                     >
-                      {LLM_PRESETS.map((preset) => (
-                        <option key={preset.id} value={preset.id}>
-                          {preset.name}
+                      <RotateCw className={cn("h-3.5 w-3.5", loadingLlmProviderStatus && "animate-spin")} />
+                      Refresh
+                    </button>
+                    {pendingLlmAuthUrl && !llmProviderStatus?.authenticated && (
+                      <a href={pendingLlmAuthUrl} target="_blank" rel="noreferrer" className={secondaryButtonClass}>
+                        Open sign-in link
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedLlmPreset === "custom" && (
+                <label className="block">
+                  <span className={labelClass}>Base URL</span>
+                  <input
+                    type="url"
+                    autoComplete="off"
+                    placeholder="https://api.openai.com/v1"
+                    value={llmForm.base_url}
+                    onChange={(e) => updateLlm("base_url", e.target.value)}
+                    className={inputClass}
+                  />
+                </label>
+              )}
+
+              {selectedLlmPreset !== "mock" && !isCodexSubscription && (
+                <label className="block">
+                  <span className={labelClass}>API key</span>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    placeholder="Paste your provider's API key"
+                    value={llmForm.api_key}
+                    onChange={(e) => updateLlm("api_key", e.target.value)}
+                    className={cn(inputClass, "font-mono")}
+                  />
+                  {selectedLlmPreset !== "custom" ? (
+                    <span className="mt-1.5 block text-[12px] text-secondary">
+                      Endpoint: <code className="font-mono select-all">{llmForm.base_url}</code>
+                    </span>
+                  ) : null}
+                </label>
+              )}
+
+              {selectedLlmPreset !== "mock" && (
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label htmlFor="llm-model" className="text-[13px] font-medium text-primary">Model</label>
+                    {!isCodexSubscription && currentPresetConfig && currentPresetConfig.defaultModels.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLlmTestResult(null);
+                          const nextState = !customModelActive;
+                          setCustomModelActive(nextState);
+                          updateLlm("model", nextState ? "" : currentPresetConfig.defaultModels[0]);
+                        }}
+                        className="text-[12px] text-secondary underline-offset-2 hover:text-primary hover:underline"
+                      >
+                        {customModelActive ? "Choose from list" : "Enter a model ID"}
+                      </button>
+                    )}
+                  </div>
+
+                  {isCodexSubscription ? (
+                    <select
+                      id="llm-model"
+                      value={llmForm.model}
+                      onChange={(e) => {
+                        setLlmTestResult(null);
+                        const nextModelId = e.target.value;
+                        const nextModel = llmProviderStatus?.models.find((model) => model.id === nextModelId);
+                        setLlmForm((prev) => ({
+                          ...prev,
+                          model: nextModelId,
+                          reasoning_effort: prev.reasoning_effort !== "auto"
+                            && !nextModel?.supported_reasoning_efforts.includes(prev.reasoning_effort)
+                            ? "auto"
+                            : prev.reasoning_effort,
+                        }));
+                      }}
+                      disabled={!codexReady}
+                      className={inputClass}
+                    >
+                      {!codexReady && <option value="">Connect ChatGPT to load models</option>}
+                      {llmProviderStatus?.models.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.display_name}{model.is_default ? " · Recommended" : ""}
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
-                  </div>
-                </label>
-
-                {isCodexSubscription && (
-                  <div className="rounded-xl border border-accent-amber/20 bg-accent-amber/5 p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold text-primary">Official Codex app-server</p>
-                        <p className="text-[11px] leading-relaxed text-secondary">
-                          Uses the ChatGPT account managed by the official Codex CLI. Requests consume that account&apos;s Codex plan allowance, not OpenAI API billing.
-                        </p>
-                      </div>
-                      {loadingLlmProviderStatus ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-accent-amber shrink-0" />
-                      ) : llmProviderStatus?.authenticated ? (
-                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2">
-                        <span className="text-secondary">Codex CLI</span>
-                        <p className="mt-0.5 text-on-surface-variant">
-                          {llmProviderStatus?.installed
-                            ? llmProviderStatus.version || "Installed"
-                            : "Not installed"}
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2">
-                        <span className="text-secondary">ChatGPT plan</span>
-                        <p className="mt-0.5 text-on-surface-variant capitalize">
-                          {llmProviderStatus?.authenticated
-                            ? llmProviderStatus.plan_type || "Connected"
-                            : "Not connected"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {llmProviderStatus?.account_email && (
-                      <p className="text-[11px] text-secondary truncate">
-                        Signed in as {llmProviderStatus.account_email}
-                      </p>
-                    )}
-
-                    {llmProviderStatus?.rate_limit && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-[10px] text-secondary">
-                          <span>Current Codex usage window</span>
-                          <span>{Math.round(llmProviderStatus.rate_limit.used_percent)}% used</span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-surface-container-high">
-                          <div
-                            className="h-full rounded-full bg-accent-amber transition-[width]"
-                            style={{ width: `${Math.min(100, llmProviderStatus.rate_limit.used_percent)}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <p className="text-[11px] leading-relaxed text-secondary">
-                      {llmProviderStatus?.message
-                        ?? "Checking the local Codex installation and ChatGPT sign-in…"}
-                    </p>
-                    {!llmProviderStatus?.installed && (
-                      <code className="block rounded-lg bg-surface-container-high px-3 py-2 text-[10px] text-on-surface-variant select-all">
-                        npm install -g @openai/codex
-                      </code>
-                    )}
-
-                    <div className="flex flex-wrap gap-2">
-                      {!llmProviderStatus?.authenticated && (
-                        <button
-                          type="button"
-                          onClick={() => void handleStartCodexLogin()}
-                          disabled={!llmProviderStatus?.installed || startingLlmLogin || llmLoginPending}
-                          className="rounded-lg bg-accent-amber px-3 py-2 text-[11px] font-semibold text-on-primary disabled:opacity-50"
-                        >
-                          {startingLlmLogin || llmLoginPending ? "Waiting for ChatGPT…" : "Connect ChatGPT"}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => void refreshLlmProviderStatus()}
-                        disabled={loadingLlmProviderStatus}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-outline px-3 py-2 text-[11px] text-on-surface-variant disabled:opacity-50"
-                      >
-                        <RotateCw className={cn("h-3 w-3", loadingLlmProviderStatus && "animate-spin")} />
-                        Refresh
-                      </button>
-                      {pendingLlmAuthUrl && !llmProviderStatus?.authenticated && (
-                        <a
-                          href={pendingLlmAuthUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-lg border border-accent-amber/30 px-3 py-2 text-[11px] text-accent-amber"
-                        >
-                          Open sign-in link
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Conditional Base URL field */}
-                {selectedLlmPreset === "custom" && (
-                  <label className="block">
-                    <span className="text-xs font-semibold text-on-surface-variant mb-2 block">Base URL</span>
+                  ) : !customModelActive && currentPresetConfig && currentPresetConfig.defaultModels.length > 0 ? (
+                    <select
+                      id="llm-model"
+                      value={llmForm.model}
+                      onChange={(e) => {
+                        setLlmTestResult(null);
+                        updateLlm("model", e.target.value);
+                      }}
+                      className={inputClass}
+                    >
+                      {currentPresetConfig.defaultModels.map((modelId) => (
+                        <option key={modelId} value={modelId}>{modelId}</option>
+                      ))}
+                    </select>
+                  ) : (
                     <input
-                      type="url"
+                      id="llm-model"
+                      type="text"
                       autoComplete="off"
-                      placeholder="e.g. https://api.openai.com/v1"
-                      value={llmForm.base_url}
-                      onChange={(e) => updateLlm("base_url", e.target.value)}
-                      className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all"
+                      placeholder="e.g. gpt-4o or deepseek-chat"
+                      value={llmForm.model}
+                      onChange={(e) => {
+                        setLlmTestResult(null);
+                        updateLlm("model", e.target.value);
+                      }}
+                      className={inputClass}
                     />
-                  </label>
-                )}
-
-                {/* Preset-inferred non-editable Base URL details */}
-                {selectedLlmPreset !== "custom" && selectedLlmPreset !== "mock" && !isCodexSubscription && (
-                  <div className="px-4 py-2 rounded-xl bg-surface-container-low border border-outline-variant flex items-center justify-between text-xs">
-                    <span className="text-secondary font-medium">Endpoint URL:</span>
-                    <code className="text-on-surface-variant font-mono select-all text-[11px]">{llmForm.base_url}</code>
-                  </div>
-                )}
-
-                {/* API Key */}
-                {selectedLlmPreset !== "mock" && !isCodexSubscription && (
-                  <label className="block">
-                    <span className="text-xs font-semibold text-on-surface-variant mb-2 block">API key</span>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      placeholder="Paste your provider's API key here"
-                      value={llmForm.api_key}
-                      onChange={(e) => updateLlm("api_key", e.target.value)}
-                      className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all font-mono"
-                    />
-                  </label>
-                )}
-
-                {/* Model Configuration Selector (Dual-mode) */}
-                {selectedLlmPreset !== "mock" && (
-                  <label className="block">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-on-surface-variant">Model Name</span>
-                      {currentPresetConfig && currentPresetConfig.defaultModels.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLlmTestResult(null);
-                            const nextState = !customModelActive;
-                            setCustomModelActive(nextState);
-                            if (!nextState) {
-                              updateLlm("model", currentPresetConfig.defaultModels[0]);
-                            } else {
-                              updateLlm("model", "");
-                            }
-                          }}
-                          className="text-[11px] text-accent-amber hover:underline transition-all"
-                        >
-                          {customModelActive ? "Choose standard models" : "Type custom model ID"}
-                        </button>
-                      )}
-                    </div>
-
-                    {isCodexSubscription ? (
-                      <div className="relative">
-                        <select
-                          value={llmForm.model}
-                          onChange={(e) => {
-                            setLlmTestResult(null);
-                            const nextModelId = e.target.value;
-                            const nextModel = llmProviderStatus?.models.find(
-                              (model) => model.id === nextModelId,
-                            );
-                            setLlmForm((prev) => ({
-                              ...prev,
-                              model: nextModelId,
-                              reasoning_effort: prev.reasoning_effort !== "auto"
-                                && !nextModel?.supported_reasoning_efforts.includes(prev.reasoning_effort)
-                                ? "auto"
-                                : prev.reasoning_effort,
-                            }));
-                          }}
-                          disabled={!codexReady}
-                          className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50 disabled:opacity-50 appearance-none"
-                        >
-                          {!codexReady && <option value="">Connect ChatGPT to load models</option>}
-                          {llmProviderStatus?.models.map((model) => (
-                            <option key={model.id} value={model.id}>
-                              {model.display_name}{model.is_default ? " · Recommended" : ""}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
-                      </div>
-                    ) : !customModelActive && currentPresetConfig && currentPresetConfig.defaultModels.length > 0 ? (
-                      <div className="relative">
-                        <select
-                          value={llmForm.model}
-                          onChange={(e) => {
-                            setLlmTestResult(null);
-                            updateLlm("model", e.target.value);
-                          }}
-                          className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all appearance-none cursor-pointer"
-                        >
-                          {currentPresetConfig.defaultModels.map((modelId) => (
-                            <option key={modelId} value={modelId}>
-                              {modelId}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
-                      </div>
-                    ) : (
-                      <input
-                        type="text"
-                        autoComplete="off"
-                        placeholder="e.g. gpt-4o, deepseek-chat, or your custom fine-tune ID"
-                        value={llmForm.model}
-                        onChange={(e) => {
-                          setLlmTestResult(null);
-                          updateLlm("model", e.target.value);
-                        }}
-                        className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary placeholder:text-secondary/50 outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all"
-                      />
-                    )}
-                  </label>
-                )}
-
-                {isCodexSubscription && (
-                  <label className="block">
-                    <span className="text-xs font-semibold text-on-surface-variant mb-2 block">
-                      Reasoning effort
-                    </span>
-                    <div className="relative">
-                      <select
-                        value={llmForm.reasoning_effort}
-                        onChange={(e) => {
-                          setLlmTestResult(null);
-                          updateLlm("reasoning_effort", e.target.value);
-                        }}
-                        disabled={!codexReady || !selectedCodexModel}
-                        className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50 disabled:opacity-50 appearance-none"
-                      >
-                        <option value="auto">
-                          Auto · Model default
-                          {selectedCodexModel?.default_reasoning_effort
-                            ? ` (${reasoningEffortLabel(selectedCodexModel.default_reasoning_effort)})`
-                            : ""}
-                        </option>
-                        {selectedCodexModel?.supported_reasoning_efforts.map((effort) => (
-                          <option key={effort} value={effort}>
-                            {reasoningEffortLabel(effort)}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
-                    </div>
-                    <p className="mt-2 text-[11px] leading-relaxed text-secondary">
-                      Applies to every Codex-backed LLM task. Higher effort can improve difficult outputs,
-                      but usually increases response time and plan usage.
-                    </p>
-                  </label>
-                )}
-              </div>
-
-              {/* Dynamic connection check messages */}
-              <AnimatePresence mode="wait">
-                {llmTestResult && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    className={cn(
-                      "p-3.5 rounded-xl border text-xs flex items-start gap-2.5 leading-relaxed transition-all duration-200",
-                      llmTestResult.success
-                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                        : "bg-rose-500/10 border-rose-500/20 text-rose-400"
-                    )}
-                  >
-                    {llmTestResult.success ? (
-                      <Check className="w-4 h-4 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    )}
-                    <span className="select-all">{llmTestResult.message}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between border-t border-outline pt-4">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveLlm()}
-                    disabled={loading || savingLlm || (isCodexSubscription && !codexReady)}
-                    className="px-5 py-2.5 rounded-xl bg-accent-amber hover:bg-accent-amber/90 text-on-primary text-xs font-semibold uppercase tracking-wider transition-all disabled:opacity-50"
-                  >
-                    {savingLlm ? "Saving…" : "Save LLM"}
-                  </button>
-                  <span
-                    className={cn(
-                      "text-xs text-secondary transition-opacity",
-                      savedFlashLlm ? "opacity-100" : "opacity-0"
-                    )}
-                  >
-                    Saved successfully
-                  </span>
+                  )}
                 </div>
+              )}
 
+              {isCodexSubscription && (
+                <label className="block">
+                  <span className={labelClass}>Reasoning effort</span>
+                  <select
+                    value={llmForm.reasoning_effort}
+                    onChange={(e) => {
+                      setLlmTestResult(null);
+                      updateLlm("reasoning_effort", e.target.value);
+                    }}
+                    disabled={!codexReady || !selectedCodexModel}
+                    className={inputClass}
+                  >
+                    <option value="auto">
+                      Auto
+                      {selectedCodexModel?.default_reasoning_effort
+                        ? ` (${reasoningEffortLabel(selectedCodexModel.default_reasoning_effort)})`
+                        : ""}
+                    </option>
+                    {selectedCodexModel?.supported_reasoning_efforts.map((effort) => (
+                      <option key={effort} value={effort}>{reasoningEffortLabel(effort)}</option>
+                    ))}
+                  </select>
+                  <span className="mt-1.5 block text-[12px] leading-relaxed text-secondary">
+                    Higher effort can help hard outputs but is slower and uses more of your plan.
+                  </span>
+                </label>
+              )}
+
+              {renderTestResult(llmTestResult)}
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveLlm()}
+                  disabled={loading || savingLlm || (isCodexSubscription && !codexReady)}
+                  className={primaryButtonClass}
+                >
+                  {savingLlm ? "Saving…" : savedFlashLlm ? "Saved" : "Save"}
+                </button>
                 {selectedLlmPreset !== "mock" && (
                   <button
                     type="button"
                     onClick={() => void handleTestLlm()}
                     disabled={testingLlm || savingLlm || loading || (isCodexSubscription && !codexReady)}
-                    className="px-4 py-2.5 rounded-xl border border-outline hover:bg-surface-container-high/60 text-on-surface-variant hover:text-primary text-xs font-semibold transition-all disabled:opacity-50 inline-flex items-center gap-2"
+                    className={secondaryButtonClass}
                   >
-                    {testingLlm ? (
-                      <>
-                        <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                        Testing Connection...
-                      </>
-                    ) : (
-                      <>
-                        <Activity className="w-3.5 h-3.5" />
-                        Test Connection
-                      </>
-                    )}
+                    {testingLlm ? <RotateCw className="h-3.5 w-3.5 animate-spin" /> : null}
+                    {testingLlm ? "Testing…" : "Test connection"}
                   </button>
                 )}
               </div>
             </section>
 
+            <section className="mt-10 space-y-5 border-t border-outline pt-6">
+              <h2 className="text-[15px] font-semibold text-primary">Speech</h2>
 
-            {/* SECTION 2: TTS CONFIGURATION */}
-            <section className="p-6 rounded-2xl border border-outline bg-surface-container-low/50 backdrop-blur-xl shadow-xl space-y-6 relative">
-              <div className="flex items-center border-b border-outline pb-4">
-                <div className="flex items-center gap-2.5 text-accent-amber">
-                  <Volume2 className="w-5 h-5" />
-                  <h2 className="text-sm font-semibold tracking-wider uppercase font-headline">Text-to-Speech (TTS)</h2>
-                </div>
-              </div>
+              <label className="block">
+                <span className={labelClass}>Engine</span>
+                <select
+                  value={ttsForm.provider}
+                  onChange={(e) => {
+                    const local = e.target.value === "local_http";
+                    setTtsTestResult(null);
+                    setTtsForm((current) => ({ ...current, provider: e.target.value,
+                      ...(local ? { model: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit", base_url: "http://127.0.0.1:8090/v1", voice: "默认中文音色", audio_format: "wav" } : {}) }));
+                  }}
+                  className={inputClass}
+                >
+                  <option value="local_http">Local speech service</option>
+                  <option value="openai_compatible">Cloud API (OpenAI-compatible)</option>
+                </select>
+              </label>
 
-              <div className="space-y-5">
-                {/* TTS Provider Select */}
-                <label className="block">
-                  <span className="text-xs font-semibold text-on-surface-variant mb-2 block">TTS Engine</span>
-                  <div className="relative">
-                    <select
-                      value={ttsForm.provider}
-                      onChange={(e) => {
-                        const local = e.target.value === "local_http";
-                        setTtsForm((current) => ({ ...current, provider: e.target.value,
-                          ...(local ? { model: "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit", base_url: "http://127.0.0.1:8090/v1", voice: "默认中文音色", audio_format: "wav" } : {}) }));
-                      }}
-                      className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-[13px] text-primary outline-none focus:border-accent-amber/50 hover:border-accent-amber/20 transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="local_http">Local · HTTP speech service</option>
-                      <option value="openai_compatible">Remote API · OpenAI-compatible Cloud</option>
-                    </select>
-                    <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary pointer-events-none" />
-                  </div>
-                </label>
-
-                {ttsUsesLocalModels && (
-                  <div className="rounded-xl border border-outline p-4 text-xs leading-6 text-secondary">
-                    本机语音服务独立运行于 127.0.0.1:8090；请先启动 service.sh。
-                    模型切换由服务的 .env 管理，Aodcast 不下载模型。支持预设音色和 WAV，不支持克隆、风格或变速。
-                    <button type="button" onClick={() => navigate("/models")} className="block text-accent-amber">查看服务状态</button>
-                  </div>
-                )}
-                {([['model', 'Model'], ['base_url', 'Base URL'], ['api_key', 'API key'], ['voice', 'Voice']] as const).map(([field, label]) => (
-                  <label key={field} className="block">
-                    <span className="mb-2 block text-xs font-semibold text-secondary">{label}</span>
-                    <input type={field === 'api_key' ? 'password' : 'text'} autoComplete="off"
-                      value={ttsForm[field]} onChange={(e) => updateTts(field, e.target.value)}
-                      className="w-full rounded-xl border border-outline bg-surface-container-high px-4 py-2.5 text-sm text-primary" />
-                  </label>
-                ))}
-                <label className="block text-xs text-secondary">Audio format
-                  <select value={ttsForm.audio_format} disabled={ttsUsesLocalModels}
-                    onChange={(e) => updateTts('audio_format', e.target.value)}
-                    className="ml-3 rounded-lg border border-outline bg-surface-container-high p-2">
-                    <option value="wav">WAV</option>
-                    {!ttsUsesLocalModels && <option value="mp3">MP3</option>}
-                  </select>
-                </label>
-              </div>
-
-              {/* Dynamic TTS Verification Feedback */}
-              <AnimatePresence mode="wait">
-                {ttsTestResult && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    className={cn(
-                      "p-3.5 rounded-xl border text-xs flex items-start gap-2.5 leading-relaxed transition-all duration-200",
-                      ttsTestResult.success
-                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                        : "bg-rose-500/10 border-rose-500/20 text-rose-400"
-                    )}
-                  >
-                    {ttsTestResult.success ? (
-                      <Check className="w-4 h-4 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    )}
-                    <span className="select-all">{ttsTestResult.message}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Action Footer */}
-              <div className="flex items-center justify-between border-t border-outline pt-4">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveTts()}
-                    disabled={loading || savingTts}
-                    className="px-5 py-2.5 rounded-xl bg-accent-amber hover:bg-accent-amber/90 text-on-primary text-xs font-semibold uppercase tracking-wider transition-all disabled:opacity-50"
-                  >
-                    {savingTts ? "Saving…" : "Save TTS"}
-                  </button>
-                  <span
-                    className={cn(
-                      "text-xs text-secondary transition-opacity",
-                      savedFlashTts ? "opacity-100" : "opacity-0"
-                    )}
-                  >
-                    Saved successfully
+              <label className="block">
+                <span className={labelClass}>{ttsUsesLocalModels ? "Service address" : "Base URL"}</span>
+                <input type="url" autoComplete="off" value={ttsForm.base_url}
+                  onChange={(e) => updateTts("base_url", e.target.value)} className={inputClass} />
+                {ttsUsesLocalModels ? (
+                  <span className="mt-1.5 block text-[12px] leading-relaxed text-secondary">
+                    The speech service chooses its own model and supports preset voices only; pick a voice per episode.{" "}
+                    <button type="button" onClick={() => navigate("/models")} className="text-primary underline underline-offset-2">
+                      View service status
+                    </button>
                   </span>
-                </div>
+                ) : null}
+              </label>
 
+              {!ttsUsesLocalModels ? (
+                <>
+                  <label className="block">
+                    <span className={labelClass}>API key</span>
+                    <input type="password" autoComplete="off" value={ttsForm.api_key}
+                      onChange={(e) => updateTts("api_key", e.target.value)} className={cn(inputClass, "font-mono")} />
+                  </label>
+                  <div className="grid gap-4 sm:grid-cols-[1fr_1fr_120px]">
+                    <label className="block">
+                      <span className={labelClass}>Model</span>
+                      <input type="text" autoComplete="off" value={ttsForm.model}
+                        onChange={(e) => updateTts("model", e.target.value)} className={inputClass} />
+                    </label>
+                    <label className="block">
+                      <span className={labelClass}>Default voice</span>
+                      <input type="text" autoComplete="off" value={ttsForm.voice}
+                        onChange={(e) => updateTts("voice", e.target.value)} className={inputClass} />
+                    </label>
+                    <label className="block">
+                      <span className={labelClass}>Format</span>
+                      <select value={ttsForm.audio_format} onChange={(e) => updateTts("audio_format", e.target.value)} className={inputClass}>
+                        <option value="wav">WAV</option>
+                        <option value="mp3">MP3</option>
+                      </select>
+                    </label>
+                  </div>
+                </>
+              ) : null}
+
+              {renderTestResult(ttsTestResult)}
+
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => void handleSaveTts()} disabled={loading || savingTts} className={primaryButtonClass}>
+                  {savingTts ? "Saving…" : savedFlashTts ? "Saved" : "Save"}
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleTestTts()}
                   disabled={testingTts || savingTts || loading}
-                  className="px-4 py-2.5 rounded-xl border border-outline hover:bg-surface-container-high/60 text-on-surface-variant hover:text-primary text-xs font-semibold transition-all disabled:opacity-50 inline-flex items-center gap-2"
+                  className={secondaryButtonClass}
                 >
-                  {testingTts ? (
-                    <>
-                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                      Testing TTS...
-                    </>
-                  ) : (
-                    <>
-                      <Activity className="w-3.5 h-3.5" />
-                      Test Connection
-                    </>
-                  )}
+                  {testingTts ? <RotateCw className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {testingTts ? "Testing…" : "Test connection"}
                 </button>
               </div>
             </section>
 
-          </div>
+            <p className="mt-10 border-t border-outline pt-4 text-[12px] leading-relaxed text-secondary">
+              Settings and API keys are saved unencrypted in <code className="font-mono">.local-data/config/</code> on this device.
+              Changing them doesn't alter existing episodes or audio.
+            </p>
+          </>
         )}
-
-        {/* Global Error Banner */}
-        {error && (
-          <div className="p-4 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-400 text-xs flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-semibold">Operation Failed</p>
-              <p className="leading-relaxed">{error}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Global Status Manager Polling Indicator */}
-        {!error && requestState?.phase === "running" && (
-          <div className="p-4 rounded-xl border border-outline bg-surface-container-high/60 text-secondary text-xs flex items-center gap-2.5 animate-pulse">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-amber" />
-            <span>{`${Math.round(requestState.progress_percent)}% · ${requestState.message}`}</span>
-          </div>
-        )}
-
-        {/* Cohesive Footer Notice */}
-        <p className="text-[11px] text-secondary text-center leading-relaxed max-w-sm mx-auto">
-          Persisted globally in <code className="text-secondary font-mono">.local-data/config/</code>. Swapping default model presets does not re-write session-level configurations or historic audio files.
-        </p>
-
       </div>
-    </motion.div>
+    </div>
   );
 }

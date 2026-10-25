@@ -305,7 +305,7 @@ class PodcastRenderingTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
         self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
-        with self.assertRaisesRegex(ValueError, "不支持.*克隆"):
+        with self.assertRaisesRegex(ValueError, "cloning is unavailable"):
             service.render_audio(session_id, script_id=script_id)
 
     def test_explicit_preset_render_releases_old_reference_binding(self) -> None:

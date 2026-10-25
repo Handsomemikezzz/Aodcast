@@ -30,10 +30,13 @@ All notable changes to Aodcast will be documented in this file.
 - Editorial Speech Plans and Render Manifests remain in Aodcast for paragraph reuse, regeneration, and podcast assembly.
 - Final `podcast.wav` is assembled from the Render Manifest with explicit pauses, format normalization, one edge fade per segment, audible-sample RMS matching, and a sample-peak ceiling.
 - Default TTS provider is `local_http`; cloud TTS remains OpenAI-compatible only.
+- Simplified the desktop UI: no global title bar, a single "New episode" entry that opens the idea composer (Markdown import is a secondary link), one Workspace header with script actions in an overflow menu, engine-aware Voice controls, and leaner Voice, Models, Memory, and Settings pages.
+- The desktop UI, preset voice names, and user-facing runtime errors are now English. Speech sample text, voice IDs, and model-generated interview content are unchanged.
 
 ### Fixed
 
 - Chat no longer waits for suspended text animations, stream cancellation, or a background session refresh before restoring Send after completion or Stop.
+- Opening an episode no longer reports "Audio needs update" before any voice change; audio freshness compares saved voice settings by ID, not display name.
 - Native runtime readiness probes the built-in voice-preset endpoint instead of a removed model-storage route. Desktop/web launchers separately ensure the speech HTTP service is online before starting the shell.
 
 ### Removed

@@ -228,12 +228,10 @@ export function ConversationDrawer({
       >
         {/* Header */}
         <div className="px-4 py-3 border-b border-outline shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-secondary/70">
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>{isSourceDiscussion ? "Source Discussion" : "Interview Transcript"}</span>
-            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-surface-container-high/60 text-secondary">
-              {turns.length} turns
-            </span>
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-primary">
+            <MessageSquare className="w-4 h-4 text-secondary" />
+            <span>{isSourceDiscussion ? "Source discussion" : "Conversation"}</span>
+            <span className="text-[12px] font-normal tabular-nums text-secondary">{turns.length}</span>
           </div>
           <button
             type="button"
@@ -250,11 +248,11 @@ export function ConversationDrawer({
           <span className="flex items-center gap-1.5 text-secondary/80 min-w-0">
             <Brain className="w-3 h-3 text-accent-amber shrink-0" />
             {memoryDisabled ? (
-              <span className="truncate">本集不使用记忆</span>
+              <span className="truncate">Memory off for this episode</span>
             ) : lastReferencedCount > 0 ? (
-              <span className="truncate">本轮参考了 {lastReferencedCount} 条记忆</span>
+              <span className="truncate">Last reply used {lastReferencedCount} {lastReferencedCount === 1 ? "memory" : "memories"}</span>
             ) : (
-              <span className="truncate">记忆已启用</span>
+              <span className="truncate">Memory on</span>
             )}
           </span>
           <button
@@ -263,7 +261,7 @@ export function ConversationDrawer({
             disabled={memoryBusy}
             className="shrink-0 rounded-md border border-outline px-2 py-0.5 text-[10px] font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
           >
-            {memoryBusy ? "…" : memoryDisabled ? "启用记忆" : "本次不使用"}
+            {memoryBusy ? "…" : memoryDisabled ? "Turn on" : "Turn off for this episode"}
           </button>
         </div>
 
@@ -330,7 +328,7 @@ export function ConversationDrawer({
           <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-bold uppercase tracking-wider text-accent-amber">
-                在脚本中引用这些过往经历?
+                Use these past experiences in the script?
               </p>
               <button
                 type="button"
@@ -342,7 +340,7 @@ export function ConversationDrawer({
               </button>
             </div>
             <p className="text-xs text-secondary leading-relaxed">
-              这些记忆只有在你授权后,才会被用于本集脚本。
+              They are only used in this episode’s script if you allow it.
             </p>
             <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
               {followUpState.candidates.map((candidate) => {
@@ -354,7 +352,7 @@ export function ConversationDrawer({
                   >
                     <div className="min-w-0">
                       <p className="text-[13px] font-medium text-primary truncate">
-                        {candidate.sensitive ? "（敏感）" : ""}
+                        {candidate.sensitive ? "(Sensitive) " : ""}
                         {candidate.name}
                       </p>
                       <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
@@ -370,7 +368,7 @@ export function ConversationDrawer({
                           : "border-outline text-secondary hover:bg-primary/5 hover:text-primary")
                       }
                     >
-                      {authorized ? "已授权" : "授权使用"}
+                      {authorized ? "Allowed" : "Allow"}
                     </button>
                   </div>
                 );
@@ -393,7 +391,7 @@ export function ConversationDrawer({
                 ) : (
                   <Sparkles className="w-4 h-4 shrink-0" />
                 )}
-                生成脚本
+                Generate script
               </button>
             </div>
           </div>
@@ -404,7 +402,7 @@ export function ConversationDrawer({
           <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-bold uppercase tracking-wider text-red-400">
-                忘记哪条记忆?
+                Which memory should be forgotten?
               </p>
               <button
                 type="button"
@@ -416,7 +414,7 @@ export function ConversationDrawer({
               </button>
             </div>
             <p className="text-xs text-secondary leading-relaxed">
-              找到以下相关记忆，请选择要删除的条目。删除后不可恢复。
+              Choose the memory to delete. This can’t be undone.
             </p>
             <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
               {followUpState.candidates.map((candidate) => (
@@ -426,7 +424,7 @@ export function ConversationDrawer({
                 >
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium text-primary truncate">
-                      {candidate.sensitive ? "（敏感）" : ""}
+                      {candidate.sensitive ? "(Sensitive) " : ""}
                       {candidate.name}
                     </p>
                     <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
@@ -454,7 +452,7 @@ export function ConversationDrawer({
           <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[11px] font-bold uppercase tracking-wider text-accent-amber">
-                替代哪条旧记忆?
+                Which memory does this replace?
               </p>
               <button
                 type="button"
@@ -466,7 +464,7 @@ export function ConversationDrawer({
               </button>
             </div>
             <p className="text-xs text-secondary leading-relaxed">
-              新记忆已开始创建。请选择要被替代（移入历史）的旧条目。
+              The new memory is being saved. Choose the older one to move to history.
             </p>
             <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
               {followUpState.candidates.map((candidate) => (
@@ -509,9 +507,6 @@ export function ConversationDrawer({
                 {followUpError}
               </div>
             ) : null}
-            <p className="text-[10px] text-secondary/60 px-1">
-              Add more detail or ask a follow-up
-            </p>
             <div className="flex items-end gap-2 rounded-xl border border-outline bg-surface-container-low px-3 py-2 focus-within:border-accent-amber/25 transition-colors">
               <textarea
                 value={followUpInput}
@@ -522,7 +517,7 @@ export function ConversationDrawer({
                     void handleFollowUpSubmit();
                   }
                 }}
-                placeholder="Continue the conversation…"
+                placeholder="Add detail or ask a follow-up…"
                 rows={2}
                 disabled={followUpState.kind === "submitting"}
                 className="flex-1 bg-transparent text-[13px] text-primary placeholder:text-outline/60 outline-none resize-none leading-relaxed disabled:opacity-50"
@@ -531,7 +526,7 @@ export function ConversationDrawer({
                 type="button"
                 onClick={() => void handleFollowUpSubmit()}
                 disabled={!followUpInput.trim() || followUpState.kind === "submitting"}
-                className="p-2 theme-accent-gradient text-on-primary rounded-lg hover:scale-105 active:scale-95 transition-all shadow-sm disabled:opacity-30 disabled:scale-100 shrink-0 cursor-pointer"
+                className="p-2 bg-primary text-background rounded-lg transition-opacity disabled:opacity-30 shrink-0"
                 aria-label="Submit follow-up"
               >
                 {followUpState.kind === "submitting" ? (

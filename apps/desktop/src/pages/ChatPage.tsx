@@ -1,38 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import {
-  AlertCircle,
-  BookOpen,
-  CheckCircle2,
-  Circle,
-  Lightbulb,
-  Loader2,
-  PanelLeft,
-  PanelLeftClose,
-  PencilLine,
-  Plus,
-  Search,
-  Send,
-  Sparkles,
-  Square,
-  Target,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, FileText, Loader2, Plus, Send, Square } from "lucide-react";
 import { SafeMarkdown } from "../components/SafeMarkdown";
-import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ComposerModelPicker } from "../components/ComposerModelPicker";
 import {
   PendingAttachmentTray,
   TurnAttachments,
   filesFromDataTransfer,
 } from "../components/ChatAttachments";
-import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
+import { SessionTopicEditor } from "../components/SessionTopicEditor";
 import { useBridge } from "../lib/BridgeContext";
 import {
   ChatAttachment,
   SessionProject,
   Readiness,
-  PromptInput,
   RequestState,
   TranscriptRecord,
   TranscriptTurn,
@@ -54,6 +35,13 @@ import {
   withRequestStateFallback,
 } from "../lib/requestState";
 
+const COVERAGE_ITEMS: { key: "topic_context" | "core_viewpoint" | "example_or_detail" | "conclusion"; label: string }[] = [
+  { key: "topic_context", label: "Background" },
+  { key: "core_viewpoint", label: "Main point" },
+  { key: "example_or_detail", label: "Examples and details" },
+  { key: "conclusion", label: "Takeaway" },
+];
+
 export function ChatPage({
   onRefresh,
 }: {
@@ -66,19 +54,11 @@ export function ChatPage({
 
   const [project, setProject] = useState<SessionProject | null>(null);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
-  const [promptInput, setPromptInput] = useState<PromptInput | null>(null);
   const [loading, setLoading] = useState(Boolean(sessionId));
   const [inputValue, setInputValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, setRequestState] = useState<RequestState | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyProjects, setHistoryProjects] = useState<SessionProject[]>([]);
-  const [historyQuery, setHistoryQuery] = useState("");
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
-  const [editingTopic, setEditingTopic] = useState("");
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyActionId, setHistoryActionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const landingInputRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLDivElement>(null);
@@ -96,12 +76,11 @@ export function ChatPage({
   const submittingRef = useRef(false);
   // True only while submitReplyStream is in flight — drives Send↔Stop (not generate_script).
   const [replyStreaming, setReplyStreaming] = useState(false);
+  const [generatingScript, setGeneratingScript] = useState(false);
   const replyStreamAbortRef = useRef<AbortController | null>(null);
   const replyRunRef = useRef(0);
   const consumedInitialReplyRef = useRef<string | null>(null);
-  const historyRequestIdRef = useRef(0);
   const optimisticTranscriptRef = useRef<TranscriptRecord | null>(null);
-  const [sessionToDelete, setSessionToDelete] = useState<SessionProject | null>(null);
 
   const routeState = location.state as { initialReply?: string; initialAttachments?: ChatAttachment[] } | null;
   const initialReply = typeof routeState?.initialReply === "string" ? routeState.initialReply : "";
@@ -157,30 +136,8 @@ export function ChatPage({
     }
   };
 
-  const loadHistory = async (searchValue = historyQuery) => {
-    const requestId = ++historyRequestIdRef.current;
-    try {
-      setHistoryLoading(true);
-      const list = await bridge.listProjects({
-        search: searchValue.trim() || undefined,
-        includeDeleted: false,
-      });
-      if (requestId !== historyRequestIdRef.current) return;
-      setHistoryProjects(
-        list.filter((entry) => !entry.session.deleted_at),
-      );
-    } catch (err) {
-      if (requestId !== historyRequestIdRef.current) return;
-      setError(getErrorMessage(err, "Failed to load chat history."));
-      setRequestState(getErrorRequestState(err));
-    } finally {
-      if (requestId !== historyRequestIdRef.current) return;
-      setHistoryLoading(false);
-    }
-  };
-
   const refreshWorkspace = async () => {
-    await Promise.allSettled([fetchProject(), loadHistory(), onRefresh()]);
+    await Promise.allSettled([fetchProject(), onRefresh()]);
   };
 
   /** Align transcript after Stop without flipping the page into the loading shell. */
@@ -280,14 +237,6 @@ export function ChatPage({
   }, [sessionId, bridge]);
 
   useEffect(() => {
-    const delayMs = historyQuery.trim() ? 250 : 0;
-    const handle = window.setTimeout(() => {
-      void loadHistory(historyQuery);
-    }, delayMs);
-    return () => window.clearTimeout(handle);
-  }, [bridge, historyQuery]);
-
-  useEffect(() => {
     submittingRef.current = submitting;
   }, [submitting]);
 
@@ -357,7 +306,6 @@ export function ChatPage({
       const result = await bridge.startInterview(sessionId);
       setProject(result.project);
       setReadiness(result.readiness);
-      setPromptInput(result.prompt_input);
       setRequestState(
         withRequestStateFallback(
           result.request_state,
@@ -470,7 +418,6 @@ export function ChatPage({
       replyText.finish();
       setProject(result.project);
       setReadiness(result.readiness);
-      setPromptInput(result.prompt_input);
       setRequestState(
         withRequestStateFallback(
           result.request_state,
@@ -479,9 +426,9 @@ export function ChatPage({
       );
       optimisticTranscriptRef.current = null;
       // The SSE final payload is already the source of truth for this turn.
-      // Refresh navigation/history in the background so a slow ancillary request
+      // Refresh the episode list in the background so a slow ancillary request
       // cannot keep the composer stuck on its Stop state.
-      void Promise.allSettled([loadHistory(), onRefresh()]);
+      void onRefresh();
     } catch (err) {
       // Stop generation: keep user turn, drop partial assistant, sync from server.
       if (isAbortError(err)) {
@@ -548,6 +495,7 @@ export function ChatPage({
     if (!sessionId || submitting) return;
 
     setSubmitting(true);
+    setGeneratingScript(true);
     setError(null);
     setRequestState({
       operation: "generate_script",
@@ -590,404 +538,161 @@ export function ChatPage({
       );
     } finally {
       setSubmitting(false);
+      setGeneratingScript(false);
     }
   };
-
-  const handleRenameSession = async (targetSessionId: string, nextTopic: string) => {
-    if (!nextTopic.trim()) {
-      setEditingSessionId(null);
-      return;
-    }
-    setHistoryActionId(targetSessionId);
-    setError(null);
-    setRequestState({
-      operation: "rename_session",
-      phase: "running",
-      progress_percent: 0,
-      message: "Renaming chat...",
-    });
-    try {
-      const updated = await bridge.renameSession(targetSessionId, nextTopic.trim());
-      if (updated.session.session_id === sessionId) {
-        setProject(updated);
-      }
-      await refreshWorkspace();
-      setRequestState(buildRequestState("rename_session", "succeeded", "Chat renamed."));
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to rename chat."));
-      setRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("rename_session", "failed", "Failed to rename chat."),
-        ),
-      );
-    } finally {
-      setHistoryActionId(null);
-      setEditingSessionId(null);
-    }
-  };
-
-  const handleDeleteSession = async (target: SessionProject) => {
-    setHistoryActionId(target.session.session_id);
-    setError(null);
-    setRequestState({
-      operation: "delete_session",
-      phase: "running",
-      progress_percent: 0,
-      message: "Deleting chat...",
-    });
-    try {
-      const updated = await bridge.deleteSession(target.session.session_id);
-      if (updated.session.session_id === sessionId) {
-        // Leaving this page skips refreshWorkspace, so refresh the shared episode list here.
-        await onRefresh();
-        navigate("/chat");
-      } else {
-        await refreshWorkspace();
-      }
-      setRequestState(buildRequestState("delete_session", "succeeded", "Chat deleted."));
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to delete chat."));
-      setRequestState(
-        withRequestStateFallback(
-          getErrorRequestState(err),
-          buildRequestState("delete_session", "failed", "Failed to delete chat."),
-        ),
-      );
-    } finally {
-      setHistoryActionId(null);
-    }
-  };
-
-  const renderWithDialog = (content: JSX.Element) => (
-    <>
-      {content}
-      <ConfirmDialog
-        open={sessionToDelete !== null}
-        title="Delete chat?"
-        message={
-          sessionToDelete
-            ? `Move "${sessionToDelete.session.topic || "Untitled"}" to trash?`
-            : ""
-        }
-        onClose={() => setSessionToDelete(null)}
-        actions={[
-          {
-            label: "Cancel",
-            onClick: () => setSessionToDelete(null),
-          },
-          {
-            label: "Move to trash",
-            onClick: () => {
-              const target = sessionToDelete;
-              setSessionToDelete(null);
-              if (!target) return;
-              void handleDeleteSession(target);
-            },
-            variant: "danger",
-          },
-        ]}
-      />
-    </>
-  );
-
-  const historyAside =
-    historyOpen && (
-      <aside className="w-[300px] shrink-0 border-r border-outline bg-surface flex flex-col min-h-0">
-        <div className="p-3 border-b border-outline space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">
-              Chats
-            </span>
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(false)}
-              className="p-1.5 rounded-md text-secondary hover:bg-surface-container-high hover:text-primary"
-              aria-label="Hide history"
-            >
-              <PanelLeftClose className="w-4 h-4" />
-            </button>
-          </div>
-          <label className="flex items-center gap-2 rounded-md border border-outline bg-background px-2.5 py-2">
-            <Search className="w-4 h-4 text-secondary shrink-0" />
-            <input
-              value={historyQuery}
-              onChange={(event) => setHistoryQuery(event.target.value)}
-              placeholder="Search chats"
-              className="w-full bg-transparent text-[13px] outline-none placeholder:text-outline"
-            />
-          </label>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 mac-scrollbar">
-          {historyLoading ? (
-            <div className="flex items-center gap-2 px-2 py-4 text-xs text-secondary">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading chats...
-            </div>
-          ) : historyProjects.length === 0 ? (
-            <p className="px-2 py-4 text-xs text-secondary text-center">
-              No chats yet.
-            </p>
-          ) : (
-            historyProjects.map((p) => {
-              const isCurrent = p.session.session_id === sessionId;
-              const isEditing = editingSessionId === p.session.session_id;
-
-              return (
-                <div
-                  key={p.session.session_id}
-                  className={cn(
-                    "rounded-md border px-2 py-2 transition-colors",
-                    isCurrent ? "border-primary/20 bg-primary/5" : "border-transparent hover:bg-surface-container-high",
-                  )}
-                >
-                  {isEditing ? (
-                    <div className="w-full flex items-center gap-2 mb-2">
-                      <input
-                        autoFocus
-                        value={editingTopic}
-                        onChange={(e) => setEditingTopic(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            void handleRenameSession(p.session.session_id, editingTopic);
-                          } else if (e.key === "Escape") {
-                            setEditingSessionId(null);
-                          }
-                        }}
-                        onBlur={() => setEditingSessionId(null)}
-                        className="flex-1 min-w-0 bg-background text-[13px] text-primary border border-primary/30 rounded px-2 py-1 outline-none focus:border-primary"
-                      />
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigate(`/studio/${p.session.session_id}?panel=conversation`);
-                        setHistoryOpen(false);
-                      }}
-                      className="w-full text-left"
-                    >
-                      <p className="text-[13px] font-medium truncate text-primary">{p.session.topic || "Untitled"}</p>
-                      <p className="text-[10px] text-outline truncate mt-0.5">
-                        {new Date(p.session.updated_at).toLocaleDateString()}
-                      </p>
-                    </button>
-                  )}
-                  <div className="mt-2 flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingSessionId(p.session.session_id);
-                        setEditingTopic(p.session.topic);
-                      }}
-                      disabled={historyActionId === p.session.session_id}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50"
-                    >
-                      <PencilLine className="w-3.5 h-3.5" />
-                      Rename
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSessionToDelete(p)}
-                      disabled={historyActionId === p.session.session_id}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary disabled:opacity-50 text-red-500/80 hover:text-red-500"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </aside>
-    );
-
-  const chatToolbar = (
-    <div className="h-11 shrink-0 border-b border-outline flex items-center gap-2 px-3 bg-background/90 backdrop-blur-md">
-      <button
-        type="button"
-        onClick={() => setHistoryOpen((v) => !v)}
-        className="p-2 rounded-md text-secondary hover:bg-surface-container-high hover:text-primary transition-colors"
-        aria-label={historyOpen ? "Hide chat history" : "Show chat history"}
-        title="Chat history"
-      >
-        {historyOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
-      </button>
-      <button
-        type="button"
-        onClick={() => navigate("/chat")}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-secondary hover:bg-surface-container-high hover:text-primary transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-        New chat
-      </button>
-      <div className="flex-1" />
-      <QuickSettingsPopover onConfigChange={ensureLlmReady} />
-    </div>
-  );
 
   if (loading && sessionId) {
-    return renderWithDialog(
-      <div className="flex h-full w-full overflow-hidden">
-        {historyAside}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {chatToolbar}
-          <div className="flex-1 flex items-center justify-center text-secondary text-sm">Loading workspace…</div>
-        </div>
-      </div>,
+    return (
+      <div className="flex h-full items-center justify-center text-secondary text-sm">
+        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+        Loading conversation…
+      </div>
     );
   }
 
   if (!sessionId) {
-    return renderWithDialog(
-      <div className="flex h-full w-full overflow-hidden">
-        {historyAside}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {chatToolbar}
-          <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--color-accent-amber)_6%,transparent),transparent_45%)]">
-            <div className="w-full max-w-2xl flex flex-col items-center gap-6">
-              <h2 className="text-3xl sm:text-4xl font-headline font-bold text-center tracking-wide leading-tight select-none bg-gradient-to-b from-primary via-primary to-primary/40 bg-clip-text text-transparent">
-                今天你想聊什么?
-              </h2>
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center px-6 py-10">
+        <div className="w-full max-w-2xl flex flex-col items-center gap-8">
+          <h1 className="text-3xl font-headline font-semibold text-center text-primary select-none">
+            What’s this episode about?
+          </h1>
 
-              <div className="w-full flex flex-col gap-2 mt-4">
-                {landingError ? (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
-                    <p>{landingError}</p>
-                    {showLlmSetupAction ? (
-                      <button
-                        type="button"
-                        onClick={() => navigate("/settings")}
-                        className="mt-3 rounded-lg border border-accent-amber/30 px-3 py-1.5 text-[12px] font-medium text-accent-amber hover:bg-accent-amber/10"
-                      >
-                        Open Settings
-                      </button>
-                    ) : null}
-                  </div>
+          <div className="w-full flex flex-col gap-3">
+            {landingError ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-center text-sm text-red-700 dark:text-red-300">
+                <p>{landingError}</p>
+                {showLlmSetupAction ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate("/settings")}
+                    className="mt-3 rounded-lg border border-outline px-3 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/5"
+                  >
+                    Open Settings
+                  </button>
                 ) : null}
-                <div
-                  {...attachmentDropProps("landing")}
-                  className={cn(
-                    "flex flex-col gap-2 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl px-3.5 pt-2.5 pb-2 shadow-[0_20px_50px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.02)]",
-                    "focus-within:border-accent-amber/35 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.3),0_0_20px_rgba(242,191,87,0.06)] transition-all duration-300",
-                  )}
+              </div>
+            ) : null}
+            <div
+              {...attachmentDropProps("landing")}
+              className="flex flex-col gap-2 rounded-2xl border border-outline bg-surface-container-low px-3.5 pt-3 pb-2 transition-colors focus-within:border-primary/20"
+            >
+              <PendingAttachmentTray
+                items={landingAttachments}
+                onRemove={(localId) => removeAttachment("landing", localId)}
+                disabled={landingSubmitting}
+              />
+              <div
+                ref={landingInputRef}
+                contentEditable={!landingSubmitting}
+                suppressContentEditableWarning
+                onInput={(e) => setLandingInput(e.currentTarget.innerText)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleLandingCreate();
+                  }
+                }}
+                onPaste={handlePaste("landing")}
+                data-placeholder="An idea, a story, or a question you want to talk through"
+                aria-label="Episode idea"
+                className="w-full min-h-[52px] max-h-[200px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[15px] text-primary py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
+              />
+              {attachmentError ? (
+                <p className="px-1 text-[12px] text-red-600 dark:text-red-400">{attachmentError}</p>
+              ) : null}
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  ref={landingFileInputRef}
+                  type="file"
+                  multiple
+                  accept={ATTACHMENT_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    addAttachments("landing", Array.from(e.target.files ?? []));
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => landingFileInputRef.current?.click()}
+                  disabled={landingSubmitting}
+                  className="p-1.5 text-secondary hover:text-primary hover:bg-primary/5 rounded-lg transition-colors shrink-0 disabled:opacity-30"
+                  aria-label="Attach images or files"
+                  title="Attach images or files"
                 >
-                  <PendingAttachmentTray
-                    items={landingAttachments}
-                    onRemove={(localId) => removeAttachment("landing", localId)}
+                  <Plus className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <ComposerModelPicker
                     disabled={landingSubmitting}
+                    onConfigChange={() => void ensureLlmReady()}
                   />
-                  <div
-                    ref={landingInputRef}
-                    contentEditable={!landingSubmitting}
-                    suppressContentEditableWarning
-                    onInput={(e) => setLandingInput(e.currentTarget.innerText)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void handleLandingCreate();
-                      }
-                    }}
-                    onPaste={handlePaste("landing")}
-                    data-placeholder="今天你想聊什么?"
-                    className="w-full min-h-[28px] max-h-[160px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[14px] text-primary placeholder:text-outline/75 py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
-                  />
-                  {attachmentError ? (
-                    <p className="px-1 text-[12px] text-red-400">{attachmentError}</p>
-                  ) : null}
-                  <div className="flex items-center justify-between gap-2">
-                    <input
-                      ref={landingFileInputRef}
-                      type="file"
-                      multiple
-                      accept={ATTACHMENT_ACCEPT}
-                      className="hidden"
-                      onChange={(e) => {
-                        addAttachments("landing", Array.from(e.target.files ?? []));
-                        e.target.value = "";
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => landingFileInputRef.current?.click()}
-                      disabled={landingSubmitting}
-                      className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0 disabled:opacity-30"
-                      aria-label="添加图片或文件"
-                      title="添加图片或文件"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <ComposerModelPicker
-                        disabled={landingSubmitting}
-                        onConfigChange={() => void ensureLlmReady()}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void handleLandingCreate()}
-                        disabled={(!landingInput.trim() && landingAttachments.length === 0) || landingSubmitting}
-                        className="p-1.5 theme-accent-gradient text-on-primary rounded-full hover:scale-105 active:scale-95 shadow-md shadow-accent-amber/15 transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed shrink-0"
-                        aria-label="Start chat"
-                      >
-                        {landingSubmitting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Send className="w-4 h-4 text-on-primary" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleLandingCreate()}
+                    disabled={(!landingInput.trim() && landingAttachments.length === 0) || landingSubmitting}
+                    className="p-2 bg-primary text-background rounded-full transition-opacity disabled:opacity-20 disabled:cursor-not-allowed shrink-0"
+                    aria-label="Start chat"
+                  >
+                    {landingSubmitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => navigate("/episodes/new/markdown")}
+              className="mx-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
+            >
+              <FileText className="h-4 w-4" />
+              Already written it? Import Markdown
+            </button>
           </div>
         </div>
-      </div>,
+      </div>
     );
   }
 
   if (!project) {
-    return renderWithDialog(
-      <div className="flex h-full w-full overflow-hidden">
-        {historyAside}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {chatToolbar}
-          <div className="flex-1 flex flex-col items-center justify-center text-secondary gap-4 px-6">
-            {error ? (
-              <>
-                <p className="text-sm text-red-400">{error}</p>
-                <button
-                  type="button"
-                  onClick={() => void fetchProject()}
-                  className="text-sm font-medium text-accent-amber hover:underline"
-                >
-                  Retry
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="text-sm">Session not found.</p>
-                <button
-                  type="button"
-                  onClick={() => navigate("/chat")}
-                  className="text-sm font-medium text-accent-amber hover:underline"
-                >
-                  Back to chat
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>,
+    return (
+      <div className="flex h-full flex-col items-center justify-center text-secondary gap-4 px-6">
+        {error ? (
+          <>
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <button
+              type="button"
+              onClick={() => void fetchProject()}
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              Retry
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm">Episode not found.</p>
+            <button
+              type="button"
+              onClick={() => navigate("/episodes")}
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              Back to Episodes
+            </button>
+          </>
+        )}
+      </div>
     );
   }
 
   const turns = Array.isArray(project.transcript?.turns) ? project.transcript.turns : [];
   const state = project.session.state;
   const isFinished = state === "ready_to_generate" || state === "script_generated" || state === "script_edited" || state === "completed";
+  const hasGeneratedScript = state === "script_generated" || state === "script_edited" || state === "completed";
   const isDeletedSession = Boolean(project.session.deleted_at);
   const hasUserTurns = turns.some((turn) => turn.speaker === "user");
   // Keep the dock visible during the first reply stream: landing → studio leaves
@@ -1000,6 +705,13 @@ export function ChatPage({
     && !submitting
     && streamingMessage === null;
   const showChatComposer = !isDeletedSession && !showStartInterview;
+  // Source-backed episodes can generate before any reply; interviews need at least one answer.
+  const canGenerateScript = hasUserTurns || isFinished;
+  const scriptOffered = !isDeletedSession && Boolean(readiness?.can_offer_script) && state === "interview_in_progress";
+  const coverage = readiness
+    ? COVERAGE_ITEMS.map((item) => ({ ...item, done: Boolean(readiness[item.key]) }))
+    : [];
+  const coveredCount = coverage.filter((item) => item.done).length;
 
   const openLatestScript = async () => {
     if (!sessionId) return;
@@ -1029,45 +741,73 @@ export function ChatPage({
     }
   };
 
-  return renderWithDialog(
-    <div className="flex flex-row h-full w-full relative overflow-hidden">
-      {historyAside}
-      {/* 1. Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative min-h-0">
-        {chatToolbar}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto w-full px-6 lg:px-12 scroll-smooth chat-container">
-          <div className="max-w-4xl flex flex-col py-8 gap-6 pb-64 mx-auto">
+  return (
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-outline px-3">
+        <button
+          type="button"
+          onClick={() => navigate("/episodes")}
+          aria-label="Back to Episodes"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <SessionTopicEditor
+            sessionId={project.session.session_id}
+            topic={project.session.topic || "Untitled Episode"}
+            density="header"
+            disabled={isDeletedSession || submitting}
+            onRenamed={async (updated) => {
+              setProject(updated);
+              await onRefresh();
+            }}
+          />
+        </div>
+        {coverage.length ? (
+          <span
+            className="hidden shrink-0 items-center gap-1.5 text-[12px] text-secondary sm:inline-flex"
+            title={coverage.map((item) => `${item.done ? "✓" : "·"} ${item.label}`).join("\n")}
+          >
+            <span className="flex gap-0.5" aria-hidden="true">
+              {coverage.map((item) => (
+                <span
+                  key={item.key}
+                  className={cn("h-1.5 w-3 rounded-full", item.done ? "bg-accent-amber" : "bg-primary/10")}
+                />
+              ))}
+            </span>
+            {coveredCount} of {coverage.length} points covered
+          </span>
+        ) : null}
+      </header>
 
-            {/* Header Area (Left-aligned, document style) */}
-            <div className="pb-6 border-b border-outline">
-              <h1 className="text-2xl font-headline font-bold text-primary mb-2">Chat</h1>
-              <p className="text-secondary text-sm">
-                {project.source
-                  ? "围绕导入的文章补充重点、口语表达与听众目标；原文仍然是脚本的事实来源。"
-                  : "通过自然的对话打磨你的选题大纲与内容细节；脚本会依据此处的讨论自动提炼。"}
-              </p>
-              {project.source ? (
-                <details className="mt-3 rounded-xl border border-accent-amber/25 bg-accent-amber/8 px-3 py-2 text-xs text-secondary">
-                  <summary className="flex min-h-7 cursor-pointer items-center font-medium text-accent-amber">
-                    已导入 Markdown：{project.source.title} · v{project.source.version}
-                  </summary>
-                  <div className="mt-2 max-h-64 overflow-y-auto border-t border-accent-amber/15 pt-3 mac-scrollbar">
-                    <div className="prose prose-sm prose-theme max-w-none text-[12px] leading-5">
-                      <SafeMarkdown>{project.source.raw_markdown}</SafeMarkdown>
-                    </div>
+      <div className="relative flex-1 min-h-0">
+        <div ref={scrollRef} className="h-full overflow-y-auto w-full px-6 lg:px-12 scroll-smooth chat-container">
+          <div className="max-w-3xl flex flex-col pt-6 gap-6 pb-56 mx-auto">
+            {project.source ? (
+              <details className="rounded-xl border border-outline px-3 py-2 text-xs text-secondary">
+                <summary className="flex min-h-7 cursor-pointer items-center gap-1.5 font-medium text-primary">
+                  <FileText className="h-3.5 w-3.5 text-secondary" />
+                  Source: {project.source.title} · v{project.source.version}
+                  <span className="font-normal text-secondary">(the script stays faithful to it)</span>
+                </summary>
+                <div className="mt-2 max-h-64 overflow-y-auto border-t border-outline pt-3 mac-scrollbar">
+                  <div className="prose prose-sm prose-theme max-w-none text-[12px] leading-5">
+                    <SafeMarkdown>{project.source.raw_markdown}</SafeMarkdown>
                   </div>
-                </details>
-              ) : null}
-            </div>
+                </div>
+              </details>
+            ) : null}
 
             {showStartInterview && (
               <div className="py-8">
                 <button
                   onClick={handleStart}
                   disabled={submitting}
-                  className="px-5 py-2.5 theme-accent-gradient text-on-primary rounded-xl text-sm font-semibold transition-all hover:scale-[1.02] shadow-sm disabled:opacity-50"
+                  className="px-5 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold transition-opacity disabled:opacity-50"
                 >
-                  开始访谈流程
+                  Start interview
                 </button>
               </div>
             )}
@@ -1075,13 +815,13 @@ export function ChatPage({
             {/* Chat History: user bubbles right, assistant plain left */}
             <div className="flex flex-col gap-6">
               {error && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
                   {error}
                   {showLlmSetupAction ? (
                     <button
                       type="button"
                       onClick={() => navigate("/settings")}
-                      className="ml-3 rounded-md border border-accent-amber/30 px-2 py-1 text-[12px] font-medium text-accent-amber hover:bg-accent-amber/10"
+                      className="ml-3 rounded-md border border-outline px-2 py-1 text-[12px] font-medium text-primary hover:bg-primary/5"
                     >
                       Open Settings
                     </button>
@@ -1101,21 +841,13 @@ export function ChatPage({
 
                 if (!isAgent) {
                   return (
-                    <div
-                      key={i}
-                      className="flex w-full justify-end animate-in fade-in duration-300"
-                    >
-                      <div
-                        className={cn(
-                          "max-w-[min(85%,28rem)] rounded-2xl rounded-tr-sm",
-                          "border border-accent-amber/20 bg-accent-amber/8 px-4.5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.15)]",
-                        )}
-                      >
+                    <div key={i} className="flex w-full justify-end">
+                      <div className="max-w-[min(85%,32rem)] rounded-2xl rounded-tr-md bg-primary/[0.05] px-4 py-2.5">
                         <TurnAttachments sessionId={project.session.session_id} attachments={turn.attachments} />
                         {cleanContent ? (
                           <div
                             className={cn(
-                              "text-[14px] leading-relaxed text-accent-amber prose prose-sm prose-theme max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
+                              "text-[14px] leading-relaxed text-primary prose prose-sm prose-theme max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
                               turn.attachments?.length ? "mt-2" : "",
                             )}
                           >
@@ -1128,116 +860,63 @@ export function ChatPage({
                 }
 
                 return (
-                  <div
-                    key={i}
-                    className="flex w-full justify-start animate-in fade-in duration-300"
-                  >
-                    <div className="max-w-[min(92%,40rem)] space-y-2.5 bg-surface-container-low/60 border border-outline rounded-2xl p-4.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.01),0_4px_20px_rgba(0,0,0,0.15)]">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
-                        <span className="font-headline font-semibold text-[13px] text-primary">The Archivist</span>
-                      </div>
-                      <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
-                        <div className="prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                          <SafeMarkdown>{cleanContent}</SafeMarkdown>
-                        </div>
-                      </div>
-                      {insight ? (
-                        <div className="mt-3 bg-accent-amber-container text-accent-amber text-[13px] px-4 py-3.5 rounded-xl border border-accent-amber/20 flex items-start gap-3">
-                          <Lightbulb className="w-4 h-4 mt-0.5 text-accent-amber shrink-0 animate-pulse" />
-                          <p className="italic opacity-90">{insight}</p>
-                        </div>
-                      ) : null}
+                  <div key={i} className="w-full">
+                    <div className="text-[14px] leading-relaxed text-on-surface prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                      <SafeMarkdown>{cleanContent}</SafeMarkdown>
                     </div>
+                    {insight ? (
+                      <p className="mt-3 border-l-2 border-accent-amber/50 pl-3 text-[13px] text-secondary">{insight}</p>
+                    ) : null}
                   </div>
                 );
               })}
 
               {/* Streaming Content */}
               {streamingMessage !== null && (
-                <div className="flex w-full justify-start animate-in fade-in duration-300">
-                  <div className="max-w-[min(92%,40rem)] space-y-2.5 bg-surface-container-low/60 border border-outline rounded-2xl p-4.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.01),0_4px_20px_rgba(0,0,0,0.15)]">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-accent-amber shrink-0" />
-                      <span className="font-headline font-semibold text-[13px] text-primary">The Archivist</span>
-                    </div>
-                    <div className="text-[14px] leading-relaxed text-on-surface pl-0.5">
-                      <div className="prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                        <SafeMarkdown>{streamingMessage || "..."}</SafeMarkdown>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Loading Indicator — left-aligned like assistant */}
-              {submitting && state === "interview_in_progress" && streamingMessage === null && (
-                <div className="flex w-full justify-start gap-3 pt-1">
-                  <div className="flex items-center gap-2 text-secondary bg-surface-container-low/60 border border-outline rounded-2xl px-4.5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.1)]">
-                    <Sparkles className="w-4 h-4 text-accent-amber shrink-0 animate-pulse" />
-                    <div className="flex items-center gap-1.5 h-6">
-                      <div className="w-1.5 h-1.5 rounded-full bg-accent-amber/50 animate-bounce" />
-                      <div className="w-1.5 h-1.5 rounded-full bg-accent-amber/50 animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-1.5 h-1.5 rounded-full bg-accent-amber/50 animate-bounce [animation-delay:0.4s]" />
-                    </div>
-                  </div>
+                <div className="w-full text-[14px] leading-relaxed text-on-surface prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                  {streamingMessage ? (
+                    <SafeMarkdown>{streamingMessage}</SafeMarkdown>
+                  ) : (
+                    <span className="flex items-center gap-1.5 h-6" aria-label="Thinking">
+                      <span className="w-1.5 h-1.5 rounded-full bg-secondary/50 animate-bounce" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-secondary/50 animate-bounce [animation-delay:0.2s]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-secondary/50 animate-bounce [animation-delay:0.4s]" />
+                    </span>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Soft script offer while interview continues (non-blocking) */}
-            {!isDeletedSession && readiness?.can_offer_script && state === "interview_in_progress" && (
-              <div className="py-3 border-t border-outline/60 mt-4 flex flex-wrap items-center gap-3">
+            {/* Soft script offer and post-generation hint; generation itself stays in the composer. */}
+            {scriptOffered || (isFinished && !isDeletedSession) ? (
+              <div className="flex flex-wrap items-center gap-3 border-t border-outline pt-4">
                 <p className="text-xs text-secondary flex-1 min-w-[200px]">
-                  当前素材已经可以生成脚本；也可以继续聊，我们会接着帮你深挖。
+                  {scriptOffered
+                    ? "There’s enough here for a script. Keep talking to go deeper, or generate it now."
+                    : state === "ready_to_generate"
+                      ? "Ready for a script. You can also keep talking and generate one later."
+                      : "Keep talking any time. Each generation adds a new script without replacing earlier ones."}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => void handleGenerateScript()}
-                  disabled={submitting}
-                  className="px-4 py-2 bg-surface-container-high/60 hover:bg-surface-container-high border border-outline rounded-xl text-xs font-semibold text-primary transition-colors shrink-0"
-                >
-                  {submitting ? "生成中…" : "生成脚本"}
-                </button>
-              </div>
-            )}
-
-            {/* Script hints after explicit ready / generated states */}
-            {isFinished && !isDeletedSession && (
-              <div className="py-4 border-t border-outline mt-6 flex flex-wrap items-center gap-3">
-                <p className="text-xs text-secondary flex-1 min-w-[200px]">
-                  {state === "ready_to_generate"
-                    ? "可以从此对话生成脚本；也可继续聊天后再生成新的脚本。"
-                    : "可随时继续对话；每次生成都会新增一份脚本，不会覆盖已有脚本。"}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void handleGenerateScript()}
-                  disabled={submitting}
-                  className="px-4 py-2 bg-surface-container-high/60 hover:bg-surface-container-high border border-outline rounded-xl text-xs font-semibold text-primary transition-colors shrink-0"
-                >
-                  {submitting ? "生成中…" : "生成脚本"}
-                </button>
-                {(state === "script_generated" || state === "script_edited" || state === "completed") && (
+                {hasGeneratedScript ? (
                   <button
                     type="button"
                     onClick={() => void openLatestScript()}
-                    className="px-4 py-2 bg-accent-amber/10 hover:bg-accent-amber/15 border border-accent-amber/20 rounded-xl text-xs font-semibold text-accent-amber transition-colors shrink-0"
+                    className="px-3 py-1.5 border border-outline rounded-lg text-xs font-semibold text-primary hover:bg-primary/5 transition-colors shrink-0"
                   >
-                    查看脚本
+                    Open script
                   </button>
-                )}
+                ) : null}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 
         {/* Persistent Bottom Input Dock */}
         {showChatComposer && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-20 select-none">
+          <div className="absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-background via-background to-transparent px-4 pb-5 pt-6">
             <div
               {...attachmentDropProps("composer")}
-              className="flex flex-col gap-2.5 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl p-3 shadow-[0_24px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.02)] focus-within:border-accent-amber/25 focus-within:shadow-[0_24px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(242,191,87,0.05)] transition-all duration-300"
+              className="mx-auto flex max-w-3xl flex-col gap-2 rounded-2xl border border-outline bg-surface-container-low p-3 shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition-colors focus-within:border-primary/20"
             >
               <PendingAttachmentTray
                 items={pendingAttachments}
@@ -1258,14 +937,15 @@ export function ChatPage({
                   }
                 }}
                 onPaste={handlePaste("composer")}
-                className="w-full bg-transparent border-none focus:ring-0 overflow-y-auto text-[14px] text-primary placeholder:text-outline/75 py-1.5 px-2 max-h-[160px] min-h-[38px] outline-none leading-relaxed composer-editable select-text text-left"
-                data-placeholder="输入你的想法... (Shift+Enter 换行，Enter 发送)"
+                className="w-full bg-transparent border-none focus:ring-0 overflow-y-auto text-[14px] text-primary py-1 px-1.5 max-h-[160px] min-h-[28px] outline-none leading-relaxed composer-editable select-text text-left"
+                data-placeholder="Reply… (Shift+Enter for a new line)"
+                aria-label="Reply"
               />
 
               {attachmentError ? (
-                <p className="px-2 text-[12px] text-red-400">{attachmentError}</p>
+                <p className="px-2 text-[12px] text-red-600 dark:text-red-400">{attachmentError}</p>
               ) : null}
-              <div className="flex items-center justify-between gap-2 px-0.5">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1">
                   <input
                     ref={composerFileInputRef}
@@ -1282,19 +962,25 @@ export function ChatPage({
                     type="button"
                     onClick={() => composerFileInputRef.current?.click()}
                     disabled={submitting}
-                    className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0 disabled:opacity-30"
-                    aria-label="添加图片或文件"
-                    title="添加图片或文件"
+                    className="p-1.5 text-secondary hover:text-primary hover:bg-primary/5 rounded-lg transition-colors shrink-0 disabled:opacity-30"
+                    aria-label="Attach images or files"
+                    title="Attach images or files"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => void handleGenerateScript()}
-                    disabled={submitting || !hasUserTurns}
-                    className="px-3 py-1.5 text-secondary hover:text-accent-amber hover:bg-accent-amber/8 border border-transparent hover:border-accent-amber/20 rounded-xl text-[12px] font-semibold transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent"
+                    disabled={submitting || !canGenerateScript}
+                    title={!canGenerateScript ? "Answer a few questions before generating a script" : undefined}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-30",
+                      scriptOffered || state === "ready_to_generate"
+                        ? "bg-accent-amber/12 text-accent-amber hover:bg-accent-amber/18"
+                        : "text-secondary hover:text-primary hover:bg-primary/5",
+                    )}
                   >
-                    生成脚本
+                    {generatingScript ? "Generating…" : "Generate script"}
                   </button>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -1306,9 +992,9 @@ export function ChatPage({
                     <button
                       type="button"
                       onClick={handleStopReply}
-                      title="停止生成"
-                      aria-label="停止生成"
-                      className="p-2 bg-on-surface/90 text-background hover:scale-105 active:scale-95 rounded-full transition-all duration-200"
+                      title="Stop"
+                      aria-label="Stop"
+                      className="p-2 bg-primary text-background rounded-full transition-opacity"
                     >
                       <Square className="w-3.5 h-3.5 fill-current" />
                     </button>
@@ -1317,14 +1003,14 @@ export function ChatPage({
                       type="button"
                       onClick={handleSubmit}
                       disabled={(!inputValue.trim() && pendingAttachments.length === 0) || submitting}
-                      title={submitting ? "正在处理" : "发送"}
-                      aria-label={submitting ? "正在处理" : "发送"}
-                      className="p-2 theme-accent-gradient text-on-primary hover:scale-105 active:scale-95 rounded-full transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"
+                      title={submitting ? "Working…" : "Send"}
+                      aria-label={submitting ? "Working…" : "Send"}
+                      className="p-2 bg-primary text-background rounded-full transition-opacity disabled:opacity-20 disabled:cursor-not-allowed"
                     >
                       {submitting ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-on-primary" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <Send className="w-4 h-4 text-on-primary" />
+                        <Send className="w-4 h-4" />
                       )}
                     </button>
                   )}
@@ -1334,78 +1020,6 @@ export function ChatPage({
           </div>
         )}
       </div>
-
-      {/* 2. AI Guidance Side Panel */}
-      <aside className="w-[300px] border-l border-outline bg-surface/50 flex flex-col shrink-0 overflow-y-auto hidden xl:flex">
-        <div className="p-5 space-y-8">
-
-          {/* Episode context */}
-          <section>
-            <div className="flex items-center gap-2 mb-4 text-secondary">
-               <BookOpen className="w-4 h-4" />
-               <span className="text-[11px] font-bold uppercase tracking-wider">Episode notes</span>
-            </div>
-            <div className="space-y-2">
-              <div className="bg-surface-container rounded-lg p-3 border border-outline">
-                <p className="text-[13px] text-primary leading-relaxed">
-                  {project.session.topic}
-                </p>
-              </div>
-              <p className="text-[11px] leading-relaxed text-secondary">
-                {turns.length} conversation turns saved with this episode.
-              </p>
-            </div>
-          </section>
-
-          {/* Conversation coverage */}
-          <section>
-            <div className="flex items-center gap-2 mb-4 text-secondary">
-               <AlertCircle className="w-4 h-4" />
-               <span className="text-[11px] font-bold uppercase tracking-wider">What we've covered</span>
-            </div>
-            <div className="space-y-4">
-               {[
-                 { key: 'topic_context', label: 'Context & Background' },
-                 { key: 'core_viewpoint', label: 'Core Narrative' },
-                 { key: 'example_or_detail', label: 'Anecdotes & Details' },
-                 { key: 'conclusion', label: 'Summary & Wrap' }
-               ].map((item) => (
-                 <div key={item.key} className="flex items-center justify-between group">
-                    <span className={cn(
-                      "text-[12px] transition-colors",
-                      readiness?.[item.key as keyof Readiness] ? "text-secondary" : "text-primary font-medium"
-                    )}>
-                      {item.label}
-                    </span>
-                    {readiness?.[item.key as keyof Readiness] ? (
-                      <CheckCircle2 className="w-4 h-4 text-accent-amber" />
-                    ) : (
-                      <Circle className="w-4 h-4 text-outline group-hover:text-secondary transition-colors" />
-                    )}
-                 </div>
-               ))}
-            </div>
-          </section>
-
-          {/* Current conversational focus */}
-          <section>
-            <div className="flex items-center gap-2 mb-4 text-secondary">
-               <Target className="w-4 h-4" />
-               <span className="text-[11px] font-bold uppercase tracking-wider">Current focus</span>
-            </div>
-            <div className="bg-primary/5 rounded-xl p-4 border border-outline/50 relative overflow-hidden group">
-               <div className="absolute right-0 top-0 p-2 opacity-10 group-hover:scale-125 transition-transform">
-                  <Sparkles className="w-8 h-8 text-primary" />
-               </div>
-               <p className="text-[12px] text-on-surface leading-relaxed relative z-10">
-                  {promptInput?.suggested_focus || promptInput?.strategy_instruction || "Listening for the angle, details, and takeaway that belong in this episode."}
-               </p>
-            </div>
-          </section>
-
-        </div>
-      </aside>
-
     </div>
   );
 }

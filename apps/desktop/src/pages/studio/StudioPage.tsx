@@ -18,6 +18,7 @@ import {
   buildVoiceFreshnessKey,
   deriveAudioFreshness,
   deriveEpisodeRenderReadiness,
+  savedVoiceFreshnessKey,
 } from "./studioWorkflow";
 import {
   deriveEpisodeProductStatus,
@@ -96,6 +97,17 @@ function StudioWorkspace({
   const [sourceOpen, setSourceOpen] = useState(initialSourceOpen);
   const [previewLabel, setPreviewLabel] = useState("Current paragraph");
 
+  useEffect(() => {
+    if (!transcriptOpen && !sourceOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      setTranscriptOpen(false);
+      setSourceOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [transcriptOpen, sourceOpen]);
+
   // Audio out-of-date: set when script or voice inputs change after audio exists.
   const [audioOutOfDate, setAudioOutOfDate] = useState(false);
   const [audioOutOfDateReason, setAudioOutOfDateReason] = useState<string | undefined>(undefined);
@@ -105,6 +117,7 @@ function StudioWorkspace({
 
   const serverScript = workbench.project?.script?.final ?? workbench.project?.script?.draft ?? "";
   const voiceFreshnessKey = buildVoiceFreshnessKey(workbench.project, scriptId, workbench.voiceSettings);
+  const savedVoiceKey = savedVoiceFreshnessKey(workbench.project, scriptId, voiceFreshnessKey);
   const sourceOutOfDate = isProjectSourceOutOfDate(workbench.project);
   const persistedAudioOutOfDate = isProjectAudioOutOfDate(workbench.project, scriptId, workbench.isDirty);
 
@@ -113,8 +126,8 @@ function StudioWorkspace({
     if (!hasAudio) {
       setAudioOutOfDate(false);
       setAudioOutOfDateReason(undefined);
-      prevScriptRef.current = serverScript;
-      prevVoiceKeyRef.current = voiceFreshnessKey;
+      prevScriptRef.current = null;
+      prevVoiceKeyRef.current = null;
       return;
     }
     if (sourceOutOfDate) {
@@ -131,7 +144,7 @@ function StudioWorkspace({
     }
 
     const previousServerScript = prevScriptRef.current ?? serverScript;
-    const previousVoiceKey = prevVoiceKeyRef.current ?? voiceFreshnessKey;
+    const previousVoiceKey = prevVoiceKeyRef.current ?? savedVoiceKey;
     const freshness = deriveAudioFreshness({
       hasAudio,
       generating: workbench.generating,
@@ -154,6 +167,7 @@ function StudioWorkspace({
     serverScript,
     scriptId,
     persistedAudioOutOfDate,
+    savedVoiceKey,
     sourceOutOfDate,
     voiceFreshnessKey,
     workbench.audioSrc,
@@ -228,12 +242,11 @@ function StudioWorkspace({
   return (
     <>
       {/* ── Full-height studio layout ──────────────────────── */}
-      <div className="flex flex-col h-full w-full overflow-hidden bg-background">
+      <div className="flex flex-col h-full w-full overflow-hidden">
 
         <StudioHeader
           workbench={workbench}
           listTopic={listTopic}
-          status={productStatus}
           onSourceOpen={() => {
             setTranscriptOpen(false);
             setSourceOpen(true);
@@ -279,7 +292,7 @@ function StudioWorkspace({
           <div className="flex flex-col w-full lg:flex-1 min-w-0 min-h-[560px] lg:min-h-0 overflow-hidden">
             {/* Deleted session / script warnings */}
             {(workbench.isSessionDeleted || workbench.isScriptDeleted) && (
-              <div className="mx-4 mt-3 rounded-2xl border border-accent-amber/25 bg-accent-amber/10 px-4 py-3 text-sm text-primary shrink-0">
+              <div className="mx-4 mt-3 rounded-xl border border-outline bg-surface-container-low px-4 py-3 text-sm text-primary shrink-0">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     {workbench.isSessionDeleted ? (
@@ -305,7 +318,7 @@ function StudioWorkspace({
                       workbench.busyAction === "restore-session" ||
                       workbench.busyAction === "restore-script"
                     }
-                    className="inline-flex h-10 items-center justify-center rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high disabled:opacity-50 shrink-0"
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-50 shrink-0"
                   >
                     {workbench.isSessionDeleted ? "Restore Session" : "Restore Script"}
                   </button>
@@ -314,12 +327,12 @@ function StudioWorkspace({
             )}
 
             {/* Script editor — takes remaining height */}
-            <div className="flex-1 overflow-hidden p-4">
+            <div className="flex-1 overflow-hidden">
               <ScriptEditorPane workbench={workbench} />
             </div>
           </div>
 
-          <div className="w-full shrink-0 border-t border-outline lg:w-[300px] lg:overflow-hidden lg:border-l lg:border-t-0 xl:w-[320px]">
+          <div className="w-full shrink-0 border-t border-outline lg:w-[288px] lg:overflow-hidden lg:border-l lg:border-t-0">
             <EpisodeInspector
               workbench={workbench}
               scriptId={scriptId}

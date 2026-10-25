@@ -23,11 +23,11 @@ class LocalSpeechTTSProvider:
             or request.context_text
             or request.clone_mode not in ("auto", "none")
         ):
-            raise ValueError("本机语音服务仅支持预设音色，不支持音色克隆或上下文音频。")
+            raise ValueError("The local speech service supports preset voices only; voice cloning and context audio are unavailable.")
         if request.speed != 1.0 or request.style_prompt or request.breaks:
-            raise ValueError("本机语音服务不支持语速、风格指令或精确停顿；请使用自然标点。")
+            raise ValueError("The local speech service does not support speed, style instructions, or exact pauses; use natural punctuation.")
         if self.config.audio_format != "wav" or request.audio_format != "wav":
-            raise ValueError("本机语音服务仅支持 WAV 输出。")
+            raise ValueError("The local speech service supports WAV output only.")
         model_name = str(self.client.health()["models"]["tts"]["id"])
         audio = self.client.synthesize(
             request.script_text,

@@ -8,15 +8,15 @@ import { cn } from "../lib/utils";
 
 /** Compact Chinese labels for the composer trigger (matches Cursor-style intensity chips). */
 const REASONING_EFFORT_LABELS: Record<string, string> = {
-  auto: "自动",
-  none: "无",
-  minimal: "最低",
-  low: "低",
-  medium: "中",
-  high: "高",
-  xhigh: "极高",
-  max: "最大",
-  ultra: "超高",
+  auto: "Auto",
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+  ultra: "Ultra",
 };
 
 const PRESET_MODELS_BY_URL: { keyword: string; models: string[] }[] = [
@@ -32,7 +32,7 @@ function reasoningEffortLabel(value: string): string {
 }
 
 function shortModelLabel(modelId: string, displayName?: string | null): string {
-  const raw = (displayName || modelId || "模型").trim();
+  const raw = (displayName || modelId || "Model").trim();
   // Prefer a compact chip: drop common vendor prefixes when the remainder stays readable.
   const withoutVendor = raw.replace(/^(openai\/|gpt-|claude-|google\/)/i, "");
   return withoutVendor.length >= 2 ? withoutVendor : raw;
@@ -84,7 +84,7 @@ export function ComposerModelPicker({
         setCodexStatus(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "无法加载模型配置");
+      setError(err instanceof Error ? err.message : "Couldn’t load model settings.");
       setConfig(null);
       setCodexStatus(null);
     } finally {
@@ -137,7 +137,7 @@ export function ComposerModelPicker({
     ? effortValue === "auto"
       ? selectedCodexModel?.default_reasoning_effort
         ? reasoningEffortLabel(selectedCodexModel.default_reasoning_effort)
-        : "自动"
+        : "Auto"
       : reasoningEffortLabel(effortValue)
     : null;
 
@@ -168,7 +168,7 @@ export function ComposerModelPicker({
       setConfig(updated);
       onConfigChange?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存模型配置失败");
+      setError(err instanceof Error ? err.message : "Couldn’t save model settings.");
     } finally {
       setSaving(false);
     }
@@ -188,7 +188,7 @@ export function ComposerModelPicker({
         )}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title="选择模型与推理强度"
+        title="Model and reasoning effort"
       >
         {loading ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
@@ -215,7 +215,7 @@ export function ComposerModelPicker({
           >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-outline">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
-                模型
+                Model
               </span>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-amber" /> : null}
             </div>
@@ -225,10 +225,10 @@ export function ComposerModelPicker({
             ) : null}
 
             {loading ? (
-              <div className="py-6 text-center text-xs text-secondary">加载中…</div>
+              <div className="py-6 text-center text-xs text-secondary">Loading…</div>
             ) : !config ? (
               <div className="space-y-2 py-2">
-                <p className="text-[12px] text-secondary leading-relaxed">尚未配置语言模型。</p>
+                <p className="text-[12px] text-secondary leading-relaxed">No language model is set up yet.</p>
                 <button
                   type="button"
                   className="inline-flex text-[12px] font-medium text-accent-amber hover:underline"
@@ -237,7 +237,7 @@ export function ComposerModelPicker({
                     navigate("/settings");
                   }}
                 >
-                  前往设置
+                  Open Settings
                 </button>
               </div>
             ) : (
@@ -247,8 +247,8 @@ export function ComposerModelPicker({
                     codexModels.length === 0 ? (
                       <p className="px-2 py-3 text-[12px] text-secondary leading-relaxed">
                         {codexStatus?.authenticated
-                          ? "暂无可用模型。"
-                          : "请先在设置中连接 ChatGPT 订阅。"}
+                          ? "No models available."
+                          : "Connect your ChatGPT subscription in Settings first."}
                       </p>
                     ) : (
                       codexModels.map((model) => {
@@ -269,7 +269,7 @@ export function ComposerModelPicker({
                             <span className="truncate">
                               {model.display_name || model.id}
                               {model.is_default ? (
-                                <span className="ml-1 text-[10px] text-secondary">推荐</span>
+                                <span className="ml-1 text-[10px] text-secondary">Recommended</span>
                               ) : null}
                             </span>
                             {selected ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
@@ -304,7 +304,7 @@ export function ComposerModelPicker({
                 {showReasoning ? (
                   <div className="border-t border-outline pt-2.5 space-y-1.5">
                     <span className="px-1 text-[11px] font-semibold uppercase tracking-wider text-secondary">
-                      推理强度
+                      Reasoning effort
                     </span>
                     <div className="flex flex-wrap gap-1.5">
                       <button
@@ -318,7 +318,7 @@ export function ComposerModelPicker({
                             : "bg-surface-container-high/70 text-secondary hover:text-primary",
                         )}
                       >
-                        自动
+                        Auto
                       </button>
                       {reasoningOptions.map((effort) => (
                         <button

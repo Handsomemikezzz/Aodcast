@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ChevronRight, FileText, MessageSquare, PlusCircle, Trash2 } from "lucide-react";
+import { FileText, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SessionTopicEditor } from "../components/SessionTopicEditor";
 import type { SessionProject } from "../types";
@@ -99,42 +98,44 @@ export function EpisodesPage({
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="flex flex-col h-full w-full overflow-y-auto px-6 lg:px-12 py-8"
-      >
+      <div className="flex flex-col h-full w-full overflow-y-auto px-6 lg:px-10 py-8">
         <div className="max-w-3xl mx-auto w-full">
-          <div className="mb-8 border-b border-outline pb-6 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-headline font-bold text-primary mb-2">Episodes</h1>
-              <p className="text-secondary text-sm">
-                Create and manage your podcast episodes.
-              </p>
-            </div>
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <h1 className="text-2xl font-headline font-semibold text-primary">Episodes</h1>
             <button
               type="button"
               onClick={handleNewEpisode}
-              className="flex h-11 items-center gap-2 rounded-xl bg-accent-amber/10 border border-accent-amber/30 px-4 text-sm font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors shrink-0"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity hover:opacity-90 shrink-0"
             >
-              <PlusCircle className="w-4 h-4" />
-              New Episode
+              <Plus className="w-4 h-4" />
+              New episode
             </button>
           </div>
 
           {listError ? (
-            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               {listError}
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-outline bg-surface-container-low overflow-hidden divide-y divide-outline-variant">
-            {sorted.length === 0 ? (
-              <div className="p-8 text-center text-secondary text-sm">
-                No episodes yet. Create your first one above.
-              </div>
-            ) : (
-              sorted.map((p) => {
+          {sorted.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-outline px-6 py-14 text-center">
+              <p className="text-sm font-medium text-primary">No episodes yet</p>
+              <p className="mt-1 text-[13px] text-secondary">
+                Start from an idea you want to talk through, or import an article you have written.
+              </p>
+              <button
+                type="button"
+                onClick={handleNewEpisode}
+                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg border border-outline px-3.5 text-[13px] font-medium text-primary hover:bg-primary/5"
+              >
+                <Plus className="w-4 h-4" />
+                New episode
+              </button>
+            </div>
+          ) : (
+            <ul className="-mx-3">
+              {sorted.map((p) => {
                 const displayProject = projectDetails[p.session.session_id] ?? p;
                 const hasScript = Boolean(displayProject.script?.script_id);
                 const title = displayProject.session.topic || "Untitled Episode";
@@ -149,73 +150,66 @@ export function EpisodesPage({
                 const OriginIcon = isMarkdown ? FileText : MessageSquare;
                 const busy = deletingId === rowId || renamingId === displayProject.session.session_id;
                 return (
-                  <div
+                  <li
                     key={p.session.session_id}
                     role="button"
                     tabIndex={0}
                     aria-label={`Open "${title}"`}
                     onClick={() => void openEpisode(displayProject)}
                     onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         void openEpisode(displayProject);
                       }
                     }}
-                    className="flex cursor-pointer items-center gap-2 px-4 py-3 hover:bg-surface-container transition-colors"
+                    className="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-primary/[0.035] focus-visible:bg-primary/[0.035] focus-visible:outline-none"
                   >
+                    <OriginIcon
+                      className="h-4 w-4 shrink-0 text-secondary/70"
+                      aria-label={isMarkdown ? "From Markdown" : "From conversation"}
+                    />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        <SessionTopicEditor
-                          sessionId={displayProject.session.session_id}
-                          topic={title}
-                          disabled={busy}
-                          density="list"
-                          className="flex-1"
-                          onRenamed={async () => {
-                            setRenamingId(displayProject.session.session_id);
-                            try {
-                              await onRefresh();
-                            } finally {
-                              setRenamingId("");
-                            }
-                          }}
-                        />
-                      </div>
-                      <div className="mt-1 flex w-full items-center gap-1.5 truncate text-left text-[12px]">
+                      <SessionTopicEditor
+                        sessionId={displayProject.session.session_id}
+                        topic={title}
+                        disabled={busy}
+                        density="list"
+                        onRenamed={async () => {
+                          setRenamingId(displayProject.session.session_id);
+                          try {
+                            await onRefresh();
+                          } finally {
+                            setRenamingId("");
+                          }
+                        }}
+                      />
+                      <div className="mt-0.5 flex items-center gap-1.5 truncate text-[12px] text-secondary">
                         <span className={episodeStatusTone(status.kind)}>{status.label}</span>
-                        {duration ? <><span className="text-outline">·</span><span className="tabular-nums text-secondary">{duration}</span></> : null}
-                      </div>
-                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-secondary/75">
-                        <OriginIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
-                        <span>{isMarkdown ? "Markdown" : "Conversation"}</span>
-                        {updated ? <><span className="text-outline">·</span><span>{updated}</span></> : null}
+                        {duration ? <><span aria-hidden>·</span><span className="tabular-nums">{duration}</span></> : null}
+                        {updated ? <><span aria-hidden>·</span><span>{updated}</span></> : null}
                       </div>
                     </div>
                     <button
                       type="button"
                       aria-label={`Move "${title}" to trash`}
+                      title="Move to trash"
                       disabled={busy}
                       onClick={(event) => {
                         event.stopPropagation();
                         setDeleteTarget({ project: displayProject, kind: hasScript ? "script" : "session" });
                       }}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 disabled:opacity-50 dark:hover:text-red-300"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
-                    <span
-                      aria-hidden
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-outline"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </span>
-                  </div>
+                  </li>
                 );
-              })
-            )}
-          </div>
+              })}
+            </ul>
+          )}
         </div>
-      </motion.div>
+      </div>
 
       <ConfirmDialog
         open={deleteTarget !== null}

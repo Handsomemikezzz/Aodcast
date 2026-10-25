@@ -309,7 +309,7 @@ export function useScriptWorkbenchAudio({
     const renderSpeakerReference = renderProject?.artifact?.script_artifacts?.[scriptId]?.speaker_reference
       ?? renderProject?.artifact?.speaker_reference;
     if (selectedEngine === "local_http" && !selectedModelId) {
-      setAudioError("请先选择服务当前使用的语音模型。");
+      setAudioError("The speech service has no ready model. Check Models.");
       setAudioMessage(null);
       setAudioRequestState(null);
       return null;
@@ -414,7 +414,7 @@ export function useScriptWorkbenchAudio({
     const plan = project?.speech_plan;
     const manifest = project?.render_manifest;
     if (!plan || !manifest) {
-      setAudioError("请先生成完整音频，再进行局部重生成。");
+      setAudioError("Generate the full audio before regenerating a part of it.");
       return;
     }
     try {
@@ -496,7 +496,7 @@ export function useScriptWorkbenchAudio({
   };
 
   const handleAudioLoadError = () => {
-    setAudioError("无法加载音频文件。文件可能已移动或删除，请重新生成音频。");
+    setAudioError("Couldn’t load the audio file. It may have been moved or deleted; generate the audio again.");
   };
 
   const handleRevealInFinder = async () => {
@@ -531,9 +531,9 @@ export function useScriptWorkbenchAudio({
       const result = await bridge.exportPodcastAudio(audioPath, EXPORT_MP3_FORMAT, EXPORT_MP3_BITRATE, "");
       try {
         await revealInFinder(result.audio_path);
-        setAudioMessage(`MP3 已导出：${result.file_name}`);
+        setAudioMessage(`Exported MP3: ${result.file_name}`);
       } catch {
-        setAudioMessage(`MP3 已导出到 ${result.audio_path}`);
+        setAudioMessage(`Exported MP3 to ${result.audio_path}`);
       }
     } catch (err: unknown) {
       setAudioError(getErrorMessage(err, "Failed to export MP3."));

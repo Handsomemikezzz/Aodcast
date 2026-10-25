@@ -47,15 +47,15 @@ export function toPendingAttachments(
     const name = file.name || `pasted-image${file.type === "image/jpeg" ? ".jpg" : ".png"}`;
     const kind = attachmentKindForFile(name, file.type);
     if (!kind) {
-      problems.push(`不支持的文件类型：${name}`);
+      problems.push(`Unsupported file type: ${name}`);
       continue;
     }
     if (file.size > MAX_ATTACHMENT_BYTES) {
-      problems.push(`文件超过 10 MB：${name}`);
+      problems.push(`Larger than 10 MB: ${name}`);
       continue;
     }
     if (existingCount + accepted.length >= MAX_ATTACHMENTS_PER_TURN) {
-      problems.push(`每条消息最多 ${MAX_ATTACHMENTS_PER_TURN} 个附件`);
+      problems.push(`Up to ${MAX_ATTACHMENTS_PER_TURN} attachments per message`);
       break;
     }
     localCounter += 1;

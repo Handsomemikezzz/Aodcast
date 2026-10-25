@@ -10,7 +10,7 @@ type SessionTopicEditorProps = {
   onRenamed: (project: SessionProject) => void | Promise<void>;
   disabled?: boolean;
   /** Visual density for list rows vs headers */
-  density?: "list" | "header" | "app";
+  density?: "list" | "header";
   className?: string;
 };
 
@@ -78,18 +78,14 @@ export function SessionTopicEditor({
   };
 
   const titleClass =
-    density === "app"
-      ? "font-headline font-semibold text-[15px] tracking-wide text-primary truncate"
-      : density === "header"
-        ? "truncate text-[13px] font-semibold text-primary leading-tight"
-        : "font-medium text-[14px] text-primary truncate";
+    density === "header"
+      ? "truncate text-[14px] font-semibold text-primary leading-tight"
+      : "font-medium text-[14px] text-primary truncate";
 
   const inputClass =
-    density === "app"
-      ? "min-w-0 flex-1 max-w-[280px] bg-background font-headline font-semibold text-[15px] tracking-wide text-primary border border-accent-amber/40 rounded-lg px-2 py-1 outline-none focus:border-accent-amber/70"
-      : density === "header"
-        ? "min-w-0 w-full max-w-[220px] bg-background text-[13px] font-semibold text-primary border border-accent-amber/40 rounded-lg px-2 py-1 outline-none focus:border-accent-amber/70"
-        : "min-w-0 flex-1 bg-background text-[14px] font-medium text-primary border border-accent-amber/40 rounded-lg px-2 py-1.5 outline-none focus:border-accent-amber/70";
+    density === "header"
+      ? "min-w-0 w-full max-w-[420px] bg-background text-[14px] font-semibold text-primary border border-accent-amber/40 rounded-lg px-2 py-1 outline-none focus:border-accent-amber/70"
+      : "min-w-0 flex-1 bg-background text-[14px] font-medium text-primary border border-accent-amber/40 rounded-lg px-2 py-1.5 outline-none focus:border-accent-amber/70";
 
   if (editing) {
     return (
@@ -152,7 +148,9 @@ export function SessionTopicEditor({
         aria-label={`Rename "${topic || "Untitled Episode"}"`}
         className={cn(
           "no-drag inline-flex shrink-0 items-center justify-center rounded-md text-secondary transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-50",
-          density === "list" ? "h-8 w-8" : "h-7 w-7 opacity-0 group-hover/topic:opacity-100 focus-visible:opacity-100",
+          density === "list"
+            ? "h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            : "h-7 w-7 opacity-0 group-hover/topic:opacity-100 focus-visible:opacity-100",
         )}
       >
         <PencilLine className={density === "list" ? "h-3.5 w-3.5" : "h-3 w-3"} />

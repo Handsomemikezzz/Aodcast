@@ -23,14 +23,14 @@ REFERENCE_SAMPLE_WIDTH_BYTES = 2
 _BUILTIN_REFERENCES = (
     {
         "speaker_reference_id": "builtin_warm_knowledge",
-        "name": "温和知识型",
-        "description": "适合知识解释、通用播客和长时间收听。",
+        "name": "Warm explainer",
+        "description": "For explanations, general podcasts, and long listening.",
         "asset": "builtin_warm_knowledge.wav",
     },
     {
         "speaker_reference_id": "builtin_clear_broadcast",
-        "name": "清晰播报型",
-        "description": "适合资讯、分析和正式播报内容。",
+        "name": "Clear broadcaster",
+        "description": "For news, analysis, and formal delivery.",
         "asset": "builtin_clear_broadcast.wav",
     },
 )
@@ -85,12 +85,12 @@ class SpeakerReferenceStore:
         now = utc_now_iso()
         reference = self._build_reference(
             reference_id=reference_id,
-            name=name.strip() or "我的音色",
+            name=name.strip() or "My voice",
             source="user_saved",
             audio_path=target,
             reference_text=text,
             language=language.strip() or "zh",
-            description="用户添加的参考音色",
+            description="Your voice sample",
             created_at=now,
             updated_at=now,
         )

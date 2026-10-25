@@ -121,7 +121,7 @@ class AudioRenderingTests(unittest.TestCase):
         configs.save_tts_config(TTSProviderConfig(provider="openai_compatible", base_url="https://example.com/v1"))
         session_id, script_id = self.seed_project(store)
         for settings in (VoiceRenderSettings(speed=1.1), VoiceRenderSettings(style_id="story"), VoiceRenderSettings(audio_format="mp3")):
-            with self.assertRaisesRegex(ValueError, "仅支持"):
+            with self.assertRaisesRegex(ValueError, "supports natural delivery, normal speed, and WAV output only"):
                 service.render_audio(session_id, script_id=script_id, override_provider="local_http", settings=settings)
         self.assertFalse(store.load_project_for_script(session_id, script_id).artifact.voice_settings)
 

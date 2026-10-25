@@ -358,7 +358,7 @@ class AudioRenderingService:
         if tts_config.provider == "local_http":
             _validate_local_settings(normalized)
             if speaker_reference:
-                raise ValueError("本机语音服务仅支持预设音色，不支持 Speaker Reference 克隆。")
+                raise ValueError("The local speech service supports preset voices only; Speaker Reference cloning is unavailable.")
             style_prompt = ""
         preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
         def raise_if_cancelled() -> None:
@@ -584,7 +584,7 @@ def _audio_progress(progress: PodcastRenderProgress) -> AudioRenderProgress:
 
 def _validate_local_settings(settings: VoiceRenderSettings) -> None:
     if settings.speed != 1.0 or settings.style_id != "natural" or settings.audio_format != "wav":
-        raise ValueError("本机语音服务仅支持自然讲述、正常语速和 WAV 输出。")
+        raise ValueError("The local speech service supports natural delivery, normal speed, and WAV output only.")
 
 
 def _is_allowed_speaker_reference_path(target: Path, data_dir: Path) -> bool:

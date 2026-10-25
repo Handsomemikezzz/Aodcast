@@ -1,18 +1,7 @@
 import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronDown,
-  FileText,
-  Loader2,
-  MessageSquare,
-  Sparkles,
-  Upload,
-  Volume2,
-} from "lucide-react";
+import { ArrowLeft, ChevronDown, Loader2, Upload } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
-import { SafeMarkdown } from "../components/SafeMarkdown";
 import type { EpisodeSourceInput } from "../lib/desktopBridge";
 import { cn } from "../lib/utils";
 
@@ -33,60 +22,20 @@ function estimateMinutes(markdown: string): number {
   return Math.max(0.1, cjk / 300 + latin / 160);
 }
 
-function ChoiceCard({
-  icon: Icon,
-  title,
-  description,
-  action,
-  onClick,
-  accent = false,
-}: {
-  icon: typeof MessageSquare;
-  title: string;
-  description: string;
-  action: string;
-  onClick: () => void;
-  accent?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "group min-h-[220px] rounded-2xl border p-6 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/60",
-        accent
-          ? "border-accent-amber/30 bg-accent-amber/8 hover:bg-accent-amber/12"
-          : "border-outline bg-surface-container-low hover:border-outline-variant hover:bg-surface-container",
-      )}
-    >
-      <span className={cn(
-        "mb-8 flex h-11 w-11 items-center justify-center rounded-xl border",
-        accent
-          ? "border-accent-amber/25 bg-accent-amber/10 text-accent-amber"
-          : "border-outline bg-surface-container-high text-primary",
-      )}>
-        <Icon className="h-5 w-5" />
-      </span>
-      <span className="block text-lg font-semibold text-primary">{title}</span>
-      <span className="mt-2 block max-w-sm text-sm leading-6 text-secondary">{description}</span>
-      <span className={cn(
-        "mt-7 inline-flex items-center gap-2 text-sm font-semibold",
-        accent ? "text-accent-amber" : "text-primary",
-      )}>
-        {action}
-        <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-      </span>
-    </button>
-  );
-}
+const CONVERSION_MODES: { value: ConversionMode; label: string; description: string }[] = [
+  {
+    value: "adapt",
+    label: "Podcast adaptation",
+    description: "Rewrite for listening while preserving the author's facts and point of view.",
+  },
+  {
+    value: "narrate",
+    label: "Faithful narration",
+    description: "Keep the wording and order; only remove Markdown and visual-only phrasing.",
+  },
+];
 
-export function NewEpisodePage({
-  mode,
-  onRefresh,
-}: {
-  mode: "choose" | "markdown";
-  onRefresh: () => Promise<void>;
-}) {
+export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const navigate = useNavigate();
   const bridge = useBridge();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -183,277 +132,195 @@ export function NewEpisodePage({
     }
   };
 
-  if (mode === "choose") {
-    return (
-      <div className="h-full overflow-y-auto px-6 py-10 lg:px-12">
-        <div className="mx-auto w-full max-w-4xl">
-          <button
-            type="button"
-            onClick={() => navigate("/episodes")}
-            className="mb-8 inline-flex h-11 items-center gap-2 rounded-xl px-3 text-sm text-secondary transition-colors hover:bg-surface-container hover:text-primary"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Episodes
-          </button>
-          <div className="mb-8">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-accent-amber">New episode</p>
-            <h1 className="text-3xl font-bold text-primary">How would you like to begin?</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-secondary">
-              Start with a conversation, or turn something you have already written into a spoken episode.
-            </p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <ChoiceCard
-              icon={MessageSquare}
-              title="Start from an idea"
-              description="Talk with AI to shape your angle, examples, and takeaway before creating a draft."
-              action="Talk through the idea"
-              onClick={() => navigate("/chat")}
-            />
-            <ChoiceCard
-              icon={FileText}
-              title="Start from content"
-              description="Import an article, note, or Markdown file and turn it into a natural spoken draft."
-              action="Import content"
-              onClick={() => navigate("/episodes/new/markdown")}
-              accent
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const modeDescription = CONVERSION_MODES.find((item) => item.value === conversionMode)?.description;
+  const lengthHint = !rawMarkdown.trim()
+    ? null
+    : !canContinue
+      ? readableCharacters > 300_000 ? "The source is over the 300,000-character limit." : "Add at least 20 characters of readable content."
+      : null;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between border-b border-outline px-5 py-3">
+    <div className="h-full overflow-y-auto px-6 py-6 lg:px-10">
+      <div className="mx-auto w-full max-w-3xl">
         <button
           type="button"
           onClick={() => navigate("/episodes/new")}
-          className="inline-flex h-11 items-center gap-2 rounded-xl px-3 text-sm text-secondary transition-colors hover:bg-surface-container hover:text-primary"
+          className="-ml-2 mb-4 inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-[13px] text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
         >
           <ArrowLeft className="h-4 w-4" />
-          Choose another start
+          New episode
         </button>
-        <div className="hidden items-center gap-2 text-xs text-secondary sm:flex">
-          <FileText className="h-4 w-4 text-accent-amber" />
-          Source is saved locally; generation uses your configured LLM provider
-        </div>
-      </div>
+        <h1 className="text-2xl font-headline font-semibold text-primary">Import a Markdown article</h1>
+        <p className="mt-1.5 text-sm text-secondary">
+          The original is kept as the episode source; the draft is written from it.
+        </p>
 
-      <div className="flex-1 overflow-y-auto px-5 py-6 lg:px-8">
-        <div className="mx-auto grid w-full max-w-6xl gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-          <section className="min-w-0 space-y-4">
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-accent-amber">Source</p>
-              <h1 className="text-2xl font-bold text-primary">Import a Markdown article</h1>
-              <p className="mt-2 text-sm leading-6 text-secondary">
-                Drop in a file or paste Markdown below. The original is preserved as the episode source.
-              </p>
-            </div>
-
-            <div
-              onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
-              onDragOver={(event) => event.preventDefault()}
-              onDragLeave={() => setDragActive(false)}
-              onDrop={handleDrop}
-              className={cn(
-                "rounded-2xl border bg-surface-container-low p-3 transition-colors",
-                dragActive ? "border-accent-amber bg-accent-amber/8" : "border-outline",
-              )}
+        <div
+          onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={handleDrop}
+          className={cn(
+            "mt-6 rounded-xl border transition-colors",
+            dragActive ? "border-accent-amber bg-accent-amber/5" : "border-outline focus-within:border-primary/20",
+          )}
+        >
+          <label htmlFor="markdown-source" className="sr-only">Markdown source</label>
+          <textarea
+            id="markdown-source"
+            value={rawMarkdown}
+            onChange={(event) => {
+              setRawMarkdown(event.target.value);
+              if (importKind !== "paste") {
+                setImportKind("paste");
+                setSourceName("Pasted Markdown");
+              }
+              setError(null);
+            }}
+            placeholder={"Paste Markdown here, or drop a .md file\n\n# Article title\n\nBody…"}
+            className="block min-h-[320px] w-full resize-y rounded-t-xl bg-transparent px-4 py-4 font-mono text-[13px] leading-6 text-primary outline-none placeholder:text-secondary/60"
+          />
+          <div className="flex items-center gap-3 border-t border-outline px-3 py-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-primary transition-colors hover:bg-primary/5"
             >
-              <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-outline pb-3">
+              <Upload className="h-4 w-4" />
+              Choose file
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".md,text/markdown,text/plain"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <p className="min-w-0 flex-1 truncate text-xs text-secondary" title={importKind === "file" ? sourceName : undefined}>
+              {importKind === "file" ? sourceName : ""}
+            </p>
+            <span className="text-xs tabular-nums text-secondary">
+              {readableCharacters.toLocaleString()} / 300,000
+            </span>
+          </div>
+        </div>
+
+        {rawMarkdown.trim() ? (
+          <p className="mt-3 truncate text-[13px] text-secondary" title={title}>
+            <span className="font-medium text-primary">{title}</span>
+            <span className="tabular-nums"> · ≈ {minutes.toFixed(1)} min source</span>
+          </p>
+        ) : null}
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_200px]">
+          <div>
+            <p id="conversion-style-label" className="text-[13px] font-medium text-primary">Style</p>
+            <div className="mt-2 inline-flex rounded-lg border border-outline p-0.5" role="radiogroup" aria-labelledby="conversion-style-label">
+              {CONVERSION_MODES.map(({ value, label }) => (
+                <label
+                  key={value}
+                  className={cn(
+                    "cursor-pointer rounded-md px-3 py-1.5 text-[13px] transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-amber/50",
+                    conversionMode === value ? "bg-primary/[0.07] font-medium text-primary" : "text-secondary hover:text-primary",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="conversion-mode"
+                    value={value}
+                    checked={conversionMode === value}
+                    onChange={() => {
+                      setConversionMode(value);
+                      if (value === "narrate") setTargetLength("auto");
+                    }}
+                    className="sr-only"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs leading-5 text-secondary">{modeDescription}</p>
+          </div>
+
+          <div>
+            <label htmlFor="target-length" className="block text-[13px] font-medium text-primary">Length</label>
+            <select
+              id="target-length"
+              value={targetLength}
+              disabled={conversionMode === "narrate"}
+              onChange={(event) => setTargetLength(event.target.value as TargetLength)}
+              title={conversionMode === "narrate" ? "Faithful narration keeps the source's natural length." : undefined}
+              className="mt-2 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus:border-primary/25 disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              <option value="auto">Follow the source</option>
+              <option value="short">Short · 3–5 min</option>
+              <option value="standard">Standard · 6–10 min</option>
+              <option value="long">Long · 12–18 min</option>
+            </select>
+          </div>
+        </div>
+
+        <details className="group mt-4">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[13px] text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
+            Add a focus for listeners
+            <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+          </summary>
+          <label htmlFor="focus-instructions" className="sr-only">What should listeners remember?</label>
+          <textarea
+            id="focus-instructions"
+            value={focusInstructions}
+            onChange={(event) => setFocusInstructions(event.target.value.slice(0, 1000))}
+            placeholder="What should listeners remember? For example: the practical lesson in the final section."
+            className="mt-2 min-h-[72px] w-full resize-y rounded-lg border border-outline bg-transparent px-3 py-2 text-[13px] leading-5 text-primary outline-none placeholder:text-secondary/60 focus:border-primary/25"
+          />
+        </details>
+
+        {error ? (
+          <div role="alert" className="mt-5 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+            <p>{error}</p>
+            {savedSessionId ? (
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-outline bg-surface-container px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high"
+                  onClick={() => navigate(`/studio/${savedSessionId}`)}
+                  className="rounded-lg border border-outline px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5"
                 >
-                  <Upload className="h-4 w-4" />
-                  Choose .md file
+                  Open saved source
                 </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".md,text/markdown,text/plain"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <p className="min-w-0 flex-1 truncate text-xs text-secondary" title={sourceName}>
-                  {importKind === "file" ? sourceName : "Or paste Markdown directly"}
-                </p>
-                <span className="text-xs tabular-nums text-secondary">
-                  {readableCharacters.toLocaleString()} / 300,000
-                </span>
-              </div>
-              <label htmlFor="markdown-source" className="sr-only">Markdown source</label>
-              <textarea
-                id="markdown-source"
-                value={rawMarkdown}
-                onChange={(event) => {
-                  setRawMarkdown(event.target.value);
-                  if (importKind !== "paste") {
-                    setImportKind("paste");
-                    setSourceName("Pasted Markdown");
-                  }
-                  setError(null);
-                }}
-                placeholder="# Your article title\n\nPaste the Markdown you want to turn into a podcast…"
-                className="min-h-[360px] w-full resize-y rounded-xl border border-transparent bg-background/45 px-4 py-4 font-mono text-[13px] leading-6 text-primary outline-none transition-colors placeholder:text-secondary/60 focus:border-accent-amber/35"
-              />
-            </div>
-
-            {error ? (
-              <div role="alert" className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                <p>{error}</p>
-                {savedSessionId ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/studio/${savedSessionId}`)}
-                      className="rounded-lg border border-red-300/25 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-500/10"
-                    >
-                      Open saved source
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => navigate("/settings")}
-                      className="rounded-lg border border-outline px-3 py-1.5 text-xs font-semibold text-primary hover:bg-surface-container"
-                    >
-                      Open Settings
-                    </button>
-                  </div>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => navigate("/settings")}
+                  className="rounded-lg border border-outline px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5"
+                >
+                  Open Settings
+                </button>
               </div>
             ) : null}
-          </section>
+          </div>
+        ) : null}
 
-          <aside className="min-w-0 space-y-4">
-            <section className="rounded-2xl border border-outline bg-surface-container-low p-4">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-secondary">Preview</p>
-                  <h2 className="mt-1 truncate text-base font-semibold text-primary" title={title}>{title}</h2>
-                </div>
-                <span className="shrink-0 rounded-full border border-outline bg-background/40 px-2.5 py-1 text-[11px] tabular-nums text-secondary">
-                  ≈ {minutes.toFixed(1)} min source
-                </span>
-              </div>
-              <div className="max-h-[210px] overflow-y-auto rounded-xl border border-outline bg-background/35 px-4 py-3 mac-scrollbar">
-                {rawMarkdown.trim() ? (
-                  <div className="prose prose-sm prose-theme max-w-none text-[13px] leading-6 [&_h1]:text-lg [&_h2]:text-base [&_p]:my-2">
-                    <SafeMarkdown>{rawMarkdown}</SafeMarkdown>
-                  </div>
-                ) : (
-                  <p className="py-8 text-center text-sm text-secondary">Your article preview will appear here.</p>
-                )}
-              </div>
-            </section>
-
-            <details className="group rounded-2xl border border-outline bg-surface-container-low">
-              <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
-                <span>
-                  Customize
-                  <span className="ml-2 text-xs font-normal text-secondary">Optional</span>
-                </span>
-                <ChevronDown className="h-4 w-4 text-secondary transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="border-t border-outline p-4">
-              <fieldset>
-                <legend className="text-sm font-semibold text-primary">How should Aodcast use it?</legend>
-                <div className="mt-3 grid gap-2">
-                  {([
-                    ["adapt", Sparkles, "Podcast adaptation", "Rewrite for listening while preserving the author's facts and point of view."],
-                    ["narrate", Volume2, "Faithful narration", "Keep the wording and order; only remove Markdown and visual-only phrasing."],
-                  ] as const).map(([value, Icon, label, description]) => (
-                    <label
-                      key={value}
-                      className={cn(
-                        "flex cursor-pointer gap-3 rounded-xl border p-3 transition-colors",
-                        conversionMode === value
-                          ? "border-accent-amber/35 bg-accent-amber/8"
-                          : "border-outline bg-background/20 hover:bg-surface-container",
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="conversion-mode"
-                        value={value}
-                        checked={conversionMode === value}
-                        onChange={() => {
-                          setConversionMode(value);
-                          if (value === "narrate") setTargetLength("auto");
-                        }}
-                        className="sr-only"
-                      />
-                      <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", conversionMode === value ? "text-accent-amber" : "text-secondary")} />
-                      <span>
-                        <span className="block text-sm font-medium text-primary">{label}</span>
-                        <span className="mt-1 block text-xs leading-5 text-secondary">{description}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              <div className="mt-5">
-                <label htmlFor="target-length" className="text-sm font-semibold text-primary">Target length</label>
-                <select
-                  id="target-length"
-                  value={targetLength}
-                  disabled={conversionMode === "narrate"}
-                  onChange={(event) => setTargetLength(event.target.value as TargetLength)}
-                  className="mt-2 h-11 w-full rounded-xl border border-outline bg-background/45 px-3 text-sm text-primary outline-none focus:border-accent-amber/40 disabled:cursor-not-allowed disabled:opacity-55"
-                >
-                  <option value="auto">Auto — follow the source</option>
-                  <option value="short">Short — about 3–5 minutes</option>
-                  <option value="standard">Standard — about 6–10 minutes</option>
-                  <option value="long">Long — about 12–18 minutes</option>
-                </select>
-                {conversionMode === "narrate" ? (
-                  <p className="mt-1.5 text-xs leading-5 text-secondary">Faithful narration keeps the source's natural length.</p>
-                ) : null}
-              </div>
-
-              <div className="mt-5">
-                <label htmlFor="focus-instructions" className="text-sm font-semibold text-primary">What should listeners remember?</label>
-                <p className="mt-1 text-xs leading-5 text-secondary">Optional. Use this to emphasize one idea without changing the source facts.</p>
-                <textarea
-                  id="focus-instructions"
-                  value={focusInstructions}
-                  onChange={(event) => setFocusInstructions(event.target.value.slice(0, 1000))}
-                  placeholder="For example: focus on the practical lesson in the final section."
-                  className="mt-2 min-h-[88px] w-full resize-y rounded-xl border border-outline bg-background/45 px-3 py-2.5 text-sm leading-5 text-primary outline-none placeholder:text-secondary/60 focus:border-accent-amber/40"
-                />
-              </div>
-              </div>
-            </details>
-
-            <div className="sticky bottom-0 rounded-2xl border border-outline bg-background/90 p-3 shadow-xl backdrop-blur-xl">
-              {!canContinue && rawMarkdown.trim() ? (
-                <p className="mb-2 px-1 text-xs text-red-300">
-                  {readableCharacters > 300_000 ? "The source is over the 300,000-character limit." : "Add at least 20 characters of readable content."}
-                </p>
-              ) : null}
-              <button
-                type="button"
-                disabled={!canContinue || submitting !== null}
-                onClick={() => void createEpisode("generate")}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl theme-accent-gradient px-4 text-sm font-semibold text-on-primary transition-opacity disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                {submitting === "generate" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {submitting === "generate" ? "Creating draft…" : "Create draft"}
-              </button>
-              <button
-                type="button"
-                disabled={!canContinue || submitting !== null}
-                onClick={() => void createEpisode("discuss")}
-                className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-medium text-secondary transition-colors hover:bg-surface-container hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                {submitting === "discuss" ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
-                Discuss the source first
-              </button>
-            </div>
-          </aside>
+        <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-outline pt-5 pb-8">
+          <button
+            type="button"
+            disabled={!canContinue || submitting !== null}
+            onClick={() => void createEpisode("generate")}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-background transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            {submitting === "generate" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {submitting === "generate" ? "Creating draft…" : "Create draft"}
+          </button>
+          <button
+            type="button"
+            disabled={!canContinue || submitting !== null}
+            onClick={() => void createEpisode("discuss")}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            {submitting === "discuss" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Discuss it first
+          </button>
+          <p className="ml-auto text-xs text-secondary">
+            {lengthHint ?? "Saved locally; generation uses your configured language model."}
+          </p>
         </div>
       </div>
     </div>
