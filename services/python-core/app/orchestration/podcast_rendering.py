@@ -171,8 +171,6 @@ class PodcastRenderingPipeline:
             tts_config.model = override_model
         tts_config.audio_format = "wav"
         provider = build_tts_provider(tts_config)
-        if tts_config.provider == "local_http" and speaker_reference:
-            raise ValueError("The local speech service supports preset voices only; Speaker Reference cloning is unavailable.")
         if tts_config.provider == "local_http" and settings.style_id != "natural":
             raise ValueError("The local speech service does not support style instructions; choose Natural.")
 

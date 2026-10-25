@@ -13,14 +13,22 @@ import { resolveAudioFileUrl } from "../../lib/audioFile";
 import { cn } from "../../lib/utils";
 import {
   filterActiveSpeakerReferences,
+  modelId,
+  modelMode,
+  referenceDurationIssue,
   selectedSpeakerReferenceLabel,
 } from "../../lib/voiceSettings";
-import type { SpeakerReference } from "../../types";
+import type { ModelStatus, SpeakerReference } from "../../types";
 import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWorkbench";
 import type { EpisodeRenderReadiness } from "./studioWorkflow";
 
 function InspectorTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="text-[12px] font-semibold text-primary">{children}</h2>;
+}
+
+function formatSeconds(durationMs: number): string {
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 function byRecentUse(a: SpeakerReference, b: SpeakerReference): number {
@@ -59,7 +67,19 @@ export function EpisodeInspector({
     || workbench.project?.artifact?.speaker_reference?.speaker_reference_id
     || "";
   const localHttp = workbench.selectedEngine === "local_http";
+  const cloning = localHttp && workbench.localVoiceMode === "clone";
   const selectedVoiceLabel = selectedSpeakerReferenceLabel(workbench.project, scriptId) || "Choose a voice";
+  const presetModels = workbench.models.filter((model) => modelMode(model) === "preset");
+  const cloneModels = workbench.models.filter((model) => modelMode(model) === "clone");
+  const selectedModel = workbench.models.find((model) => modelId(model) === workbench.selectedModelId);
+  const selectedReference = references.find((reference) => reference.speaker_reference_id === selectedReferenceId);
+  const durationIssue = cloning && selectedReference
+    ? referenceDurationIssue(selectedReference.duration_ms, {
+        min: workbench.capability?.min_reference_duration_ms,
+        max: selectedModel?.capabilities?.limits.max_reference_duration_ms
+          ?? workbench.capability?.max_reference_duration_ms,
+      })
+    : "";
   const returnPath = `/studio/${workbench.project?.session.session_id ?? ""}/${scriptId}`;
   const voiceLibraryPath = `/voice-studio/${workbench.project?.session.session_id ?? ""}/${scriptId}?returnTo=${encodeURIComponent(returnPath)}`;
 
@@ -112,7 +132,7 @@ export function EpisodeInspector({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-semibold text-primary">{reference.name}</span>
                     <span className="mt-0.5 block truncate text-[10px] text-secondary">
-                      {reference.language || "Voice sample"}
+                      {reference.language || "Voice sample"} · {formatSeconds(reference.duration_ms)}
                     </span>
                   </span>
                   {selected ? <Check className="h-4 w-4 shrink-0 text-accent-amber" aria-hidden="true" /> : null}
@@ -137,7 +157,9 @@ export function EpisodeInspector({
     !readiness.scriptReady && { label: "Script has issues to fix", action: null },
     !readiness.voiceReady && { label: "No voice selected", action: { label: "Choose voice", run: () => setVoicePickerOpen(true) } },
     !readiness.ttsReady && {
-      label: localHttp ? "Local speech service isn't ready" : "Cloud voice isn't configured",
+      label: cloning
+        ? "Voice cloning model isn't ready"
+        : localHttp ? "Local speech service isn't ready" : "Cloud voice isn't configured",
       action: { label: localHttp ? "Open Models" : "Open Settings", run: () => workbench.navigate(localHttp ? "/models" : "/settings") },
     },
   ].filter(Boolean) as { label: string; action: { label: string; run: () => void } | null }[];
@@ -177,13 +199,44 @@ export function EpisodeInspector({
         <InspectorTitle>Voice</InspectorTitle>
         {localHttp ? (
           <>
+            <label htmlFor="episode-local-model" className="mt-2 block text-[12px] text-secondary">Model</label>
+            <select
+              id="episode-local-model"
+              value={workbench.selectedModelId}
+              onChange={(event) => workbench.setSelectedModelId(event.target.value)}
+              disabled={workbench.generating}
+              className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
+            >
+              {!workbench.selectedModelId ? <option value="">No ready model</option> : null}
+              {([
+                ["Built-in voices", presetModels],
+                ["Clone a voice", cloneModels],
+              ] as [string, ModelStatus[]][]).map(([label, group]) => group.length ? (
+                <optgroup key={label} label={label}>
+                  {group.map((model) => (
+                    <option key={modelId(model)} value={modelId(model)} disabled={!model.ready}>
+                      {model.display_name}
+                      {model.ready ? "" : " · not ready"}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null)}
+            </select>
+            {selectedModel?.recommendation ? (
+              <p className="mt-1.5 text-[12px] leading-5 text-secondary">{selectedModel.recommendation}</p>
+            ) : null}
+            <p className="mt-3 text-[12px] text-secondary">{cloning ? "Cloned voice" : "Built-in voice"}</p>
+          </>
+        ) : null}
+        {localHttp && !cloning ? (
+          <>
             <label htmlFor="episode-preset-voice" className="sr-only">Preset voice</label>
             <select
               id="episode-preset-voice"
               value={workbench.selectedPresetVoiceId}
               onChange={(event) => workbench.setSelectedPresetVoiceId(event.target.value)}
               disabled={workbench.generating}
-              className="mt-2 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
+              className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
             >
               {!workbench.voicePresets.some((voice) => voice.voice_id === workbench.selectedPresetVoiceId) && (
                 <option value={workbench.selectedPresetVoiceId}>{workbench.selectedPresetVoiceId}</option>
@@ -191,7 +244,7 @@ export function EpisodeInspector({
               {workbench.voicePresets.map((voice) => <option key={voice.voice_id} value={voice.voice_id}>{voice.name}</option>)}
             </select>
             <p className="mt-2 text-[12px] leading-5 text-secondary">
-              The local speech service uses preset voices at natural style and 1.0× speed.
+              This model speaks built-in voices only. Choose a cloning model above to use your own voice.
             </p>
           </>
         ) : (
@@ -201,7 +254,7 @@ export function EpisodeInspector({
               onClick={() => setVoicePickerOpen((open) => !open)}
               aria-expanded={voicePickerOpen}
               aria-label={`Change voice (current: ${selectedVoiceLabel})`}
-              className="mt-2 inline-flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-outline px-2.5 text-[13px] text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50"
+              className={cn(localHttp ? "mt-1" : "mt-2", "inline-flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-outline px-2.5 text-[13px] text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50")}
             >
               <span className="truncate">{selectedVoiceLabel}</span>
               <ChevronDown className={cn("h-4 w-4 shrink-0 text-secondary transition-transform", voicePickerOpen && "rotate-180")} />
@@ -210,19 +263,27 @@ export function EpisodeInspector({
               <div className="mt-2 space-y-3 rounded-xl border border-outline p-2">
                 {renderReferenceGroup("Recent", recentReferences)}
                 {renderReferenceGroup("Your voices", yourReferences)}
-                {renderReferenceGroup("Built in", builtInReferences)}
+                {renderReferenceGroup(cloning ? "Built-in samples" : "Built in", builtInReferences)}
                 {!references.length ? (
                   <p className="px-2 py-4 text-center text-xs leading-5 text-secondary">No saved voices yet.</p>
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => workbench.navigate(voiceLibraryPath)}
+                  onClick={() => workbench.navigate(`${voiceLibraryPath}&create=1`)}
                   className="inline-flex h-9 w-full items-center justify-between rounded-lg px-2 text-[13px] text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
                 >
-                  Create or clone a voice
+                  {cloning ? "Clone a new voice from a recording" : "Create or clone a voice"}
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
+            ) : null}
+            {cloning && !selectedReferenceId ? (
+              <p className="mt-2 text-[12px] leading-5 text-secondary">
+                Pick a saved voice, or clone a new one from a 5–15 second recording and its exact transcript.
+              </p>
+            ) : null}
+            {durationIssue ? (
+              <p className="mt-2 text-[12px] leading-5 text-amber-700 dark:text-amber-300">{durationIssue}</p>
             ) : null}
           </>
         )}
@@ -296,11 +357,11 @@ export function EpisodeInspector({
               </button>
             ))}
           </div>
-          <p className="text-[12px] leading-5 text-secondary">
-            {localHttp
-              ? `Model: ${workbench.models.find((model) => (model.hf_repo_id || model.model_name) === workbench.selectedModelId)?.display_name || workbench.selectedModelId || "managed by the speech service"}`
-              : `${workbench.cloudProvider} · configured in Settings`}
-          </p>
+          {localHttp ? (
+            <p className="text-[12px] leading-5 text-secondary">Local speech service · model chosen under Voice</p>
+          ) : (
+            <p className="text-[12px] leading-5 text-secondary">{`${workbench.cloudProvider} · configured in Settings`}</p>
+          )}
         </div>
       </details>
     </aside>

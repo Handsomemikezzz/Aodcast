@@ -10,6 +10,11 @@ load_dotenv(ROOT / ".env", override=False)
 QWEN_TTS = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit"
 KOKORO = "mlx-community/Kokoro-82M-bf16"
 QWEN_ASR = "mlx-community/Qwen3-ASR-0.6B-8bit"
+# Base models clone a voice from reference audio + transcript; the first is the default.
+CLONE_MODELS = (
+    "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+    "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
+)
 
 
 def number(name: str, default: float, minimum: float, maximum: float) -> float:
@@ -46,9 +51,14 @@ class Settings:
     ffmpeg_timeout: float = number("FFMPEG_TIMEOUT_SECONDS", 120, 1, 600)
     pause_ms: float = number("PARAGRAPH_PAUSE_MS", 300, 0, 2000)
     crossfade_ms: float = number("CROSSFADE_MS", 10, 1, 30)
+    # The reference is prepended to every slice, so its length bounds prefill and decode cost.
+    clone_min_seconds: float = number("CLONE_MIN_REFERENCE_SECONDS", 3, 1, 30)
+    clone_max_seconds: float = number("CLONE_MAX_REFERENCE_SECONDS", 30, 3, 60)
 
     def __post_init__(self):
         if self.tts_model not in (QWEN_TTS, KOKORO) or self.asr_model != QWEN_ASR:
             raise ValueError("Only the documented Qwen3 and Kokoro model IDs are supported")
+        if self.clone_min_seconds > self.clone_max_seconds:
+            raise ValueError("CLONE_MIN_REFERENCE_SECONDS must not exceed the maximum")
         if not 0 <= self.seed < 2**32:
             raise ValueError("TTS_SEED must be an unsigned 32-bit integer")

@@ -1,4 +1,4 @@
-import type { ModelStatus, SessionProject, SpeakerReference, VoiceRenderSettings } from "../types";
+import type { LocalVoiceMode, ModelStatus, SessionProject, SpeakerReference, VoiceRenderSettings } from "../types";
 
 const BUILT_IN_SPEAKER_REFERENCE_LABELS: Record<string, string> = {
   builtin_clear_broadcast: "Clear broadcaster",
@@ -57,11 +57,49 @@ export function selectedSpeakerReferenceLabel(
 }
 
 
+export function modelId(model: ModelStatus): string {
+  return model.hf_repo_id || model.model_name;
+}
+
+/** Voice options follow the model's declared capability, never its name. */
+export function modelMode(model: ModelStatus | undefined): LocalVoiceMode {
+  return model?.capabilities?.capabilities.speaker_cloning === "native" ? "clone" : "preset";
+}
+
 export function readySpeechModel(models: ModelStatus[], ...preferredIds: string[]): ModelStatus | undefined {
   const ready = models.filter((model) => model.ready === true && model.available !== false);
   for (const id of preferredIds) {
     const match = ready.find((model) => model.hf_repo_id === id || model.model_name === id);
     if (match) return match;
   }
-  return ready[0];
+  return ready.find((model) => model.default_for_mode) ?? ready[0];
+}
+
+/** Ready local model for one voice mode; cloning never falls back to a preset model. */
+export function readyModelForMode(
+  models: ModelStatus[],
+  mode: LocalVoiceMode,
+  ...preferredIds: string[]
+): ModelStatus | undefined {
+  return readySpeechModel(models.filter((model) => modelMode(model) === mode), ...preferredIds);
+}
+
+/** Speech-service model that rendered the current audio, if any. */
+export function renderedSpeechModel(project: SessionProject | null | undefined): string {
+  return project?.render_manifest?.pipeline.find((stage) => stage.stage === "speech_synthesis")?.model || "";
+}
+
+/** Spoken-length window the clone model accepts, from the service capability. */
+export function referenceDurationIssue(
+  durationMs: number,
+  limits: { min?: number | null; max?: number | null },
+): string {
+  const seconds = (ms: number) => `${Math.round(ms / 1000)} s`;
+  if (limits.max && durationMs > limits.max) {
+    return `This sample is ${seconds(durationMs)}; local cloning uses at most ${seconds(limits.max)} of speech. Record a shorter clip.`;
+  }
+  if (limits.min && durationMs < limits.min) {
+    return `This sample is ${seconds(durationMs)}; local cloning needs at least ${seconds(limits.min)} of speech.`;
+  }
+  return "";
 }

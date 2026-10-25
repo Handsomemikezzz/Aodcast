@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { useBridge } from "../../lib/BridgeContext";
 import type {
+  LocalVoiceMode,
   ModelStatus,
   RequestState,
   SessionProject,
@@ -14,7 +15,7 @@ import type {
   VoiceStylePreset,
 } from "../../types";
 import { contextWindowSegmentIds } from "./workbenchUtils";
-import { useScriptWorkbenchAudio } from "./useScriptWorkbenchAudio";
+import { useScriptWorkbenchAudio, type PreviewTake } from "./useScriptWorkbenchAudio";
 import { useScriptWorkbenchData } from "./useScriptWorkbenchData";
 import { useScriptWorkbenchEditor } from "./useScriptWorkbenchEditor";
 import { useSpokenScriptChecks } from "./useSpokenScriptChecks";
@@ -41,6 +42,7 @@ export type UseScriptWorkbenchResult = {
   models: ModelStatus[];
   selectedModelId: string;
   setSelectedModelId: (value: string) => void;
+  localVoiceMode: LocalVoiceMode;
   voiceSelectionError: string | null;
   selectedEngine: "local_http" | "cloud";
   setSelectedEngine: (value: "local_http" | "cloud") => void;
@@ -80,6 +82,8 @@ export type UseScriptWorkbenchResult = {
   previewError: string | null;
   previewRequestState: RequestState | null;
   previewSrc: string;
+  previewTakes: PreviewTake[];
+  selectPreviewTake: (modelId: string) => void;
   outputFilename: string;
   localEngineDisabled: boolean;
   cloudEngineDisabled: boolean;
@@ -144,6 +148,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     selectedEngine: data.selectedEngine,
     cloudProvider: data.cloudProvider,
     selectedModelId: data.selectedModelId,
+    localVoiceMode: data.localVoiceMode,
     voiceSettings: data.voiceSettings,
   });
 
@@ -238,6 +243,7 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     models: data.models,
     selectedModelId: data.selectedModelId,
     setSelectedModelId: data.setSelectedModelId,
+    localVoiceMode: data.localVoiceMode,
     voiceSelectionError: data.voiceSelectionError,
     selectedEngine: data.selectedEngine,
     setSelectedEngine: data.setSelectedEngine,
@@ -277,6 +283,8 @@ export function useScriptWorkbench(sessionId: string, scriptId: string, onRefres
     previewError: audio.previewError,
     previewRequestState: audio.previewRequestState,
     previewSrc: audio.previewSrc,
+    previewTakes: audio.previewTakes,
+    selectPreviewTake: audio.selectPreviewTake,
     outputFilename: data.outputFilename,
     localEngineDisabled,
     cloudEngineDisabled,

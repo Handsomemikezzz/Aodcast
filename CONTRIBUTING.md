@@ -83,6 +83,7 @@ From the repository root, run real-model verification for changes to speech inte
 ./speech-service/service.sh start
 cd services/python-core
 uv run --extra test python ../../scripts/verification/verify-local-speech.py
+uv run --extra test python ../../scripts/verification/verify-local-clone.py
 ```
 
 Results and memory samples are written into a new `.local-data/speech-verification/<timestamp>/` directory. Keep test substitutes separate from real model evidence.
@@ -93,7 +94,7 @@ Results and memory samples are written into a new `.local-data/speech-verificati
 - Update docs when changing user flow, storage shape, provider configuration, runtime behavior, or development workflow.
 - Do not commit `.local-data/`, model weights, `.env`, `.omx/`, `docs/`, build outputs, virtualenvs, or node modules.
 - Do not commit API keys, provider credentials, private prompts, generated audio, or user session data.
-- For refactors, protect supported behavior with tests and prefer deletion/reuse over new abstractions. The local speech provider supports preset voices, WAV, normal speed, and transcription; cloning, style, exact pauses, and continuity conditioning require explicit unsupported feedback.
+- For refactors, protect supported behavior with tests and prefer deletion/reuse over new abstractions. The local speech provider supports preset voices, Qwen3 Base reference cloning, WAV, normal speed, and transcription; style, exact pauses, and continuity conditioning require explicit unsupported feedback.
 - Keep inference-memory slicing inside the bundled, process-isolated `speech-service`. Preserve Aodcast natural-paragraph Speech Plans and manifest assembly for editing and publication.
 - Real-model integration checks require the running speech service. Do not report mocked client tests as model, quality, or performance validation.
 

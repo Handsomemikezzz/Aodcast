@@ -103,16 +103,17 @@ class AudioRenderingService:
         if project.script is None:
             raise ValueError("Cannot render audio without a script record.")
         provider_name = override_provider or self.config_store.load_tts_config().provider
-        if settings is not None and provider_name == "local_http" and not require_speaker_reference:
+        if settings is not None and provider_name == "local_http":
             _validate_local_settings(self._normalize_settings(settings))
-            # An explicit preset selection replaces any old cloning selection.
-            # Persist it before capturing the publication preconditions.
-            project = self.save_voice_settings(session_id, settings, script_id=script_id)
-            if project.artifact and project.artifact.speaker_reference:
-                project.artifact = self.store.update_script_audio_preferences(
-                    session_id, project.script.script_id,
-                    speaker_reference=None, replace_speaker_reference=True,
-                )
+            if not require_speaker_reference:
+                # An explicit preset selection replaces any old cloning selection.
+                # Persist it before capturing the publication preconditions.
+                project = self.save_voice_settings(session_id, settings, script_id=script_id)
+                if project.artifact and project.artifact.speaker_reference:
+                    project.artifact = self.store.update_script_audio_preferences(
+                        session_id, project.script.script_id,
+                        speaker_reference=None, replace_speaker_reference=True,
+                    )
         artifact = project.artifact or ArtifactRecord(
             session_id=session_id,
             transcript_path=f"sessions/{session_id}/transcript.json",
@@ -321,9 +322,10 @@ class AudioRenderingService:
         style_prompt = style.prompt
         if tts_config.provider == "local_http":
             _validate_local_settings(normalized)
-            if speaker_reference:
-                raise ValueError("The local speech service supports preset voices only; Speaker Reference cloning is unavailable.")
             style_prompt = ""
+        reference_audio_path = ""
+        if speaker_reference:
+            reference_audio_path = str(self._validate_reference_audio_path(str(speaker_reference.get("audio_path") or "")))
         preview_text = normalized.preview_text.strip() or STANDARD_PREVIEW_TEXT
         def raise_if_cancelled() -> None:
             if should_cancel is not None and should_cancel():
@@ -338,6 +340,8 @@ class AudioRenderingService:
             style_id=normalized.style_id,
             style_prompt=style_prompt,
             language=normalized.language,
+            reference_audio_path=reference_audio_path,
+            reference_text=str(speaker_reference.get("reference_text") or "") if speaker_reference else "",
             should_cancel=should_cancel,
         )
         raise_if_cancelled()
@@ -463,13 +467,11 @@ class AudioRenderingService:
 
     def _validate_reference_audio_path(self, path: str) -> Path:
         if not path.strip():
-            raise ValueError("Cannot lock voice preview without a preview audio path.")
+            raise ValueError("Speaker Reference has no audio path.")
         data_dir = self.artifact_store.exports_dir.parent.resolve()
         target = Path(path).expanduser().resolve()
-        if not target.exists():
-            raise ValueError("Locked voice preview audio is missing. Re-render and lock a new preview.")
         if not target.is_file():
-            raise ValueError("Locked voice preview path must point to an audio file.")
+            raise ValueError("Speaker Reference audio is missing. Upload or record it again in Voice Studio.")
         if not _is_allowed_speaker_reference_path(target, data_dir):
             raise ValueError("Speaker reference audio must be inside the app data directory or packaged reference assets.")
         return target

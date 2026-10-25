@@ -17,6 +17,7 @@ All notable changes to Aodcast will be documented in this file.
 - Mock LLM provider path for smoke tests and development fallback.
 - ChatGPT subscription LLM provider through the official Codex app-server, including browser sign-in, dynamic account model discovery, streaming interview output, structured JSON generation, and Codex usage-window status.
 - Chat composer attachments (images and TXT/Markdown/CSV/JSON/PDF documents) with paste, drag-and-drop, file picker, previews, and transcript display; images reach OpenAI-compatible and Codex models as image input, and document text is extracted by the Python runtime.
+- Local zero-shot voice cloning: a Voice Studio Speaker Reference (recording + exact transcript) is cloned by `mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit` (default) or `1.7B-Base-8bit`, chosen per episode as the model in the Voice section; voice options follow the model's cloning capability, and Voice Studio guides recording (read-aloud passage, timer, length check, consent). The same reference works with both models; previews of one passage are kept per model for A/B comparison, and switching models marks existing audio as needing an update. The speech service adds `POST /v1/audio/speech/clone`, reports clone models and the 3–30 s reference window in `/health`, and `scripts/verification/verify-local-clone.py` compares both models with real inference.
 - Shared request-state contracts for long-running operations, script-scoped audio task ids, run-token-safe cancellation, and stale-poll rejection.
 
 ### Changed
@@ -59,7 +60,7 @@ All notable changes to Aodcast will be documented in this file.
 ### Notes
 
 - This release is intended as a GitHub source-code alpha, not a polished packaged desktop app distribution.
-- Local audio uses the bundled speech service in a separate process, started automatically by desktop/web launchers. Its preset-voice API supports WAV at normal speed; it does not support reference-audio cloning, style, exact pauses, or continuity conditioning. Voice Studio assets remain manageable but cannot be cloned through this provider.
+- Local audio uses the bundled speech service in a separate process, started automatically by desktop/web launchers. It supports preset voices and Qwen3 Base reference cloning, WAV at normal speed; it does not support style, exact pauses, or continuity conditioning.
 - ASR is exposed through the Python speech client; microphone input and subtitle-editing UI are not included.
 - Model quality and performance claims require real-model measurements; client unit tests alone are insufficient.
 - API keys are stored and managed locally by users at their own risk.

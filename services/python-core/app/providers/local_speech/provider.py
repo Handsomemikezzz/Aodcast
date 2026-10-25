@@ -4,6 +4,7 @@ import io
 import wave
 
 from app.domain.tts_config import KOKORO_TTS_MODEL, TTSProviderConfig
+from app.providers.local_speech.capabilities import is_clone_model
 from app.providers.local_speech.client import LocalSpeechClient
 from app.providers.tts_api.base import TTSGenerationRequest, TTSGenerationResponse
 
@@ -16,32 +17,53 @@ class LocalSpeechTTSProvider:
         self.client = LocalSpeechClient(config.base_url)
 
     def synthesize(self, request: TTSGenerationRequest) -> TTSGenerationResponse:
-        if (
-            request.reference_audio_path
-            or request.reference_text
-            or request.context_audio_path
-            or request.context_text
-            or request.clone_mode not in ("auto", "none")
-        ):
-            raise ValueError("The local speech service supports preset voices only; voice cloning and context audio are unavailable.")
+        if request.context_audio_path or request.context_text:
+            raise ValueError(
+                "The local speech service cannot condition on preceding audio; "
+                "each segment is cloned from the selected Speaker Reference only."
+            )
         if request.speed != 1.0 or request.style_prompt or request.breaks:
             raise ValueError("The local speech service does not support speed, style instructions, or exact pauses; use natural punctuation.")
         if self.config.audio_format != "wav" or request.audio_format != "wav":
             raise ValueError("The local speech service supports WAV output only.")
-        model_name = str(self.client.health()["models"]["tts"]["id"])
-        audio = self.client.synthesize(
-            request.script_text,
-            self._voice(request.voice or self.config.voice, request.language, model_name),
-            model=model_name,
-            should_cancel=request.should_cancel,
-        )
+        cloning = is_clone_model(self.config.model)
+        has_reference = bool(request.reference_audio_path or request.reference_text)
+        if cloning and (not has_reference or request.clone_mode == "none"):
+            raise ValueError(
+                f"{self.config.model} clones a voice and has no preset voices. "
+                "Select a Speaker Reference first."
+            )
+        if not cloning and (has_reference or request.clone_mode not in ("auto", "none")):
+            raise ValueError(
+                "The selected local model uses preset voices only; choose a Qwen3 Base model to clone a Speaker Reference."
+            )
+        if cloning:
+            model_name = self.config.model
+            audio = self.client.clone(
+                request.script_text,
+                request.reference_audio_path,
+                request.reference_text,
+                model=model_name,
+                language=request.language,
+                should_cancel=request.should_cancel,
+            )
+            adapter_version = "local-http-clone-v1"
+        else:
+            model_name = str(self.client.health()["models"]["tts"]["id"])
+            audio = self.client.synthesize(
+                request.script_text,
+                self._voice(request.voice or self.config.voice, request.language, model_name),
+                model=model_name,
+                should_cancel=request.should_cancel,
+            )
+            adapter_version = "local-http-v1"
         with wave.open(io.BytesIO(audio), "rb") as wav:
             return TTSGenerationResponse(
                 audio_bytes=audio,
                 file_extension="wav",
                 provider_name=self.provider_name,
                 model_name=model_name,
-                adapter_version="local-http-v1",
+                adapter_version=adapter_version,
                 sample_rate_hz=wav.getframerate(),
                 channels=wav.getnchannels(),
             )

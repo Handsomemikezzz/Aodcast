@@ -1,4 +1,6 @@
+import { renderedSpeechModel } from "../../lib/voiceSettings";
 import type {
+  LocalVoiceMode,
   SessionProject,
   SpeakerReference,
   TTSCapability,
@@ -24,6 +26,7 @@ export function deriveEpisodeRenderReadiness({
   scriptReady,
   hasSelectedVoice,
   selectedEngine,
+  localVoiceMode,
   selectedModelId,
   capability,
   ttsConfig,
@@ -31,6 +34,7 @@ export function deriveEpisodeRenderReadiness({
   scriptReady: boolean;
   hasSelectedVoice: boolean;
   selectedEngine: "local_http" | "cloud";
+  localVoiceMode: LocalVoiceMode;
   selectedModelId: string;
   capability: TTSCapability | null;
   ttsConfig: TTSProviderConfig | null;
@@ -44,7 +48,8 @@ export function deriveEpisodeRenderReadiness({
         && ttsConfig.base_url
         && ttsConfig.api_key
       );
-  const voiceReady = selectedEngine === "local_http" || hasSelectedVoice;
+  // Cloud voices and local cloning both speak with the selected Speaker Reference.
+  const voiceReady = (selectedEngine === "local_http" && localVoiceMode === "preset") || hasSelectedVoice;
   return {
     scriptReady,
     voiceReady,
@@ -102,7 +107,7 @@ export function deriveAudioFreshness({
   if (voiceKey !== previousVoiceKey) {
     return {
       outOfDate: true,
-      reason: "Voice settings changed.",
+      reason: "Voice or model changed.",
     };
   }
   return { outOfDate: false };
@@ -136,9 +141,12 @@ export function buildVoiceFreshnessKey(
   project: SessionProject | null,
   scriptId?: string,
   currentSettings?: VoiceRenderSettings,
+  currentModel?: string,
 ): string {
   const scriptArtifact = scriptId ? project?.artifact?.script_artifacts?.[scriptId] : undefined;
   return JSON.stringify({
+    // Switching clone models (0.6B ↔ 1.7B) is a voice change: the audio needs an update.
+    model: currentModel || renderedSpeechModel(project),
     reference: normalizeSpeakerReference(scriptArtifact?.speaker_reference ?? project?.artifact?.speaker_reference),
     settings: normalizeVoiceSettings(
       currentSettings ?? scriptArtifact?.voice_settings ?? project?.artifact?.voice_settings,

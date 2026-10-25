@@ -92,7 +92,7 @@ describe("studio workflow helpers", () => {
       }),
     ).toEqual({
       outOfDate: true,
-      reason: "Voice settings changed.",
+      reason: "Voice or model changed.",
     });
   });
 
@@ -157,6 +157,7 @@ describe("HTTP speech readiness", () => {
       scriptReady: true,
       hasSelectedVoice: false,
       selectedEngine: "local_http",
+      localVoiceMode: "preset",
       selectedModelId: "qwen-customvoice",
       capability: { provider: "local_http", runtime: "http", available: true, reasons: [], current_model: "qwen-customvoice", model_source: "http_service" },
       ttsConfig: null,
@@ -164,8 +165,35 @@ describe("HTTP speech readiness", () => {
   });
   it("blocks synthesis when the local speech service is unavailable", () => {
     expect(deriveEpisodeRenderReadiness({
-      scriptReady: true, hasSelectedVoice: false, selectedEngine: "local_http",
+      scriptReady: true, hasSelectedVoice: false, selectedEngine: "local_http", localVoiceMode: "preset",
       selectedModelId: "qwen-customvoice", capability: null, ttsConfig: null,
     }).ready).toBe(false);
+  });
+  it("requires a speaker reference before local cloning", () => {
+    const capability = { provider: "local_http", runtime: "http", available: true, reasons: [], current_model: "qwen-customvoice", model_source: "http_service" };
+    const base = { scriptReady: true, selectedEngine: "local_http" as const, localVoiceMode: "clone" as const, selectedModelId: "qwen-base-0.6b", capability, ttsConfig: null };
+    expect(deriveEpisodeRenderReadiness({ ...base, hasSelectedVoice: false })).toEqual({
+      scriptReady: true, voiceReady: false, ttsReady: true, ready: false,
+    });
+    expect(deriveEpisodeRenderReadiness({ ...base, hasSelectedVoice: true }).ready).toBe(true);
+    expect(deriveEpisodeRenderReadiness({ ...base, hasSelectedVoice: true, selectedModelId: "" }).ttsReady).toBe(false);
+  });
+});
+
+describe("model freshness", () => {
+  const settings = { voice_id: "warm_narrator", voice_name: "", style_id: "natural", style_name: "", speed: 1, language: "zh", audio_format: "wav" };
+  const project = {
+    artifact: { script_artifacts: { "script-1": { voice_settings: settings } } },
+    render_manifest: { pipeline: [{ stage: "speech_synthesis", provider: "local_http", model: "base-0.6b", adapter_version: "v1" }] },
+  } as unknown as SessionProject;
+
+  it("treats switching the clone model as a voice change", () => {
+    const saved = savedVoiceFreshnessKey(project, "script-1", "unused");
+    expect(buildVoiceFreshnessKey(project, "script-1", settings, "base-0.6b")).toBe(saved);
+    expect(buildVoiceFreshnessKey(project, "script-1", settings, "base-1.7b")).not.toBe(saved);
+  });
+
+  it("does not flag audio while the model list is still loading", () => {
+    expect(buildVoiceFreshnessKey(project, "script-1", settings, "")).toBe(savedVoiceFreshnessKey(project, "script-1", "unused"));
   });
 });

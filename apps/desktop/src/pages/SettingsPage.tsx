@@ -825,7 +825,7 @@ export function SettingsPage() {
                   onChange={(e) => updateTts("base_url", e.target.value)} className={inputClass} />
                 {ttsUsesLocalModels ? (
                   <span className="mt-1.5 block text-[12px] leading-relaxed text-secondary">
-                    The speech service chooses its own model and supports preset voices only; pick a voice per episode.{" "}
+                    The speech service manages its models: preset voices, plus voice cloning with Qwen3 Base models. Pick a voice per episode.{" "}
                     <button type="button" onClick={() => navigate("/models")} className="text-primary underline underline-offset-2">
                       View service status
                     </button>

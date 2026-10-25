@@ -10,7 +10,7 @@
 
 Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个文本想法或现有 Markdown 文章转成单人播客脚本和最终音频。
 
-应用由 Tauri 桌面壳和本地 Python HTTP runtime 组成，引导用户完成访谈、生成可编辑的脚本快照，并通过本地或远程语音 provider 渲染最终音频。本机合成使用仓库内置 `speech-service` 提供的预设音色，服务以独立进程运行；Speaker Reference 仍可作为参考音频资产管理，不代表本机服务支持克隆。
+应用由 Tauri 桌面壳和本地 Python HTTP runtime 组成，引导用户完成访谈、生成可编辑的脚本快照，并通过本地或远程语音 provider 渲染最终音频。本机合成由仓库内置、以独立进程运行的 `speech-service` 完成：可使用预设音色，也可用 Qwen3 TTS Base 模型对 Speaker Reference（录音加准确逐字稿）做零样本声音克隆。
 
 > 当前状态：源码级 alpha。Aodcast 可用于本地开发和验证，但还不是经过完整加固的桌面发行版。Provider key 和生成内容存储在本机；目前没有 macOS Keychain 或专用密钥保险库集成。
 
@@ -25,9 +25,10 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 - 内部 Speech Director 为精确的脚本 hash 生成版本化、provider-neutral 的 Speech Plan，包含稳定分段、结构化停顿、重音、发音和表达指导，但主 UI 不暴露这些工程概念。
 - 以脚本为核心的 Episode Workspace 支持编辑、上下文内 Voice 与 Delivery 选择、短片段试听、完整音频生成、非破坏式更新、播放和导出。
 - Voice Studio 支持内置和用户创建的 Speaker Reference、最长 10 分钟的样本上传/录音、资产试听和 reference 管理；已有 Voice 直接在 Episode 内选择。
+- 本机声音克隆：同一份 Speaker Reference 可由 `Qwen3-TTS-12Hz-0.6B-Base-8bit`（默认）或 `1.7B-Base-8bit` 克隆；同一段落的试听按模型分别保留，便于在完整渲染前 A/B 比较。
 - 仓库内置原生 TTS/ASR `speech-service`，由轻量级 `local_http` 客户端调用，同时支持 OpenAI-compatible 远程 TTS provider。模型加载与下载由服务的独立进程和环境负责。
 - 通过 Render Manifest 装配 WAV，显式处理停顿、格式/响度一致性、渲染血缘和可复用分段音频资产。
-- Models 页面展示本机语音服务状态，以及服务报告的当前模型。
+- Models 页面展示本机语音服务状态、服务报告的当前预设模型，以及两个声音克隆模型是否就绪。
 - Mock LLM provider 可用于无付费 API 的访谈与脚本 smoke test；音频渲染仍需运行中的本机语音服务或已配置的远程 TTS provider。
 - 可通过官方本地 Codex app-server 使用 ChatGPT 订阅额度，支持浏览器登录、账户模型发现和 Codex 使用窗口展示。
 - 开发期本地数据默认存储在 `.local-data/`。
@@ -250,9 +251,10 @@ ASR 是新增的 Python 客户端能力，尚未形成麦克风输入或字幕�
 
 #### 能力与限制
 
-- 当前本机服务支持预设音色、WAV 输出、正常语速（`1.0`）及语音识别。
-- 不支持音色克隆、风格指令、精确 Speech Plan 停顿或前文音频条件，遇到这些请求必须明确反馈能力限制。请使用自然标点调整节奏；标点不等于精确停顿契约。
-- Voice Studio 继续管理参考音频资产，支持最长 10 分钟且附匹配文本的上传或录音。这些资产不能通过 `local_http` 克隆为音色，请选择受支持的预设音色。
+- 当前本机服务支持预设音色、两个 Qwen3 TTS Base 模型的零样本声音克隆、WAV 输出、正常语速（`1.0`）及语音识别。
+- 克隆采用上下文学习（ICL）：Speaker Reference 音频及其准确逐字稿会作为每个推理切片的条件。服务裁剪首尾静音后，默认接受 3～30 秒参考语音（`CLONE_MIN/MAX_REFERENCE_SECONDS`）；超出范围会明确报错而不截断，因为截断后的音频与逐字稿不再对应。一位说话人、5～15 秒清晰录音、逐字（含标点）一致的文稿效果最稳定。
+- Voice Studio 仍可保存最长 10 分钟的上传或录音资产，但只有在克隆时长窗口内的参考才能用于本机克隆；界面会提示过长或过短的样本。
+- 不支持微调训练、声音转换、其他模型系列、风格指令、精确 Speech Plan 停顿或前文音频条件，遇到这些请求必须明确反馈能力限制。每个段落都从同一份参考克隆，而不是递归使用已生成的音频。请使用自然标点调整节奏；标点不等于精确停顿契约。
 - 首次请求可能因加载或下载模型较慢。空闲卸载释放模型权重与缓存，但常驻服务进程仍占用内存。
 - 完整节目渲染仍保存编辑用 Speech Plan、生成自然段 WAV，并装配发布 `podcast.wav`。MP3 仍通过可选 FFmpeg 转换导出。
 - `.mp4` 仅作为 Speaker Reference 音频容器输入并规范化为 WAV；Aodcast 不生成视频 MP4。
@@ -268,6 +270,16 @@ uv run --extra test python ../../scripts/verification/verify-local-speech.py
 脚本会在新的 `.local-data/speech-verification/<timestamp>/` 目录保存 WAV、`results.json` 和每秒内存采样 `memory.jsonl`。语音模型使用真实推理，只有编辑规划使用确定性的 mock LLM；通过识别长音频结束语检查是否截断。
 
 2026-10-15 的 16 GiB Apple M4 实测：首次 TTS 含加载耗时 51.00 秒，得到 9.04 秒短音频；ASR 用 9.20 秒识别回正文，规整字符错误率为 0%；1246 字完整自然段耗时 207.94 秒，得到 266.31 秒音频，服务端完成 11 个切片。服务 RSS 峰值为 2.07 GiB、Metal 分配峰值为 6.68 GiB，两种口径不能相加。这是此前解耦验收时的实测，并非本次迁移的新基准或性能保证。
+
+### 声音克隆真机验证
+
+在 `services/python-core` 执行（用朋友的录音时追加 `--reference /path/to/friend.wav --reference-text "准确逐字稿"`）：
+
+```bash
+uv run --extra test python ../../scripts/verification/verify-local-clone.py
+```
+
+2026-10-25 在 16 GiB M4 上实测（8.2 秒生成参考音频，测试时其他应用占用约 18 GiB swap）：两个模型均通过。每个模型都完成了短句克隆（ASR 回读字错率 0%）、4 段完整节目（结尾标记完整）以及 3 段上下文窗口重渲染。0.6B 渲染 38.2 秒节目耗时 96.6 秒，1.7B 渲染 37.1 秒节目耗时 132.8 秒。Metal 峰值分配在 0.6B 时为 6.27 GiB，切到 1.7B 后为 7.25 GiB，该计数在服务进程内累计。服务同一时间只驻留一个模型，交替使用 0.6B 与 1.7B 会反复重新加载权重；内存紧张时单个 1.7B 切片可能耗时数分钟。比较时建议对同一段落分别试听，不要交替发起完整渲染。
 
 ## 开发命令
 
@@ -358,7 +370,7 @@ Aodcast 当前聚焦本地优先的单人播客创作：
 - 输入：文本主题，或每个 episode 一个本地/粘贴的 Markdown 来源
 - 输出：单人播客脚本 + Episode Workspace 渲染的最终音频
 - LLM：Mock、OpenAI-compatible，或通过 Codex 使用 ChatGPT 订阅
-- 本机说话者身份：每个脚本选择预设音色；Speaker Reference 音频资产独立管理
+- 本机说话者身份：每个脚本选择预设音色，或由 Qwen3 Base 模型克隆的 Speaker Reference
 - TTS：独立进程运行的内置 HTTP `speech-service`，或远程 API provider
 - 记忆：文件原生、仅本地的跨 Episode 长期用户记忆
 
@@ -392,15 +404,16 @@ UI 通过 desktop HTTP bridge 调用本地 Python runtime。长任务（音频�
 - 完整渲染会保存不可变的分段 WAV 与 Render Manifest，再装配 manifest 指向的最终 WAV；MP3 是该最终成片旁的按需导出。
 - Preview 优先使用选中文字，其次使用当前段落或稿件开头，生成一次性试听音频，不会替换当前 Episode 成片。
 - 修改脚本、Source、Voice 或 Delivery 后，旧音频仍可播放，并显示 `Audio needs update`，直到新成片成功发布。
-- Voice Studio 负责可复用 Speaker Reference 资产。本机 HTTP 渲染使用 Episode 的预设音色。完整渲染时明确选择本机预设，会解除旧克隆选择，不删除参考音频源文件或历史 Render Manifest；本机试听不发送参考音频。
+- Voice Studio 负责可复用 Speaker Reference 资产。使用本机引擎时，Inspector 的 Voice 区先选择 **Model**，分为 *Built-in voices*（CustomVoice）与 *Clone a voice*（`Qwen3 TTS 0.6B Base`，选中参考声音时的默认模型；以及 `1.7B Base`）。下方的音色控件按模型声明的克隆能力切换：不支持克隆的模型只能选内置音色；支持克隆的模型可选自己保存的声音和内置样本，并可跳转克隆新声音。同一份参考可用于两个克隆模型，无需重复创建资产。同一段落的试听按模型分别保留，可在底部音频栏切换比较；切换模型会把已有音频标记为 `Audio needs update`。用本机预设音色完整渲染会解除旧克隆选择，不删除参考音频源文件或历史 Render Manifest。
+- 在 Voice Studio 克隆新声音：对话框给出录音条件提示、约 10 秒的朗读段落（录这段即可自动得到准确逐字稿）、在本机克隆上限处自动停止的录音计时、上传或录音样本的时长检查，并要求确认已获得说话人同意。从 Episode 进入创建时，新声音会直接应用到该脚本并返回 Episode，可立即试听。
 - 内置 reference 音频当前位于 `services/python-core/app/assets/speaker-references/`（纳入版本控制）。用户 metadata 位于 `.local-data/speaker-references/`；上传或录制的音频会规范化为不可变的 48 kHz、单声道、16-bit PCM WAV，并保存到 `.local-data/exports/_speaker_references/`。创建时必须提供匹配的参考文本；系统音频捕获尚不可用。
-- 本机语音服务决定并加载当前模型；Aodcast 在每份 manifest 中记录所选 provider 和 pipeline。Speech Plan 与上下文窗口重生成合同保留在内部，不进入主 UI。
+- 本机语音服务从 `.env` 加载预设模型，并按每个请求加载指定的克隆模型，同一时间只驻留一个模型。Aodcast 在每份 manifest 中记录所选 provider、模型与 Speaker Reference 哈希，因此上下文窗口重生成会沿用被替换渲染的模型和参考。Speech Plan 与上下文窗口重生成合同保留在内部，不进入主 UI。
 - Artifact 音频播放在 Web 与 Tauri 中都走 localhost HTTP 路由 `/api/v1/artifacts/audio`。
 - Reveal in Finder 等 Tauri-only 助手不在 HTTP `DesktopBridge` 接口中。
 
 ### 本机语音职责边界
 
-Aodcast 编排核心不包含语音模型 worker 或进程内推理。`LocalSpeechClient` 保持同步 TTS provider 契约，内部执行可取消的 HTTP 请求。内置 `speech-service` 进程负责模型加载、GPU 并发、推理切片及 ASR 解码。请求间保持固定预设音色；不会把参考音频或先前生成的音频作为克隆或连续性条件发送。
+Aodcast 编排核心不包含语音模型 worker 或进程内推理。`LocalSpeechClient` 保持同步 TTS provider 契约，内部执行可取消的 HTTP 请求。内置 `speech-service` 进程负责模型加载、GPU 并发、推理切片及 ASR 解码。请求间保持固定预设音色。克隆请求在每个段落都上传所选 Speaker Reference 的 WAV 与逐字稿；不会把先前生成的音频作为连续性条件发送。
 
 Aodcast 的 manifest 装配把自然段 WAV 规范化为统一格式，每段做一次边缘淡化，根据可听样本匹配 RMS 电平，插入编辑停顿，限制 sample peak，最终写出 `podcast.wav`。这一步是节目发布装配，服务内部另外负责推理切片间的交叉淡化。
 

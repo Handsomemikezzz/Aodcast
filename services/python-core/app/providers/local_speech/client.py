@@ -147,14 +147,45 @@ class LocalSpeechClient:
                 "response_format": "wav",
             },
         )
-        audio = response.content
+        return self._validated_wav(response.content)
+
+    @staticmethod
+    def _validated_wav(audio: bytes) -> bytes:
         try:
             with wave.open(io.BytesIO(audio), "rb") as wav:
                 if wav.getnframes() == 0 or wav.getsampwidth() != 2:
                     raise ValueError("Expected non-empty PCM16 WAV audio.")
-        except (wave.Error, EOFError) as exc:
+        except (wave.Error, EOFError, ValueError) as exc:
             raise LocalSpeechError("The local speech service did not return valid WAV audio.") from exc
         return audio
+
+    def clone(
+        self,
+        text: str,
+        reference_audio: str | Path,
+        reference_text: str,
+        *,
+        model: str,
+        language: str = "",
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> bytes:
+        """Zero-shot clone: the service conditions every slice on this reference."""
+        if not text.strip():
+            raise ValueError("Speech input cannot be empty.")
+        if not reference_text.strip():
+            raise ValueError("Voice cloning requires the exact transcript of the reference audio.")
+        source = Path(reference_audio)
+        data = {"input": text, "reference_text": reference_text, "model": model, "response_format": "wav"}
+        if language:
+            data["language"] = language
+        response = self._request(
+            "POST",
+            self.base_url + "/audio/speech/clone",
+            should_cancel=should_cancel,
+            files={"reference": (source.name, source.read_bytes(), "audio/wav")},
+            data=data,
+        )
+        return self._validated_wav(response.content)
 
     def transcribe(self, path: str | Path, language: str | None = None) -> str:
         source = Path(path)

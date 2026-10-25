@@ -12,7 +12,8 @@ from app.domain.project import SessionProject
 from app.domain.provider_config import LLMProviderConfig
 from app.domain.script import ScriptRecord
 from app.domain.session import SessionRecord, SessionState
-from app.domain.tts_config import TTSProviderConfig
+from app.domain.tts_config import DEFAULT_LOCAL_CLONE_MODEL, LOCAL_CLONE_MODELS, TTSProviderConfig
+from app.providers.local_speech.provider import LocalSpeechTTSProvider
 from tests.audio_utils import synthesize_sine_wave_bytes
 from app.providers.tts_api.base import TTSGenerationResponse
 from app.orchestration.audio_rendering import AudioRenderingService, VoiceRenderSettings
@@ -300,13 +301,120 @@ class PodcastRenderingTests(unittest.TestCase):
             self.assertEqual(current.context_text, "")
             self.assertEqual(current.clone_mode, "auto")
 
-    def test_local_service_rejects_speaker_reference_instead_of_silently_ignoring_it(self) -> None:
+    def test_local_preset_model_rejects_speaker_reference_instead_of_silently_ignoring_it(self) -> None:
         temp, store, _, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
         self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
-        with self.assertRaisesRegex(ValueError, "cloning is unavailable"):
-            service.render_audio(session_id, script_id=script_id)
+        with patch("app.orchestration.podcast_rendering.build_tts_provider", side_effect=LocalSpeechTTSProvider):
+            with self.assertRaisesRegex(ValueError, "preset voices only"):
+                service.render_audio(session_id, script_id=script_id)
+
+    def capture_clone_requests(self, model: str = DEFAULT_LOCAL_CLONE_MODEL):
+        requests = []
+        configs = []
+
+        class CloneProvider:
+            def __init__(self, config):
+                configs.append(config)
+
+            def synthesize(self, request):
+                requests.append(request)
+                return TTSGenerationResponse(
+                    audio_bytes=synthesize_sine_wave_bytes(1),
+                    file_extension="wav",
+                    provider_name="local_http",
+                    model_name=configs[-1].model,
+                    adapter_version="local-http-clone-v1",
+                    sample_rate_hz=24_000,
+                    channels=1,
+                )
+
+        patcher = patch("app.orchestration.podcast_rendering.build_tts_provider", side_effect=CloneProvider)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return requests
+
+    def test_local_clone_render_anchors_every_segment_to_the_reference(self) -> None:
+        temp, store, _, _, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        session_id, script_id = self.seed_project(store)
+        reference = self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
+        requests = self.capture_clone_requests()
+
+        result = service.render_audio(
+            session_id,
+            script_id=script_id,
+            override_provider="local_http",
+            override_model=DEFAULT_LOCAL_CLONE_MODEL,
+            settings=VoiceRenderSettings(),
+            require_speaker_reference=True,
+        )
+
+        self.assertEqual(result.model, DEFAULT_LOCAL_CLONE_MODEL)
+        self.assertGreater(len(requests), 1)
+        for current in requests:
+            self.assertEqual(current.reference_audio_path, reference["audio_path"])
+            self.assertEqual(current.reference_text, reference["reference_text"])
+            self.assertEqual(current.context_audio_path, "")
+            self.assertEqual(current.style_prompt, "")
+        loaded = store.load_project_for_script(session_id, script_id)
+        assert loaded.render_manifest and loaded.artifact
+        self.assertEqual(loaded.render_manifest.speaker_reference["reference_hash"], reference["reference_hash"])
+        self.assertEqual(loaded.render_manifest.pipeline[0].model, DEFAULT_LOCAL_CLONE_MODEL)
+        self.assertEqual(loaded.artifact.speaker_reference["speaker_reference_id"], "speaker-test")
+
+    def test_same_reference_renders_with_either_clone_model_and_regenerates_with_its_own(self) -> None:
+        temp, store, _, _, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        session_id, script_id = self.seed_project(store)
+        reference = self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
+        requests = self.capture_clone_requests()
+        for model in LOCAL_CLONE_MODELS:
+            service.render_audio(
+                session_id,
+                script_id=script_id,
+                override_provider="local_http",
+                override_model=model,
+                settings=VoiceRenderSettings(),
+                require_speaker_reference=True,
+            )
+            manifest = store.load_project_for_script(session_id, script_id).render_manifest
+            assert manifest
+            self.assertEqual(manifest.pipeline[0].model, model)
+            self.assertEqual(manifest.speaker_reference["reference_hash"], reference["reference_hash"])
+
+        loaded = store.load_project_for_script(session_id, script_id)
+        assert loaded.speech_plan and loaded.render_manifest
+        before = len(requests)
+        service.regenerate_audio_window_with_cancellation(
+            session_id,
+            script_id=script_id,
+            target_segment_id=loaded.speech_plan.segments[2].segment_id,
+            expected_plan_id=loaded.speech_plan.plan_id,
+            expected_render_id=loaded.render_manifest.render_id,
+        )
+        self.assertEqual(len(requests) - before, 3)
+        after = store.load_project_for_script(session_id, script_id).render_manifest
+        assert after
+        self.assertEqual(after.pipeline[0].model, LOCAL_CLONE_MODELS[-1])
+        self.assertTrue(all(r.reference_audio_path == reference["audio_path"] for r in requests[before:]))
+
+    def test_clone_render_without_reference_fails_before_synthesis(self) -> None:
+        temp, store, _, _, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        session_id, script_id = self.seed_project(store)
+        requests = self.capture_clone_requests()
+        with self.assertRaisesRegex(ValueError, "Select a speaker reference"):
+            service.render_audio(
+                session_id,
+                script_id=script_id,
+                override_provider="local_http",
+                override_model=DEFAULT_LOCAL_CLONE_MODEL,
+                settings=VoiceRenderSettings(),
+                require_speaker_reference=True,
+            )
+        self.assertFalse(requests)
 
     def test_explicit_preset_render_releases_old_reference_binding(self) -> None:
         temp, store, _, _, service = self.build_environment()

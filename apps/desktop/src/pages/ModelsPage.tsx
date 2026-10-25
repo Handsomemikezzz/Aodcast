@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
 import { getErrorMessage } from "../lib/requestState";
 import { cn } from "../lib/utils";
+import { modelMode } from "../lib/voiceSettings";
 import type { ModelStatus, TTSCapability, TTSProviderConfig } from "../types";
 
 export function ModelsPage() {
@@ -78,19 +79,29 @@ export function ModelsPage() {
           {models.map((model) => (
             <li key={model.model_name} className="flex items-start justify-between gap-4 px-4 py-3">
               <div className="min-w-0">
-                <p className="text-[14px] font-medium text-primary">{model.display_name}</p>
+                <p className="text-[14px] font-medium text-primary">
+                  {model.display_name}
+                  <span className="ml-2 text-[12px] font-normal text-secondary">
+                    {modelMode(model) === "clone" ? "Voice cloning" : "Preset voices"}
+                  </span>
+                </p>
                 <p className="mt-0.5 break-all text-[12px] text-secondary">{model.hf_repo_id || model.model_name}</p>
                 {model.recommendation ? <p className="mt-1 text-[12px] text-secondary">{model.recommendation}</p> : null}
               </div>
               {model.ready ? (
-                <span className="shrink-0 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">Active</span>
+                <span className="shrink-0 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[12px] font-medium text-emerald-700 dark:text-emerald-300">
+                  {modelMode(model) === "clone" ? "Ready" : "Active"}
+                </span>
+              ) : model.unavailable_reason && available ? (
+                <span className="max-w-[45%] shrink-0 text-right text-[12px] text-amber-700 dark:text-amber-300">{model.unavailable_reason}</span>
               ) : null}
             </li>
           ))}
         </ul>
         <p className="mt-3 text-[12px] leading-5 text-secondary">
-          The speech service picks its model from <code className="font-mono">speech-service/.env</code> and handles downloads itself.
-          It supports preset voices only — no cloning, styles, or speed changes.{" "}
+          The speech service picks its preset-voice model from <code className="font-mono">speech-service/.env</code> and handles
+          downloads itself. Both Qwen3 Base models clone a saved voice from Voice; choose a model per episode in its Voice
+          section. Styles and speed changes are not supported locally.{" "}
           <button type="button" onClick={() => navigate("/settings")} className="text-primary underline underline-offset-2">
             Language models are configured in Settings.
           </button>

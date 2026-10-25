@@ -6,6 +6,12 @@ from typing import Any
 
 DEFAULT_LOCAL_TTS_MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit"
 KOKORO_TTS_MODEL = "mlx-community/Kokoro-82M-bf16"
+# Base models clone the selected Speaker Reference and have no preset voices.
+LOCAL_CLONE_MODELS = (
+    "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+    "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
+)
+DEFAULT_LOCAL_CLONE_MODEL = LOCAL_CLONE_MODELS[0]
 DEFAULT_SPEECH_URL = "http://127.0.0.1:8090/v1"
 
 

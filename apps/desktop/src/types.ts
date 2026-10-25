@@ -455,6 +455,9 @@ export type TTSCapability = {
   reasons: string[];
   current_model: string;
   model_source: string;
+  clone_models?: string[];
+  min_reference_duration_ms?: number | null;
+  max_reference_duration_ms?: number | null;
 };
 
 export type LLMProviderConfig = {
@@ -556,8 +559,14 @@ export type ModelStatus = {
   available?: boolean;
   active?: boolean;
   ready?: boolean;
+  /** Default among models of the same kind (preset voices or cloning). */
+  default_for_mode?: boolean;
+  unavailable_reason?: string;
   capabilities?: TTSModelCapability;
 };
+
+/** "preset" models speak built-in voices; "clone" models speak a selected Speaker Reference. */
+export type LocalVoiceMode = "preset" | "clone";
 
 export type MemoryType = "profile" | "experience" | "viewpoint" | "preference";
 

@@ -6,14 +6,18 @@ import json
 import tempfile
 import time
 import unittest
+import unittest.mock
 import wave
 from pathlib import Path
 
 import httpx
 
-from app.domain.tts_config import KOKORO_TTS_MODEL, TTSProviderConfig
+from app.domain.tts_config import DEFAULT_LOCAL_CLONE_MODEL, KOKORO_TTS_MODEL, LOCAL_CLONE_MODELS, TTSProviderConfig
 from tests.audio_utils import synthesize_sine_wave_bytes
-from app.providers.local_speech.capabilities import capability_contract_for_model
+from app.providers.local_speech.capabilities import (
+    capability_contract_for_model,
+    detect_local_speech_capability,
+)
 from app.providers.local_speech.client import LocalSpeechClient, LocalSpeechError
 from app.providers.local_speech.provider import LocalSpeechTTSProvider
 from app.providers.tts_api.base import TTSGenerationRequest
@@ -162,9 +166,88 @@ class LocalSpeechTests(unittest.TestCase):
             {"speed": 1.1},
             {"style_prompt": "happy"},
             {"reference_audio_path": "/tmp/reference.wav"},
+            {"context_audio_path": "/tmp/previous.wav"},
         ]:
             with self.assertRaises(ValueError):
                 provider.synthesize(TTSGenerationRequest("s", "你好", "Vivian", "wav", **options))
+        with self.assertRaisesRegex(ValueError, "preset voices only; choose a Qwen3 Base model"):
+            provider.synthesize(
+                TTSGenerationRequest("s", "你好", "Vivian", "wav", reference_audio_path="/tmp/r.wav", reference_text="参考")
+            )
+
+    def test_clone_model_uploads_reference_and_reports_requested_model(self):
+        audio = synthesize_sine_wave_bytes(1)
+        requests = []
+
+        def handler(request):
+            requests.append(request)
+            return httpx.Response(200, content=audio)
+
+        with tempfile.TemporaryDirectory() as folder:
+            reference = Path(folder) / "friend.wav"
+            reference.write_bytes(synthesize_sine_wave_bytes(4, frequency=220.0))
+            for model in LOCAL_CLONE_MODELS:
+                provider = LocalSpeechTTSProvider(TTSProviderConfig(model=model))
+                provider.client = LocalSpeechClient(transport=httpx.MockTransport(handler))
+                result = provider.synthesize(
+                    TTSGenerationRequest(
+                        "s",
+                        "这是需要克隆朋友声音的一整段文稿。",
+                        "warm_narrator",
+                        "wav",
+                        language="zh",
+                        reference_audio_path=str(reference),
+                        reference_text="你好，这是我的声音。",
+                    )
+                )
+                self.assertEqual(result.model_name, model)
+                self.assertEqual(result.adapter_version, "local-http-clone-v1")
+                body = requests[-1].content
+                self.assertEqual(requests[-1].url.path, "/v1/audio/speech/clone")
+                self.assertIn(b'name="reference"; filename="friend.wav"', body)
+                self.assertIn(reference.read_bytes(), body)
+                self.assertIn("你好，这是我的声音。".encode(), body)
+                self.assertIn(model.encode(), body)
+                self.assertIn(b'name="language"\r\n\r\nzh', body)
+        # No health probe: the clone model is chosen per request, not by service config.
+        self.assertEqual([r.method for r in requests], ["POST", "POST"])
+
+    def test_clone_model_requires_a_speaker_reference(self):
+        provider = LocalSpeechTTSProvider(TTSProviderConfig(model=DEFAULT_LOCAL_CLONE_MODEL))
+        with self.assertRaisesRegex(ValueError, "Select a Speaker Reference"):
+            provider.synthesize(TTSGenerationRequest("s", "你好", "Vivian", "wav"))
+        with self.assertRaisesRegex(ValueError, "preceding audio"):
+            provider.synthesize(
+                TTSGenerationRequest(
+                    "s", "你好", "Vivian", "wav",
+                    reference_audio_path="/tmp/r.wav", reference_text="参考", context_audio_path="/tmp/p.wav",
+                )
+            )
+
+    def test_capability_reads_clone_models_and_reference_limits_from_health(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "models": {
+                        "tts": {"id": TTSProviderConfig().model, "loaded": False},
+                        "clone": [{"id": model, "loaded": False} for model in LOCAL_CLONE_MODELS],
+                    },
+                    "clone_reference": {"min_seconds": 3, "max_seconds": 30},
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        original = LocalSpeechClient.__init__
+
+        def patched(client, base_url="", **kwargs):
+            original(client, base_url or "http://127.0.0.1:8090", transport=transport)
+
+        with unittest.mock.patch.object(LocalSpeechClient, "__init__", patched):
+            capability = detect_local_speech_capability(TTSProviderConfig()).to_dict()
+        self.assertEqual(capability["clone_models"], list(LOCAL_CLONE_MODELS))
+        self.assertEqual(capability["min_reference_duration_ms"], 3000)
+        self.assertEqual(capability["max_reference_duration_ms"], 30000)
 
     def test_service_model_switch_updates_voice_mapping_and_response_metadata(self):
         received = []

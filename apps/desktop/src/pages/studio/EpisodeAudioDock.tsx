@@ -6,10 +6,16 @@ import { OverflowMenu } from "../../components/OverflowMenu";
 import { ProgressBar } from "../../components/ProgressBar";
 import { cn } from "../../lib/utils";
 import { episodeStatusTone, type EpisodeProductStatus } from "../../lib/episodeStatus";
+import { modelId } from "../../lib/voiceSettings";
 import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWorkbench";
 import type { EpisodeRenderReadiness } from "./studioWorkflow";
 
 type ActiveTrack = "episode" | "preview";
+
+/** "Qwen3 TTS 1.7B Base (8-bit)" -> "1.7B"; keeps take buttons short. */
+function shortModelLabel(name: string): string {
+  return name.match(/\d+(?:\.\d+)?B\b/)?.[0] ?? name;
+}
 
 export function EpisodeAudioDock({
   workbench,
@@ -36,6 +42,9 @@ export function EpisodeAudioDock({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const hasAudio = Boolean(workbench.audioSrc);
   const hasPreview = Boolean(workbench.previewSrc);
+  const activeTakeId = workbench.previewTakes.find((take) => take.src === workbench.previewSrc)?.modelId ?? "";
+  const takeLabel = (id: string) =>
+    shortModelLabel(workbench.models.find((model) => modelId(model) === id)?.display_name ?? id);
 
   useEffect(() => {
     if (hasPreview) setActiveTrack("preview");
@@ -106,6 +115,25 @@ export function EpisodeAudioDock({
                       )}
                     >
                       {track === "episode" ? "Episode" : "Preview"}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {activeTrack === "preview" && workbench.previewTakes.length > 1 ? (
+                <div className="flex shrink-0 rounded-lg border border-outline p-0.5" role="group" aria-label="Compare preview takes">
+                  {workbench.previewTakes.map((take) => (
+                    <button
+                      key={take.modelId}
+                      type="button"
+                      onClick={() => workbench.selectPreviewTake(take.modelId)}
+                      aria-pressed={activeTakeId === take.modelId}
+                      title={take.modelId}
+                      className={cn(
+                        "h-7 rounded-md px-2.5 text-[12px] font-medium tabular-nums transition-colors",
+                        activeTakeId === take.modelId ? "bg-primary/[0.07] text-primary" : "text-secondary hover:text-primary",
+                      )}
+                    >
+                      {takeLabel(take.modelId)}
                     </button>
                   ))}
                 </div>

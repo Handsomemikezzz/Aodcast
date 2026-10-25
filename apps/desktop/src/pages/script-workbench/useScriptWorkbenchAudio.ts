@@ -15,6 +15,7 @@ import { revealInFinder } from "../../lib/shellOps";
 import { analyzeSpokenScript } from "./spokenScriptChecks";
 import type {
   AudioRenderResult,
+  LocalVoiceMode,
   RequestState,
   RuntimeInfo,
   SessionProject,
@@ -37,7 +38,14 @@ type UseScriptWorkbenchAudioArgs = {
   selectedEngine: "local_http" | "cloud";
   cloudProvider: string;
   selectedModelId: string;
+  localVoiceMode: LocalVoiceMode;
   voiceSettings: VoiceRenderSettings;
+};
+
+/** One rendered preview of the current passage; kept per model so takes can be compared. */
+export type PreviewTake = {
+  modelId: string;
+  src: string;
 };
 
 type UseScriptWorkbenchAudioResult = {
@@ -54,6 +62,8 @@ type UseScriptWorkbenchAudioResult = {
   previewError: string | null;
   previewRequestState: RequestState | null;
   previewSrc: string;
+  previewTakes: PreviewTake[];
+  selectPreviewTake: (modelId: string) => void;
   previewAudioRef: RefObject<HTMLAudioElement>;
   triggerRenderAudio: (options?: { scriptToRender?: string }) => Promise<void>;
   triggerVoicePreview: (previewText: string) => Promise<void>;
@@ -94,6 +104,7 @@ export function useScriptWorkbenchAudio({
   selectedEngine,
   cloudProvider,
   selectedModelId,
+  localVoiceMode,
   voiceSettings,
 }: UseScriptWorkbenchAudioArgs): UseScriptWorkbenchAudioResult {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -117,28 +128,46 @@ export function useScriptWorkbenchAudio({
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewRequestState, setPreviewRequestState] = useState<RequestState | null>(null);
-  const [previewSrc, setPreviewSrc] = useState("");
+  const [previewTakes, setPreviewTakes] = useState<PreviewTake[]>([]);
+  const [activePreviewModelId, setActivePreviewModelId] = useState("");
+  const previewTextRef = useRef("");
 
   const audioPath = project?.render_manifest?.output.audio_path || project?.artifact?.audio_path || "";
   const audioSrc = useMemo(() => (audioPath ? resolveAudioFileUrl(audioPath) : ""), [audioPath]);
   const speakerReference = project?.artifact?.script_artifacts?.[scriptId]?.speaker_reference
     ?? project?.artifact?.speaker_reference;
+  const cloning = selectedEngine === "local_http" && localVoiceMode === "clone";
+  const needsReference = selectedEngine !== "local_http" || cloning;
+  // The model is deliberately not part of this key: switching between clone models keeps
+  // earlier takes of the same passage so they can be compared side by side.
   const previewInputKey = JSON.stringify({
     engine: selectedEngine,
-    model: selectedModelId,
+    mode: localVoiceMode,
     reference: speakerReference?.speaker_reference_id ?? "",
+    preset: selectedEngine === "local_http" && !cloning ? voiceSettings.voice_id : "",
     style: voiceSettings.style_id,
     speed: voiceSettings.speed,
   });
+  const previewModelId = selectedEngine === "local_http" ? selectedModelId : cloudProvider;
+  const previewSrc = (
+    previewTakes.find((take) => take.modelId === activePreviewModelId)
+    ?? previewTakes[previewTakes.length - 1]
+  )?.src ?? "";
 
   useEffect(() => {
     previewRequestTokenRef.current += 1;
     previewTaskRef.current = null;
+    previewTextRef.current = "";
     setPreviewing(false);
     setPreviewError(null);
     setPreviewRequestState(null);
-    setPreviewSrc("");
+    setPreviewTakes([]);
+    setActivePreviewModelId("");
   }, [previewInputKey]);
+
+  useEffect(() => {
+    if (previewTakes.some((take) => take.modelId === previewModelId)) setActivePreviewModelId(previewModelId);
+  }, [previewModelId]);
 
   const stopTaskPolling = () => {
     if (pollHandleRef.current !== null) {
@@ -309,13 +338,24 @@ export function useScriptWorkbenchAudio({
     const renderSpeakerReference = renderProject?.artifact?.script_artifacts?.[scriptId]?.speaker_reference
       ?? renderProject?.artifact?.speaker_reference;
     if (selectedEngine === "local_http" && !selectedModelId) {
-      setAudioError("The speech service has no ready model. Check Models.");
+      setAudioError(
+        cloning
+          ? "No voice cloning model is ready. Restart the speech service, then check Models."
+          : "The speech service has no ready model. Check Models.",
+      );
+      setAudioMessage(null);
+      setAudioRequestState(null);
+      return null;
+    }
+    if (cloning && !renderSpeakerReference?.speaker_reference_id) {
+      setAudioError("Choose a voice to clone before generating audio.");
       setAudioMessage(null);
       setAudioRequestState(null);
       return null;
     }
 
-    if (selectedEngine !== "local_http" && renderSpeakerReference?.speaker_reference_id) {
+    // Re-select so the render uses the reference's latest saved revision.
+    if (needsReference && renderSpeakerReference?.speaker_reference_id) {
       renderProject = await bridge.selectSpeakerReference(sessionId, scriptId, renderSpeakerReference.speaker_reference_id);
       setProject(renderProject);
     }
@@ -335,7 +375,7 @@ export function useScriptWorkbenchAudio({
         modelId: selectedEngine === "local_http" ? selectedModelId : undefined,
         scriptId,
         voiceSettings,
-        requireSpeakerReference: false,
+        requireSpeakerReference: cloning,
       });
       beginTask(result);
       await onRefresh();
@@ -357,23 +397,23 @@ export function useScriptWorkbenchAudio({
       setPreviewError("Add some script text before previewing.");
       return;
     }
-    if (selectedEngine !== "local_http" && !speakerReference?.speaker_reference_id) {
-      setPreviewError("Choose a voice before previewing this passage.");
+    if (needsReference && !speakerReference?.speaker_reference_id) {
+      setPreviewError(cloning ? "Choose a voice to clone before previewing." : "Choose a voice before previewing this passage.");
       return;
     }
     if (selectedEngine === "local_http" && !selectedModelId) {
-      setPreviewError("Choose the active service model before previewing.");
+      setPreviewError(cloning ? "No voice cloning model is ready. Check Models." : "Choose the active service model before previewing.");
       return;
     }
 
     const requestToken = previewRequestTokenRef.current + 1;
     previewRequestTokenRef.current = requestToken;
     const isCurrentRequest = () => previewRequestTokenRef.current === requestToken;
+    const requestModelId = previewModelId;
 
     try {
       setPreviewing(true);
       setPreviewError(null);
-      setPreviewSrc("");
       setPreviewRequestState(buildRequestState("render_voice_preview", "running", "Preparing preview..."));
       const result = await bridge.renderVoicePreview(
         { ...voiceSettings, preview_text: text },
@@ -382,7 +422,7 @@ export function useScriptWorkbenchAudio({
           scriptId,
           providerOverride: selectedEngine === "local_http" ? "local_http" : cloudProvider,
           modelId: selectedEngine === "local_http" ? selectedModelId : undefined,
-          speakerReferenceId: selectedEngine === "local_http" ? undefined : speakerReference?.speaker_reference_id,
+          speakerReferenceId: needsReference ? speakerReference?.speaker_reference_id : undefined,
           onState: (state) => {
             if (isCurrentRequest()) setPreviewRequestState(state);
           },
@@ -393,7 +433,12 @@ export function useScriptWorkbenchAudio({
       );
       if (!isCurrentRequest()) return;
       setPreviewRequestState(result.request_state ?? null);
-      setPreviewSrc(resolveAudioFileUrl(result.audio_path));
+      const take = { modelId: requestModelId, src: resolveAudioFileUrl(result.audio_path) };
+      // A different passage starts a new comparison; the same passage replaces this model's take.
+      const samePassage = previewTextRef.current === text;
+      previewTextRef.current = text;
+      setPreviewTakes((takes) => [...(samePassage ? takes.filter((item) => item.modelId !== take.modelId) : []), take]);
+      setActivePreviewModelId(take.modelId);
       window.setTimeout(() => {
         if (isCurrentRequest()) void previewAudioRef.current?.play().catch(() => undefined);
       }, 100);
@@ -556,6 +601,8 @@ export function useScriptWorkbenchAudio({
     previewError,
     previewRequestState,
     previewSrc,
+    previewTakes,
+    selectPreviewTake: setActivePreviewModelId,
     previewAudioRef,
     triggerRenderAudio,
     triggerVoicePreview,

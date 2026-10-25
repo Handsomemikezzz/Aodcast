@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DesktopBridge } from "../../lib/desktopBridge";
 import { getErrorMessage } from "../../lib/requestState";
-import { readySpeechModel, resolveProjectVoiceSettings } from "../../lib/voiceSettings";
+import {
+  modelId,
+  modelMode,
+  readyModelForMode,
+  renderedSpeechModel,
+  resolveProjectVoiceSettings,
+} from "../../lib/voiceSettings";
 import type {
+  LocalVoiceMode,
   ModelStatus,
   SessionProject,
   SpeakerReference,
@@ -33,7 +40,8 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
   const [presetVoiceOverride, setSelectedPresetVoiceId] = useState<string | null>(null);
   const [voiceStyles, setVoiceStyles] = useState<VoiceStylePreset[]>([]);
   const [models, setModels] = useState<ModelStatus[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState("");
+  // The user's explicit model choice; null follows the rendered/selected voice.
+  const [modelOverride, setSelectedModelId] = useState<string | null>(null);
   const [voiceSelectionError, setVoiceSelectionError] = useState<string | null>(null);
   const [engineOverride, setSelectedEngine] = useState<"local_http" | "cloud" | null>(null);
   const [styleOverride, setSelectedStyleId] = useState<string | null>(null);
@@ -92,14 +100,31 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     setSelectedEngine(null);
   }, [capability?.available, ttsConfig?.provider]);
 
+  const renderedModel = renderedSpeechModel(project);
+  const hasScriptReference = Boolean(
+    (project?.artifact?.script_artifacts?.[scriptId]?.speaker_reference ?? project?.artifact?.speaker_reference)
+      ?.speaker_reference_id,
+  );
+  // The model is chosen first; its declared capability decides whether the script speaks a
+  // preset voice or a cloned Speaker Reference. Without an explicit choice, keep the model that
+  // rendered the current audio, else a selected reference implies the default cloning model.
+  const selectedModel = useMemo(() => {
+    const ready = models.filter((model) => model.ready === true && model.available !== false);
+    const byId = (id: string | null) => (id ? ready.find((model) => modelId(model) === id) : undefined);
+    const rendered = byId(renderedModel);
+    const followReference = hasScriptReference
+      ? readyModelForMode(models, "clone", rendered && modelMode(rendered) === "clone" ? modelId(rendered) : "")
+      : rendered;
+    return byId(modelOverride)
+      ?? followReference
+      ?? readyModelForMode(models, "preset", ttsConfig?.model?.trim() || "");
+  }, [models, modelOverride, renderedModel, hasScriptReference, ttsConfig?.model]);
+  const selectedModelId = selectedModel ? modelId(selectedModel) : "";
+  const localVoiceMode: LocalVoiceMode = modelMode(selectedModel);
+
   useEffect(() => {
-    const configured = ttsConfig?.model?.trim() || "";
-    const rendered = project?.render_manifest?.pipeline.find((stage) => stage.stage === "speech_synthesis")?.model || "";
-    setSelectedModelId((current) => {
-      const model = readySpeechModel(models, current, configured, rendered);
-      return model?.hf_repo_id || model?.model_name || "";
-    });
-  }, [models, project?.render_manifest?.render_id, ttsConfig?.model]);
+    setSelectedModelId(null);
+  }, [scriptId]);
 
   const savedVoiceSettings = resolveProjectVoiceSettings(project, scriptId);
 
@@ -173,6 +198,7 @@ export function useScriptWorkbenchData({ bridge, sessionId, scriptId, onRefresh 
     models,
     selectedModelId,
     setSelectedModelId,
+    localVoiceMode,
     voiceSelectionError,
     selectedEngine,
     setSelectedEngine,

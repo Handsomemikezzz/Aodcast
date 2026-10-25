@@ -8,7 +8,7 @@ import { AudioPlayer } from "../components/AudioPlayer";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OverflowMenu } from "../components/OverflowMenu";
 import { getErrorMessage } from "../lib/requestState";
-import { readySpeechModel } from "../lib/voiceSettings";
+import { readyModelForMode, referenceDurationIssue } from "../lib/voiceSettings";
 import { cn } from "../lib/utils";
 import type {
   ModelStatus,
@@ -39,6 +39,16 @@ function shortRepoName(repo: string): string {
 
 function scriptOpeningText(script: string): string {
   return script.trim().replace(/\s+/g, " ").slice(0, 180);
+}
+
+/** About ten seconds read at a natural pace; reading it makes the transcript exact by construction. */
+const SUGGESTED_PASSAGES: Record<string, string> = {
+  zh: "今天下午阳光很好，我刚泡了一杯茶。想跟你聊聊最近读到的一本书，它讲的是普通人怎样把日子过得踏实，又有点意思。",
+  en: "It's a quiet afternoon and I just made a cup of tea. I'd love to tell you about a book I've been reading, about how ordinary days can still feel meaningful.",
+};
+
+function suggestedPassage(language: string): string {
+  return SUGGESTED_PASSAGES[language.trim().toLowerCase().split(/[-_]/)[0]] ?? SUGGESTED_PASSAGES.en;
 }
 
 function formatReferenceDuration(durationMs: number): string {
@@ -99,6 +109,9 @@ export function VoiceStudioPage() {
   const [newReferenceAudioPreviewUrl, setNewReferenceAudioPreviewUrl] = useState("");
   const [newReferenceText, setNewReferenceText] = useState("");
   const [newReferenceLanguage, setNewReferenceLanguage] = useState("zh");
+  const [newReferenceDurationMs, setNewReferenceDurationMs] = useState<number | null>(null);
+  const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [savingReference, setSavingReference] = useState(false);
   const [recordingReferenceSample, setRecordingReferenceSample] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +121,7 @@ export function VoiceStudioPage() {
 
   const selectedSession = projects.find((item) => item.session.session_id === selectedSessionId);
   const scriptBoundMode = Boolean(routeSessionId && routeScriptId);
-  const canApplyReferenceToScript = Boolean(selectedSessionId && selectedScriptId && ttsConfig?.provider !== "local_http");
+  const canApplyReferenceToScript = Boolean(selectedSessionId && selectedScriptId);
   const scriptTitle = (project?.script as { title?: string } | undefined)?.title || selectedSession?.session.topic || "this script";
   const scriptText = scriptBoundMode ? project?.script?.final?.trim() || project?.script?.draft?.trim() || "" : "";
   const scriptOpening = scriptOpeningText(scriptText);
@@ -126,8 +139,22 @@ export function VoiceStudioPage() {
   const selectedVoice = voices.find((voice) => voice.voice_id === selectedVoiceId) ?? voices[0];
   const selectedStyle = styles.find((style) => style.style_id === selectedStyleId) ?? styles[0];
   const resolvedModel = resolvedTtsModel(ttsConfig);
-  const currentModel = ttsConfig?.provider === "local_http" ? readySpeechModel(models, resolvedModel) : undefined;
   const isLocalEngine = ttsConfig?.provider === "local_http";
+  // With the local engine a selected voice is cloned by the default Base model; the
+  // episode's Voice section switches to the larger model for comparison.
+  const localCloning = isLocalEngine && Boolean(selectedReference);
+  const currentModel = isLocalEngine
+    ? localCloning
+      ? readyModelForMode(models, "clone")
+      : readyModelForMode(models, "preset", resolvedModel)
+    : undefined;
+  const cloneLimits = {
+    min: ttsCapability?.min_reference_duration_ms,
+    max: ttsCapability?.max_reference_duration_ms,
+  };
+  const cloneWindow = cloneLimits.min && cloneLimits.max
+    ? `${Math.round(cloneLimits.min / 1000)}–${Math.round(cloneLimits.max / 1000)} seconds`
+    : "a few seconds";
   const localEngineReady = Boolean(ttsConfig) && (!isLocalEngine || Boolean(ttsCapability?.available && currentModel));
   const previewEngineReady = localEngineReady;
   const engineLabel = isLocalEngine
@@ -160,8 +187,9 @@ export function VoiceStudioPage() {
       language,
       audioFormat,
       providerOverride,
+      model: currentModel?.hf_repo_id ?? "",
     }),
-    [audioFormat, effectivePreviewText, language, providerOverride, selectedReferenceId, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
+    [audioFormat, currentModel?.hf_repo_id, effectivePreviewText, language, providerOverride, selectedReferenceId, selectedStyleId, selectedVoice?.name, selectedVoiceId, speed],
   );
   previewContextRef.current = {
     previewKey: currentPreviewKey,
@@ -190,13 +218,24 @@ export function VoiceStudioPage() {
     referenceRecordingStreamRef.current = null;
   }, []);
 
-  const setReferenceAudioSample = useCallback((file: File | Blob, fileName: string) => {
+  const setReferenceAudioSample = useCallback((file: File | Blob, fileName: string, knownDurationMs?: number) => {
     setNewReferenceAudioFile(file);
     setNewReferenceAudioFileName(fileName);
+    setNewReferenceDurationMs(knownDurationMs ?? null);
+    const url = URL.createObjectURL(file);
     setNewReferenceAudioPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
-      return URL.createObjectURL(file);
+      return url;
     });
+    if (knownDurationMs === undefined) {
+      // Recorded WebM often reports an infinite duration; recordings pass the timer value instead.
+      const probe = new Audio();
+      probe.preload = "metadata";
+      probe.onloadedmetadata = () => {
+        if (Number.isFinite(probe.duration) && probe.duration > 0) setNewReferenceDurationMs(probe.duration * 1000);
+      };
+      probe.src = url;
+    }
   }, []);
 
   const resetReferenceDialog = useCallback(() => {
@@ -213,6 +252,9 @@ export function VoiceStudioPage() {
     setExistingReferenceAudioUrl("");
     setNewReferenceText("");
     setNewReferenceLanguage("zh");
+    setNewReferenceDurationMs(null);
+    setRecordingElapsedMs(0);
+    setConsentConfirmed(false);
     setRecordingReferenceSample(false);
     referenceRecordingChunksRef.current = [];
     referenceRecorderRef.current = null;
@@ -223,6 +265,11 @@ export function VoiceStudioPage() {
     resetReferenceDialog();
     setReferenceDialogMode("create");
   }, [resetReferenceDialog]);
+
+  const createRequested = searchParams.get("create") === "1";
+  useEffect(() => {
+    if (createRequested) openCreateReferenceDialog();
+  }, [createRequested, openCreateReferenceDialog]);
 
   const openEditReferenceDialog = useCallback((reference: SpeakerReference) => {
     resetReferenceDialog();
@@ -319,6 +366,22 @@ export function VoiceStudioPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [recordingReferenceSample, referenceDialogMode, referenceToDelete, resetReferenceDialog, savingReference]);
 
+  // Show elapsed time while recording and stop at the local cloning limit, so the sample stays usable.
+  useEffect(() => {
+    if (!recordingReferenceSample) return;
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => {
+      const elapsed = performance.now() - startedAt;
+      setRecordingElapsedMs(elapsed);
+      const limit = isLocalEngine ? ttsCapability?.max_reference_duration_ms : undefined;
+      if (limit && elapsed >= limit) {
+        const recorder = referenceRecorderRef.current;
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+      }
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [isLocalEngine, recordingReferenceSample, ttsCapability?.max_reference_duration_ms]);
+
   // Success copy is ephemeral: show briefly, then clear so it doesn't pin the layout.
   useEffect(() => {
     if (!message) return;
@@ -379,7 +442,7 @@ export function VoiceStudioPage() {
         scriptId: requestScriptId,
         providerOverride,
         modelId: isLocalEngine ? currentModel?.hf_repo_id || currentModel?.model_name : undefined,
-        speakerReferenceId: isLocalEngine ? undefined : requestReferenceId,
+        speakerReferenceId: isLocalEngine && !localCloning ? undefined : requestReferenceId,
       });
       if (!isCurrentPreviewRequest()) return;
       setPreviewRequestState(result.request_state ?? null);
@@ -443,6 +506,7 @@ export function VoiceStudioPage() {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) referenceRecordingChunksRef.current.push(event.data);
       };
+      const startedAt = performance.now();
       recorder.onstop = () => {
         const blob = new Blob(referenceRecordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         referenceRecordingChunksRef.current = [];
@@ -450,9 +514,12 @@ export function VoiceStudioPage() {
         setRecordingReferenceSample(false);
         if (blob.size > 0) {
           const extension = recorder.mimeType.includes("mp4") ? "mp4" : recorder.mimeType.includes("wav") ? "wav" : "webm";
-          setReferenceAudioSample(blob, `microphone-reference.${extension}`);
+          setReferenceAudioSample(blob, `microphone-reference.${extension}`, performance.now() - startedAt);
         }
       };
+      // Recording the suggested passage makes the transcript exact without typing.
+      setNewReferenceText((current) => current.trim() ? current : suggestedPassage(newReferenceLanguage));
+      setRecordingElapsedMs(0);
       recorder.start();
       setRecordingReferenceSample(true);
     } catch (err) {
@@ -490,6 +557,10 @@ export function VoiceStudioPage() {
         setError("Upload or record a sample first.");
         return;
       }
+      if (!consentConfirmed) {
+        setError("Confirm that you have permission to clone this person's voice.");
+        return;
+      }
       try {
         setSavingReference(true);
         setError(null);
@@ -510,7 +581,7 @@ export function VoiceStudioPage() {
             navigate(returnTo);
           }
         } else {
-          setMessage(isLocalEngine ? `Saved “${reference.name}”. The local speech service can't use voice samples.` : `Created “${reference.name}”. Open an episode to use it.`);
+          setMessage(`Created “${reference.name}”. Open an episode to use it.`);
         }
       } catch (err) {
         setError(getErrorMessage(err, "Failed to create speaker reference."));
@@ -548,7 +619,7 @@ export function VoiceStudioPage() {
       }
       const reference = await bridge.updateSpeakerReference(editingReferenceId, patch);
       await refreshSpeakerReferences();
-      if (!isLocalEngine && selectedSessionId && selectedScriptId && speakerReference?.speaker_reference_id === reference.speaker_reference_id) {
+      if (selectedSessionId && selectedScriptId && speakerReference?.speaker_reference_id === reference.speaker_reference_id) {
         const updated = await bridge.selectSpeakerReference(selectedSessionId, selectedScriptId, reference.speaker_reference_id);
         setProject(updated);
       }
@@ -671,8 +742,8 @@ export function VoiceStudioPage() {
 
         {isLocalEngine ? (
           <p className="mt-4 rounded-lg bg-primary/[0.04] px-3 py-2.5 text-[12px] leading-5 text-secondary">
-            The local speech service uses preset voices, chosen per episode. Saved samples are kept here but can only be
-            applied with a cloud speech engine (Settings).
+            The local speech service clones a saved voice with Qwen3 Base models: 0.6B by default, 1.7B selectable as the
+            episode&apos;s model. Use {cloneWindow} of one person&apos;s clean speech and its exact transcript.
           </p>
         ) : null}
 
@@ -688,6 +759,7 @@ export function VoiceStudioPage() {
             {speakerReferences.map((reference) => {
               const isSelected = speakerReference?.speaker_reference_id === reference.speaker_reference_id;
               const referenceAudioError = referenceAudioErrors[reference.speaker_reference_id];
+              const durationIssue = isLocalEngine ? referenceDurationIssue(reference.duration_ms, cloneLimits) : "";
               return (
                 <li key={reference.speaker_reference_id} className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center">
                   <div className="min-w-0 flex-1">
@@ -704,6 +776,7 @@ export function VoiceStudioPage() {
                       {reference.description || reference.reference_text ? ` · ${reference.description || reference.reference_text}` : ""}
                     </p>
                     {referenceAudioError ? <p className="mt-1 text-[12px] text-red-700 dark:text-red-300">{referenceAudioError}</p> : null}
+                    {durationIssue ? <p className="mt-1 text-[12px] text-amber-700 dark:text-amber-300">{durationIssue}</p> : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <div className="w-56">
@@ -713,7 +786,7 @@ export function VoiceStudioPage() {
                        
                       />
                     </div>
-                    {scriptBoundMode && !isLocalEngine && !isSelected ? (
+                    {scriptBoundMode && !isSelected ? (
                       <button
                         type="button"
                         onClick={() => void handleSelectSpeakerReference(reference)}
@@ -746,7 +819,9 @@ export function VoiceStudioPage() {
               <div className="min-w-0">
                 <h2 className="text-[15px] font-semibold text-primary">Preview</h2>
                 <p className="mt-0.5 truncate text-[12px] text-secondary">
-                  {isLocalEngine
+                  {localCloning && selectedReference
+                    ? `${selectedReference.name} · cloned by ${currentModel?.display_name ?? "a Qwen3 Base model"}`
+                    : isLocalEngine
                     ? `${voices.find((voice) => voice.voice_id === ttsConfig?.voice)?.name ?? "Service default voice"} · Natural · 1.0×`
                     : selectedReference
                       ? `${selectedReference.name} · ${selectedStyle?.name ?? "Default style"} · ${speed.toFixed(1)}×`
@@ -854,7 +929,7 @@ export function VoiceStudioPage() {
                 </h2>
                 <p className="mt-1 text-[12px] leading-relaxed text-secondary">
                   {referenceDialogMode === "create"
-                    ? "Add a 10–30 second sample and type exactly what is said in it."
+                    ? `Add ${cloneWindow} of one person's clean speech and type exactly what is said in it.`
                     : "Change the name, language, or transcript. Upload or record again to replace the sample."}
                 </p>
               </div>
@@ -870,6 +945,13 @@ export function VoiceStudioPage() {
 
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 mac-scrollbar">
               <div className="grid gap-4">
+                {referenceDialogMode === "create" ? (
+                  <ul className="list-disc space-y-0.5 rounded-lg bg-primary/[0.04] py-2.5 pl-7 pr-3 text-[12px] leading-5 text-secondary">
+                    <li>One person speaking, in a quiet room, with no music or other voices.</li>
+                    <li>5–15 seconds of natural, steady speech works best{isLocalEngine ? ` (local cloning accepts ${cloneWindow})` : ""}.</li>
+                    <li>The transcript must match the recording word for word. Recording the suggested passage does this for you.</li>
+                  </ul>
+                ) : null}
                 <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
                   <label className="flex flex-col gap-1.5 text-[13px] font-medium text-primary">
                     Name
@@ -933,6 +1015,19 @@ export function VoiceStudioPage() {
                     </div>
                   ) : (
                     <div className="mt-2 flex flex-col items-center gap-2 rounded-lg border border-outline px-4 py-4">
+                      <div className="w-full rounded-lg bg-primary/[0.04] px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[12px] font-medium text-primary">Read this aloud at a natural pace</p>
+                          <button
+                            type="button"
+                            onClick={() => setNewReferenceText(suggestedPassage(newReferenceLanguage))}
+                            className="shrink-0 text-[12px] text-primary underline underline-offset-2"
+                          >
+                            Use as transcript
+                          </button>
+                        </div>
+                        <p className="mt-1 text-[13px] leading-relaxed text-primary">{suggestedPassage(newReferenceLanguage)}</p>
+                      </div>
                       <button
                         type="button"
                         onClick={() => (recordingReferenceSample ? handleStopReferenceRecording() : void handleStartReferenceRecording())}
@@ -946,8 +1041,10 @@ export function VoiceStudioPage() {
                         {recordingReferenceSample ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-4 w-4" />}
                         {recordingReferenceSample ? "Stop recording" : "Start recording"}
                       </button>
-                      <p className="text-[12px] text-secondary">
-                        {recordingReferenceSample ? "Recording…" : "The recording becomes the sample when you stop. Up to 10 minutes."}
+                      <p className="text-[12px] tabular-nums text-secondary" aria-live="polite">
+                        {recordingReferenceSample
+                          ? `Recording… ${formatReferenceDuration(recordingElapsedMs)}${isLocalEngine && ttsCapability?.max_reference_duration_ms ? ` / stops at ${formatReferenceDuration(ttsCapability.max_reference_duration_ms)}` : ""}`
+                          : "The recording becomes the sample when you stop. If the transcript is empty, it is filled with the passage above."}
                       </p>
                     </div>
                   )}
@@ -959,8 +1056,20 @@ export function VoiceStudioPage() {
                   ) : null}
                   {newReferenceAudioPreviewUrl ? (
                     <div className="mt-2">
-                      <p className="mb-1 truncate text-[12px] text-secondary">{newReferenceAudioFileName || "New sample"}</p>
+                      <p className="mb-1 truncate text-[12px] text-secondary">
+                        {newReferenceAudioFileName || "New sample"}
+                        {newReferenceDurationMs ? ` · ${formatReferenceDuration(newReferenceDurationMs)}` : ""}
+                      </p>
                       <audio controls src={newReferenceAudioPreviewUrl} className="w-full" />
+                      {isLocalEngine && newReferenceDurationMs ? (
+                        referenceDurationIssue(newReferenceDurationMs, cloneLimits) ? (
+                          <p className="mt-1 text-[12px] text-amber-700 dark:text-amber-300">
+                            {referenceDurationIssue(newReferenceDurationMs, cloneLimits)}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[12px] text-emerald-700 dark:text-emerald-300">Good length for local cloning.</p>
+                        )
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -974,7 +1083,25 @@ export function VoiceStudioPage() {
                     className={cn(fieldClass, "resize-none py-2 font-normal leading-relaxed")}
                     placeholder="Exactly what is said in the sample"
                   />
+                  <span className="text-[12px] font-normal leading-5 text-secondary">
+                    Cloning reads the sample word for word against this text, punctuation included. A mismatch makes the
+                    voice drift or mispronounce.
+                  </span>
                 </label>
+
+                {referenceDialogMode === "create" ? (
+                  <label className="flex items-start gap-2 text-[13px] text-primary">
+                    <input
+                      type="checkbox"
+                      checked={consentConfirmed}
+                      onChange={(event) => setConsentConfirmed(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-current"
+                    />
+                    <span>
+                      This is my voice, or I have permission from the person speaking to clone their voice.
+                    </span>
+                  </label>
+                ) : null}
               </div>
             </div>
 
@@ -1006,7 +1133,8 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handleSaveSpeakerReference()}
-                  disabled={savingReference || recordingReferenceSample}
+                  disabled={savingReference || recordingReferenceSample || (referenceDialogMode === "create" && !consentConfirmed)}
+                  title={referenceDialogMode === "create" && !consentConfirmed ? "Confirm permission to clone this voice first." : undefined}
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-40"
                 >
                   {savingReference ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

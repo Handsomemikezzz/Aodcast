@@ -11,10 +11,24 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from .config import Settings
+from .config import CLONE_MODELS, Settings
 from .engine import ServiceError, SpeechEngine
 
 log = logging.getLogger(__name__)
+
+SPEECH_PATHS = ("/v1/audio/speech", "/v1/audio/speech/clone", "/v1/audio/transcriptions")
+MAX_REFERENCE_TEXT_CHARS = 2000
+# Qwen expects language names; map common OpenAI ISO language codes.
+LANGUAGES = {
+    "zh": "Chinese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "ru": "Russian",
+}
 
 
 def error_response(status: int, message: str):
@@ -56,15 +70,15 @@ class BoundedRequests:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         self.engine.touch()  # Includes /health: polling intentionally resets idle timeout.
-        if scope["path"] not in ("/v1/audio/speech", "/v1/audio/transcriptions"):
+        if scope["path"] not in SPEECH_PATHS:
             return await self.app(scope, receive, send)
         if self.inflight >= self.settings.max_pending:
             return await error_response(429, "Too many pending requests")(scope, receive, send)
-        limit = (
-            self.settings.max_chars * 12 + 4096
-            if scope["path"].endswith("speech")
-            else self.settings.max_upload_bytes + 65536
-        )
+        text_limit = self.settings.max_chars * 12 + 4096
+        limit = {
+            "/v1/audio/speech": text_limit,
+            "/v1/audio/speech/clone": text_limit + self.settings.max_upload_bytes + 65536,
+        }.get(scope["path"], self.settings.max_upload_bytes + 65536)
         headers = dict(scope["headers"])
         if b"content-length" in headers:
             try:
@@ -122,6 +136,41 @@ class SpeechRequest(BaseModel):
     response_format: Literal["wav"] = "wav"
     seed: int | None = Field(default=None, ge=0, lt=2**32)
     speed: Literal[1.0] = 1.0
+
+
+def validate_input(text: str, settings: Settings):
+    if len(text) > settings.max_chars:
+        raise ServiceError(413, f"input exceeds MAX_TEXT_CHARS={settings.max_chars}")
+    if not text.strip():
+        raise ServiceError(400, "input must contain non-whitespace text")
+
+
+async def save_upload(file: UploadFile, settings: Settings) -> Path:
+    """Spool an upload to disk; the caller owns the returned file."""
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in (".wav", ".mp3", ".m4a"):
+        raise ServiceError(400, "Supported filename extensions: wav, mp3, m4a")
+    name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="local-upload-", suffix=suffix, delete=False
+        ) as out:
+            name = Path(out.name)
+            size = 0
+            while chunk := await file.read(65536):
+                size += len(chunk)
+                if size > settings.max_upload_bytes:
+                    raise ServiceError(413, "Upload exceeds MAX_UPLOAD_MB")
+                await run_in_threadpool(out.write, chunk)
+        if not size:
+            raise ServiceError(400, "Uploaded file is empty")
+        return name
+    except BaseException:
+        if name:
+            name.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
 
 
 async def run_until_disconnect(request: Request, engine: SpeechEngine, operation: str, *args):
@@ -182,10 +231,7 @@ def create_app(settings: Settings | None = None, engine: SpeechEngine | None = N
 
     @app.post("/v1/audio/speech")
     async def speech(body: SpeechRequest, request: Request):
-        if len(body.input) > settings.max_chars:
-            raise ServiceError(413, f"input exceeds MAX_TEXT_CHARS={settings.max_chars}")
-        if not body.input.strip():
-            raise ServiceError(400, "input must contain non-whitespace text")
+        validate_input(body.input, settings)
         if body.model not in (None, "tts-1", "tts-1-hd", settings.tts_model):
             raise ServiceError(400, "Unknown model; use tts-1 or the configured TTS model ID")
         voice = settings.voice if body.voice in ("默认中文音色", "default") else body.voice
@@ -217,42 +263,47 @@ def create_app(settings: Settings | None = None, engine: SpeechEngine | None = N
         # 'whisper-1' is a routing alias; the actual model is always Qwen3-ASR.
         if model not in ("whisper-1", settings.asr_model):
             raise ServiceError(400, "Unknown model; use whisper-1 or the configured ASR model ID")
-        suffix = Path(file.filename or "").suffix.lower()
-        if suffix not in (".wav", ".mp3", ".m4a"):
-            raise ServiceError(400, "Supported filename extensions: wav, mp3, m4a")
-        # Qwen expects language names; map common OpenAI ISO language codes.
-        languages = {
-            "zh": "Chinese",
-            "en": "English",
-            "ja": "Japanese",
-            "ko": "Korean",
-            "de": "German",
-            "fr": "French",
-            "es": "Spanish",
-            "ru": "Russian",
-        }
-        language = languages.get(language, language) if language else None
-        name = None
-        handed_off = False
-        try:
-            with tempfile.NamedTemporaryFile(
-                prefix="local-upload-", suffix=suffix, delete=False
-            ) as out:
-                name = Path(out.name)
-                size = 0
-                while chunk := await file.read(65536):
-                    size += len(chunk)
-                    if size > settings.max_upload_bytes:
-                        raise ServiceError(413, "Upload exceeds MAX_UPLOAD_MB")
-                    await run_in_threadpool(out.write, chunk)
-            if not size:
-                raise ServiceError(400, "Uploaded file is empty")
-            handed_off = True  # Engine owns deletion even if queued work is cancelled.
-            text = await run_until_disconnect(request, engine, "asr", name, language)
-        finally:
-            await file.close()
-            if name and not handed_off:
-                name.unlink(missing_ok=True)
+        language = LANGUAGES.get(language, language) if language else None
+        # The engine owns deletion from here on, even if queued work is cancelled.
+        name = await save_upload(file, settings)
+        text = await run_until_disconnect(request, engine, "asr", name, language)
         return PlainTextResponse(text) if response_format == "text" else {"text": text}
+
+    @app.post("/v1/audio/speech/clone")
+    async def clone_speech(
+        request: Request,
+        reference: Annotated[UploadFile, File()],
+        reference_text: Annotated[str, Form(min_length=1, max_length=MAX_REFERENCE_TEXT_CHARS)],
+        input: Annotated[str, Form(min_length=1)],
+        model: Annotated[str | None, Form()] = None,
+        language: Annotated[str | None, Form(max_length=40)] = None,
+        seed: Annotated[int | None, Form(ge=0, lt=2**32)] = None,
+        response_format: Annotated[Literal["wav"], Form()] = "wav",
+    ):
+        """Zero-shot cloning: reference audio + its exact transcript condition every slice."""
+        validate_input(input, settings)
+        if not reference_text.strip():
+            raise ServiceError(400, "reference_text must be the exact transcript of the audio")
+        model = model or CLONE_MODELS[0]
+        if model not in CLONE_MODELS:
+            raise ServiceError(400, f"Unknown clone model; choose one of {list(CLONE_MODELS)}")
+        name = await save_upload(reference, settings)
+        path, chunks = await run_until_disconnect(
+            request,
+            engine,
+            "clone",
+            input,
+            model,
+            name,
+            reference_text.strip(),
+            LANGUAGES.get(language, language) if language else "auto",
+            settings.seed if seed is None else seed,
+        )
+        return TemporaryWavResponse(
+            path,
+            media_type="audio/wav",
+            filename="speech.wav",
+            headers={"X-TTS-Chunks": str(chunks)},
+        )
 
     return app

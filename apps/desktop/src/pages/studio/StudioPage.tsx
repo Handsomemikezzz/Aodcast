@@ -116,7 +116,12 @@ function StudioWorkspace({
   const prevVoiceKeyRef = useRef<string | null>(null);
 
   const serverScript = workbench.project?.script?.final ?? workbench.project?.script?.draft ?? "";
-  const voiceFreshnessKey = buildVoiceFreshnessKey(workbench.project, scriptId, workbench.voiceSettings);
+  const voiceFreshnessKey = buildVoiceFreshnessKey(
+    workbench.project,
+    scriptId,
+    workbench.voiceSettings,
+    workbench.selectedEngine === "local_http" ? workbench.selectedModelId : undefined,
+  );
   const savedVoiceKey = savedVoiceFreshnessKey(workbench.project, scriptId, voiceFreshnessKey);
   const sourceOutOfDate = isProjectSourceOutOfDate(workbench.project);
   const persistedAudioOutOfDate = isProjectAudioOutOfDate(workbench.project, scriptId, workbench.isDirty);
@@ -197,6 +202,7 @@ function StudioWorkspace({
     scriptReady: workbench.scriptCheck.canRender,
     hasSelectedVoice: projectHasSelectedVoice(workbench.project, scriptId),
     selectedEngine: workbench.selectedEngine,
+    localVoiceMode: workbench.localVoiceMode,
     selectedModelId: workbench.selectedModelId,
     capability: workbench.capability,
     ttsConfig: workbench.ttsConfig,

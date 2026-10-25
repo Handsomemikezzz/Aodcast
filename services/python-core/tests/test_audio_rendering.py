@@ -102,6 +102,40 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertEqual(before.artifact.voice_settings, after.artifact.voice_settings)
         self.assertEqual(after.artifact.audio_path, "")
 
+    def test_local_clone_preview_sends_the_selected_reference(self) -> None:
+        temp, _, _, artifacts, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        reference_path = artifacts.exports_dir / "_speaker_references" / "friend.wav"
+        reference_path.parent.mkdir(parents=True, exist_ok=True)
+        reference_path.write_bytes(b"RIFF")
+        captured = []
+
+        class Capturing(SineWaveTTSProvider):
+            def synthesize(self, request):
+                captured.append(request)
+                return super().synthesize(request)
+
+        with patch("app.orchestration.audio_rendering.build_tts_provider", return_value=Capturing()) as build:
+            service.render_voice_preview_with_cancellation(
+                VoiceRenderSettings(preview_text="试听这一段。"),
+                override_provider="local_http",
+                override_model="mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
+                speaker_reference={"audio_path": str(reference_path), "reference_text": "朋友的逐字稿。"},
+            )
+        self.assertEqual(build.call_args.args[0].model, "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit")
+        self.assertEqual(captured[0].reference_audio_path, str(reference_path.resolve()))
+        self.assertEqual(captured[0].reference_text, "朋友的逐字稿。")
+        self.assertEqual(captured[0].style_prompt, "")
+
+        outside = Path(temp.name) / "outside.wav"
+        outside.write_bytes(b"RIFF")
+        with self.assertRaisesRegex(ValueError, "inside the app data directory"):
+            service.render_voice_preview_with_cancellation(
+                VoiceRenderSettings(preview_text="试听"),
+                override_provider="local_http",
+                speaker_reference={"audio_path": str(outside), "reference_text": "x"},
+            )
+
     def test_local_final_render_requires_speaker_reference_when_requested(self) -> None:
         temp, store, configs, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)

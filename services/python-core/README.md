@@ -32,12 +32,13 @@ The same script supports `stop`, `restart`, `status`, and `logs`. Stopping Aodca
 | API | Contract |
 | --- | --- |
 | `POST /v1/audio/speech` | JSON `input`, `voice`, `response_format: "wav"`; PCM16 WAV response |
+| `POST /v1/audio/speech/clone` | Multipart `reference` WAV, exact `reference_text`, `input`, Base `model`, `language`; PCM16 WAV response |
 | `POST /v1/audio/transcriptions` | Multipart `file` (WAV/MP3/M4A); JSON `text` response |
-| `GET /health` | Configured models, loaded state, process and Metal memory |
+| `GET /health` | Configured and clone models, loaded state, reference-length window, process and Metal memory |
 
-`LocalSpeechClient.transcribe(path, language=None) -> str` exposes ASR to Python. This is not a microphone-input or subtitle-editing UI. `LocalSpeechTTSProvider.synthesize(TTSGenerationRequest) -> TTSGenerationResponse` preserves the rendering contract and submits complete natural paragraphs with a 1,800-second read timeout and 30-second connect timeout. The adapter uses the service's actual model for voice mapping and response metadata; a stopped service produces an actionable startup message.
+`LocalSpeechClient.transcribe(path, language=None) -> str` exposes ASR to Python. This is not a microphone-input or subtitle-editing UI. `LocalSpeechTTSProvider.synthesize(TTSGenerationRequest) -> TTSGenerationResponse` preserves the rendering contract and submits complete natural paragraphs with a 1,800-second read timeout and 30-second connect timeout. For preset models the adapter uses the service's actual model for voice mapping and response metadata; for the Qwen3 Base clone models it sends the selected model and the Speaker Reference with every segment. A stopped service produces an actionable startup message.
 
-The service owns GPU serialization, inference slicing, silence trimming, slice crossfades, and model memory. Aodcast retains editorial Speech Plans, immutable paragraph audio, manifest publication, and podcast assembly. Local rendering supports preset voices, WAV, and normal speed. Reference cloning, style instructions, exact pause durations, and preceding-audio conditioning are unsupported; natural punctuation only approximates editorial pauses. Explicitly selecting a local preset for a full render detaches an older reference selection while preserving its audio assets and older manifests.
+The service owns GPU serialization, inference slicing, silence trimming, slice crossfades, and model memory. Aodcast retains editorial Speech Plans, immutable paragraph audio, manifest publication, and podcast assembly. Local rendering supports preset voices, zero-shot Speaker Reference cloning with `Qwen3-TTS-12Hz-0.6B-Base-8bit` (default) or `1.7B-Base-8bit`, WAV, and normal speed. A clone model without a reference, or a reference sent to a preset model, fails explicitly. Style instructions, exact pause durations, and preceding-audio conditioning are unsupported; natural punctuation only approximates editorial pauses. Explicitly selecting a local preset for a full render detaches an older reference selection while preserving its audio assets and older manifests.
 
 `AODCAST_SPEECH_URL` is a process environment variable used when no base URL is saved. Export it before starting Aodcast or configure `--tts-base-url`; the Python core does not automatically load a `.env` file.
 

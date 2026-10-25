@@ -10,7 +10,7 @@ English | [简体中文](README.zh-CN.md)
 
 Aodcast is an open-source, local-first macOS desktop app for turning a text idea or an existing Markdown article into a solo podcast script and final audio.
 
-The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It guides the user through an interview, generates editable script snapshots, and renders final audio through local or remote speech providers. Local synthesis uses preset voices from the bundled `speech-service` running in a separate process; Speaker Reference audio remains a reusable asset library, not a local cloning feature.
+The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It guides the user through an interview, generates editable script snapshots, and renders final audio through local or remote speech providers. Local synthesis runs in the bundled `speech-service` process and either speaks a preset voice or zero-shot clones a Speaker Reference (a recording plus its exact transcript) with a Qwen3 TTS Base model.
 
 > Status: source-code alpha. Aodcast is usable for local development, but it is not yet a hardened packaged desktop distribution. Provider keys and generated content are stored locally; there is no Keychain or dedicated secret vault integration yet.
 
@@ -25,9 +25,10 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 - An internal Speech Director that creates a versioned, provider-neutral Speech Plan with stable segments, structured pauses, emphasis, pronunciation, and delivery guidance for the exact script hash without exposing those engineering concepts in the main UI.
 - A script-first Episode Workspace for editing, contextual Voice and Delivery selection, short passage previews, full audio rendering, non-destructive audio updates, playback, and export.
 - Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, asset previews, and reference management; existing voices are selected directly inside an episode.
+- Local voice cloning: one Speaker Reference can be cloned by `Qwen3-TTS-12Hz-0.6B-Base-8bit` (default) or `1.7B-Base-8bit`, with short passage previews kept per model for A/B comparison before a full render.
 - A bundled native `speech-service` for local TTS/ASR, accessed through a lightweight `local_http` client, plus OpenAI-compatible remote TTS providers. Model loading and downloads stay inside the service process and its isolated environment.
 - Manifest-driven WAV assembly with explicit pauses, consistent format/loudness, render lineage, and reusable per-segment audio assets.
-- Models page for local speech-service status and the active model reported by that service.
+- Models page for local speech-service status, the active preset model reported by that service, and the readiness of both voice-cloning models.
 - A mock LLM provider for interview and script smoke testing without paid provider access; audio rendering still requires a running local speech service or a configured remote TTS provider.
 - ChatGPT subscription LLM access through the official local Codex app-server, with browser sign-in, account model discovery, and Codex usage-window reporting.
 - Local-first development storage under `.local-data/`.
@@ -250,9 +251,10 @@ ASR is a new Python client capability; it is not a microphone-input or subtitle-
 
 #### Capabilities and limits
 
-- The current local service supports preset voices, WAV output, normal speed (`1.0`), and transcription.
-- Voice cloning, style instructions, precise Speech Plan breaks, and preceding-audio conditioning are unsupported and must produce explicit capability feedback. Use natural punctuation for rhythm; punctuation is not a precise pause contract.
-- Voice Studio continues to manage reference-audio assets, including uploads/recordings up to 10 minutes with matching transcripts. Those assets cannot become cloned voices through `local_http`; choose a supported preset instead.
+- The current local service supports preset voices, zero-shot voice cloning with two Qwen3 TTS Base models, WAV output, normal speed (`1.0`), and transcription.
+- Cloning uses in-context learning: the Speaker Reference audio and its exact transcript condition every inference slice. The service trims edge silence and accepts 3–30 seconds of reference speech by default (`CLONE_MIN/MAX_REFERENCE_SECONDS`); longer clips are rejected with an explicit message rather than truncated, because a truncated clip no longer matches its transcript. A clean 5–15 second clip of one speaker with a word-for-word transcript (punctuation included) gives the most stable result.
+- Voice Studio keeps uploads/recordings up to 10 minutes as assets, but only references inside the cloning window can be cloned locally; the UI flags longer or shorter samples.
+- Fine-tuning, voice conversion, other model families, style instructions, precise Speech Plan breaks, and preceding-audio conditioning are unsupported and produce explicit capability feedback. Each segment is cloned from the same reference rather than from previously generated audio. Use natural punctuation for rhythm; punctuation is not a precise pause contract.
 - Model loading/downloading may make the first request slower. Idle unloading releases model weights and caches; the service process still uses memory.
 - A full podcast render still saves an editorial Speech Plan, renders paragraph WAVs, and publishes the assembled `podcast.wav`. MP3 export remains an optional FFmpeg conversion.
 - `.mp4` is accepted only as a Speaker Reference audio-container input and normalized to WAV; Aodcast does not generate video MP4.
@@ -268,6 +270,14 @@ uv run --extra test python ../../scripts/verification/verify-local-speech.py
 The script writes WAV files, `results.json`, and per-second `memory.jsonl` into a new `.local-data/speech-verification/<timestamp>/` directory. It uses real speech models and a deterministic mock LLM only for editorial planning. It checks the spoken closing marker to detect truncated long audio.
 
 On 2026-10-15, the 16 GiB Apple M4 run produced a 9.04-second short WAV in 51.00 seconds (first load), recognized it in 9.20 seconds with 0% normalized character error, and rendered the 1,246-character paragraph in 207.94 seconds into 266.31 seconds of audio. The service handled all 11 inference slices. Service RSS peaked at 2.07 GiB and Metal allocation at 6.68 GiB; those counters use different accounting and must not be added. These are measurements of the earlier decoupling acceptance run, not a new migration benchmark or performance guarantees.
+
+Voice cloning has its own real-model check, which reuses one Speaker Reference for both Base models (pass `--reference /path/to/friend.wav --reference-text "exact transcript"` to use your own recording):
+
+```bash
+uv run --extra test python ../../scripts/verification/verify-local-clone.py
+```
+
+On 2026-10-25 (16 GiB M4, 8.2-second generated reference, about 18 GiB of macOS swap in use from other apps), both models passed. Each one rendered a short clone that ASR read back with 0% character error, a 4-segment episode with its closing marker intact, and a 3-segment context-window regeneration. The 0.6B episode was 38.2 s of audio in 96.6 s; the 1.7B episode was 37.1 s in 132.8 s. Metal peak allocation reached 6.27 GiB with 0.6B and 7.25 GiB after 1.7B; the counter is cumulative for the service process. Because the service keeps one model resident, alternating between 0.6B and 1.7B reloads weights each time, and under heavy swap a single 1.7B slice can take minutes. Compare by previewing one passage per model rather than interleaving full renders.
 
 ## Development Commands
 
@@ -358,7 +368,7 @@ Aodcast currently focuses on local-first solo podcast creation:
 - input: a text topic or one local/pasted Markdown source per episode
 - output: solo podcast script plus final audio from Episode Workspace
 - LLM: mock, OpenAI-compatible, or ChatGPT subscription through Codex
-- local speech identity: a preset voice selected per script; Speaker Reference assets are managed separately
+- local speech identity: a preset voice, or a Speaker Reference cloned by a Qwen3 Base model, selected per script
 - TTS: bundled local HTTP `speech-service` in an isolated process, or remote API providers
 - memory: file-native, local-only long-term user memory across episodes
 
@@ -392,15 +402,16 @@ UI calls go through the desktop HTTP bridge to the local Python runtime. Long op
 - A full render saves immutable segment WAVs and a Render Manifest, then assembles the manifest's final WAV. MP3 is an on-demand sibling export next to that final render.
 - Preview uses selected text, the current paragraph, or the script opening and creates disposable audio without replacing the current episode render.
 - Existing audio remains playable after script, source, voice, or delivery changes and is labeled `Audio needs update` until a replacement render succeeds.
-- Voice Studio owns reusable Speaker Reference assets. Local HTTP rendering uses the episode's preset voice instead of a reference. Explicitly selecting a local preset for a full render detaches an earlier cloning selection without deleting its source audio or older Render Manifests; local previews do not send reference audio.
+- Voice Studio owns reusable Speaker Reference assets. With the local engine, the inspector's Voice section starts with **Model**, grouped into *Built-in voices* (CustomVoice) and *Clone a voice* (`Qwen3 TTS 0.6B Base`, the default when a reference is selected, and `1.7B Base`). The voice control below follows the model's declared cloning capability: preset models offer only built-in voices, cloning models offer your saved voices and built-in samples plus a link to clone a new one. The same reference serves both cloning models without duplicating assets. Previews of the same passage are kept per model, and the audio dock switches between them; changing the model marks existing audio `Audio needs update`. Explicitly rendering with a local preset detaches an earlier cloning selection without deleting its source audio or older Render Manifests.
+- Cloning a new voice in Voice Studio: tips on recording conditions, a ~10 second read-aloud passage that fills the transcript exactly, a recording timer that stops at the local cloning limit, a length check for uploaded or recorded samples, and a required confirmation that the speaker consented. Created from an episode, the voice is applied to that script and the app returns to the episode, ready to preview.
 - Built-in reference audio lives under `services/python-core/app/assets/speaker-references/` (tracked for now). User metadata lives in `.local-data/speaker-references/`; uploaded or recorded audio is normalized to immutable 48 kHz mono 16-bit PCM WAV under `.local-data/exports/_speaker_references/`. Creation requires the matching reference text; system audio capture is not available yet.
-- The local speech service chooses and loads its active model. Aodcast records the selected provider and pipeline in each manifest. Speech Plan and context-window regeneration contracts remain internal rather than appearing in the primary UI.
+- The local speech service loads the preset model from its `.env` and the clone model named by each request, keeping one model resident at a time. Aodcast records the selected provider, model, and Speaker Reference hash in each manifest, so context-window regeneration reuses the model and reference of the render it replaces. Speech Plan and context-window regeneration contracts remain internal rather than appearing in the primary UI.
 - Artifact audio playback uses the localhost HTTP route `/api/v1/artifacts/audio` in both Web and Tauri shells.
 - Tauri-only helpers such as Reveal in Finder live in shell helpers and are not part of the HTTP `DesktopBridge` surface.
 
 ### Local speech boundary
 
-Aodcast's orchestration core contains no speech-model worker or in-process inference. `LocalSpeechClient` preserves the synchronous TTS provider contract while performing cancellable HTTP requests. The bundled `speech-service` process controls model loading, GPU concurrency, inference slicing, and ASR decoding. Preset voice selection remains stable across requests; reference audio and preceding generated audio are not sent as cloning or continuity conditions.
+Aodcast's orchestration core contains no speech-model worker or in-process inference. `LocalSpeechClient` preserves the synchronous TTS provider contract while performing cancellable HTTP requests. The bundled `speech-service` process controls model loading, GPU concurrency, inference slicing, and ASR decoding. Preset voice selection remains stable across requests. Clone requests upload the selected Speaker Reference WAV and transcript with every segment; preceding generated audio is never sent as a continuity condition.
 
 Manifest-driven assembly in Aodcast normalizes paragraph WAVs, applies one edge fade per segment, matches audible-sample RMS level, inserts editorial pauses, enforces a sample-peak ceiling, and writes `podcast.wav`. This publication stage remains separate from the service's inference-slice crossfades.
 
