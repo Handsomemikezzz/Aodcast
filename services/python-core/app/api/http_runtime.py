@@ -2173,7 +2173,9 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
+        # HTTP/1.0 without a length: the body ends when the socket closes, so the
+        # stream must close after the final event or clients wait forever for EOF.
+        self.send_header("Connection", "close")
         self._send_cors_headers(origin)
         self.end_headers()
 

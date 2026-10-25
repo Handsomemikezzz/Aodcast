@@ -35,6 +35,7 @@ All notable changes to Aodcast will be documented in this file.
 
 ### Fixed
 
+- Interview reply streams now close after the final event (`Connection: close`), so the desktop WebView no longer keeps the composer on Stop after a reply finishes.
 - Chat no longer waits for suspended text animations, stream cancellation, or a background session refresh before restoring Send after completion or Stop.
 - Opening an episode no longer reports "Audio needs update" before any voice change; audio freshness compares saved voice settings by ID, not display name.
 - Native runtime readiness probes the built-in voice-preset endpoint instead of a removed model-storage route. Desktop/web launchers separately ensure the speech HTTP service is online before starting the shell.

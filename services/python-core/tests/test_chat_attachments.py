@@ -322,16 +322,12 @@ class AttachmentHttpRouteTests(unittest.TestCase):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        # The SSE connection stays open; read until the final event's data line.
+        # Read to EOF: the stream must end after the final event, or this times out.
         with urllib_request.urlopen(req, timeout=10) as response:
-            in_final = False
-            for raw_line in response:
-                line = raw_line.decode("utf-8").rstrip("\n")
-                if line == "event: final":
-                    in_final = True
-                elif in_final and line.startswith("data: "):
-                    final = json.loads(line.removeprefix("data: "))
-                    break
+            self.assertEqual(response.headers["Connection"], "close")
+            lines = response.read().decode("utf-8").splitlines()
+        final_index = lines.index("event: final")
+        final = json.loads(lines[final_index + 1].removeprefix("data: "))
         self.assertTrue(final["ok"], final)
         user_turn = final["data"]["project"]["transcript"]["turns"][0]
         self.assertEqual(user_turn["attachments"][0]["attachment_id"], attachment["attachment_id"])
