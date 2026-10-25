@@ -32,6 +32,7 @@ import {
   TranscriptTurn,
 } from "../types";
 import { cn } from "../lib/utils";
+import { createSmoothTextBuffer } from "../lib/smoothText";
 import {
   buildRequestState,
   getErrorMessage,
@@ -342,6 +343,7 @@ export function ChatPage({
       return { ...prev, session: nextSession, transcript: newTranscript };
     });
 
+    const replyText = createSmoothTextBuffer(setStreamingMessage);
     try {
       const ready = await ensureLlmReady();
       if (!ready) {
@@ -363,17 +365,19 @@ export function ChatPage({
       replyStreamAbortRef.current?.abort();
       const replyAbort = new AbortController();
       replyStreamAbortRef.current = replyAbort;
+      // Stop during the final reveal skips the animation; the reply is already saved.
+      replyAbort.signal.addEventListener("abort", () => replyText.cancel());
       setReplyStreaming(true);
 
       const result = await bridge.submitReplyStream(
         sessionId,
         content,
-        (delta) => {
-          setStreamingMessage((prev) => (prev ?? "") + delta);
-        },
+        (delta) => replyText.push(delta),
         false,
         replyAbort.signal,
       );
+      // Let the paced reveal catch up before the streaming bubble is swapped for the saved turn.
+      await replyText.drain();
       setProject(result.project);
       setReadiness(result.readiness);
       setPromptInput(result.prompt_input);
@@ -421,6 +425,7 @@ export function ChatPage({
         ),
       );
     } finally {
+      replyText.cancel();
       replyStreamAbortRef.current = null;
       optimisticTranscriptRef.current = null;
       setStreamingMessage(null);
