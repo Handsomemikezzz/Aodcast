@@ -228,14 +228,14 @@ class TestFocusSectionSelection(unittest.TestCase):
 
 class TestOptionMode(unittest.TestCase):
     def test_open_for_first_turn_or_short_answer(self) -> None:
-        """Default interview posture is open: observation + one question, no A/B/C."""
+        """Default interview posture is open: observation + one question + answer candidates."""
         r = _readiness(topic_context=False, core_viewpoint=False)
         tr = _empty_transcript()
         mode = _determine_option_mode(r, tr, script_exists=False)
         self.assertEqual(mode, "open")
 
     def test_open_for_detailed_user_answer(self) -> None:
-        """Long answers still use open mode (no A/B/C branch)."""
+        """Long answers still use open mode."""
         r = _readiness(topic_context=False, core_viewpoint=False)
         long_content = "A" * 300
         tr = _transcript_with_turns(("user", long_content))
@@ -253,7 +253,9 @@ class TestOptionMode(unittest.TestCase):
         self.assertNotIn("option_mode.abc", plan.metadata.section_ids)
         self.assertNotIn("option_mode.none", plan.metadata.section_ids)
         self.assertNotIn("option_mode.soft_ready", plan.metadata.section_ids)
-        self.assertIn("Do NOT offer A/B/C options", plan.system)
+        self.assertIn("End with the A/B/C answer candidates", plan.system)
+        self.assertIn("Do NOT recommend which candidate", plan.system)
+        self.assertIn("never invent facts", plan.system)
 
     def test_open_mode_section_loaded_when_detailed_answer(self) -> None:
         r = _readiness(topic_context=False, core_viewpoint=False)

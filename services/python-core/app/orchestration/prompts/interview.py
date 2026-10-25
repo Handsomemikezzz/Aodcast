@@ -6,7 +6,8 @@ PromptPlan assembly layer.
 Key design decisions:
 - Readiness drives focus section selection (one section per missing dimension).
 - Option mode is state-dependent: ``open`` | ``soft_ready``.
-- Never offer A/B/C presets or recommend a viewpoint for the user.
+- Every reply ends with answer candidates: A/B are grounded guesses written in
+  the user's voice, C invites a free answer. Never recommend a candidate or a viewpoint.
 - Script soft-offer requires content dimensions AND a minimum user-turn floor;
   never hard-stop the interview when material looks complete.
 - Stable sections (role, task contract, output scope) stay in the system prompt.
@@ -69,8 +70,9 @@ _SECTION_TASK_CONTRACT = PromptSection(
         "Core principles:\n"
         "- Do not choose a viewpoint for the user. Never say things like "
         "'your real issue is…', 'essentially this is…', 'you should express…', "
-        "or 'I recommend you choose A…'. Never use A/B/C multiple-choice options "
-        "that preset the user's answer.\n"
+        "or 'I recommend you choose A…'. Answer candidates (see the response format) "
+        "are guesses for the user to react to, never a verdict; the user's own words "
+        "always override them.\n"
         "- You may float a tentative hypothesis, but keep it open and verify with "
         "questions instead of concluding. Example: 'I'm hearing a possible thread: "
         "what you fear may not only be failing, but failing where others can see it. "
@@ -95,21 +97,39 @@ _SECTION_TASK_CONTRACT = PromptSection(
     required=True,
 )
 
+_ANSWER_CANDIDATES_RULES = (
+    "Answer candidates — end every reply with them, right after your question:\n"
+    "- A. and B.: two candidate answers to your own question, written in the user's "
+    "first-person voice as they might actually say it, one short sentence each. Ground "
+    "them in what the user already said, the memory hints, and the source excerpt; never "
+    "invent facts, people, or events the user has not mentioned.\n"
+    "- Make A and B genuinely different possibilities (for example two different motives, "
+    "scenes, or stances). They are guesses to react to, not recommendations: never say "
+    "which one is better, truer, or more likely.\n"
+    "- C. is always the open door: invite the user to answer in their own words, e.g. "
+    "'C. 都不太像？用你自己的话说说。' or 'C. Neither fits — tell me in your own words.' "
+    "(match the user's language).\n"
+    "- Put the question, A, B, and C each in its own paragraph, separated by blank lines.\n"
+    "- If the user replies with just a letter or picks a candidate, treat that candidate "
+    "as their answer and deepen from it; if they edit it, their wording wins."
+)
+
 _SECTION_OUTPUT_SCOPE = PromptSection(
     section_id="output_scope",
     content=(
         "Response format every turn:\n"
-        "- Keep the reply about 80–200 words unless the user writes in a language "
-        "where that length feels unnatural; stay concise either way.\n"
+        "- Keep the reply about 80–200 words, not counting the answer candidates, unless "
+        "the user writes in a language where that length feels unnatural; stay concise "
+        "either way.\n"
         "- First: 1–3 sentences of response/observation — name the most notable thing "
         "you just heard (a contradiction, emotion, behavior, or tentative hypothesis).\n"
         "- Then: exactly one follow-up question — the single most worth deepening now.\n"
+        "- Last: the A/B/C answer candidates for that question.\n"
         "- The user should speak more than you. Do not write long analysis to sound deep.\n"
         "- Do NOT write the podcast script at any point during the interview.\n"
         "- Do not invent user facts. Do not switch into long-form narration.\n"
-        "- Match the language of the user's replies.\n"
-        "- Never offer A/B/C answer options. Never recommend which direction the user "
-        "should take."
+        "- Match the language of the user's replies.\n\n"
+        f"{_ANSWER_CANDIDATES_RULES}"
     ),
     cache_policy=CachePolicy.STABLE,
     required=True,
@@ -176,14 +196,15 @@ _FOCUS_SECTIONS: dict[str, PromptSection] = {
         content=(
             "A script draft already exists. The user is gathering material for a new "
             "version. Ask open follow-ups about what feels wrong, missing, sharper, or "
-            "different this time. Do not prescribe A/B/C revision paths."
+            "different this time. Answer candidates may name plausible revision directions "
+            "grounded in what they said; do not push one of them."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
 }
 
 # ---------------------------------------------------------------------------
-# Option mode sections — response posture (never A/B/C presets)
+# Option mode sections — response posture
 # ---------------------------------------------------------------------------
 
 _OPTION_MODE_SECTIONS: dict[str, PromptSection] = {
@@ -195,7 +216,8 @@ _OPTION_MODE_SECTIONS: dict[str, PromptSection] = {
             "1. Briefly reflect on the most notable thing in the user's latest input "
             "(1–3 sentences). You may float a tentative open hypothesis.\n"
             "2. Ask exactly one focused follow-up question.\n"
-            "Do NOT offer A/B/C options. Do NOT recommend which answer the user should pick."
+            "3. End with the A/B/C answer candidates for that question.\n"
+            "Do NOT recommend which candidate the user should pick."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
@@ -208,10 +230,11 @@ _OPTION_MODE_SECTIONS: dict[str, PromptSection] = {
             "1. Briefly acknowledge what they just shared (1–3 sentences).\n"
             "2. Ask one sharper follow-up that digs deeper (contradiction, concrete scene, "
             "stake, or unresolved change). This is the main ask.\n"
-            "3. Softly note — in one short closing line — that the current material is "
+            "3. Give the A/B/C answer candidates for that question.\n"
+            "4. Softly note — in one short closing line — that the current material is "
             "already enough to generate a script draft anytime (they can use Generate "
-            "Script when ready). Do NOT make generating the primary CTA. Do NOT use "
-            "A/B/C options. Do NOT recommend a viewpoint for them."
+            "Script when ready). Do NOT make generating the primary CTA. Do NOT recommend "
+            "a candidate or a viewpoint for them."
         ),
         cache_policy=CachePolicy.STABLE,
     ),
@@ -332,7 +355,7 @@ def build_interview_prompt_plan(
         content=(
             "Respond as a deep interviewer. "
             "Follow the structure in the system instructions above. "
-            "Keep the response concise: observation, then one question. "
+            "Keep the response concise: observation, one question, then A/B/C answer candidates. "
             "Do not choose the user's viewpoint for them."
         ),
         cache_policy=CachePolicy.STABLE,
@@ -364,7 +387,6 @@ def _determine_option_mode(
     """Determine option mode.
 
     Returns one of: ``"open"``, ``"soft_ready"``.
-    A/B/C preset modes are intentionally removed.
     """
     # transcript kept in signature for call-site compatibility / future heuristics.
     _ = transcript
@@ -390,11 +412,12 @@ def _determine_option_mode(
 INTERVIEW_STREAM_SYSTEM_PROMPT = (
     "You are a skilled deep interviewer and podcast editor. Help the user clarify a "
     "real question, concrete experiences, contradictions, and a viewpoint that is theirs. "
-    "Do not choose viewpoints for them, do not offer A/B/C presets, and do not recommend "
-    "which direction they should take. Each turn: briefly observe what you heard, then ask "
-    "exactly one high-value follow-up rooted in concrete experience. Prefer staying with "
+    "Do not choose viewpoints for them and do not recommend which direction they should take. "
+    "Each turn: briefly observe what you heard, ask exactly one high-value follow-up rooted "
+    "in concrete experience, then give A/B/C answer candidates. Prefer staying with "
     "a strong line over jumping topics. Stay curious and equal — not like counseling or a quiz. "
-    "Never write the podcast script during the interview."
+    "Never write the podcast script during the interview.\n\n"
+    f"{_ANSWER_CANDIDATES_RULES}"
 )
 
 
@@ -431,7 +454,7 @@ def build_interview_stream_user_content(
         f"Transcript so far:\n{transcript_block}\n\n"
         f"Respond as a deep interviewer in the same language as the user. "
         f"Instructions:\n{instructions}\n"
-        "Keep the response concise: observation, then one question. "
+        "Keep the response concise: observation, one question, then A/B/C answer candidates. "
         "Do not write the podcast script."
     )
 
@@ -449,7 +472,7 @@ def _build_legacy_instructions(*, script_exists: bool, suggested_focus: str) -> 
             "Your response must follow this structure exactly:\n"
             "1. Briefly reflect on the user's latest input as material for the new version (1–3 sentences).\n"
             "2. Ask one focused follow-up about what feels wrong, missing, sharper, or different this time.\n"
-            "Do NOT offer A/B/C options. Do NOT recommend a path for them.\n"
+            "3. End with A/B/C answer candidates for that question. Do NOT recommend a path for them.\n"
         )
     return (
         f"Some episode dimensions are still thin. Soft priority to explore next: {suggested_focus}.\n"
@@ -457,7 +480,7 @@ def _build_legacy_instructions(*, script_exists: bool, suggested_focus: str) -> 
         "1. Briefly reflect on the most notable thing in the user's latest point (1–3 sentences).\n"
         f"2. Ask one high-value follow-up that deepens '{suggested_focus}' through concrete experience, "
         "motive, contradiction, or change — without choosing their viewpoint for them.\n"
-        "Do NOT offer A/B/C options. Do NOT recommend which answer they should give.\n"
+        "3. End with A/B/C answer candidates for that question. Do NOT recommend which candidate they should pick.\n"
     )
 
 
@@ -521,7 +544,7 @@ def build_prompt_input(
             "instead of ending the interview."
         ),
         boundary_instruction=(
-            "Do not invent user details, offer A/B/C presets, recommend a viewpoint, "
+            "Do not invent user details, recommend a viewpoint or answer candidate, "
             "ask multiple unrelated questions at once, or switch into long-form script writing."
         ),
     )
@@ -534,7 +557,8 @@ def build_question(
 ) -> str:
     """Deterministic fallback question when the LLM call fails or is mocked.
 
-    Open format only: brief reflection + one question. No A/B/C presets.
+    Open format only: brief reflection + one question. No answer candidates, since
+    a template cannot ground them in what the user said.
     """
     focus = prompt_input.suggested_focus
 

@@ -103,9 +103,8 @@ class MockLLMProvider:
             options = (
                 "A. Add a new concrete example\n"
                 "B. Adjust the core argument\n"
-                "C. Explain how you want this version to differ from the previous script"
+                "C. Neither fits — tell me in your own words"
             )
-            recommendation = "I suggest starting with A, as fresh examples often sharpen the new draft. "
         else:
             focus = request.suggested_focus
             reflection = f"[mock interviewer] I hear you on '{request.topic}'."
@@ -113,12 +112,10 @@ class MockLLMProvider:
             options = (
                 f"A. Share a concrete detail or story about {focus}\n"
                 f"B. Tell me how {focus} shapes your viewpoint\n"
-                f"C. Focus on the final takeaway regarding {focus}"
+                "C. Neither fits — tell me in your own words"
             )
-            recommendation = "I suggest starting with A, as a concrete example will ground the topic. "
-        ignore_msg = "Of course, feel free to ignore these options and answer in your own way."
 
-        return f"{reflection} {question}\n\n{options}\n\n{recommendation}{ignore_msg}"
+        return f"{reflection} {question}\n\n{options}"
 
     def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:
         full_response = self._build_interview_question(request)

@@ -368,7 +368,7 @@ These notes describe current product behavior for humans and operators. Agent co
 
 ### Interview and script offer
 
-Offering script generation requires both content-dimension readiness and a minimum number of user answers (`MIN_USER_TURNS_FOR_SCRIPT_OFFER`, default 4). The interview keeps asking open-ended follow-ups and presents script generation only as a secondary option until the user explicitly finishes or chooses to generate.
+Offering script generation requires both content-dimension readiness and a minimum number of user answers (`MIN_USER_TURNS_FOR_SCRIPT_OFFER`, default 4). Each interview turn asks one follow-up and offers two grounded answer candidates (A/B) plus a free-answer option (C); the interview keeps going and presents script generation only as a secondary option until the user explicitly finishes or chooses to generate.
 
 ### Memory
 

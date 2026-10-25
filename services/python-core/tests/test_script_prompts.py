@@ -35,9 +35,11 @@ class ScriptPromptTests(unittest.TestCase):
         self.assertIn("执行力", content)
         self.assertIn("user: I feel stuck.", content)
 
-    def test_interview_stream_system_prompt_forbids_abc_presets(self) -> None:
+    def test_interview_stream_system_prompt_requires_answer_candidates(self) -> None:
         lowered = INTERVIEW_STREAM_SYSTEM_PROMPT.lower()
-        self.assertIn("a/b/c", lowered)
+        self.assertIn("a/b/c answer candidates", lowered)
+        self.assertIn("user's first-person voice", lowered)
+        self.assertIn("own words", lowered)
         self.assertIn("one high-value follow-up", lowered)
         self.assertIn("do not choose viewpoints", lowered)
         self.assertNotIn("recommend one of them", lowered)
@@ -48,7 +50,7 @@ class ScriptPromptTests(unittest.TestCase):
             suggested_focus="topic_context",
         )
         self.assertIn("topic_context", instructions_no_script)
-        self.assertIn("Do NOT offer A/B/C options", instructions_no_script)
+        self.assertIn("End with A/B/C answer candidates", instructions_no_script)
         self.assertIn("one high-value follow-up", instructions_no_script)
         self.assertNotIn("Recommend one option", instructions_no_script)
 
@@ -57,7 +59,7 @@ class ScriptPromptTests(unittest.TestCase):
             suggested_focus="ready_to_generate",
         )
         self.assertIn("NEW script version", instructions_with_script)
-        self.assertIn("Do NOT offer A/B/C options", instructions_with_script)
+        self.assertIn("End with A/B/C answer candidates", instructions_with_script)
         self.assertNotIn("Soft priority to explore next", instructions_with_script)
 
     def test_interview_stream_user_content_embeds_instructions(self) -> None:
@@ -71,7 +73,7 @@ class ScriptPromptTests(unittest.TestCase):
         )
         self.assertIn("Session topic: Local tools", content)
         self.assertIn("example_or_detail", content)
-        self.assertIn("Do NOT offer A/B/C options", content)
+        self.assertIn("End with A/B/C answer candidates", content)
         self.assertIn("Do not write the podcast script.", content)
 
 
