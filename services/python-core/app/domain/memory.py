@@ -87,10 +87,6 @@ class MemoryEntry:
     def source_count(self) -> int:
         return len(self.evidence)
 
-    def touch_used(self) -> None:
-        self.last_used_at = utc_now_iso()
-        self.use_count += 1
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -183,13 +179,6 @@ class MemoryState:
 
     def to_dict(self) -> dict[str, Any]:
         return {"settings": self.settings.to_dict(), "worker": self.worker.to_dict()}
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "MemoryState":
-        return cls(
-            settings=MemorySettings.from_dict(payload.get("settings", {}) or {}),
-            worker=WorkerState.from_dict(payload.get("worker", {}) or {}),
-        )
 
 
 @dataclass(slots=True)

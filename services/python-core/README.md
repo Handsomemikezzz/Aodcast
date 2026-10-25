@@ -35,7 +35,7 @@ The same script supports `stop`, `restart`, `status`, and `logs`. Stopping Aodca
 | `POST /v1/audio/transcriptions` | Multipart `file` (WAV/MP3/M4A); JSON `text` response |
 | `GET /health` | Configured models, loaded state, process and Metal memory |
 
-`LocalSpeechClient.transcribe(path, language=None) -> str` exposes ASR to Python. This is not a microphone-input or subtitle-editing UI. `LocalSpeechTTSProvider.synthesize(TTSGenerationRequest) -> TTSGenerationResponse` preserves the rendering contract and submits complete natural paragraphs with a 1,800-second read timeout and 5-second connect timeout. The adapter uses the service's actual model for voice mapping and response metadata; a stopped service produces an actionable startup message.
+`LocalSpeechClient.transcribe(path, language=None) -> str` exposes ASR to Python. This is not a microphone-input or subtitle-editing UI. `LocalSpeechTTSProvider.synthesize(TTSGenerationRequest) -> TTSGenerationResponse` preserves the rendering contract and submits complete natural paragraphs with a 1,800-second read timeout and 30-second connect timeout. The adapter uses the service's actual model for voice mapping and response metadata; a stopped service produces an actionable startup message.
 
 The service owns GPU serialization, inference slicing, silence trimming, slice crossfades, and model memory. Aodcast retains editorial Speech Plans, immutable paragraph audio, manifest publication, and podcast assembly. Local rendering supports preset voices, WAV, and normal speed. Reference cloning, style instructions, exact pause durations, and preceding-audio conditioning are unsupported; natural punctuation only approximates editorial pauses. Explicitly selecting a local preset for a full render detaches an older reference selection while preserving its audio assets and older manifests.
 
@@ -52,4 +52,4 @@ uv run --extra test python -m unittest discover -s tests -v
 uv run --extra test python ../../scripts/verification/verify-local-speech.py
 ```
 
-The last command requires the running speech service and performs real TTS→ASR and 1,246-character pipeline validation. It writes WAVs, results, and per-second memory samples under the repository's `.local-data/speech-verification/<timestamp>/`. Editorial planning uses a mock LLM; speech inference is real. See the [acceptance report](../../SPEECH_DECOUPLING_REPORT.md) for measured results and the [root README](../../README.md) for product setup.
+The last command requires the running speech service and performs real TTS→ASR and 1,246-character pipeline validation. It writes WAVs, results, and per-second memory samples under the repository's `.local-data/speech-verification/<timestamp>/`. Editorial planning uses a mock LLM; speech inference is real. See the [root README](../../README.md) for measured results and product setup.

@@ -10,6 +10,7 @@ from app.domain.session import SessionRecord, SessionState
 from app.domain.transcript import Speaker, TranscriptRecord
 from app.orchestration.memory_retrieval import MemoryRetrieval, RetrievalQuery
 from app.orchestration.memory_service import MemoryService
+from app.orchestration.prompts.memory import build_memory_rerank_plan
 from app.orchestration.script_generation import ScriptGenerationService
 from app.providers.llm.base import MemoryRerankRequest
 from app.providers.llm.mock_provider import MockLLMProvider
@@ -45,6 +46,7 @@ class RerankProviderTests(unittest.TestCase):
                 {"id": "m3", "type": "experience", "name": "复盘经历", "description": "一次复盘"},
             ],
             max_select=2,
+            prompt_plan=build_memory_rerank_plan(topic="职场成长复盘", creation_intent="分享", candidates=[], max_select=2),
         )
         first = provider.rerank_memories(req).selected_ids
         second = provider.rerank_memories(req).selected_ids

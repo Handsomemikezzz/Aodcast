@@ -5,24 +5,9 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 
 from app.domain.provider_config import LLMProviderConfig
-from app.orchestration.prompts import (
-    INTERVIEW_STREAM_SYSTEM_PROMPT,
-    MEMORY_EXTRACTION_SYSTEM_PROMPT,
-    MEMORY_MAINTENANCE_SYSTEM_PROMPT,
-    MEMORY_RERANK_SYSTEM_PROMPT,
-    SCRIPT_GENERATION_SYSTEM_PROMPT,
-    _MEMORY_ACTION_SYSTEM,
-    build_interview_stream_user_content,
-    build_memory_action_classification_prompt,
-    build_memory_extraction_user_content,
-    build_memory_maintenance_user_content,
-    build_memory_rerank_user_content,
-    build_script_generation_user_prompt,
-)
+from app.orchestration.prompts.registry import PromptPlan
 from app.providers.llm.base import (
     InterviewQuestionRequest,
-    MemoryActionRequest,
-    MemoryActionResponse,
     MemoryExtractionRequest,
     MemoryExtractionResponse,
     MemoryMergeRequest,
@@ -199,19 +184,6 @@ _MEMORY_MERGE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_MEMORY_ACTION_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "action": {
-            "type": "string",
-            "enum": ["remember", "correct", "forget_candidates", "none"],
-        },
-        "subject": {"type": "string"},
-    },
-    "required": ["action", "subject"],
-    "additionalProperties": False,
-}
-
 
 @dataclass(frozen=True, slots=True)
 class CodexSubscriptionProvider:
@@ -226,37 +198,21 @@ class CodexSubscriptionProvider:
 
     def _complete(
         self,
-        *,
-        system_content: str,
-        user_content: str,
+        plan: PromptPlan,
         output_schema: dict[str, Any] | None = None,
     ) -> tuple[str, str]:
         model = self._model()
         content = self._client().complete_turn(
             model=model,
             reasoning_effort=self.config.reasoning_effort,
-            developer_instructions=system_content,
-            user_content=user_content,
+            developer_instructions=plan.system,
+            user_content=plan.user,
             output_schema=output_schema,
         )
         return content, model
 
     def generate_script(self, request: ScriptGenerationRequest) -> ScriptGenerationResponse:
-        if request.prompt_plan is not None:
-            system_content = request.prompt_plan.system
-            user_content = request.prompt_plan.user
-        else:
-            system_content = SCRIPT_GENERATION_SYSTEM_PROMPT
-            user_content = build_script_generation_user_prompt(
-                topic=request.topic,
-                creation_intent=request.creation_intent,
-                transcript_text=request.transcript_text,
-                memory_context=request.memory_context,
-            )
-        draft, model = self._complete(
-            system_content=system_content,
-            user_content=user_content,
-        )
+        draft, model = self._complete(request.prompt_plan)
         return ScriptGenerationResponse(
             draft=draft,
             provider_name=PROVIDER_ID,
@@ -267,11 +223,7 @@ class CodexSubscriptionProvider:
         self,
         request: SpeechPlanGenerationRequest,
     ) -> SpeechPlanGenerationResponse:
-        raw, model = self._complete(
-            system_content=request.prompt_plan.system,
-            user_content=request.prompt_plan.user,
-            output_schema=_SPEECH_PLAN_SCHEMA,
-        )
+        raw, model = self._complete(request.prompt_plan, _SPEECH_PLAN_SCHEMA)
         payload = parse_json_object(raw)
         directives = payload.get("segments")
         if not isinstance(directives, list):
@@ -283,26 +235,12 @@ class CodexSubscriptionProvider:
         )
 
     def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:
-        if request.prompt_plan is not None:
-            system_content = request.prompt_plan.system
-            user_content = request.prompt_plan.user
-        else:
-            system_content = INTERVIEW_STREAM_SYSTEM_PROMPT
-            user_content = build_interview_stream_user_content(
-                topic=request.topic,
-                creation_intent=request.creation_intent,
-                missing_dimensions=list(request.missing_dimensions),
-                transcript_text=request.transcript_text,
-                script_exists=request.script_exists,
-                suggested_focus=request.suggested_focus,
-                memory_context=request.memory_context,
-            )
         model = self._model()
         yield from self._client().stream_turn(
             model=model,
             reasoning_effort=self.config.reasoning_effort,
-            developer_instructions=system_content,
-            user_content=user_content,
+            developer_instructions=request.prompt_plan.system,
+            user_content=request.prompt_plan.user,
             image_urls=tuple(
                 f"data:{image.mime_type};base64,{base64.b64encode(image.data).decode('ascii')}"
                 for image in request.images
@@ -310,23 +248,7 @@ class CodexSubscriptionProvider:
         )
 
     def extract_memories(self, request: MemoryExtractionRequest) -> MemoryExtractionResponse:
-        if request.prompt_plan is not None:
-            system_content = request.prompt_plan.system
-            user_content = request.prompt_plan.user
-        else:
-            system_content = MEMORY_EXTRACTION_SYSTEM_PROMPT
-            user_content = build_memory_extraction_user_content(
-                topic=request.topic,
-                creation_intent=request.creation_intent,
-                user_turns=list(request.user_turns),
-                existing_candidates=list(request.existing_candidates),
-                explicit_intent=request.explicit_intent,
-            )
-        raw, model = self._complete(
-            system_content=system_content,
-            user_content=user_content,
-            output_schema=_MEMORY_EXTRACTION_SCHEMA,
-        )
+        raw, model = self._complete(request.prompt_plan, _MEMORY_EXTRACTION_SCHEMA)
         return MemoryExtractionResponse(
             candidates=parse_candidates(raw),
             provider_name=PROVIDER_ID,
@@ -334,22 +256,7 @@ class CodexSubscriptionProvider:
         )
 
     def rerank_memories(self, request: MemoryRerankRequest) -> MemoryRerankResponse:
-        if request.prompt_plan is not None:
-            system_content = request.prompt_plan.system
-            user_content = request.prompt_plan.user
-        else:
-            system_content = MEMORY_RERANK_SYSTEM_PROMPT
-            user_content = build_memory_rerank_user_content(
-                topic=request.topic,
-                creation_intent=request.creation_intent,
-                candidates=list(request.candidates),
-                max_select=request.max_select,
-            )
-        raw, model = self._complete(
-            system_content=system_content,
-            user_content=user_content,
-            output_schema=_MEMORY_RERANK_SCHEMA,
-        )
+        raw, model = self._complete(request.prompt_plan, _MEMORY_RERANK_SCHEMA)
         return MemoryRerankResponse(
             selected_ids=parse_selected_ids(raw),
             provider_name=PROVIDER_ID,
@@ -357,17 +264,7 @@ class CodexSubscriptionProvider:
         )
 
     def merge_memories(self, request: MemoryMergeRequest) -> MemoryMergeResponse:
-        if request.prompt_plan is not None:
-            system_content = request.prompt_plan.system
-            user_content = request.prompt_plan.user
-        else:
-            system_content = MEMORY_MAINTENANCE_SYSTEM_PROMPT
-            user_content = build_memory_maintenance_user_content(entries=list(request.entries))
-        raw, model = self._complete(
-            system_content=system_content,
-            user_content=user_content,
-            output_schema=_MEMORY_MERGE_SCHEMA,
-        )
+        raw, model = self._complete(request.prompt_plan, _MEMORY_MERGE_SCHEMA)
         payload = parse_json_object(raw)
         return MemoryMergeResponse(
             primary_id=str(payload.get("primary_id") or ""),
@@ -381,41 +278,6 @@ class CodexSubscriptionProvider:
                 if isinstance(item, str)
             ],
             drop_ids=[str(item) for item in payload.get("drop_ids", []) if isinstance(item, str)],
-            provider_name=PROVIDER_ID,
-            model_name=model,
-        )
-
-    def classify_memory_action(self, request: MemoryActionRequest) -> MemoryActionResponse:
-        fallback = MemoryActionResponse(
-            action="none",
-            subject="",
-            provider_name=PROVIDER_ID,
-            model_name=self.config.model,
-        )
-        if request.prompt_plan is not None:
-            system_content = request.prompt_plan.system
-            user_content = request.prompt_plan.user
-        else:
-            system_content = _MEMORY_ACTION_SYSTEM
-            user_content = build_memory_action_classification_prompt(
-                request.user_message,
-                request.candidate_names,
-            )
-        try:
-            raw, model = self._complete(
-                system_content=system_content,
-                user_content=user_content,
-                output_schema=_MEMORY_ACTION_SCHEMA,
-            )
-        except Exception:
-            return fallback
-        payload = parse_json_object(raw)
-        action = str(payload.get("action") or "none")
-        if action not in {"remember", "correct", "forget_candidates", "none"}:
-            action = "none"
-        return MemoryActionResponse(
-            action=action,  # type: ignore[arg-type]
-            subject=str(payload.get("subject") or "").strip(),
             provider_name=PROVIDER_ID,
             model_name=model,
         )

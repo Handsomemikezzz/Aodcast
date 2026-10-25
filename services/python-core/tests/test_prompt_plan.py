@@ -340,19 +340,18 @@ class TestTranscriptTurnMetadata(unittest.TestCase):
         self.assertIn("metadata", payload)
         self.assertEqual(payload["metadata"]["interview_focus"], "topic_context")
 
-        recovered = TranscriptTurn.from_dict(payload, session_id="s1")
+        recovered = TranscriptTurn.from_dict(payload)
         self.assertEqual(recovered.metadata["interview_focus"], "topic_context")
         self.assertEqual(recovered.metadata["turn_role"], "question")
 
-    def test_legacy_turn_without_metadata_loads_as_empty_dict(self) -> None:
-        """§10: legacy turns without metadata field load correctly."""
-        legacy_payload = {
+    def test_turn_without_metadata_loads_as_empty_dict(self) -> None:
+        payload = {
             "speaker": "agent",
             "content": "What is your topic?",
             "created_at": "2025-01-01T00:00:00Z",
             "turn_id": "turn_abc123",
         }
-        turn = TranscriptTurn.from_dict(legacy_payload, session_id="s1")
+        turn = TranscriptTurn.from_dict(payload)
         self.assertIsInstance(turn.metadata, dict)
         self.assertEqual(turn.metadata, {})
 

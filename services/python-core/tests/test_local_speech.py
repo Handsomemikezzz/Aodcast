@@ -67,6 +67,42 @@ class LocalSpeechTests(unittest.TestCase):
         with self.assertRaisesRegex(LocalSpeechError, r"service.sh start"):
             client.synthesize("你好")
 
+    def test_connect_timeout_message_distinguishes_tcp_handshake(self):
+        def handler(request):
+            raise httpx.ConnectTimeout("connection timed out", request=request)
+
+        client = LocalSpeechClient(transport=httpx.MockTransport(handler))
+        self.assertEqual(client.timeout.connect, 30)
+        self.assertEqual(client.timeout.pool, 30)
+        with self.assertRaisesRegex(LocalSpeechError, r"timed out during TCP handshake"):
+            client.synthesize("你好")
+
+    def test_read_timeout_distinguishes_health_and_speech_endpoints(self):
+        def health_handler(request):
+            self.assertEqual(request.extensions["timeout"]["read"], 30)
+            raise httpx.ReadTimeout("read timed out", request=request)
+
+        client = LocalSpeechClient(transport=httpx.MockTransport(health_handler))
+        with self.assertRaisesRegex(LocalSpeechError, r"Health check probe timed out"):
+            client.health()
+
+        def speech_handler(request):
+            raise httpx.ReadTimeout("read timed out", request=request)
+
+        client = LocalSpeechClient(transport=httpx.MockTransport(speech_handler))
+        with self.assertRaisesRegex(LocalSpeechError, r"Speech synthesis timed out"):
+            client.synthesize("你好")
+
+        def transcription_handler(request):
+            raise httpx.ReadTimeout("read timed out", request=request)
+
+        client = LocalSpeechClient(transport=httpx.MockTransport(transcription_handler))
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "sample.wav"
+            source.write_bytes(synthesize_sine_wave_bytes(1))
+            with self.assertRaisesRegex(LocalSpeechError, r"Speech transcription timed out"):
+                client.transcribe(source)
+
     def test_invalid_audio_and_server_errors_are_not_success(self):
         for response in [
             httpx.Response(200, content=b"invalid"),

@@ -135,6 +135,6 @@ bash -n service.sh
 uv run --extra test python ../../scripts/verification/verify-local-speech.py
 ```
 
-输出写入本机 `.local-data/speech-verification/<timestamp>/`，不随 Git 发布。此前 2026-10-15 量化模型真机验收与内存证据见[验收报告](../SPEECH_DECOUPLING_REPORT.md)；迁移不改变这些历史测量值。
+输出写入本机 `.local-data/speech-verification/<timestamp>/`，不随 Git 发布。此前 2026-10-15 的量化模型真机实测摘要见根目录 [README](../README.zh-CN.md)。
 
 上游：[MLX Audio](https://github.com/Blaizzy/mlx-audio)。

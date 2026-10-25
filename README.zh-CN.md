@@ -232,7 +232,7 @@ curl http://127.0.0.1:8090/health
 
 服务默认模型为 `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit`（TTS）和 `mlx-community/Qwen3-ASR-0.6B-8bit`（ASR）。若使用 `mlx-community/Kokoro-82M-bf16`，请修改 `speech-service/.env` 中的 `TTS_MODEL`、`TTS_VOICE=zf_xiaobei`、`TTS_LANGUAGE=z`，运行 `(cd speech-service && uv sync --frozen --extra kokoro)`，然后 `./speech-service/service.sh restart`。可选的 `HF_ENDPOINT=https://hf-mirror.com` 也配置在服务环境中。编排核心不再提供模型下载器、权重路径设置或模型目录迁移；模型获取与缓存由内置服务负责。
 
-Aodcast 完整传递自然段，包括超过 1,000 字的段落。防 OOM 切片、串行 GPU 推理、静音裁剪、交叉淡化、缓存清理与空闲模型卸载均由语音服务负责。Aodcast 保留 Speech Plan、不可变自然段音频和 Render Manifest，用于节目装配与局部重生成；这些是编辑发布资产。HTTP 客户端读取超时为 1,800 秒，连接超时为 5 秒。服务未启动时会明确提示运行 `./speech-service/service.sh start`。
+Aodcast 完整传递自然段，包括超过 1,000 字的段落。防 OOM 切片、串行 GPU 推理、静音裁剪、交叉淡化、缓存清理与空闲模型卸载均由语音服务负责。Aodcast 保留 Speech Plan、不可变自然段音频和 Render Manifest，用于节目装配与局部重生成；这些是编辑发布资产。HTTP 客户端读取超时为 1,800 秒，连接超时为 30 秒。服务未启动时会明确提示运行 `./speech-service/service.sh start`。
 
 #### Python 语音识别
 
@@ -267,7 +267,7 @@ uv run --extra test python ../../scripts/verification/verify-local-speech.py
 
 脚本会在新的 `.local-data/speech-verification/<timestamp>/` 目录保存 WAV、`results.json` 和每秒内存采样 `memory.jsonl`。语音模型使用真实推理，只有编辑规划使用确定性的 mock LLM；通过识别长音频结束语检查是否截断。
 
-2026-10-15 的 16 GiB Apple M4 实测：首次 TTS 含加载耗时 51.00 秒，得到 9.04 秒短音频；ASR 用 9.20 秒识别回正文，规整字符错误率为 0%；1246 字完整自然段耗时 207.94 秒，得到 266.31 秒音频，服务端完成 11 个切片。服务 RSS 峰值为 2.07 GiB、Metal 分配峰值为 6.68 GiB，两种口径不能相加。这是此前解耦验收时的实测，并非本次迁移的新基准或性能保证；原始产物见[验收报告](SPEECH_DECOUPLING_REPORT.md)。
+2026-10-15 的 16 GiB Apple M4 实测：首次 TTS 含加载耗时 51.00 秒，得到 9.04 秒短音频；ASR 用 9.20 秒识别回正文，规整字符错误率为 0%；1246 字完整自然段耗时 207.94 秒，得到 266.31 秒音频，服务端完成 11 个切片。服务 RSS 峰值为 2.07 GiB、Metal 分配峰值为 6.68 GiB，两种口径不能相加。这是此前解耦验收时的实测，并非本次迁移的新基准或性能保证。
 
 ## 开发命令
 
@@ -408,7 +408,7 @@ Aodcast 的 manifest 装配把自然段 WAV 规范化为统一格式，每段做
 
 - `./scripts/dev/run-dev-all.sh` 先启动语音并等待健康检查，再默认重启 `8765` 上的 Python runtime；只有需要进程连续性时才用 `--reuse-runtime`。
 - 音频渲染排障：先看 `/healthz` runtime 元数据，再看 `.local-data/runtime/request-state/*`，最后才查前端 `run_token` 过滤。
-- CLI 写后读应串行（`start-interview`、`reply-session`、`generate-script`、`render-audio`、configure/show）；并行读写可能读到陈旧状态。
+- `run-python-core.sh` 只是运维 CLI：`--serve-http`、`--configure-llm-provider`/`--configure-tts-provider`、`--show-llm-config`/`--show-tts-config`、`--check-llm-config`、`--show-local-tts-capability`、`--list-models-status` 和 `--create-demo-session`，每条命令输出一个 JSON 对象。访谈、脚本和音频都走 HTTP runtime。
 - 桌面打包验证用 `pnpm --dir apps/desktop tauri:build`（不要在 `--` 后追加 cargo 风格参数）。非交互 DMG 依赖 `CI=true` 跳过 Finder AppleScript 样式。
 - 新建脚本先 `chmod +x` 再执行，不要让权限与执行竞态。
 
@@ -427,5 +427,3 @@ Aodcast 的 manifest 装配把自然段 WAV 规范化为统一格式，每段做
 ## License
 
 Aodcast 使用 [MIT License](LICENSE)。
-
-真实模型联调结果、完整删除清单、内存实测与复跑脚本见[《解耦与清理验收报告》](SPEECH_DECOUPLING_REPORT.md)。

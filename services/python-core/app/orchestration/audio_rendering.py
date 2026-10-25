@@ -56,21 +56,6 @@ class VoicePreviewResult:
     settings: VoiceRenderSettings
 
 
-@dataclass(frozen=True, slots=True)
-class AudioRenderProgress:
-    """Progress snapshot surfaced to the orchestration caller.
-
-    ``percent`` is a 0-100 completion estimate. ``chunk_index`` and
-    ``chunks_total`` are 1-based counters describing the current sentence
-    being synthesized; values of 0 mean no chunk information was supplied.
-    """
-
-    percent: float
-    message: str
-    chunk_index: int = 0
-    chunks_total: int = 0
-
-
 class AudioRenderingService:
     def __init__(
         self,
@@ -112,7 +97,7 @@ class AudioRenderingService:
         settings: VoiceRenderSettings | None = None,
         require_speaker_reference: bool = False,
         should_cancel: Callable[[], bool] | None = None,
-        on_progress: Callable[[AudioRenderProgress], None] | None = None,
+        on_progress: Callable[[PodcastRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
         if project.script is None:
@@ -148,11 +133,7 @@ class AudioRenderingService:
                 override_model=override_model,
                 require_speaker_reference=require_speaker_reference,
                 should_cancel=should_cancel,
-                on_progress=(
-                    (lambda progress: on_progress(_audio_progress(progress)))
-                    if on_progress is not None
-                    else None
-                ),
+                on_progress=on_progress,
             )
         except TaskCancellationRequested:
             self.store.restore_after_audio_render(
@@ -206,7 +187,7 @@ class AudioRenderingService:
         expected_plan_id: str,
         expected_render_id: str,
         should_cancel: Callable[[], bool] | None = None,
-        on_progress: Callable[[AudioRenderProgress], None] | None = None,
+        on_progress: Callable[[PodcastRenderProgress], None] | None = None,
     ) -> AudioRenderResult:
         project = self.store.load_project_for_script(session_id, script_id)
         if project.artifact is None:
@@ -229,11 +210,7 @@ class AudioRenderingService:
                     project.render_manifest.pipeline[0].provider if project.render_manifest else "",
                 ),
                 should_cancel=should_cancel,
-                on_progress=(
-                    (lambda progress: on_progress(_audio_progress(progress)))
-                    if on_progress is not None
-                    else None
-                ),
+                on_progress=on_progress,
             )
         except TaskCancellationRequested:
             self.store.restore_after_audio_render(
@@ -276,19 +253,6 @@ class AudioRenderingService:
             audio_path=pipeline_result.audio_path,
             transcript_path=pipeline_result.transcript_path,
             affected_segment_ids=pipeline_result.affected_segment_ids,
-        )
-
-    def render_voice_preview(
-        self,
-        settings: VoiceRenderSettings,
-        *,
-        override_provider: str = "",
-        override_model: str = "",
-    ) -> VoicePreviewResult:
-        return self.render_voice_preview_with_cancellation(
-            settings,
-            override_provider=override_provider,
-            override_model=override_model,
         )
 
     def save_voice_settings(
@@ -339,7 +303,7 @@ class AudioRenderingService:
         override_model: str = "",
         speaker_reference: dict[str, object] | None = None,
         should_cancel: Callable[[], bool] | None = None,
-        on_progress: Callable[[AudioRenderProgress], None] | None = None,
+        on_progress: Callable[[PodcastRenderProgress], None] | None = None,
     ) -> VoicePreviewResult:
         normalized = self._normalize_settings(settings)
         tts_config = self.config_store.load_tts_config()
@@ -378,11 +342,11 @@ class AudioRenderingService:
         )
         raise_if_cancelled()
         if on_progress is not None:
-            on_progress(AudioRenderProgress(percent=8.0, message="Preparing voice preview..."))
+            on_progress(PodcastRenderProgress(percent=8.0, message="Preparing voice preview..."))
         response = provider.synthesize(request)
         raise_if_cancelled()
         if on_progress is not None:
-            on_progress(AudioRenderProgress(percent=96.0, message="Writing voice preview audio..."))
+            on_progress(PodcastRenderProgress(percent=96.0, message="Writing voice preview audio..."))
         audio_path = self.artifact_store.write_preview_audio(response.audio_bytes, response.file_extension)
         return VoicePreviewResult(
             provider=response.provider_name,
@@ -571,15 +535,6 @@ def _resolve_post_render_state(previous_state: SessionState) -> SessionState:
     if _should_preserve_session_state(previous_state):
         return previous_state
     return SessionState.COMPLETED
-
-
-def _audio_progress(progress: PodcastRenderProgress) -> AudioRenderProgress:
-    return AudioRenderProgress(
-        percent=progress.percent,
-        message=progress.message,
-        chunk_index=progress.segment_index,
-        chunks_total=progress.segments_total,
-    )
 
 
 def _validate_local_settings(settings: VoiceRenderSettings) -> None:

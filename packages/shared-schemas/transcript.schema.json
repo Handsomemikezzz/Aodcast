@@ -8,9 +8,9 @@
     "session_id": { "type": "string" },
     "turns": {
       "type": "array",
-        "items": {
+      "items": {
         "type": "object",
-        "required": ["speaker", "content", "created_at"],
+        "required": ["turn_id", "speaker", "content", "created_at"],
         "properties": {
           "turn_id": { "type": "string" },
           "speaker": { "type": "string", "enum": ["agent", "user"] },

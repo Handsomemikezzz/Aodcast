@@ -274,37 +274,28 @@ class InterviewOrchestrator:
         # silently drop what the user sent.
         attachments = build_attachment_context(self.store, transcript)
 
-        # Build the PromptPlan for this turn.  Falls back gracefully when
-        # readiness is not supplied (e.g. start_interview before first user reply).
-        try:
-            effective_readiness = readiness or evaluate_readiness(transcript)
-            prompt_plan = build_interview_prompt_plan(
-                topic=prompt_input.topic,
-                creation_intent=prompt_input.creation_intent,
-                transcript=transcript,
-                readiness=effective_readiness,
-                script_exists=(project.script is not None),
-                memory_context=memory_context,
-                source_context=_source_context(project),
-                attachment_context=attachments.prompt_block,
-                transcript_text=_transcript_text(transcript),
-            )
-        except Exception:
-            prompt_plan = None
-
-        if plan_out is not None and prompt_plan is not None:
+        # readiness is absent for start_interview before the first user reply.
+        prompt_plan = build_interview_prompt_plan(
+            topic=prompt_input.topic,
+            creation_intent=prompt_input.creation_intent,
+            transcript=transcript,
+            readiness=readiness or evaluate_readiness(transcript),
+            script_exists=(project.script is not None),
+            memory_context=memory_context,
+            source_context=_source_context(project),
+            attachment_context=attachments.prompt_block,
+            transcript_text=_transcript_text(transcript),
+        )
+        if plan_out is not None:
             plan_out.append(prompt_plan)
 
         request = InterviewQuestionRequest(
             session_id=prompt_input.session_id,
             topic=prompt_input.topic,
             creation_intent=prompt_input.creation_intent,
-            transcript_text=_transcript_text(transcript),
             suggested_focus=prompt_input.suggested_focus,
-            missing_dimensions=list(prompt_input.missing_dimensions),
-            script_exists=(project.script is not None),
-            memory_context=memory_context,
             prompt_plan=prompt_plan,
+            script_exists=(project.script is not None),
             images=attachments.images,
         )
         try:

@@ -85,7 +85,7 @@ cd services/python-core
 uv run --extra test python ../../scripts/verification/verify-local-speech.py
 ```
 
-Results and memory samples are written into a new `.local-data/speech-verification/<timestamp>/` directory. See [the measured acceptance report](SPEECH_DECOUPLING_REPORT.md); keep test substitutes separate from real model evidence.
+Results and memory samples are written into a new `.local-data/speech-verification/<timestamp>/` directory. Keep test substitutes separate from real model evidence.
 
 ## Contribution guidelines
 

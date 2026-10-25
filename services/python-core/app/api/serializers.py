@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.domain.memory import MemoryEntry
 from app.domain.project import SessionProject
-from app.orchestration.audio_rendering import AudioRenderResult, VoiceRenderSettings
+from app.orchestration.audio_rendering import VoiceRenderSettings
 from app.orchestration.interview_service import InterviewTurnResult
 from app.orchestration.script_generation import ScriptGenerationResult, build_generation_context
 
@@ -84,17 +84,6 @@ def serialize_generation_result(result: ScriptGenerationResult) -> dict[str, obj
     if project.script is not None:
         payload["script_id"] = project.script.script_id
     return payload
-
-
-def serialize_audio_result(result: AudioRenderResult) -> dict[str, object]:
-    return {
-        "project": serialize_project(result.project),
-        "provider": result.provider,
-        "model": result.model,
-        "audio_path": result.audio_path,
-        "transcript_path": result.transcript_path,
-        "affected_segment_ids": list(result.affected_segment_ids),
-    }
 
 
 def voice_settings_from_payload(payload: dict[str, object]) -> VoiceRenderSettings:

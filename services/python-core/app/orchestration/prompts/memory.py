@@ -1,23 +1,16 @@
 """Memory prompt profiles (Phase 3).
 
-Migrates all four memory LLM call types to PromptPlan thin profiles:
+PromptPlan thin profiles for the memory LLM calls:
 
 - ``memory_extraction``       (§8.1)
 - ``memory_rerank``           (§8.2)
 - ``memory_merge``            (§8.3)
-- ``memory_action_classifier`` (§8.4)
 
 Design principles per §8 and §3 (Non-goals):
 - Each profile is thin — a small stable system section + dynamic user payload.
 - JSON tasks keep strict JSON output contracts (never prose, no markdown fences).
 - Sensitive memory bodies never enter the rerank index (§8.2).
-- Memory action classifier uses max_tokens budget (not set at this layer —
-  provider config owns token budgets, but the section is kept small).
 - No script/interview sections leak into memory profiles.
-
-Backward-compatibility:
-  All legacy string constants and builder functions are still exported
-  so existing provider code continues to work unchanged.
 """
 
 from __future__ import annotations
@@ -100,29 +93,6 @@ _SECTION_MERGE_SYSTEM = PromptSection(
     required=True,
 )
 
-_SECTION_ACTION_SYSTEM = PromptSection(
-    section_id="mem_action.system",
-    content=(
-        "You classify a single user message to detect explicit memory-management intent.\n"
-        "Return a JSON object with exactly two string fields: 'action' and 'subject'.\n\n"
-        "'action' must be one of:\n"
-        "  - 'remember'         : user explicitly asks to save or remember something\n"
-        "  - 'correct'          : user is correcting or updating a previously stated fact\n"
-        "  - 'forget_candidates': user asks to forget or delete a past memory\n"
-        "  - 'none'             : no clear memory-management intent\n\n"
-        "'subject' is a short phrase (\u2264 8 words) naming the topic the user mentioned, "
-        "or an empty string when action is 'none'.\n\n"
-        "Rules:\n"
-        "- Only classify as 'remember'/'correct'/'forget_candidates' when the user's intent "
-        "is explicit and unambiguous. Prefer 'none' when uncertain.\n"
-        "- Never infer deletion intent from a casual correction of an AI mistake.\n"
-        "- Return ONLY the JSON object, no explanation, no markdown fences."
-    ),
-    cache_policy=CachePolicy.STABLE,
-    required=True,
-)
-
-
 # ---------------------------------------------------------------------------
 # PromptPlan builders for each memory operation profile
 # ---------------------------------------------------------------------------
@@ -141,7 +111,7 @@ def build_memory_extraction_plan(
     optional explicit remember/correction intent.
     Sensitive bodies are NEVER included in any section.
     """
-    user_content = build_memory_extraction_user_content(
+    user_content = _memory_extraction_payload(
         topic=topic,
         creation_intent=creation_intent,
         user_turns=user_turns,
@@ -179,7 +149,7 @@ def build_memory_rerank_plan(
     Thin profile: candidate index uses id/type/name/description only —
     sensitive bodies NEVER enter the rerank index.
     """
-    user_content = build_memory_rerank_user_content(
+    user_content = _memory_rerank_payload(
         topic=topic,
         creation_intent=creation_intent,
         candidates=candidates,
@@ -208,7 +178,7 @@ def build_memory_merge_plan(*, entries: list[dict]) -> PromptPlan:
 
     Thin profile: merge only true semantic duplicates using existing evidence only.
     """
-    user_content = build_memory_maintenance_user_content(entries=entries)
+    user_content = _memory_maintenance_payload(entries=entries)
     return assemble_plan(
         operation_profile="memory_merge",
         prompt_version=PROMPT_VERSION,
@@ -224,53 +194,7 @@ def build_memory_merge_plan(*, entries: list[dict]) -> PromptPlan:
     )
 
 
-def build_memory_action_plan(
-    *,
-    user_message: str,
-    candidate_names: list[str],
-) -> PromptPlan:
-    """Build the memory_action_classifier PromptPlan (§8.4).
-
-    Very thin profile: classify only explicit memory-management intent.
-    Prefer 'none' when uncertain. Strict JSON output.
-    Dynamic payload includes user message and limited memory topic names only —
-    no memory bodies.
-    """
-    user_content = build_memory_action_classification_prompt(
-        user_message=user_message,
-        candidate_names=candidate_names,
-    )
-    return assemble_plan(
-        operation_profile="memory_action_classifier",
-        prompt_version=PROMPT_VERSION,
-        system_sections=[_SECTION_ACTION_SYSTEM],
-        user_sections=[
-            PromptSection(
-                section_id="mem_action.payload",
-                content=user_content,
-                cache_policy=CachePolicy.PRIVATE_DYNAMIC,
-            )
-        ],
-        gates={
-            "candidate_name_count": len(candidate_names),
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Backward-compatibility: legacy string constants and builder functions
-# ---------------------------------------------------------------------------
-
-MEMORY_RERANK_SYSTEM_PROMPT = _SECTION_RERANK_SYSTEM.content
-
-MEMORY_MAINTENANCE_SYSTEM_PROMPT = _SECTION_MERGE_SYSTEM.content
-
-MEMORY_EXTRACTION_SYSTEM_PROMPT = _SECTION_EXTRACTION_SYSTEM.content
-
-_MEMORY_ACTION_SYSTEM = _SECTION_ACTION_SYSTEM.content
-
-
-def build_memory_rerank_user_content(
+def _memory_rerank_payload(
     *,
     topic: str,
     creation_intent: str,
@@ -291,7 +215,7 @@ def build_memory_rerank_user_content(
     )
 
 
-def build_memory_maintenance_user_content(*, entries: list[dict]) -> str:
+def _memory_maintenance_payload(*, entries: list[dict]) -> str:
     blocks = []
     for entry in entries:
         evidence = "; ".join(
@@ -313,7 +237,7 @@ def build_memory_maintenance_user_content(*, entries: list[dict]) -> str:
     )
 
 
-def build_memory_extraction_user_content(
+def _memory_extraction_payload(
     *,
     topic: str,
     creation_intent: str,
@@ -342,19 +266,4 @@ def build_memory_extraction_user_content(
         f"User turns to analyze (only these may be evidence):\n{turn_lines}\n"
         f"{explicit_block}\n"
         "Return the JSON object now."
-    )
-
-
-def build_memory_action_classification_prompt(
-    user_message: str, candidate_names: list[str]
-) -> str:
-    """Build the user-turn text for the §10.5 memory action classifier."""
-    candidate_block = ""
-    if candidate_names:
-        names_fmt = "\n".join(f"  - {n}" for n in candidate_names[:20])
-        candidate_block = f"\nExisting memory topics for reference:\n{names_fmt}\n"
-    return (
-        f"User message:\n{user_message.strip()}\n"
-        f"{candidate_block}\n"
-        "Classify the user's memory-management intent."
     )

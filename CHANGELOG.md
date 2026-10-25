@@ -23,6 +23,11 @@ All notable changes to Aodcast will be documented in this file.
 
 - Consolidated the checkout into `AudioS/Aodcast/` and bundled local speech under `speech-service/`; launchers resolve paths relative to the repository.
 - Desktop/web launchers now start speech, wait for `8090/health`, then start the orchestration runtime and UI. Health readiness does not warm up models.
+- Relaxed local speech connection and health probe timeout from 5s to 30s, distinguished detailed timeout exceptions (connect, probe, synthesis, transcription), increased default speech-service idle unload timeout to 3,600s, and enabled offline mode (`HF_HUB_OFFLINE=1`) to prevent Hugging Face remote metadata checks during model loading.
+- LLM providers now consume only the orchestration-built `PromptPlan`; the legacy string-prompt fallbacks and the interview's silent plan-build fallback are gone, so a prompt assembly error surfaces instead of degrading the prompt.
+- Full render, segment regeneration, and voice preview share one long-task launcher in the HTTP runtime; a lost cancel/succeed race now ends in an explicit `cancelled` or `failed` state for previews too.
+- CI runs Python tests and desktop checks once, through the repository hygiene script.
+- The Python CLI is now operator-only (`--serve-http`, provider configure/show/check, `--show-local-tts-capability`, `--list-models-status`, `--create-demo-session`) and prints plain JSON without a `request_state` envelope.
 - Renamed the current-user LaunchAgent to `com.aodcast.speech-service` and moved its logs to `~/Library/Logs/Aodcast/speech-service/`. Speech remains available after closing the UI and can be stopped explicitly with `./speech-service/service.sh stop`.
 
 - Desktop creation now flows from Episodes into one Episode Workspace instead of a Material/Script/Voice/Audio wizard. Voice Studio remains the asset library while existing voices are selected inside the episode.
@@ -47,6 +52,9 @@ All notable changes to Aodcast will be documented in this file.
 - Top-level Studio navigation, the four-step workflow stepper, raw session-state labels, and the primary Speech Plan viewer.
 - Legacy voice-profile, preview-lock, and voice-take bridge/API flows. Persistent speaker identity now uses Speaker References, while final audio comes from manifest-driven rendering.
 - Mock Testing TTS provider (`mock_remote`).
+- The unused memory-action classifier (prompt profile, provider methods, and request types), legacy single-file `script.json` migration, legacy `memory.sqlite` cleanup, the combined memory `state.json` shape, and derived ids for transcript turns without `turn_id` (now required by the transcript schema).
+- CLI copies of product operations (sessions, scripts, interview, script generation, audio and voice-preview rendering, speaker references, task state/cancel) and the CLI side of the bridge parity contract. These operations are available through the HTTP runtime only.
+- The one-off speech decoupling acceptance report and unused `.agent/` task templates; the README keeps the measured summary.
 
 ### Notes
 

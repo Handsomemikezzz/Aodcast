@@ -45,8 +45,6 @@ class PodcastRenderSettings:
 class PodcastRenderProgress:
     percent: float
     message: str
-    segment_index: int = 0
-    segments_total: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,8 +209,6 @@ class PodcastRenderingPipeline:
                     on_progress,
                     start_percent,
                     f"Rendering speech segment {position + 1} / {len(plan.segments)}...",
-                    position + 1,
-                    len(plan.segments),
                 )
                 response = self._render_segment(
                     provider=provider,
@@ -383,7 +379,6 @@ class PodcastRenderingPipeline:
                 language=settings.language,
                 reference_audio_path=reference_audio,
                 reference_text=reference_text,
-                voice_lock_id=speaker_reference["speaker_reference_id"] if speaker_reference else "",
                 breaks=tuple(SpeechBreak(item.offset, item.duration_ms) for item in provider_breaks),
                 clone_mode="auto",
                 should_cancel=should_cancel,
@@ -529,11 +524,9 @@ class PodcastRenderingPipeline:
         callback: Callable[[PodcastRenderProgress], None] | None,
         percent: float,
         message: str,
-        segment_index: int = 0,
-        segments_total: int = 0,
     ) -> None:
         if callback is not None:
-            callback(PodcastRenderProgress(percent, message, segment_index, segments_total))
+            callback(PodcastRenderProgress(percent, message))
 
 
 def _delivery_prompt(segment: SpeechSegment, base_prompt: str) -> str:

@@ -30,7 +30,7 @@
     "updated_at": { "type": "string", "format": "date-time" },
     "generation_metadata": {
       "type": "object",
-      "description": "Compact, non-sensitive metadata from the script generation PromptPlan (prompt_version, style_profile, episode_brief_stats, provider, model). Omitted for legacy scripts.",
+      "description": "Compact, non-sensitive metadata from the script generation PromptPlan (prompt_version, style_profile, episode_brief_stats, provider, model). Omitted when empty.",
       "properties": {
         "source": { "$ref": "#/$defs/sourceLineage" }
       },

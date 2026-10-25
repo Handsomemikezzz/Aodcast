@@ -36,7 +36,7 @@ if rg -n \
   --glob '!**/.ruff_cache/**' \
   --glob '!**/__pycache__/**' \
   "TODO|TBD|FIXME" \
-  "$repo_root/AGENTS.md" "$repo_root/README.md" "$repo_root/apps" "$repo_root/services" "$repo_root/speech-service" "$repo_root/scripts" "$repo_root/packages" "$repo_root/examples"; then
+  "$repo_root/AGENTS.md" "$repo_root/README.md" "$repo_root/apps" "$repo_root/services" "$repo_root/speech-service" "$repo_root/scripts" "$repo_root/packages"; then
   true
 else
   echo "No TODO/TBD/FIXME markers found."

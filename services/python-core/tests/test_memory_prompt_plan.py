@@ -3,10 +3,9 @@
 Tests verify (§10 / §8):
 - Each profile uses a thin system section + dynamic payload
 - JSON output constraints are present in every memory profile's system text
-- memory_action_classifier does NOT load interview/script sections
+- Memory profiles do NOT load interview/script sections
 - Sensitive bodies never appear in the rerank index
 - Required sections are present for each profile
-- Legacy string constants match new section content (backward compat)
 """
 
 from __future__ import annotations
@@ -14,11 +13,6 @@ from __future__ import annotations
 import unittest
 
 from app.orchestration.prompts.memory import (
-    MEMORY_EXTRACTION_SYSTEM_PROMPT,
-    MEMORY_MAINTENANCE_SYSTEM_PROMPT,
-    MEMORY_RERANK_SYSTEM_PROMPT,
-    _MEMORY_ACTION_SYSTEM,
-    build_memory_action_plan,
     build_memory_extraction_plan,
     build_memory_merge_plan,
     build_memory_rerank_plan,
@@ -102,7 +96,7 @@ class TestMemoryExtractionPlan(unittest.TestCase):
         self.assertIn("candidates", plan.system)
 
     def test_no_script_sections_in_memory_profile(self) -> None:
-        """§10: memory_action_classifier does not load script/interview sections."""
+        """§10: memory extraction does not load script/interview sections."""
         plan = self._plan()
         for sid in plan.metadata.section_ids:
             self.assertFalse(sid.startswith("script."), f"Script section leaked: {sid}")
@@ -123,10 +117,6 @@ class TestMemoryExtractionPlan(unittest.TestCase):
         plan = self._plan()
         self.assertIn("sensitive", plan.system)
         self.assertIn("passwords", plan.system)
-
-    def test_backward_compat_constant_matches_section(self) -> None:
-        plan = self._plan()
-        self.assertEqual(plan.system, MEMORY_EXTRACTION_SYSTEM_PROMPT)
 
 
 # ---------------------------------------------------------------------------
@@ -177,10 +167,6 @@ class TestMemoryRerankPlan(unittest.TestCase):
         plan = self._plan(n_candidates=5)
         self.assertEqual(plan.metadata.gates["candidate_count"], 5)
 
-    def test_backward_compat_constant_matches_section(self) -> None:
-        plan = self._plan()
-        self.assertEqual(plan.system, MEMORY_RERANK_SYSTEM_PROMPT)
-
     def test_no_script_sections_leak(self) -> None:
         for sid in self._plan().metadata.section_ids:
             self.assertFalse(sid.startswith("script."))
@@ -214,73 +200,6 @@ class TestMemoryMergePlan(unittest.TestCase):
         plan = self._plan()
         self.assertEqual(plan.metadata.gates["entry_count"], 2)
 
-    def test_backward_compat_constant_matches_section(self) -> None:
-        plan = self._plan()
-        self.assertEqual(plan.system, MEMORY_MAINTENANCE_SYSTEM_PROMPT)
-
-
-# ---------------------------------------------------------------------------
-# memory_action_classifier profile
-# ---------------------------------------------------------------------------
-
-class TestMemoryActionPlan(unittest.TestCase):
-    def _plan(self, candidate_names: list[str] | None = None):
-        return build_memory_action_plan(
-            user_message="Please forget what I said about my job.",
-            candidate_names=candidate_names or ["Job history", "Work stress"],
-        )
-
-    def test_operation_profile(self) -> None:
-        self.assertEqual(self._plan().metadata.operation_profile, "memory_action_classifier")
-
-    def test_thin_profile_two_sections(self) -> None:
-        """§10: memory_action_classifier uses thin profile."""
-        self.assertEqual(len(self._plan().metadata.section_ids), 2)
-
-    def test_json_constraint_in_system(self) -> None:
-        plan = self._plan()
-        self.assertIn("JSON", plan.system)
-        self.assertIn("action", plan.system)
-        self.assertIn("subject", plan.system)
-
-    def test_prefer_none_when_uncertain_in_system(self) -> None:
-        """§8.4: prefer none when uncertain."""
-        plan = self._plan()
-        self.assertIn("Prefer 'none'", plan.system)
-
-    def test_no_memory_bodies_in_payload(self) -> None:
-        """§8.4: dynamic payload includes user message and limited topic names only, no bodies."""
-        plan = self._plan(candidate_names=["Topic A", "Topic B"])
-        # Candidate names appear (safe)
-        self.assertIn("Topic A", plan.user)
-        # But there should be no body-like content
-        self.assertNotIn("body text", plan.user.lower())
-
-    def test_candidate_names_capped_at_20(self) -> None:
-        """§8.4: limit candidate names sent to classifier."""
-        many = [f"Topic {i}" for i in range(25)]
-        plan = build_memory_action_plan(user_message="forget", candidate_names=many)
-        # Count occurrences — should not include all 25
-        count = sum(1 for name in many if name in plan.user)
-        self.assertLessEqual(count, 20)
-
-    def test_no_script_or_interview_sections_in_classifier(self) -> None:
-        """§10: memory_action_classifier does NOT load unrelated product/script sections."""
-        plan = self._plan()
-        for sid in plan.metadata.section_ids:
-            self.assertFalse(sid.startswith("script."), f"Script section leaked: {sid}")
-            self.assertFalse(sid.startswith("focus."), f"Focus section leaked: {sid}")
-            self.assertFalse(sid.startswith("option_mode."), f"Option section leaked: {sid}")
-
-    def test_backward_compat_constant_matches_section(self) -> None:
-        plan = self._plan()
-        self.assertEqual(plan.system, _MEMORY_ACTION_SYSTEM)
-
-    def test_system_and_user_nonempty(self) -> None:
-        plan = self._plan()
-        self.assertTrue(plan.system.strip())
-        self.assertTrue(plan.user.strip())
-
 
 # ---------------------------------------------------------------------------
 # Cross-profile invariants
@@ -299,7 +218,6 @@ class TestMemoryProfileCrossInvariants(unittest.TestCase):
                 candidates=_make_candidates(2), max_select=2,
             ),
             build_memory_merge_plan(entries=_make_entries(2)),
-            build_memory_action_plan(user_message="Forget my job.", candidate_names=[]),
         ]
 
     def test_all_profiles_have_prompt_version(self) -> None:

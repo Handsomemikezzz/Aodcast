@@ -49,7 +49,7 @@ from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, STYLE_PRESETS, VOICE_
 from app.models_catalog import DEFAULT_LOCAL_TTS_MODEL, build_models_status, resolve_voice_model_id
 from app.orchestration.audio_rendering import (
     AudioRenderingService,
-    AudioRenderProgress,
+    VoicePreviewResult,
     VoiceRenderSettings,
 )
 from app.orchestration.interview_service import InterviewOrchestrator, InterviewTurnResult
@@ -82,17 +82,14 @@ _DEFAULT_ALLOWED_ORIGINS = frozenset(
 )
 
 
-class BridgeTaskCancelledError(RuntimeError):
-    def __init__(
-        self,
-        message: str,
-        *,
-        operation: str,
-        progress_percent: float,
-    ) -> None:
-        super().__init__(message)
-        self.operation = operation
-        self.progress_percent = progress_percent
+@dataclass(frozen=True, slots=True)
+class _TaskMessages:
+    start: str
+    finalizing: str
+    succeeded: str
+    failed: str
+    cancelled: str
+    publish_failed: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +319,139 @@ class RuntimeContext:
             # Session may be missing; task state is still finalized for the UI.
             return
 
+    def _running_task_envelope(self, task_id: str, operation: str, data: dict[str, object]) -> dict[str, object] | None:
+        """Envelope for a task whose worker is still alive, so retriggers attach to it."""
+        if not self.is_task_worker_alive(task_id):
+            return None
+        state = self.request_state_store.load(task_id)
+        if not isinstance(state, dict):
+            return None
+        run_token = str(state.get("run_token") or "")
+        return success_envelope(
+            {**data, "task_id": task_id, "run_token": run_token},
+            operation=operation,
+            message=str(state.get("message") or "Working..."),
+            phase=str(state.get("phase") or "running"),
+            progress_percent=progress_from_request_state(state, default=5.0),
+            run_token=run_token,
+        )
+
+    def _launch_task(
+        self,
+        *,
+        task_id: str,
+        operation: str,
+        run_token: str,
+        messages: _TaskMessages,
+        run: Callable[[LongTaskStateManager], Any],
+        publish: Callable[[LongTaskStateManager, Any], bool],
+        tag_task_id: bool = False,
+    ) -> dict[str, object]:
+        """Run ``run`` on a worker thread with pollable, cancellable task state.
+
+        ``run`` does the work and reports progress; ``publish`` records success and
+        returns False when a cancellation won the race. Returns the started state.
+        """
+
+        def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
+            state = build_request_state(run_token=run_token, **kwargs)
+            if tag_task_id:
+                state["task_id"] = task_id
+            return state
+
+        def cancel_requested() -> bool:
+            return self.request_state_store.is_cancel_requested(task_id, run_token=run_token)
+
+        progress = LongTaskStateManager(
+            request_state_store=self.request_state_store,
+            task_id=task_id,
+            operation=operation,
+            build_request_state=tagged_build_request_state,
+            should_cancel=cancel_requested,
+        )
+
+        def save_cancelled(message: str, *, default_progress: float) -> None:
+            progress.save_cancelled(progress_percent=progress.current_progress(default=default_progress), message=message)
+            self.request_state_store.clear_cancel_request(task_id)
+
+        def save_failed(message: str) -> None:
+            progress.save_failed(message=message)
+            self.request_state_store.clear_cancel_request(task_id)
+
+        def worker() -> None:
+            try:
+                result = run(progress)
+                if publish(progress, result):
+                    self.request_state_store.clear_cancel_request(task_id)
+                elif cancel_requested() or progress.current_phase() == "cancelling":
+                    save_cancelled(messages.cancelled, default_progress=99.0)
+                else:
+                    save_failed(messages.publish_failed)
+            except TaskCancellationRequested as exc:
+                save_cancelled(str(exc) or messages.cancelled, default_progress=10.0)
+            except Exception as exc:
+                if cancel_requested() or progress.current_phase() == "cancelling":
+                    save_cancelled(messages.cancelled, default_progress=10.0)
+                else:
+                    save_failed(_normalize_error_message(exc, fallback=messages.failed))
+            finally:
+                with self.task_lock:
+                    self.active_tasks.pop(task_id, None)
+
+        self.request_state_store.clear_cancel_request(task_id)
+        progress.start(progress_percent=5.0, message=messages.start)
+        thread = threading.Thread(target=worker, name=task_id, daemon=True)
+        self.active_tasks[task_id] = thread
+        thread.start()
+        return self.request_state_store.load(task_id) or {}
+
+    def _start_script_render_task(
+        self,
+        *,
+        session_id: str,
+        script_id: str,
+        operation: str,
+        data: dict[str, object],
+        messages: _TaskMessages,
+        render: Callable[[LongTaskStateManager], Any],
+    ) -> dict[str, object]:
+        """Full render and window regeneration share one task per script."""
+        task_id = f"render_audio:{session_id}:{script_id}"
+        running = self._running_task_envelope(task_id, operation, data)
+        if running is not None:
+            return running
+
+        # Orphaned running/cancelling marker after OOM or crash — clear before a new run.
+        self.reconcile_inactive_task(task_id)
+
+        def publish(progress: LongTaskStateManager, _result: Any) -> bool:
+            progress.save_finalizing(progress_percent=99.0, message=messages.finalizing)
+            return progress.save_succeeded(message=messages.succeeded)
+
+        with self.task_lock:
+            thread = self.active_tasks.get(task_id)
+            if thread is not None and thread.is_alive():
+                started_state = self.request_state_store.load(task_id) or {}
+                run_token = str(started_state.get("run_token") or "")
+            else:
+                run_token = uuid.uuid4().hex
+                started_state = self._launch_task(
+                    task_id=task_id,
+                    operation=operation,
+                    run_token=run_token,
+                    messages=messages,
+                    run=render,
+                    publish=publish,
+                )
+        return success_envelope(
+            {**data, "task_id": task_id, "run_token": run_token},
+            operation=operation,
+            message=str(started_state.get("message") or messages.start),
+            phase=str(started_state.get("phase") or "running"),
+            progress_percent=progress_from_request_state(started_state, default=5.0),
+            run_token=run_token,
+        )
+
     def start_render_audio(
         self,
         session_id: str,
@@ -333,137 +463,43 @@ class RuntimeContext:
         require_speaker_reference: bool = False,
     ) -> dict[str, object]:
         project = self.store.load_project_for_script(session_id, script_id) if script_id.strip() else self.store.load_project(session_id)
-        if project.session.is_deleted():
-            raise ValueError("Session is deleted. Restore it before continuing.")
-        if project.script is None:
-            raise ValueError("Cannot continue without a script record.")
-        if project.script.is_deleted():
-            raise ValueError("Script is deleted. Restore it before continuing.")
+        ensure_session_is_active(project)
+        ensure_script_is_active(project)
+        assert project.script is not None
         script_id = project.script.script_id
-        task_id = f"render_audio:{session_id}:{script_id}"
-        with self.task_lock:
-            existing_thread = self.active_tasks.get(task_id)
-            if existing_thread is not None and existing_thread.is_alive():
-                existing_state = self.request_state_store.load(task_id)
-                if isinstance(existing_state, dict):
-                    return success_envelope(
-                        {
-                            "project": serialize_project(project),
-                            "provider": str(project.session.tts_provider or ""),
-                            "model": str(override_model or self.config_store.load_tts_config().model or ""),
-                            "audio_path": project.artifact.audio_path if project.artifact else "",
-                            "transcript_path": project.artifact.transcript_path if project.artifact else "",
-                            "task_id": task_id,
-                            "run_token": str(existing_state.get("run_token") or ""),
-                        },
-                        operation="render_audio",
-                        message=str(existing_state.get("message") or "Rendering audio..."),
-                        phase=str(existing_state.get("phase") or "running"),
-                        progress_percent=progress_from_request_state(existing_state, default=5.0),
-                        run_token=str(existing_state.get("run_token") or ""),
-                    )
 
-        # Orphaned running/cancelling marker after OOM or crash — clear before a new run.
-        self.reconcile_inactive_task(task_id)
-
-        with self.task_lock:
-            run_token = uuid.uuid4().hex
-
-            def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
-                return build_request_state(run_token=run_token, **kwargs)
-
-            progress = LongTaskStateManager(
-                request_state_store=self.request_state_store,
-                task_id=task_id,
-                operation="render_audio",
-                build_request_state=tagged_build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id, run_token=run_token),
-            )
-            self.request_state_store.clear_cancel_request(task_id)
-            progress.start(
-                progress_percent=5.0,
-                message=f"Rendering audio for session {session_id}...",
+        def render(progress: LongTaskStateManager) -> None:
+            self.audio_rendering.render_audio_with_cancellation(
+                session_id,
+                script_id=script_id,
+                override_provider=override_provider,
+                override_model=override_model,
+                settings=settings,
+                require_speaker_reference=require_speaker_reference,
+                should_cancel=progress.should_cancel,
+                on_progress=lambda snapshot: progress.set_progress(snapshot.percent, snapshot.message, max_percent=99.0),
             )
 
-            def worker() -> None:
-                def on_progress(snapshot: AudioRenderProgress) -> None:
-                    progress.set_progress(
-                        snapshot.percent,
-                        snapshot.message,
-                        max_percent=99.0,
-                    )
-
-                try:
-                    self.audio_rendering.render_audio_with_cancellation(
-                        session_id,
-                        script_id=script_id,
-                        override_provider=override_provider,
-                        override_model=override_model,
-                        settings=settings,
-                        require_speaker_reference=require_speaker_reference,
-                        should_cancel=progress.should_cancel,
-                        on_progress=on_progress,
-                    )
-                except TaskCancellationRequested as exc:
-                    self.raise_task_cancelled(
-                        progress,
-                        task_id=task_id,
-                        operation="render_audio",
-                        message=str(exc),
-                        default_progress=10.0,
-                    )
-                except Exception as exc:  # pragma: no cover - exercised by integration tests
-                    current_phase = progress.current_phase()
-                    if self.request_state_store.is_cancel_requested(task_id, run_token=run_token) or current_phase == "cancelling":
-                        self.raise_task_cancelled(
-                            progress,
-                            task_id=task_id,
-                            operation="render_audio",
-                            message=f"Audio rendering cancelled for session {session_id}.",
-                            default_progress=10.0,
-                            source_error=exc,
-                        )
-                    self.fail_task(
-                        progress,
-                        task_id=task_id,
-                        message=_normalize_error_message(exc, fallback=f"Audio rendering failed for session {session_id}."),
-                        fallback_message=f"Audio rendering failed for session {session_id}.",
-                    )
-                else:
-                    self.complete_task_success(
-                        progress,
-                        task_id=task_id,
-                        operation="render_audio",
-                        finalizing_progress=99.0,
-                        finalizing_message=f"Finalizing rendered artifacts for session {session_id}...",
-                        success_message=f"Audio render finished for session {session_id}.",
-                        fallback_failure_message=f"Unable to finalize audio render for session {session_id}.",
-                        cancellation_message=f"Audio rendering cancelled for session {session_id}.",
-                    )
-                finally:
-                    with self.task_lock:
-                        self.active_tasks.pop(task_id, None)
-
-            thread = threading.Thread(target=worker, name=task_id, daemon=True)
-            self.active_tasks[task_id] = thread
-            thread.start()
-
-        started_state = self.request_state_store.load(task_id)
-        return success_envelope(
-            {
+        return self._start_script_render_task(
+            session_id=session_id,
+            script_id=script_id,
+            operation="render_audio",
+            data={
                 "project": serialize_project(project),
                 "provider": str(project.session.tts_provider or ""),
                 "model": str(override_model or self.config_store.load_tts_config().model or ""),
                 "audio_path": project.artifact.audio_path if project.artifact else "",
                 "transcript_path": project.artifact.transcript_path if project.artifact else "",
-                "task_id": task_id,
-                "run_token": run_token,
             },
-            operation="render_audio",
-            message=str((started_state or {}).get("message") or "Rendering audio..."),
-            phase=str((started_state or {}).get("phase") or "running"),
-            progress_percent=progress_from_request_state(started_state, default=5.0),
-            run_token=run_token,
+            messages=_TaskMessages(
+                start=f"Rendering audio for session {session_id}...",
+                finalizing=f"Finalizing rendered artifacts for session {session_id}...",
+                succeeded=f"Audio render finished for session {session_id}.",
+                failed=f"Audio rendering failed for session {session_id}.",
+                cancelled=f"Audio rendering cancelled for session {session_id}.",
+                publish_failed=f"Unable to finalize audio render for session {session_id}.",
+            ),
+            render=render,
         )
 
     def start_regenerate_audio_window(
@@ -486,116 +522,32 @@ class RuntimeContext:
             segment.segment_id
             for segment in project.speech_plan.context_window(target_segment_id, radius=1)
         ]
-        task_id = f"render_audio:{session_id}:{script_id}"
-        with self.task_lock:
-            existing_thread = self.active_tasks.get(task_id)
-            if existing_thread is not None and existing_thread.is_alive():
-                existing_state = self.request_state_store.load(task_id) or {}
-                return success_envelope(
-                    {
-                        "project": serialize_project(project),
-                        "task_id": task_id,
-                        "run_token": str(existing_state.get("run_token") or ""),
-                        "affected_segment_ids": affected_segment_ids,
-                    },
-                    operation="regenerate_audio_window",
-                    message=str(existing_state.get("message") or "Rendering audio..."),
-                    phase=str(existing_state.get("phase") or "running"),
-                    progress_percent=progress_from_request_state(existing_state, default=5.0),
-                    run_token=str(existing_state.get("run_token") or ""),
-                )
 
-        self.reconcile_inactive_task(task_id)
-
-        with self.task_lock:
-            run_token = uuid.uuid4().hex
-
-            def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
-                return build_request_state(run_token=run_token, **kwargs)
-
-            progress = LongTaskStateManager(
-                request_state_store=self.request_state_store,
-                task_id=task_id,
-                operation="regenerate_audio_window",
-                build_request_state=tagged_build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id, run_token=run_token),
-            )
-            self.request_state_store.clear_cancel_request(task_id)
-            progress.start(
-                progress_percent=5.0,
-                message=f"Regenerating {len(affected_segment_ids)} context segments...",
+        def render(progress: LongTaskStateManager) -> None:
+            self.audio_rendering.regenerate_audio_window_with_cancellation(
+                session_id,
+                script_id=script_id,
+                target_segment_id=target_segment_id,
+                expected_plan_id=expected_plan_id,
+                expected_render_id=expected_render_id,
+                should_cancel=progress.should_cancel,
+                on_progress=lambda snapshot: progress.set_progress(snapshot.percent, snapshot.message, max_percent=99.0),
             )
 
-            def worker() -> None:
-                def on_progress(snapshot: AudioRenderProgress) -> None:
-                    progress.set_progress(snapshot.percent, snapshot.message, max_percent=99.0)
-
-                try:
-                    self.audio_rendering.regenerate_audio_window_with_cancellation(
-                        session_id,
-                        script_id=script_id,
-                        target_segment_id=target_segment_id,
-                        expected_plan_id=expected_plan_id,
-                        expected_render_id=expected_render_id,
-                        should_cancel=progress.should_cancel,
-                        on_progress=on_progress,
-                    )
-                except TaskCancellationRequested as exc:
-                    self.raise_task_cancelled(
-                        progress,
-                        task_id=task_id,
-                        operation="regenerate_audio_window",
-                        message=str(exc),
-                        default_progress=10.0,
-                    )
-                except Exception as exc:  # pragma: no cover - integration coverage
-                    if self.request_state_store.is_cancel_requested(task_id, run_token=run_token) or progress.current_phase() == "cancelling":
-                        self.raise_task_cancelled(
-                            progress,
-                            task_id=task_id,
-                            operation="regenerate_audio_window",
-                            message=f"Audio regeneration cancelled for session {session_id}.",
-                            default_progress=10.0,
-                            source_error=exc,
-                        )
-                    self.fail_task(
-                        progress,
-                        task_id=task_id,
-                        message=_normalize_error_message(exc, fallback="Audio regeneration failed."),
-                        fallback_message="Audio regeneration failed.",
-                    )
-                else:
-                    self.complete_task_success(
-                        progress,
-                        task_id=task_id,
-                        operation="regenerate_audio_window",
-                        finalizing_progress=99.0,
-                        finalizing_message="Publishing regenerated podcast audio...",
-                        success_message="Audio regeneration finished.",
-                        fallback_failure_message="Unable to finalize regenerated audio.",
-                        cancellation_message="Audio regeneration cancelled.",
-                    )
-                finally:
-                    with self.task_lock:
-                        self.active_tasks.pop(task_id, None)
-
-            thread = threading.Thread(target=worker, name=task_id, daemon=True)
-            self.active_tasks[task_id] = thread
-            thread.start()
-
-        started_state = self.request_state_store.load(task_id) or {}
-        return success_envelope(
-            {
-                "project": serialize_project(project),
-                "task_id": task_id,
-                "run_token": run_token,
-                "affected_segment_ids": affected_segment_ids,
-            },
+        return self._start_script_render_task(
+            session_id=session_id,
+            script_id=script_id,
             operation="regenerate_audio_window",
-            message=str(started_state.get("message") or "Regenerating audio..."),
-            phase=str(started_state.get("phase") or "running"),
-            progress_percent=progress_from_request_state(started_state, default=5.0),
-            run_token=run_token,
+            data={"project": serialize_project(project), "affected_segment_ids": affected_segment_ids},
+            messages=_TaskMessages(
+                start=f"Regenerating {len(affected_segment_ids)} context segments...",
+                finalizing="Publishing regenerated podcast audio...",
+                succeeded="Audio regeneration finished.",
+                failed="Audio regeneration failed.",
+                cancelled="Audio regeneration cancelled.",
+                publish_failed="Unable to finalize regenerated audio.",
+            ),
+            render=render,
         )
 
     def start_render_voice_preview(
@@ -614,198 +566,77 @@ class RuntimeContext:
         )
         run_token = uuid.uuid4().hex
         task_id = f"render_voice_preview:{run_token}"
-        def tagged_build_request_state(**kwargs: Any) -> dict[str, object]:
-            state = build_request_state(run_token=run_token, **kwargs)
-            state["task_id"] = task_id
-            return state
+
+        def render(progress: LongTaskStateManager) -> VoicePreviewResult:
+            heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
+                start_percent=5.0,
+                max_percent=85.0,
+                step_percent=2.0,
+                interval_seconds=1.0,
+                message="Rendering voice preview...",
+            )
+            try:
+                speaker_reference: dict[str, object] | None = None
+                if speaker_reference_id.strip():
+                    speaker_reference = self.get_speaker_reference_store().get_reference(speaker_reference_id).to_dict()
+                return self.audio_rendering.render_voice_preview_with_cancellation(
+                    settings,
+                    override_provider=override_provider,
+                    override_model=override_model,
+                    speaker_reference=speaker_reference,
+                    should_cancel=progress.should_cancel,
+                    on_progress=lambda snapshot: progress.set_progress(snapshot.percent, snapshot.message, max_percent=98.0),
+                )
+            finally:
+                progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
+
+        def publish(progress: LongTaskStateManager, result: VoicePreviewResult) -> bool:
+            progress.save_finalizing(progress_percent=99.0, message="Finalizing voice preview...")
+            return self.request_state_store.save_if_current_phase(
+                task_id,
+                {
+                    **progress.build_request_state(
+                        operation="render_voice_preview",
+                        phase="succeeded",
+                        progress_percent=100.0,
+                        message="Voice preview render finished.",
+                    ),
+                    "audio_path": result.audio_path,
+                    "provider": result.provider,
+                    "model": result.model,
+                    "settings": serialize_voice_settings(result.settings),
+                },
+                allowed_phases={"running"},
+            )
 
         with self.task_lock:
-            existing_thread = self.active_tasks.get(task_id)
-            if existing_thread is not None and existing_thread.is_alive():
-                existing_state = self.request_state_store.load(task_id)
-                if isinstance(existing_state, dict):
-                    return success_envelope(
-                        {"task_id": task_id},
-                        operation="render_voice_preview",
-                        message=str(existing_state.get("message") or "Rendering voice preview..."),
-                        phase=str(existing_state.get("phase") or "running"),
-                        progress_percent=progress_from_request_state(existing_state, default=5.0),
-                        run_token=str(existing_state.get("run_token") or run_token),
-                    )
-
-            progress = LongTaskStateManager(
-                request_state_store=self.request_state_store,
+            started_state = self._launch_task(
                 task_id=task_id,
                 operation="render_voice_preview",
-                build_request_state=tagged_build_request_state,
-                should_cancel=lambda: self.request_state_store.is_cancel_requested(task_id, run_token=run_token),
+                run_token=run_token,
+                messages=_TaskMessages(
+                    start="Rendering voice preview...",
+                    finalizing="Finalizing voice preview...",
+                    succeeded="Voice preview render finished.",
+                    failed="Voice preview rendering failed.",
+                    cancelled="Voice preview rendering cancelled.",
+                    publish_failed="Unable to finalize voice preview.",
+                ),
+                run=render,
+                publish=publish,
+                tag_task_id=True,
             )
-            self.request_state_store.clear_cancel_request(task_id)
-            progress.start(progress_percent=5.0, message="Rendering voice preview...")
-
-            def worker() -> None:
-                heartbeat_stop, heartbeat_thread = progress.start_heartbeat(
-                    start_percent=5.0,
-                    max_percent=85.0,
-                    step_percent=2.0,
-                    interval_seconds=1.0,
-                    message="Rendering voice preview...",
-                )
-
-                def on_progress(snapshot: AudioRenderProgress) -> None:
-                    progress.set_progress(snapshot.percent, snapshot.message, max_percent=98.0)
-
-                try:
-                    speaker_reference: dict[str, object] | None = None
-                    if speaker_reference_id.strip():
-                        reference = self.get_speaker_reference_store().get_reference(speaker_reference_id)
-                        speaker_reference = reference.to_dict()
-                    result = self.audio_rendering.render_voice_preview_with_cancellation(
-                        settings,
-                        override_provider=override_provider,
-                        override_model=override_model,
-                        speaker_reference=speaker_reference,
-                        should_cancel=progress.should_cancel,
-                        on_progress=on_progress,
-                    )
-                except TaskCancellationRequested as exc:
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    self.raise_task_cancelled(
-                        progress,
-                        task_id=task_id,
-                        operation="render_voice_preview",
-                        message=str(exc),
-                        default_progress=10.0,
-                    )
-                except Exception as exc:  # pragma: no cover - exercised by integration tests
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    if self.request_state_store.is_cancel_requested(task_id, run_token=run_token) or progress.current_phase() == "cancelling":
-                        self.raise_task_cancelled(
-                            progress,
-                            task_id=task_id,
-                            operation="render_voice_preview",
-                            message="Voice preview rendering cancelled.",
-                            default_progress=10.0,
-                            source_error=exc,
-                        )
-                    self.fail_task(
-                        progress,
-                        task_id=task_id,
-                        message=_normalize_error_message(exc, fallback="Voice preview rendering failed."),
-                        fallback_message="Voice preview rendering failed.",
-                    )
-                else:
-                    progress.stop_heartbeat(heartbeat_stop, heartbeat_thread)
-                    progress.save_finalizing(progress_percent=99.0, message="Finalizing voice preview...")
-                    self.request_state_store.save_if_current_phase(
-                        task_id,
-                        {
-                            **build_request_state(
-                                operation="render_voice_preview",
-                                phase="succeeded",
-                                progress_percent=100.0,
-                                message="Voice preview render finished.",
-                                run_token=run_token,
-                            ),
-                            "task_id": task_id,
-                            "audio_path": result.audio_path,
-                            "provider": result.provider,
-                            "model": result.model,
-                            "settings": serialize_voice_settings(result.settings),
-                        },
-                        allowed_phases={"running"},
-                    )
-                    self.request_state_store.clear_cancel_request(task_id)
-                finally:
-                    with self.task_lock:
-                        self.active_tasks.pop(task_id, None)
-
-            thread = threading.Thread(target=worker, name=task_id, daemon=True)
-            self.active_tasks[task_id] = thread
-            thread.start()
-
-        started_state = self.request_state_store.load(task_id)
         envelope = success_envelope(
             {"task_id": task_id},
             operation="render_voice_preview",
-            message=str((started_state or {}).get("message") or "Rendering voice preview..."),
-            phase=str((started_state or {}).get("phase") or "running"),
+            message=str(started_state.get("message") or "Rendering voice preview..."),
+            phase=str(started_state.get("phase") or "running"),
             progress_percent=progress_from_request_state(started_state, default=5.0),
             run_token=run_token,
         )
-        if isinstance(started_state, dict):
+        if started_state:
             envelope["data"]["request_state"] = started_state  # type: ignore[index]
         return envelope
-
-
-    def raise_task_cancelled(
-        self,
-        progress: LongTaskStateManager,
-        *,
-        task_id: str,
-        operation: str,
-        message: str,
-        default_progress: float,
-        source_error: Exception | None = None,
-    ) -> None:
-        cancel_progress = progress.current_progress(default=default_progress)
-        progress.save_cancelled(progress_percent=cancel_progress, message=message)
-        self.request_state_store.clear_cancel_request(task_id)
-        error = BridgeTaskCancelledError(
-            message,
-            operation=operation,
-            progress_percent=cancel_progress,
-        )
-        if source_error is not None:
-            raise error from source_error
-        raise error
-
-    def fail_task(
-        self,
-        progress: LongTaskStateManager,
-        *,
-        task_id: str,
-        message: str,
-        fallback_message: str,
-    ) -> None:
-        normalized_message = message.strip() or fallback_message
-        progress.save_failed(message=normalized_message)
-        self.request_state_store.clear_cancel_request(task_id)
-
-    def complete_task_success(
-        self,
-        progress: LongTaskStateManager,
-        *,
-        task_id: str,
-        operation: str,
-        finalizing_progress: float,
-        finalizing_message: str,
-        success_message: str,
-        fallback_failure_message: str,
-        cancellation_message: str,
-    ) -> None:
-        progress.save_finalizing(
-            progress_percent=finalizing_progress,
-            message=finalizing_message,
-        )
-        saved_succeeded = progress.save_succeeded(message=success_message)
-        if not saved_succeeded:
-            if self.request_state_store.is_cancel_requested(task_id) or progress.current_phase() == "cancelling":
-                self.raise_task_cancelled(
-                    progress,
-                    task_id=task_id,
-                    operation=operation,
-                    message=cancellation_message,
-                    default_progress=finalizing_progress,
-                )
-            self.fail_task(
-                progress,
-                task_id=task_id,
-                message=fallback_failure_message,
-                fallback_message=fallback_failure_message,
-            )
-            return
-        self.request_state_store.clear_cancel_request(task_id)
 
     def list_projects_payload(self, *, include_deleted: bool = False, search_query: str = "") -> dict[str, object]:
         projects = sorted(

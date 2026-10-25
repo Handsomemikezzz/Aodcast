@@ -84,29 +84,13 @@ jobs:
         working-directory: apps/desktop
         run: pnpm install --frozen-lockfile
 
-      - name: Python tests
-        working-directory: services/python-core
-        run: .venv/bin/python -m unittest discover -s tests -v
-
       - name: Startup lifecycle contracts
         run: python3 scripts/verification/test-startup-lifecycle.py
-
-      - name: Desktop typecheck
-        working-directory: apps/desktop
-        run: pnpm check
-
-      - name: Desktop tests
-        working-directory: apps/desktop
-        run: pnpm test
-
-      - name: Desktop web build
-        working-directory: apps/desktop
-        run: pnpm build:web
 
       - name: Rust cargo check
         working-directory: apps/desktop/src-tauri
         run: cargo check
 
-      - name: Repository hygiene
+      - name: Python tests, desktop typecheck/tests/build, and repository hygiene
         # The separate Python 3.12 job covers speech without native MLX or model weights.
         run: ./scripts/maintenance/run-repo-hygiene-check.sh --skip-speech-checks

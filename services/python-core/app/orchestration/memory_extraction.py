@@ -58,7 +58,6 @@ class MemoryExtractor:
             topic=session.topic,
             creation_intent=session.creation_intent,
             user_turns=turn_dicts,
-            existing_candidates=existing,
             prompt_plan=plan,
         )
         response = provider.extract_memories(request)
@@ -131,8 +130,6 @@ class MemoryExtractor:
             topic=session.topic,
             creation_intent=session.creation_intent,
             user_turns=turn_dicts,
-            existing_candidates=existing,
-            explicit_intent=explicit,
             prompt_plan=plan,
         )
         response = provider.extract_memories(request)

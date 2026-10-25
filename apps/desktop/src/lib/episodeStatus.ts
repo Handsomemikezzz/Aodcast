@@ -22,7 +22,7 @@ const STATUS_LABELS: Record<EpisodeProductStatusKind, string> = {
   failed: "Generation failed",
 };
 
-export function projectAudioPath(project: SessionProject | null, scriptId?: string): string {
+function projectAudioPath(project: SessionProject | null, scriptId?: string): string {
   if (!project) return "";
   if (scriptId) {
     const scriptAudio = project.artifact?.script_artifacts?.[scriptId]?.audio_path;

@@ -118,9 +118,7 @@ class ProjectStoreTests(unittest.TestCase):
             transcript.append(Speaker.AGENT, "What happened?")
             transcript.append(Speaker.USER, "A full session payload was persisted.")
 
-            script = ScriptRecord(session_id=session.session_id)
-            script.update_draft("Draft copy")
-            script.update_final("Final copy")
+            script = ScriptRecord(session_id=session.session_id, draft="Draft copy", final="Final copy")
 
             artifact = ArtifactRecord(
                 session_id=session.session_id,

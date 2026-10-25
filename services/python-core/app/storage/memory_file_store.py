@@ -223,11 +223,7 @@ class MemoryFileStore:
         worker_payload = self._read_json(self.worker_file)
         state = MemoryState()
         if isinstance(settings_payload, dict):
-            # Tolerate the legacy combined shape ({"settings": ..., "worker": ...}).
-            if "settings" in settings_payload:
-                state = MemoryState.from_dict(settings_payload)
-            else:
-                state.settings = MemorySettings.from_dict(settings_payload)
+            state.settings = MemorySettings.from_dict(settings_payload)
         if isinstance(worker_payload, dict):
             state.worker = WorkerState.from_dict(worker_payload)
         return state

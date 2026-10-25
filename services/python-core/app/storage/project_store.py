@@ -7,7 +7,6 @@ import tempfile
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from uuid import uuid4
 
 try:
     import fcntl
@@ -24,7 +23,7 @@ from app.domain.attachment import (
     resolve_attachment_mime_type,
     validate_image_bytes,
 )
-from app.domain.common import sha256_bytes, sha256_text, utc_now_iso
+from app.domain.common import sha256_bytes, sha256_text
 from app.domain.episode_source import (
     EpisodeSource,
     SourceConversionMode,
@@ -99,9 +98,6 @@ class ProjectStore:
 
     def source_version_file(self, session_id: str, version: int) -> Path:
         return self.source_versions_dir(session_id) / f"v{version:04d}.json"
-
-    def legacy_script_file(self, session_id: str) -> Path:
-        return self.session_dir(session_id) / "script.json"
 
     def scripts_dir(self, session_id: str) -> Path:
         return self.session_dir(session_id) / "scripts"
@@ -239,37 +235,7 @@ class ProjectStore:
         """Persist a script to scripts/{script_id}.json."""
         return self._write_json(self.script_blob_file(script.session_id, script.script_id), script.to_dict())
 
-    def load_script(self, session_id: str) -> ScriptRecord:
-        """Deprecated single-file layout; use load_latest_script or load_script_by_id."""
-        return ScriptRecord.from_dict(self._read_json(self.legacy_script_file(session_id)))
-
-    def _maybe_migrate_legacy_script(self, session_id: str) -> None:
-        legacy = self.legacy_script_file(session_id)
-        if not legacy.exists():
-            return
-        bucket = self.scripts_dir(session_id)
-        if bucket.exists() and any(bucket.glob("*.json")):
-            return
-        payload = self._read_json(legacy)
-        payload["session_id"] = session_id
-        if not payload.get("script_id"):
-            payload["script_id"] = str(uuid4())
-        if not payload.get("name"):
-            try:
-                session = self.load_session(session_id)
-                topic = session.topic.strip() or "Untitled"
-            except OSError:
-                topic = "Untitled"
-            ts = str(payload.get("updated_at") or payload.get("created_at") or utc_now_iso())
-            payload["name"] = f"{topic}-{ts[:16].replace('T', ' ')}" if len(ts) >= 16 else f"{topic}-migrated"
-        if not payload.get("created_at"):
-            payload["created_at"] = payload.get("updated_at") or utc_now_iso()
-        script = ScriptRecord.from_dict(payload)
-        self._write_json(self.script_blob_file(session_id, script.script_id), script.to_dict())
-        legacy.unlink()
-
     def list_scripts(self, session_id: str) -> list[ScriptRecord]:
-        self._maybe_migrate_legacy_script(session_id)
         bucket = self.scripts_dir(session_id)
         if not bucket.exists():
             return []
@@ -280,7 +246,6 @@ class ProjectStore:
         return scripts
 
     def load_script_by_id(self, session_id: str, script_id: str) -> ScriptRecord:
-        self._maybe_migrate_legacy_script(session_id)
         path = self.script_blob_file(session_id, script_id)
         if not path.exists():
             raise ValueError(f"Unknown script_id '{script_id}' for session {session_id}.")
@@ -320,11 +285,6 @@ class ProjectStore:
 
     def load_render_manifest(self, session_id: str, script_id: str) -> RenderManifest:
         return RenderManifest.from_dict(self._read_json(self.render_manifest_file(session_id, script_id)))
-
-    def load_render_manifest_version(self, session_id: str, script_id: str, render_id: str) -> RenderManifest:
-        return RenderManifest.from_dict(
-            self._read_json(self.render_manifest_version_file(session_id, script_id, render_id))
-        )
 
     def list_render_manifests(self, session_id: str, script_id: str) -> list[RenderManifest]:
         directory = self.render_manifest_script_dir(session_id, script_id)

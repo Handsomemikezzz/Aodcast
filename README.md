@@ -232,7 +232,7 @@ Configure Aodcast from its repository root:
 
 The service's default models are `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit` (TTS) and `mlx-community/Qwen3-ASR-0.6B-8bit` (ASR). To use `mlx-community/Kokoro-82M-bf16`, change `TTS_MODEL`, `TTS_VOICE=zf_xiaobei`, and `TTS_LANGUAGE=z` in `speech-service/.env`, run `(cd speech-service && uv sync --frozen --extra kokoro)`, then `./speech-service/service.sh restart`. Optional `HF_ENDPOINT=https://hf-mirror.com` also belongs in that service environment. The orchestration core has no model downloader, weight-path setting, or model-directory migration; the bundled service owns model acquisition and cache use.
 
-Aodcast sends complete natural paragraphs, including paragraphs longer than 1,000 characters. The service owns memory-safe text slicing, serial GPU inference, silence trimming, crossfades, cache cleanup, and idle model unloading. Aodcast retains Speech Plans, immutable paragraph audio, and Render Manifests for editorial assembly and local regeneration; these are publishing assets, not GPU-memory slices. The HTTP client uses a 1,800-second read timeout and a 5-second connect timeout. A stopped service produces an actionable error directing you to `./speech-service/service.sh start`.
+Aodcast sends complete natural paragraphs, including paragraphs longer than 1,000 characters. The service owns memory-safe text slicing, serial GPU inference, silence trimming, crossfades, cache cleanup, and idle model unloading. Aodcast retains Speech Plans, immutable paragraph audio, and Render Manifests for editorial assembly and local regeneration; these are publishing assets, not GPU-memory slices. The HTTP client uses a 1,800-second read timeout and a 30-second connect timeout. A stopped service produces an actionable error directing you to `./speech-service/service.sh start`.
 
 #### Transcription from Python
 
@@ -267,7 +267,7 @@ uv run --extra test python ../../scripts/verification/verify-local-speech.py
 
 The script writes WAV files, `results.json`, and per-second `memory.jsonl` into a new `.local-data/speech-verification/<timestamp>/` directory. It uses real speech models and a deterministic mock LLM only for editorial planning. It checks the spoken closing marker to detect truncated long audio.
 
-On 2026-10-15, the 16 GiB Apple M4 run produced a 9.04-second short WAV in 51.00 seconds (first load), recognized it in 9.20 seconds with 0% normalized character error, and rendered the 1,246-character paragraph in 207.94 seconds into 266.31 seconds of audio. The service handled all 11 inference slices. Service RSS peaked at 2.07 GiB and Metal allocation at 6.68 GiB; those counters use different accounting and must not be added. These are measurements of the earlier decoupling acceptance run, not a new migration benchmark or performance guarantees. The [acceptance report](SPEECH_DECOUPLING_REPORT.md) links the original outputs.
+On 2026-10-15, the 16 GiB Apple M4 run produced a 9.04-second short WAV in 51.00 seconds (first load), recognized it in 9.20 seconds with 0% normalized character error, and rendered the 1,246-character paragraph in 207.94 seconds into 266.31 seconds of audio. The service handled all 11 inference slices. Service RSS peaked at 2.07 GiB and Metal allocation at 6.68 GiB; those counters use different accounting and must not be added. These are measurements of the earlier decoupling acceptance run, not a new migration benchmark or performance guarantees.
 
 ## Development Commands
 
@@ -408,7 +408,7 @@ Manifest-driven assembly in Aodcast normalizes paragraph WAVs, applies one edge 
 
 - `./scripts/dev/run-dev-all.sh` starts speech and waits for its health check before restarting the Python runtime on port `8765`; use `--reuse-runtime` only when process continuity is intentional.
 - For audio-render debugging: check `/healthz` runtime metadata first, then `.local-data/runtime/request-state/*`, then frontend `run_token` filtering.
-- Prefer sequenced CLI write-then-read flows (`start-interview`, `reply-session`, `generate-script`, `render-audio`, configure/show commands); parallel write/read can observe stale state.
+- `run-python-core.sh` is an operator CLI only: `--serve-http`, `--configure-llm-provider`/`--configure-tts-provider`, `--show-llm-config`/`--show-tts-config`, `--check-llm-config`, `--show-local-tts-capability`, `--list-models-status`, and `--create-demo-session`. Each prints one JSON object. Interviews, scripts, and audio run through the HTTP runtime.
 - Desktop package validation: `pnpm --dir apps/desktop tauri:build` (do not forward extra cargo-style flags after `--`). Non-interactive DMG builds rely on `CI=true` so Finder AppleScript styling is skipped.
 - Apply `chmod +x` before running a newly created script; do not race permission and execution.
 
@@ -427,5 +427,3 @@ If you find a vulnerability, do not open a public issue with exploit details. Re
 ## License
 
 Aodcast is released under the [MIT License](LICENSE).
-
-Real-model verification results, cleanup inventory, memory measurements, and the replay script are recorded in [Speech decoupling acceptance report](SPEECH_DECOUPLING_REPORT.md).

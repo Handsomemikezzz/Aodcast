@@ -32,7 +32,7 @@ class LocalSpeechClient:
             self.base_url += "/v1"
         if read_timeout < 180:
             raise ValueError("Local speech read_timeout must be at least 180 seconds.")
-        self.timeout = httpx.Timeout(connect=5, read=read_timeout, write=180, pool=5)
+        self.timeout = httpx.Timeout(connect=30, read=read_timeout, write=180, pool=30)
         self.transport = transport
 
     def _request(
@@ -75,9 +75,39 @@ class LocalSpeechClient:
                 f"Cannot reach the local speech service at {self.base_url}. From the Aodcast repository root, run "
                 "./speech-service/service.sh start, then try again."
             ) from exc
+        except httpx.ConnectTimeout as exc:
+            raise LocalSpeechError(
+                f"Connection to the local speech service at {url} timed out during TCP handshake ({self.timeout.connect:.0f}s). "
+                "The service process may be busy, restarting, or under heavy load. Check service logs at ~/Library/Logs/Aodcast/speech-service."
+            ) from exc
+        except httpx.ReadTimeout as exc:
+            if url.rstrip("/").endswith("/health"):
+                raise LocalSpeechError(
+                    f"Health check probe timed out waiting for {url}. The speech service event loop may be blocked or reloading model weights. "
+                    "Check service logs at ~/Library/Logs/Aodcast/speech-service."
+                ) from exc
+            if "/audio/speech" in url:
+                raise LocalSpeechError(
+                    f"Speech synthesis timed out waiting for audio from {url}. If this is a cold start, the model may still be loading into GPU memory. "
+                    "Check service logs and GPU queue at ~/Library/Logs/Aodcast/speech-service."
+                ) from exc
+            if "/audio/transcriptions" in url:
+                raise LocalSpeechError(
+                    f"Speech transcription timed out waiting for response from {url}. "
+                    "Check service logs at ~/Library/Logs/Aodcast/speech-service."
+                ) from exc
+            raise LocalSpeechError(
+                f"Local speech service timed out while reading response from {method} {url}: {exc}. "
+                "Check service logs at ~/Library/Logs/Aodcast/speech-service."
+            ) from exc
+        except httpx.WriteTimeout as exc:
+            raise LocalSpeechError(f"Timed out sending request data to the local speech service at {url}: {exc}.") from exc
+        except httpx.PoolTimeout as exc:
+            raise LocalSpeechError(f"Connection pool timed out waiting for an available connection to {self.base_url}: {exc}.") from exc
         except httpx.TimeoutException as exc:
             raise LocalSpeechError(
-                "The local speech service timed out. The first request may still be downloading the model; check the service logs and GPU queue."
+                f"The local speech service request timed out during {method} {url}: {exc}. "
+                "Check service logs and GPU queue at ~/Library/Logs/Aodcast/speech-service."
             ) from exc
         except httpx.HTTPError as exc:
             raise LocalSpeechError(f"Lost connection to the local speech service: {exc}") from exc
@@ -90,7 +120,7 @@ class LocalSpeechClient:
         return response
 
     def health(self) -> dict[str, Any]:
-        response = self._request("GET", self.base_url.removesuffix("/v1") + "/health", timeout=5)
+        response = self._request("GET", self.base_url.removesuffix("/v1") + "/health", timeout=30)
         payload = response.json()
         if not isinstance(payload, dict) or "models" not in payload:
             raise LocalSpeechError("The local speech service returned an invalid health status.")

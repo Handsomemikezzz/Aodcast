@@ -4,76 +4,63 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from app.domain.project import SessionProject
-from app.domain.provider_config import LLMProviderConfig
-from app.domain.session import SessionRecord, SessionState
-from app.domain.transcript import Speaker, TranscriptRecord
-from app.main import run
-from app.storage.config_store import ConfigStore
-from app.storage.project_store import ProjectStore
+
 from app.config import AppConfig
+from app.main import run
+from app.storage.project_store import ProjectStore
 
 
-class VoiceStudioCliTests(unittest.TestCase):
-    def run_cli(self, *args: str) -> tuple[int, list[dict[str, object]]]:
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
+class OperatorCliTests(unittest.TestCase):
+    def run_cli(self, *args: str) -> tuple[int, dict[str, object] | None, str]:
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
             code = run(list(args))
-        payloads = []
-        for line in stdout.getvalue().splitlines():
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            payloads.append(json.loads(line))
-        return code, payloads
+        output = stdout.getvalue().strip()
+        payload = json.loads(output) if output.startswith("{") else None
+        return code, payload, stderr.getvalue()
 
-    def test_list_voice_presets_outputs_catalog_payload(self) -> None:
+    def test_configure_and_show_llm_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            code, payloads = self.run_cli("--cwd", tmp_dir, "--list-voice-presets")
+            code, payload, _ = self.run_cli("--cwd", tmp_dir, "--configure-llm-provider", "mock", "--llm-model", "mock-x")
+            self.assertEqual(code, 0)
+            assert payload is not None
+            self.assertEqual(payload["llm_config"]["provider"], "mock")
 
-        self.assertEqual(code, 0)
-        self.assertTrue(payloads)
-        payload = payloads[-1]
-        self.assertEqual(payload["request_state"]["operation"], "list_voice_presets")
-        self.assertGreaterEqual(len(payload["voices"]), 5)
-        self.assertGreaterEqual(len(payload["styles"]), 4)
-        self.assertIsInstance(payload["standard_preview_text"], str)
+            code, payload, _ = self.run_cli("--cwd", tmp_dir, "--show-llm-config")
+            self.assertEqual(code, 0)
+            assert payload is not None
+            self.assertEqual(payload["llm_config"]["model"], "mock-x")
 
-    def test_list_speaker_references_outputs_provider_neutral_builtins(self) -> None:
+    def test_configure_local_tts_defaults_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            code, payloads = self.run_cli("--cwd", tmp_dir, "--list-speaker-references")
+            code, payload, _ = self.run_cli("--cwd", tmp_dir, "--configure-tts-provider", "local_http")
+            self.assertEqual(code, 0)
+            assert payload is not None
+            self.assertEqual(payload["tts_config"]["provider"], "local_http")
+            self.assertTrue(payload["tts_config"]["model"])
 
-        self.assertEqual(code, 0)
-        self.assertTrue(payloads)
-        payload = payloads[-1]
-        self.assertEqual(payload["request_state"]["operation"], "list_speaker_references")
-        built_ins = [item for item in payload["speaker_references"] if item["source"] == "built_in"]
-        self.assertEqual(len(built_ins), 2)
-
-    def test_generate_script_creates_first_script_snapshot_from_cli(self) -> None:
+    def test_unsupported_provider_fails_with_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            config = AppConfig.from_cwd(Path(tmp_dir))
-            store = ProjectStore(config.data_dir)
-            config_store = ConfigStore(config.config_dir)
-            store.bootstrap()
-            config_store.bootstrap()
-            config_store.save_llm_config(LLMProviderConfig(provider="mock"))
-            session = SessionRecord(topic="CLI script", creation_intent="Generate first script")
-            session.transition(SessionState.READY_TO_GENERATE)
-            transcript = TranscriptRecord(session_id=session.session_id)
-            transcript.append(Speaker.USER, "I think CLI flows matter because automation needs reliable scripts.")
-            store.save_project(SessionProject(session=session, transcript=transcript, script=None))
+            code, payload, stderr = self.run_cli("--cwd", tmp_dir, "--configure-llm-provider", "bad-provider")
+        self.assertEqual(code, 1)
+        self.assertIsNone(payload)
+        self.assertIn("Unsupported LLM provider", stderr)
 
-            code, payloads = self.run_cli("--cwd", tmp_dir, "--generate-script", session.session_id)
+    def test_create_demo_session_persists_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            code, payload, _ = self.run_cli("--cwd", tmp_dir, "--create-demo-session", "--topic", "Demo")
+            self.assertEqual(code, 0)
+            assert payload is not None
+            store = ProjectStore(AppConfig.from_cwd(Path(tmp_dir)).data_dir)
+            project = store.load_project(str(payload["session_id"]))
+        self.assertEqual(project.session.topic, "Demo")
+        self.assertIsNotNone(project.script)
 
-        self.assertEqual(code, 0)
-        self.assertTrue(payloads)
-        payload = payloads[-1]
-        self.assertEqual(payload["request_state"]["operation"], "generate_script")
-        self.assertIsInstance(payload["script_id"], str)
-        self.assertEqual(payload["project"]["script"]["script_id"], payload["script_id"])
+    def test_removed_product_commands_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir, self.assertRaises(SystemExit):
+            self.run_cli("--cwd", tmp_dir, "--generate-script", "session-123")
 
 
 if __name__ == "__main__":

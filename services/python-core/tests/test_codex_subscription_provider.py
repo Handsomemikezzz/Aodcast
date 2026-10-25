@@ -20,7 +20,16 @@ from app.providers.llm.codex_app_server import (
     CodexProviderStatus,
     CodexSubscriptionProvider,
 )
+from app.orchestration.prompts.registry import CachePolicy, PromptPlan, PromptSection, assemble_plan
 from app.providers.llm.preflight import check_llm_config
+
+
+def _plan(user: str) -> PromptPlan:
+    return assemble_plan(
+        operation_profile="test",
+        system_sections=[PromptSection("test.system", "System rules.", CachePolicy.STABLE)],
+        user_sections=[PromptSection("test.user", user, CachePolicy.DYNAMIC)],
+    )
 
 
 class FakeCodexClient:
@@ -113,6 +122,7 @@ class CodexSubscriptionProviderTests(unittest.TestCase):
                 topic="Reliable tools",
                 creation_intent="Explain a lesson",
                 transcript_text="User: boring tools win",
+                prompt_plan=_plan("Topic: Reliable tools"),
             )
         )
 
@@ -129,9 +139,8 @@ class CodexSubscriptionProviderTests(unittest.TestCase):
                     session_id="s1",
                     topic="A topic",
                     creation_intent="Explore it",
-                    transcript_text="User: hello",
                     suggested_focus="example_or_detail",
-                    missing_dimensions=["example_or_detail"],
+                    prompt_plan=_plan("User: hello"),
                 )
             )
         )
@@ -146,9 +155,8 @@ class CodexSubscriptionProviderTests(unittest.TestCase):
                     session_id="s1",
                     topic="A topic",
                     creation_intent="Explore it",
-                    transcript_text="User: look",
                     suggested_focus="example_or_detail",
-                    missing_dimensions=[],
+                    prompt_plan=_plan("User: look"),
                     images=(ImageInput(name="cat.png", mime_type="image/png", data=b"\x89PNG"),),
                 )
             )
@@ -163,6 +171,7 @@ class CodexSubscriptionProviderTests(unittest.TestCase):
                 topic="Examples",
                 creation_intent="Remember a preference",
                 user_turns=[{"turn_id": "t1", "content": "I prefer concrete examples"}],
+                prompt_plan=_plan("I prefer concrete examples"),
             )
         )
 
@@ -176,6 +185,7 @@ class CodexSubscriptionProviderTests(unittest.TestCase):
                 topic="Examples",
                 creation_intent="Write a script",
                 candidates=[{"id": "memory-1", "name": "Examples"}],
+                prompt_plan=_plan("Candidates: memory-1"),
             )
         )
         self.assertEqual(response.selected_ids, ["memory-1"])

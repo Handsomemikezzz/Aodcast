@@ -108,7 +108,7 @@ type RuntimeContext = {
   base_url: string;
 };
 
-export class HttpBridgeInvocationError extends Error {
+class HttpBridgeInvocationError extends Error {
   readonly code: string;
   readonly details?: Record<string, unknown>;
   readonly requestState?: RequestState;

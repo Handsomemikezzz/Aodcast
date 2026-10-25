@@ -3,7 +3,7 @@ import type { ChatAttachment } from "../types";
 // Mirrors the runtime limits in services/python-core/app/domain/attachment.py;
 // the runtime stays authoritative and these only give early feedback.
 export const MAX_ATTACHMENTS_PER_TURN = 8;
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
 const DOCUMENT_EXTENSIONS = [".txt", ".md", ".markdown", ".csv", ".json", ".pdf"];

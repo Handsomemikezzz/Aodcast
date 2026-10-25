@@ -61,14 +61,6 @@ class ScriptRecord:
             )
         )
 
-    def update_draft(self, content: str) -> None:
-        self.draft = content
-        self.updated_at = utc_now_iso()
-
-    def update_final(self, content: str) -> None:
-        self.final = content
-        self.updated_at = utc_now_iso()
-
     def save_final(self, content: str, *, reason: str = "final_edit") -> None:
         if content != self.final:
             self._snapshot(reason=reason)
@@ -138,7 +130,7 @@ class ScriptRecord:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
-        # Omit empty metadata to keep JSON compact for legacy scripts.
+        # Omit empty metadata to keep JSON compact.
         if self.generation_metadata:
             payload["generation_metadata"] = dict(self.generation_metadata)
         return payload

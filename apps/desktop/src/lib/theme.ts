@@ -1,6 +1,6 @@
 export type AppTheme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "aodcast-theme";
+const THEME_STORAGE_KEY = "aodcast-theme";
 
 export function readStoredTheme(): AppTheme {
   if (typeof window === "undefined") return "light";

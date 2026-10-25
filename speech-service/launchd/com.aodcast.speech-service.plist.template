@@ -17,6 +17,8 @@
     <key>HOST</key><string>@@HOST@@</string>
     <key>PORT</key><string>@@PORT@@</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
+    <key>HF_HUB_OFFLINE</key><string>1</string>
+    <key>TRANSFORMERS_OFFLINE</key><string>1</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

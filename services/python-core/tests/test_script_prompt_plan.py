@@ -57,7 +57,7 @@ def _make_transcript(
     from app.domain.transcript import TranscriptTurn
 
     turns = [
-        TranscriptTurn.from_dict(_turn(sp, content, focus), session_id=session_id)
+        TranscriptTurn.from_dict(_turn(sp, content, focus))
         for sp, content, focus in specs
     ]
     tr = TranscriptRecord(session_id=session_id, turns=turns)

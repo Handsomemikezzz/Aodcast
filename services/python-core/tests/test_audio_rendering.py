@@ -92,7 +92,7 @@ class AudioRenderingTests(unittest.TestCase):
         session_id, script_id = self.seed_project(store)
         before = store.load_project_for_script(session_id, script_id)
 
-        preview = service.render_voice_preview(
+        preview = service.render_voice_preview_with_cancellation(
             VoiceRenderSettings(preview_text="这是一句临时试听文本。")
         )
         after = store.load_project_for_script(session_id, script_id)

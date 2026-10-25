@@ -27,7 +27,6 @@ class TTSGenerationRequest:
     reference_text: str = ""
     context_audio_path: str = ""
     context_text: str = ""
-    voice_lock_id: str = ""
     breaks: tuple[SpeechBreak, ...] = ()
     clone_mode: str = "auto"
     should_cancel: Callable[[], bool] | None = None

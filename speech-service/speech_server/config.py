@@ -32,7 +32,7 @@ class Settings:
     seed: int = int(os.getenv("TTS_SEED", "42"))
     tts_max_tokens: int = int(number("TTS_MAX_TOKENS", 1024, 128, 2048))
     asr_max_tokens: int = int(number("ASR_MAX_TOKENS", 1024, 128, 2048))
-    idle_seconds: float = number("IDLE_UNLOAD_SECONDS", 900, 1, 86400)
+    idle_seconds: float = number("IDLE_UNLOAD_SECONDS", 3600, 1, 86400)
     single_resident: bool = os.getenv("SINGLE_MODEL_RESIDENT", "true").lower() == "true"
     memory_gb: float = number("MLX_MEMORY_LIMIT_GB", 8, 1, 12)
     cache_mb: float = number("MLX_CACHE_LIMIT_MB", 256, 0, 2048)

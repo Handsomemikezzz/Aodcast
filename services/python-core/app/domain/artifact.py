@@ -144,18 +144,6 @@ class ArtifactRecord:
             clone._apply_script_payload({})
         return clone
 
-    def script_id_for_take(self, take_id: str) -> str:
-        cleaned = take_id.strip()
-        if not cleaned:
-            return ""
-        if any(take.take_id == cleaned for take in self.takes):
-            return self.active_script_id
-        for script_id, payload in self.script_artifacts.items():
-            for take in _takes_from_payload(payload.get("takes", [])):
-                if take.take_id == cleaned:
-                    return script_id
-        return ""
-
     def _current_script_payload(self) -> dict[str, Any]:
         return {
             "transcript_path": self.transcript_path,

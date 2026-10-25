@@ -13,10 +13,8 @@ Key design decisions:
 - Stable sections (role, task contract, output scope) stay in the system prompt.
 - Dynamic sections (episode context, focus, options, memory, transcript) go in
   the user message so the stable prefix can be cached in future provider integrations.
-- Legacy compatibility: ``INTERVIEW_STREAM_SYSTEM_PROMPT``,
-  ``build_interview_stream_user_content``, ``InterviewPromptInput``,
-  ``build_prompt_input``, and ``build_question`` are still exported so existing
-  provider and service code continues to work without changes.
+- ``InterviewPromptInput``, ``build_prompt_input``, and ``build_question`` back
+  the deterministic question used by the mock provider and on mock-stream failure.
 """
 
 from __future__ import annotations
@@ -419,86 +417,8 @@ def _determine_option_mode(
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatibility layer
+# Deterministic fallback (mock provider / LLM failure)
 # ---------------------------------------------------------------------------
-# The symbols below maintain the same public interface as the old prompts.py
-# so that existing provider and service imports continue to work unchanged.
-
-# Used directly by openai_compatible.py as the system prompt constant.
-INTERVIEW_STREAM_SYSTEM_PROMPT = (
-    "You are a skilled deep interviewer and podcast editor. Help the user clarify a "
-    "real question, concrete experiences, contradictions, and a viewpoint that is theirs. "
-    "Do not choose viewpoints for them and do not recommend which direction they should take. "
-    "Each turn: briefly observe what you heard, ask exactly one high-value follow-up rooted "
-    "in concrete experience, then give A/B/C answer candidates. Prefer staying with "
-    "a strong line over jumping topics. Stay curious and equal — not like counseling or a quiz. "
-    "Never write the podcast script during the interview.\n\n"
-    f"{_ANSWER_CANDIDATES_RULES}"
-)
-
-
-def build_interview_stream_user_content(
-    *,
-    topic: str,
-    creation_intent: str,
-    missing_dimensions: list[str],
-    transcript_text: str,
-    script_exists: bool,
-    suggested_focus: str,
-    memory_context: str = "",
-) -> str:
-    """Legacy user-message builder — kept for backward compatibility.
-
-    New code should call ``build_interview_prompt_plan`` directly.
-    The provider will use ``plan.user`` in preference to this function when
-    ``prompt_plan`` is supplied in ``InterviewQuestionRequest``.
-    """
-    missing = ", ".join(missing_dimensions) or "(none)"
-    transcript_block = transcript_text.strip() or (
-        "(No messages yet — produce a short opening question for the guest.)"
-    )
-    instructions = _build_legacy_instructions(
-        script_exists=script_exists,
-        suggested_focus=suggested_focus,
-    )
-    memory_block = f"{memory_context.strip()}\n\n" if memory_context.strip() else ""
-    return (
-        f"Session topic: {topic}\n"
-        f"Creation intent: {creation_intent}\n"
-        f"Still missing dimensions: {missing}\n\n"
-        f"{memory_block}"
-        f"Transcript so far:\n{transcript_block}\n\n"
-        f"Respond as a deep interviewer in the same language as the user. "
-        f"Instructions:\n{instructions}\n"
-        "Keep the response concise: observation, one question, then A/B/C answer candidates. "
-        "Do not write the podcast script."
-    )
-
-
-def build_interview_stream_instructions(*, script_exists: bool, suggested_focus: str) -> str:
-    """Legacy helper — kept as a backward-compatible alias."""
-    return _build_legacy_instructions(script_exists=script_exists, suggested_focus=suggested_focus)
-
-
-def _build_legacy_instructions(*, script_exists: bool, suggested_focus: str) -> str:
-    if script_exists:
-        return (
-            "A draft script has already been generated for this topic, and the user is now coming back to provide more details or changes.\n"
-            "Frame your response around gathering material for a NEW script version.\n"
-            "Your response must follow this structure exactly:\n"
-            "1. Briefly reflect on the user's latest input as material for the new version (1–3 sentences).\n"
-            "2. Ask one focused follow-up about what feels wrong, missing, sharper, or different this time.\n"
-            "3. End with A/B/C answer candidates for that question. Do NOT recommend a path for them.\n"
-        )
-    return (
-        f"Some episode dimensions are still thin. Soft priority to explore next: {suggested_focus}.\n"
-        "Your response must follow this structure exactly:\n"
-        "1. Briefly reflect on the most notable thing in the user's latest point (1–3 sentences).\n"
-        f"2. Ask one high-value follow-up that deepens '{suggested_focus}' through concrete experience, "
-        "motive, contradiction, or change — without choosing their viewpoint for them.\n"
-        "3. End with A/B/C answer candidates for that question. Do NOT recommend which candidate they should pick.\n"
-    )
-
 
 @dataclass(frozen=True, slots=True)
 class InterviewPromptInput:

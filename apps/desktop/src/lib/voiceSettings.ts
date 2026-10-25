@@ -12,7 +12,7 @@ export function filterActiveSpeakerReferences(references: SpeakerReference[]): S
   return references.filter((reference) => !REMOVED_BUILTIN_SPEAKER_REFERENCE_IDS.has(reference.speaker_reference_id));
 }
 
-export function defaultVoiceRenderSettings(): VoiceRenderSettings {
+function defaultVoiceRenderSettings(): VoiceRenderSettings {
   return {
     voice_id: "warm_narrator",
     voice_name: "Warm narrator",

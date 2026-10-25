@@ -51,6 +51,14 @@ from app.storage.project_store import ProjectStore
 from app.storage.speaker_reference_store import SpeakerReferenceStore
 
 
+
+def _write_export(artifact_store: ArtifactStore, session_id: str, name: str, content: bytes) -> Path:
+    export_dir = artifact_store.session_export_dir(session_id)
+    export_dir.mkdir(parents=True, exist_ok=True)
+    path = export_dir / name
+    path.write_bytes(content)
+    return path
+
 class HttpRuntimeTests(unittest.TestCase):
     def test_desktop_readiness_probe_is_available_without_auth_or_speech_service(self) -> None:
         repo_root = Path(__file__).resolve().parents[3]
@@ -251,7 +259,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertIn("DELETE", headers["Access-Control-Allow-Methods"])
 
     def test_artifact_audio_route_streams_export_audio_for_browser_playback(self) -> None:
-        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        audio_path = _write_export(self.artifact_store, "session-a", "audio.wav", b"RIFF-audio-bytes")
         encoded_path = urllib_parse.quote(str(audio_path), safe="")
 
         status, headers, body = self.request_bytes(
@@ -324,8 +332,8 @@ class HttpRuntimeTests(unittest.TestCase):
         session_id, _ = self.seed_renderable_project()
         project = self.store.load_project(session_id)
         assert project.artifact is not None
-        audio_path = self.artifact_store.write_audio(session_id, b"audio", "wav")
-        transcript_path = self.artifact_store.write_transcript(session_id, "transcript")
+        audio_path = _write_export(self.artifact_store, session_id, "audio.wav", b"audio")
+        transcript_path = _write_export(self.artifact_store, session_id, "transcript.txt", b"transcript\n")
         project.artifact.audio_path = str(audio_path)
         project.artifact.transcript_path = str(transcript_path)
         project.artifact.provider = "openai_compatible"
@@ -1248,7 +1256,7 @@ class HttpRuntimeTests(unittest.TestCase):
 
 
     def test_audio_export_route_converts_to_wav(self) -> None:
-        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        audio_path = _write_export(self.artifact_store, "session-a", "audio.wav", b"RIFF-audio-bytes")
         status, _, payload = self.request_json(
             "POST",
             "/api/v1/artifacts/audio/export",
@@ -1268,7 +1276,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(exported_path.name, "my-podcast-episode.wav")
 
     def test_audio_export_route_writes_192k_mp3_beside_the_wav_take(self) -> None:
-        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        audio_path = _write_export(self.artifact_store, "session-a", "audio.wav", b"RIFF-audio-bytes")
         with patch("shutil.which", return_value="/usr/local/bin/ffmpeg"), patch("subprocess.run") as run:
             status, _, payload = self.request_json(
                 "POST",
@@ -1290,7 +1298,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(command[command.index("-b:a") + 1], "192k")
 
     def test_audio_export_route_rejects_unsupported_format(self) -> None:
-        audio_path = self.artifact_store.write_audio("session-a", b"RIFF-audio-bytes", "wav")
+        audio_path = _write_export(self.artifact_store, "session-a", "audio.wav", b"RIFF-audio-bytes")
         status, _, payload = self.request_json(
             "POST",
             "/api/v1/artifacts/audio/export",

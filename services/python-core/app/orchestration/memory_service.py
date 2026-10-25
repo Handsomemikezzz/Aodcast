@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.domain.common import utc_now_iso
 from app.domain.memory import (
     MemoryEntry,
     MemoryState,
@@ -62,18 +61,10 @@ class MemoryService:
     # --------------------------------------------------------------- lifecycle
     def bootstrap(self) -> None:
         self.store.bootstrap()
-        self._delete_legacy_sqlite()
         self.worker.start()
 
     def shutdown(self) -> None:
         self.worker.stop()
-
-    def _delete_legacy_sqlite(self) -> None:
-        legacy = self.data_dir / "memory" / "memory.sqlite"
-        try:
-            legacy.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     # ----------------------------------------------------------------- settings
     def get_overview(self) -> MemoryOverview:
@@ -367,16 +358,6 @@ class MemoryService:
         session = self.project_store.load_session(session_id)
         session.authorize_memory(memory_id)
         self.project_store.save_session(session)
-        return session
-
-    def revoke(self, session_id: str, memory_id: str) -> SessionRecord:
-        session = self.project_store.load_session(session_id)
-        if memory_id in session.authorized_memory_ids:
-            session.authorized_memory_ids = [
-                mid for mid in session.authorized_memory_ids if mid != memory_id
-            ]
-            session.updated_at = utc_now_iso()
-            self.project_store.save_session(session)
         return session
 
     def _build_rerank(self, topic: str, creation_intent: str):

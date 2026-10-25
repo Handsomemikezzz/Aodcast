@@ -29,8 +29,7 @@ export type SessionRecord = {
   memory_usage_events?: { operation: string; memory_ids: string[]; used_at: string }[];
 };
 
-/** Lightweight interview routing metadata stored on transcript turns.
- *  Optional — legacy turns without this field load as-is. */
+/** Lightweight interview routing metadata stored on transcript turns. */
 export type TranscriptTurnMetadata = {
   /** The readiness dimension being explored at the time of this turn. */
   interview_focus?: string;
@@ -456,7 +455,6 @@ export type TTSCapability = {
   reasons: string[];
   current_model: string;
   model_source: string;
-  fallback_provider?: string;
 };
 
 export type LLMProviderConfig = {

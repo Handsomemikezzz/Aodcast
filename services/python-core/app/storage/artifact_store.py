@@ -20,36 +20,6 @@ class ArtifactStore:
     def render_export_dir(self, session_id: str, render_id: str) -> Path:
         return self.session_export_dir(session_id) / "renders" / render_id
 
-    def write_transcript(self, session_id: str, text: str) -> Path:
-        export_dir = self.session_export_dir(session_id)
-        export_dir.mkdir(parents=True, exist_ok=True)
-        path = export_dir / "transcript.txt"
-        path.write_text(text + "\n", encoding="utf-8")
-        return path
-
-    def write_named_transcript(self, session_id: str, text: str, stem: str) -> Path:
-        export_dir = self.session_export_dir(session_id)
-        export_dir.mkdir(parents=True, exist_ok=True)
-        path = export_dir / f"{stem}.txt"
-        path.write_text(text + "\n", encoding="utf-8")
-        return path
-
-    def write_audio(self, session_id: str, audio_bytes: bytes, extension: str) -> Path:
-        export_dir = self.session_export_dir(session_id)
-        export_dir.mkdir(parents=True, exist_ok=True)
-        suffix = extension.lstrip(".")
-        path = export_dir / f"audio.{suffix}"
-        path.write_bytes(audio_bytes)
-        return path
-
-    def write_named_audio(self, session_id: str, audio_bytes: bytes, extension: str, stem: str) -> Path:
-        export_dir = self.session_export_dir(session_id)
-        export_dir.mkdir(parents=True, exist_ok=True)
-        suffix = extension.lstrip(".")
-        path = export_dir / f"{stem}.{suffix}"
-        path.write_bytes(audio_bytes)
-        return path
-
     def write_preview_audio(self, audio_bytes: bytes, extension: str) -> Path:
         preview_dir = self.exports_dir / "_previews"
         preview_dir.mkdir(parents=True, exist_ok=True)
