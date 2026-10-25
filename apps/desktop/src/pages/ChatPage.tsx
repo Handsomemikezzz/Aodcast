@@ -639,6 +639,8 @@ export function ChatPage({
     try {
       const updated = await bridge.deleteSession(target.session.session_id);
       if (updated.session.session_id === sessionId) {
+        // Leaving this page skips refreshWorkspace, so refresh the shared episode list here.
+        await onRefresh();
         navigate("/chat");
       } else {
         await refreshWorkspace();
