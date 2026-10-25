@@ -44,6 +44,15 @@ class SpeechPlanGenerationResponse:
 
 
 @dataclass(frozen=True, slots=True)
+class ImageInput:
+    """One user-attached image. Providers that cannot accept image input must raise."""
+
+    name: str
+    mime_type: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class InterviewQuestionRequest:
     session_id: str
     topic: str
@@ -57,6 +66,9 @@ class InterviewQuestionRequest:
     # building the prompt from individual fields. Allows orchestration-layer
     # PromptPlan assembly without breaking existing provider call sites.
     prompt_plan: "PromptPlan | None" = None
+    # Images from user turns, oldest first. Document attachments arrive as
+    # extracted text inside the prompt plan instead.
+    images: tuple[ImageInput, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

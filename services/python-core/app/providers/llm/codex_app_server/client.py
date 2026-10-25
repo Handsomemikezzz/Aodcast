@@ -36,6 +36,7 @@ class CodexModelInfo:
     is_default: bool
     default_reasoning_effort: str | None
     supported_reasoning_efforts: tuple[str, ...]
+    input_modalities: tuple[str, ...] = ("text",)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -392,6 +393,12 @@ class CodexAppServerClient:
                     if effort:
                         efforts.append(effort)
             default_effort = str(raw_model.get("defaultReasoningEffort") or "").strip() or None
+            raw_modalities = raw_model.get("inputModalities")
+            modalities = (
+                tuple(str(item) for item in raw_modalities)
+                if isinstance(raw_modalities, list)
+                else ("text",)
+            )
             models.append(
                 CodexModelInfo(
                     id=model_id,
@@ -399,6 +406,7 @@ class CodexAppServerClient:
                     is_default=bool(raw_model.get("isDefault", False)),
                     default_reasoning_effort=default_effort,
                     supported_reasoning_efforts=tuple(efforts),
+                    input_modalities=modalities,
                 )
             )
         return tuple(models)
@@ -583,9 +591,17 @@ class CodexAppServerClient:
         developer_instructions: str,
         user_content: str,
         output_schema: dict[str, Any] | None = None,
+        image_urls: tuple[str, ...] = (),
     ) -> Iterator[str]:
         self.require_chatgpt_subscription()
         resolved_model = model.strip() or self.resolve_model("")
+        if image_urls:
+            info = next((item for item in self.list_models() if item.id == resolved_model), None)
+            if info is None or "image" not in info.input_modalities:
+                raise CodexAppServerError(
+                    f"Codex model '{resolved_model}' does not accept image input. "
+                    "Choose a model with image support or remove the image attachments."
+                )
         resolved_effort = self.resolve_reasoning_effort(resolved_model, reasoning_effort)
         permission_id = self.read_only_permission_id()
         thread_result = self._request(
@@ -618,7 +634,10 @@ class CodexAppServerClient:
         try:
             turn_params: dict[str, Any] = {
                 "threadId": thread_id,
-                "input": [{"type": "text", "text": user_content}],
+                "input": [
+                    {"type": "text", "text": user_content},
+                    *({"type": "image", "url": url} for url in image_urls),
+                ],
                 "model": resolved_model,
                 "cwd": str(self.runtime_dir),
                 "approvalPolicy": "never",

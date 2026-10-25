@@ -15,7 +15,16 @@ except ImportError:  # pragma: no cover - non-POSIX fallback
     fcntl = None
 
 from app.domain.artifact import ArtifactRecord
-from app.domain.common import sha256_text, utc_now_iso
+from app.domain.attachment import (
+    ATTACHMENT_MAX_BYTES,
+    Attachment,
+    AttachmentKind,
+    attachment_kind,
+    extract_document_text,
+    resolve_attachment_mime_type,
+    validate_image_bytes,
+)
+from app.domain.common import sha256_bytes, sha256_text, utc_now_iso
 from app.domain.episode_source import (
     EpisodeSource,
     SourceConversionMode,
@@ -35,6 +44,7 @@ def _script_sort_key(script: ScriptRecord) -> str:
 
 
 _SNAPSHOT_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+_ATTACHMENT_ID = re.compile(r"^att_[a-f0-9]{32}$")
 
 
 def _snapshot_file_name(record_id: str) -> str:
@@ -125,6 +135,9 @@ class ProjectStore:
 
     def render_manifest_version_file(self, session_id: str, script_id: str, render_id: str) -> Path:
         return self.render_manifest_script_dir(session_id, script_id) / _snapshot_file_name(render_id)
+
+    def attachments_dir(self, session_id: str) -> Path:
+        return self.session_dir(session_id) / "attachments"
 
     @contextmanager
     def _project_guard(self, session_id: str):
@@ -368,6 +381,65 @@ class ProjectStore:
                 raise ValueError(f"Immutable snapshot already exists with different content: {path.name}")
             return path
         return self._write_json(path, payload)
+
+    def _write_immutable_bytes(self, path: Path, data: bytes) -> None:
+        if path.exists():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp", delete=False) as handle:
+            handle.write(data)
+            temporary = Path(handle.name)
+        temporary.replace(path)
+
+    def save_attachment(self, session_id: str, *, filename: str, declared_type: str, data: bytes) -> Attachment:
+        """Validate one upload and store it as an immutable content-hashed blob."""
+        if not self.session_file(session_id).exists():
+            raise ValueError(f"Session '{session_id}' was not found.")
+        if not data:
+            raise ValueError("Attachment is empty.")
+        if len(data) > ATTACHMENT_MAX_BYTES:
+            raise ValueError(f"Attachments are limited to {ATTACHMENT_MAX_BYTES // (1024 * 1024)} MB.")
+        mime_type = resolve_attachment_mime_type(filename, declared_type)
+        kind = attachment_kind(mime_type)
+        extracted_text = ""
+        if kind == AttachmentKind.IMAGE:
+            validate_image_bytes(data, mime_type)
+        else:
+            extracted_text = extract_document_text(data, mime_type)
+        attachment = Attachment(
+            session_id=session_id,
+            kind=kind,
+            mime_type=mime_type,
+            name=Path(filename).name.strip() or "attachment",
+            size_bytes=len(data),
+            sha256=sha256_bytes(data),
+        )
+        directory = self.attachments_dir(session_id)
+        self._write_immutable_bytes(directory / attachment.blob_name, data)
+        if extracted_text:
+            self._write_immutable_bytes(
+                directory / f"{attachment.sha256}.extracted.txt",
+                extracted_text.encode("utf-8"),
+            )
+        self._write_immutable_json(directory / f"{attachment.attachment_id}.json", attachment.to_dict())
+        return attachment
+
+    def load_attachment(self, session_id: str, attachment_id: str) -> Attachment:
+        cleaned = attachment_id.strip()
+        path = self.attachments_dir(session_id) / f"{cleaned}.json"
+        if not _ATTACHMENT_ID.fullmatch(cleaned) or not path.is_file():
+            raise ValueError(f"Attachment '{attachment_id}' was not found in this session.")
+        return Attachment.from_dict(self._read_json(path))
+
+    def read_attachment_bytes(self, attachment: Attachment) -> bytes:
+        data = (self.attachments_dir(attachment.session_id) / attachment.blob_name).read_bytes()
+        if sha256_bytes(data) != attachment.sha256:
+            raise ValueError(f"Attachment '{attachment.name}' no longer matches its stored hash.")
+        return data
+
+    def read_attachment_text(self, attachment: Attachment) -> str:
+        path = self.attachments_dir(attachment.session_id) / f"{attachment.sha256}.extracted.txt"
+        return path.read_text(encoding="utf-8")
 
     def save_project(self, project: SessionProject) -> None:
         with self._project_guard(project.session.session_id):

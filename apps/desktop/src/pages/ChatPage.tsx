@@ -21,9 +21,15 @@ import {
 import { SafeMarkdown } from "../components/SafeMarkdown";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ComposerModelPicker } from "../components/ComposerModelPicker";
+import {
+  PendingAttachmentTray,
+  TurnAttachments,
+  filesFromDataTransfer,
+} from "../components/ChatAttachments";
 import { QuickSettingsPopover } from "../components/QuickSettingsPopover";
 import { useBridge } from "../lib/BridgeContext";
 import {
+  ChatAttachment,
   SessionProject,
   Readiness,
   PromptInput,
@@ -33,6 +39,13 @@ import {
 } from "../types";
 import { cn } from "../lib/utils";
 import { createSmoothTextBuffer } from "../lib/smoothText";
+import {
+  ATTACHMENT_ACCEPT,
+  pendingAsChatAttachment,
+  rememberAttachmentPreview,
+  toPendingAttachments,
+  type PendingAttachment,
+} from "../lib/chatAttachments";
 import {
   buildRequestState,
   getErrorMessage,
@@ -69,6 +82,11 @@ export function ChatPage({
   const scrollRef = useRef<HTMLDivElement>(null);
   const landingInputRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLDivElement>(null);
+  const landingFileInputRef = useRef<HTMLInputElement>(null);
+  const composerFileInputRef = useRef<HTMLInputElement>(null);
+  const [landingAttachments, setLandingAttachments] = useState<PendingAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   const [landingInput, setLandingInput] = useState("");
   const [landingSubmitting, setLandingSubmitting] = useState(false);
@@ -79,13 +97,15 @@ export function ChatPage({
   // True only while submitReplyStream is in flight — drives Send↔Stop (not generate_script).
   const [replyStreaming, setReplyStreaming] = useState(false);
   const replyStreamAbortRef = useRef<AbortController | null>(null);
+  const replyRunRef = useRef(0);
   const consumedInitialReplyRef = useRef<string | null>(null);
   const historyRequestIdRef = useRef(0);
   const optimisticTranscriptRef = useRef<TranscriptRecord | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<SessionProject | null>(null);
 
-  const routeState = location.state as { initialReply?: string } | null;
+  const routeState = location.state as { initialReply?: string; initialAttachments?: ChatAttachment[] } | null;
   const initialReply = typeof routeState?.initialReply === "string" ? routeState.initialReply : "";
+  const initialAttachments = Array.isArray(routeState?.initialAttachments) ? routeState.initialAttachments : [];
 
   const toDisplayText = (value: unknown): string => {
     if (typeof value === "string") return value;
@@ -164,32 +184,83 @@ export function ChatPage({
   };
 
   /** Align transcript after Stop without flipping the page into the loading shell. */
-  const syncSessionQuietly = async () => {
+  const syncSessionQuietly = async (replyRun: number) => {
     if (!sessionId) return;
     try {
       const current = await bridge.showSession(sessionId, { includeDeleted: true });
-      setProject(current);
+      if (replyRun === replyRunRef.current) setProject(current);
     } catch {
       /* keep optimistic transcript if quiet sync fails */
     }
   };
 
+  const uploadPendingAttachments = async (
+    targetSessionId: string,
+    items: PendingAttachment[],
+  ): Promise<ChatAttachment[]> => {
+    const uploaded: ChatAttachment[] = [];
+    for (const item of items) {
+      const attachment = await bridge.uploadAttachment(targetSessionId, item.file, item.name);
+      // Reuse the local thumbnail so the saved turn does not refetch the image.
+      if (item.previewUrl) rememberAttachmentPreview(attachment.attachment_id, item.previewUrl);
+      uploaded.push(attachment);
+    }
+    return uploaded;
+  };
+
+  const addAttachments = (target: "landing" | "composer", files: File[]) => {
+    if (files.length === 0) return;
+    const setItems = target === "landing" ? setLandingAttachments : setPendingAttachments;
+    const existing = target === "landing" ? landingAttachments : pendingAttachments;
+    const { accepted, error: rejection } = toPendingAttachments(files, existing.length);
+    setAttachmentError(rejection);
+    if (accepted.length) setItems((prev) => [...prev, ...accepted]);
+  };
+
+  const removeAttachment = (target: "landing" | "composer", localId: string) => {
+    const setItems = target === "landing" ? setLandingAttachments : setPendingAttachments;
+    setItems((prev) => {
+      const removed = prev.find((item) => item.localId === localId);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((item) => item.localId !== localId);
+    });
+    setAttachmentError(null);
+  };
+
+  const attachmentDropProps = (target: "landing" | "composer") => ({
+    onDragOver: (e: React.DragEvent<HTMLDivElement>) => {
+      if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+    },
+    onDrop: (e: React.DragEvent<HTMLDivElement>) => {
+      const files = filesFromDataTransfer(e.dataTransfer);
+      if (files.length === 0) return;
+      e.preventDefault();
+      addAttachments(target, files);
+    },
+  });
+
   const handleLandingCreate = async () => {
     const message = landingInput.trim();
-    if (!message || landingSubmitting) return;
+    if ((!message && landingAttachments.length === 0) || landingSubmitting) return;
     setLandingSubmitting(true);
     setLandingError(null);
     setShowLlmSetupAction(false);
     try {
-      const topic = message.length > 200 ? `${message.slice(0, 197)}…` : message;
+      const topicSource = message || landingAttachments.map((item) => item.name).join(", ");
+      const topic = topicSource.length > 200 ? `${topicSource.slice(0, 197)}…` : topicSource;
       const created = await bridge.createSession({
         topic,
-        creationIntent: `Discuss ${message}`,
+        creationIntent: `Discuss ${topicSource}`,
       });
       const sid = created.session.session_id;
+      const uploaded = await uploadPendingAttachments(sid, landingAttachments);
       await onRefresh();
-      navigate(`/studio/${sid}?panel=conversation`, { state: { initialReply: message } });
+      navigate(`/studio/${sid}?panel=conversation`, {
+        state: { initialReply: message, initialAttachments: uploaded },
+      });
       setLandingInput("");
+      setLandingAttachments([]);
+      setAttachmentError(null);
     } catch (err) {
       setLandingError(getErrorMessage(err, "Failed to start conversation."));
     } finally {
@@ -243,8 +314,13 @@ export function ChatPage({
     }
   }, [project?.transcript?.turns]);
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+  const handlePaste = (target: "landing" | "composer") => (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
+    const files = filesFromDataTransfer(e.clipboardData);
+    if (files.length > 0) {
+      addAttachments(target, files);
+      return;
+    }
     const text = e.clipboardData.getData("text/plain");
     document.execCommand("insertText", false, text);
   };
@@ -302,8 +378,14 @@ export function ChatPage({
     }
   };
 
-  const submitReplyContent = async (content: string) => {
-    if (!sessionId || !content.trim() || submittingRef.current) return;
+  const submitReplyContent = async (
+    content: string,
+    pending: PendingAttachment[] = [],
+    preUploaded: ChatAttachment[] = [],
+  ) => {
+    if (!sessionId || submittingRef.current) return;
+    if (!content.trim() && pending.length === 0 && preUploaded.length === 0) return;
+    const replyRun = ++replyRunRef.current;
     content = content.trim();
 
     submittingRef.current = true;
@@ -323,10 +405,13 @@ export function ChatPage({
       speaker: "user",
       content,
       created_at: new Date().toISOString(),
+      attachments: [...preUploaded, ...pending.map(pendingAsChatAttachment)],
     };
 
     setStreamingMessage("");
     setInputValue("");
+    setPendingAttachments([]);
+    setAttachmentError(null);
     optimisticTranscriptRef.current = previousTranscript;
     setProject((prev) => {
       if (!prev) return prev;
@@ -359,13 +444,16 @@ export function ChatPage({
             : prev
         ));
         setInputValue(content);
+        setPendingAttachments(pending);
         return;
       }
+
+      const attachments = [...preUploaded, ...(await uploadPendingAttachments(sessionId, pending))];
 
       replyStreamAbortRef.current?.abort();
       const replyAbort = new AbortController();
       replyStreamAbortRef.current = replyAbort;
-      // Stop during the final reveal skips the animation; the reply is already saved.
+      // Stop must also discard any pending animation frames.
       replyAbort.signal.addEventListener("abort", () => replyText.cancel());
       setReplyStreaming(true);
 
@@ -373,11 +461,13 @@ export function ChatPage({
         sessionId,
         content,
         (delta) => replyText.push(delta),
-        false,
-        replyAbort.signal,
+        {
+          signal: replyAbort.signal,
+          attachmentIds: attachments.map((item) => item.attachment_id),
+        },
       );
-      // Let the paced reveal catch up before the streaming bubble is swapped for the saved turn.
-      await replyText.drain();
+      // A completed reply must not wait for animation frames, which WebViews can suspend.
+      replyText.finish();
       setProject(result.project);
       setReadiness(result.readiness);
       setPromptInput(result.prompt_input);
@@ -397,7 +487,7 @@ export function ChatPage({
       if (isAbortError(err)) {
         optimisticTranscriptRef.current = null;
         setRequestState(buildRequestState("submit_reply", "cancelled", "Generation stopped."));
-        await syncSessionQuietly();
+        void syncSessionQuietly(replyRun);
         return;
       }
 
@@ -418,6 +508,7 @@ export function ChatPage({
       }
       // Prefer an in-progress draft over restoring the already-sent text.
       setInputValue((prev) => (prev.trim() ? prev : content));
+      setPendingAttachments((prev) => (prev.length ? prev : pending));
       setRequestState(
         withRequestStateFallback(
           getErrorRequestState(err),
@@ -436,7 +527,7 @@ export function ChatPage({
   };
 
   const handleSubmit = async () => {
-    await submitReplyContent(inputValue);
+    await submitReplyContent(inputValue, pendingAttachments);
   };
 
   const handleStopReply = () => {
@@ -444,13 +535,14 @@ export function ChatPage({
   };
 
   useEffect(() => {
-    if (!sessionId || loading || submitting || !initialReply.trim()) return;
-    const key = `${sessionId}:${initialReply}`;
+    if (!sessionId || loading || submitting) return;
+    if (!initialReply.trim() && initialAttachments.length === 0) return;
+    const key = `${sessionId}:${initialReply}:${initialAttachments.map((item) => item.attachment_id).join(",")}`;
     if (consumedInitialReplyRef.current === key) return;
     consumedInitialReplyRef.current = key;
     navigate(`/studio/${sessionId}?panel=conversation`, { replace: true, state: null });
-    void submitReplyContent(initialReply);
-  }, [sessionId, loading, submitting, initialReply]);
+    void submitReplyContent(initialReply, [], initialAttachments);
+  }, [sessionId, loading, submitting, initialReply, initialAttachments]);
 
   const handleGenerateScript = async () => {
     if (!sessionId || submitting) return;
@@ -775,11 +867,17 @@ export function ChatPage({
                   </div>
                 ) : null}
                 <div
+                  {...attachmentDropProps("landing")}
                   className={cn(
                     "flex flex-col gap-2 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl px-3.5 pt-2.5 pb-2 shadow-[0_20px_50px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.02)]",
                     "focus-within:border-accent-amber/35 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.3),0_0_20px_rgba(242,191,87,0.06)] transition-all duration-300",
                   )}
                 >
+                  <PendingAttachmentTray
+                    items={landingAttachments}
+                    onRemove={(localId) => removeAttachment("landing", localId)}
+                    disabled={landingSubmitting}
+                  />
                   <div
                     ref={landingInputRef}
                     contentEditable={!landingSubmitting}
@@ -791,16 +889,32 @@ export function ChatPage({
                         void handleLandingCreate();
                       }
                     }}
-                    onPaste={handlePaste}
+                    onPaste={handlePaste("landing")}
                     data-placeholder="今天你想聊什么?"
                     className="w-full min-h-[28px] max-h-[160px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[14px] text-primary placeholder:text-outline/75 py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
                   />
+                  {attachmentError ? (
+                    <p className="px-1 text-[12px] text-red-400">{attachmentError}</p>
+                  ) : null}
                   <div className="flex items-center justify-between gap-2">
+                    <input
+                      ref={landingFileInputRef}
+                      type="file"
+                      multiple
+                      accept={ATTACHMENT_ACCEPT}
+                      className="hidden"
+                      onChange={(e) => {
+                        addAttachments("landing", Array.from(e.target.files ?? []));
+                        e.target.value = "";
+                      }}
+                    />
                     <button
                       type="button"
-                      onClick={() => landingInputRef.current?.focus()}
-                      className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0"
-                      aria-label="Focus input"
+                      onClick={() => landingFileInputRef.current?.click()}
+                      disabled={landingSubmitting}
+                      className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0 disabled:opacity-30"
+                      aria-label="添加图片或文件"
+                      title="添加图片或文件"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
@@ -812,7 +926,7 @@ export function ChatPage({
                       <button
                         type="button"
                         onClick={() => void handleLandingCreate()}
-                        disabled={!landingInput.trim() || landingSubmitting}
+                        disabled={(!landingInput.trim() && landingAttachments.length === 0) || landingSubmitting}
                         className="p-1.5 theme-accent-gradient text-on-primary rounded-full hover:scale-105 active:scale-95 shadow-md shadow-accent-amber/15 transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed shrink-0"
                         aria-label="Start chat"
                       >
@@ -995,9 +1109,17 @@ export function ChatPage({
                           "border border-accent-amber/20 bg-accent-amber/8 px-4.5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.15)]",
                         )}
                       >
-                        <div className="text-[14px] leading-relaxed text-accent-amber prose prose-sm prose-theme max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
-                          <SafeMarkdown>{cleanContent}</SafeMarkdown>
-                        </div>
+                        <TurnAttachments sessionId={project.session.session_id} attachments={turn.attachments} />
+                        {cleanContent ? (
+                          <div
+                            className={cn(
+                              "text-[14px] leading-relaxed text-accent-amber prose prose-sm prose-theme max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
+                              turn.attachments?.length ? "mt-2" : "",
+                            )}
+                          >
+                            <SafeMarkdown>{cleanContent}</SafeMarkdown>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1111,7 +1233,15 @@ export function ChatPage({
         {/* Persistent Bottom Input Dock */}
         {showChatComposer && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-20 select-none">
-            <div className="flex flex-col gap-2.5 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl p-3 shadow-[0_24px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.02)] focus-within:border-accent-amber/25 focus-within:shadow-[0_24px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(242,191,87,0.05)] transition-all duration-300">
+            <div
+              {...attachmentDropProps("composer")}
+              className="flex flex-col gap-2.5 rounded-2xl border border-outline theme-panel-surface backdrop-blur-xl p-3 shadow-[0_24px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.02)] focus-within:border-accent-amber/25 focus-within:shadow-[0_24px_50px_rgba(0,0,0,0.5),0_0_20px_rgba(242,191,87,0.05)] transition-all duration-300"
+            >
+              <PendingAttachmentTray
+                items={pendingAttachments}
+                onRemove={(localId) => removeAttachment("composer", localId)}
+                disabled={submitting}
+              />
               <div
                 ref={composerInputRef}
                 contentEditable
@@ -1125,20 +1255,46 @@ export function ChatPage({
                     handleSubmit();
                   }
                 }}
-                onPaste={handlePaste}
+                onPaste={handlePaste("composer")}
                 className="w-full bg-transparent border-none focus:ring-0 overflow-y-auto text-[14px] text-primary placeholder:text-outline/75 py-1.5 px-2 max-h-[160px] min-h-[38px] outline-none leading-relaxed composer-editable select-text text-left"
                 data-placeholder="输入你的想法... (Shift+Enter 换行，Enter 发送)"
               />
 
+              {attachmentError ? (
+                <p className="px-2 text-[12px] text-red-400">{attachmentError}</p>
+              ) : null}
               <div className="flex items-center justify-between gap-2 px-0.5">
-                <button
-                  type="button"
-                  onClick={() => void handleGenerateScript()}
-                  disabled={submitting || !hasUserTurns}
-                  className="px-3 py-1.5 text-secondary hover:text-accent-amber hover:bg-accent-amber/8 border border-transparent hover:border-accent-amber/20 rounded-xl text-[12px] font-semibold transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent"
-                >
-                  生成脚本
-                </button>
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={composerFileInputRef}
+                    type="file"
+                    multiple
+                    accept={ATTACHMENT_ACCEPT}
+                    className="hidden"
+                    onChange={(e) => {
+                      addAttachments("composer", Array.from(e.target.files ?? []));
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => composerFileInputRef.current?.click()}
+                    disabled={submitting}
+                    className="p-1.5 text-secondary hover:text-primary hover:bg-surface-container-high/60 rounded-lg transition-all duration-200 shrink-0 disabled:opacity-30"
+                    aria-label="添加图片或文件"
+                    title="添加图片或文件"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateScript()}
+                    disabled={submitting || !hasUserTurns}
+                    className="px-3 py-1.5 text-secondary hover:text-accent-amber hover:bg-accent-amber/8 border border-transparent hover:border-accent-amber/20 rounded-xl text-[12px] font-semibold transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent"
+                  >
+                    生成脚本
+                  </button>
+                </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <ComposerModelPicker
                     disabled={submitting}
@@ -1158,7 +1314,7 @@ export function ChatPage({
                     <button
                       type="button"
                       onClick={handleSubmit}
-                      disabled={!inputValue.trim() || submitting}
+                      disabled={(!inputValue.trim() && pendingAttachments.length === 0) || submitting}
                       title={submitting ? "正在处理" : "发送"}
                       aria-label={submitting ? "正在处理" : "发送"}
                       className="p-2 theme-accent-gradient text-on-primary hover:scale-105 active:scale-95 rounded-full transition-all duration-200 disabled:opacity-20 disabled:scale-100 disabled:cursor-not-allowed"

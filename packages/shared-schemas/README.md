@@ -7,6 +7,7 @@ Current cross-boundary contracts:
 - `session.schema.json`
 - `episode-source.schema.json`
 - `transcript.schema.json`
+- `attachment.schema.json`
 - `script.schema.json`
 - `speech-plan.schema.json`
 - `artifact.schema.json`
@@ -31,3 +32,5 @@ Rules:
 - treat schema edits as coordination points for multi-agent work
 
 `TTSProviderConfig` selects `local_http` (default `http://127.0.0.1:8090/v1`) or `openai_compatible`. Model loading, downloads, and weight paths belong to the bundled `speech-service` HTTP process and its isolated Python 3.12 environment. Its source lives in this repository; the orchestration core only uses HTTP. Local service requests support preset voices and WAV; speaker cloning, reference conditioning, style, and speed are unsupported.
+
+`Attachment` is a chat attachment on a user transcript turn: an immutable content-hashed blob under its session. Images go to the model as image input; documents (text, Markdown, CSV, JSON, PDF) go as backend-extracted text. A provider or model that cannot accept image input must fail explicitly instead of dropping it. Attachments are never long-term memory sources.

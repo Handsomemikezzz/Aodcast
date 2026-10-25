@@ -35,6 +35,7 @@ from app.api.serializers import (
 )
 from app.config import AppConfig
 from app.domain.artifact import ArtifactRecord
+from app.domain.attachment import ATTACHMENT_MAX_BYTES
 from app.domain.episode_source import (
     EpisodeSource,
     SourceConversionMode,
@@ -1909,6 +1910,20 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
+        if self.command == "POST" and suffix == "/attachments":
+            self._upload_attachment(session_id, origin)
+            return
+        if self.command == "GET" and suffix.startswith("/attachments/") and suffix.endswith("/content"):
+            attachment_id = suffix.removeprefix("/attachments/").removesuffix("/content").strip("/")
+            store = self.context.store
+            attachment = store.load_attachment(session_id, attachment_id)
+            self._send_binary(
+                HTTPStatus.OK,
+                store.read_attachment_bytes(attachment),
+                content_type=attachment.mime_type,
+                origin=origin,
+            )
+            return
         if self.command == "POST" and suffix == ":delete":
             project = self.context.store.load_project(session_id)
             if project.session.is_deleted():
@@ -2122,10 +2137,34 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return
         raise ValueError(f"Unknown route: {path}")
 
+    def _upload_attachment(self, session_id: str, origin: str | None) -> None:
+        # Reject oversized uploads before buffering the body.
+        if int(self.headers.get("Content-Length") or "0") > ATTACHMENT_MAX_BYTES + 64 * 1024:
+            raise ValueError(f"Attachments are limited to {ATTACHMENT_MAX_BYTES // (1024 * 1024)} MB.")
+        ensure_session_is_active(self.context.store.load_project(session_id))
+        _fields, files = self._read_multipart_form()
+        upload = files.get("file")
+        if upload is None:
+            raise ValueError("Multipart field 'file' is required.")
+        attachment = self.context.store.save_attachment(
+            session_id,
+            filename=upload.filename,
+            declared_type=upload.content_type,
+            data=upload.content,
+        )
+        self._send_bridge_envelope(
+            success_envelope({"attachment": attachment.to_dict()}, operation="upload_attachment"),
+            origin=origin,
+        )
+
     def _handle_stream_reply(self, session_id: str, body: dict[str, Any], origin: str | None) -> None:
         message = str(body.get("message") or "").strip()
-        if not message:
-            raise ValueError("Field 'message' is required.")
+        raw_attachment_ids = body.get("attachment_ids") or []
+        if not isinstance(raw_attachment_ids, list):
+            raise ValueError("Field 'attachment_ids' must be a list.")
+        attachment_ids = [str(item) for item in raw_attachment_ids]
+        if not message and not attachment_ids:
+            raise ValueError("Field 'message' or 'attachment_ids' is required.")
         project = self.context.store.load_project(session_id)
         if project.session.is_deleted():
             raise ValueError("Session is deleted. Restore it before continuing.")
@@ -2144,6 +2183,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 session_id,
                 message,
                 user_requested_finish=user_requested_finish,
+                attachment_ids=attachment_ids,
             ):
                 if isinstance(chunk, InterviewTurnResult):
                     final_result = chunk
@@ -2330,6 +2370,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             return "create_session"
         if "/interview:reply-stream" in path:
             return "submit_reply"
+        if "/attachments" in path and path.startswith("/api/v1/sessions/"):
+            return "upload_attachment" if self.command == "POST" else "show_attachment"
         if "/interview:start" in path:
             return "start_interview"
         if "/interview:finish" in path:

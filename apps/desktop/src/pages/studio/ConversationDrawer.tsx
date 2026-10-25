@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Brain, Check, Loader2, MessageSquare, Send, Sparkles, Trash2, RotateCcw, X } from "lucide-react";
 import { SafeMarkdown } from "../../components/SafeMarkdown";
+import { TurnAttachments } from "../../components/ChatAttachments";
 import { useBridge } from "../../lib/BridgeContext";
 import { cn } from "../../lib/utils";
 import { getErrorMessage } from "../../lib/requestState";
@@ -16,7 +17,7 @@ type FollowUpState =
   /** §10.3: User corrected something — surface candidates so they can confirm which to supersede. */
   | { kind: "correct"; candidates: MemoryEntry[] };
 
-function TranscriptView({ turns }: { turns: TranscriptTurn[] }) {
+function TranscriptView({ sessionId, turns }: { sessionId: string; turns: TranscriptTurn[] }) {
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
       {turns.map((turn, i) => (
@@ -35,7 +36,8 @@ function TranscriptView({ turns }: { turns: TranscriptTurn[] }) {
                 : "bg-primary/4 border border-outline text-secondary",
             )}
           >
-            <SafeMarkdown>{turn.content}</SafeMarkdown>
+            <TurnAttachments sessionId={sessionId} attachments={turn.attachments} compact />
+            {turn.content ? <SafeMarkdown>{turn.content}</SafeMarkdown> : null}
           </div>
         </div>
       ))}
@@ -272,7 +274,7 @@ export function ConversationDrawer({
               {isSourceDiscussion ? "No source discussion yet." : "No conversation yet."}
             </div>
           ) : (
-            <TranscriptView turns={turns} />
+            <TranscriptView sessionId={sessionId} turns={turns} />
           )}
           <div ref={transcriptEndRef} />
         </div>

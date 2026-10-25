@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Any, Iterator
 
 from openai import OpenAI
 
@@ -21,6 +22,7 @@ from app.orchestration.prompts import (
     build_script_generation_user_prompt,
 )
 from app.providers.llm.base import (
+    ImageInput,
     InterviewQuestionRequest,
     MemoryActionRequest,
     MemoryActionResponse,
@@ -36,6 +38,19 @@ from app.providers.llm.base import (
     SpeechPlanGenerationResponse,
 )
 from app.providers.llm.json_utils import parse_candidates, parse_json_object, parse_selected_ids
+
+
+def _user_message_content(text: str, images: tuple[ImageInput, ...]) -> str | list[dict[str, Any]]:
+    """Chat Completions multimodal content: text first, then images as base64 data URLs."""
+    if not images:
+        return text
+    parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    for image in images:
+        encoded = base64.b64encode(image.data).decode("ascii")
+        parts.append(
+            {"type": "image_url", "image_url": {"url": f"data:{image.mime_type};base64,{encoded}"}}
+        )
+    return parts
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,11 +156,13 @@ class OpenAICompatibleProvider:
             base_url=self.config.base_url,
             api_key=self.config.api_key,
         )
+        # Endpoints or models without vision reject image parts with an API
+        # error; that error surfaces to the user instead of dropping the images.
         response = client.chat.completions.create(
             model=self.config.model,
             messages=[
                 {"role": "system", "content": system_content},
-                {"role": "user", "content": user_content},
+                {"role": "user", "content": _user_message_content(user_content, request.images)},
             ],
             stream=True,
         )

@@ -17,6 +17,8 @@ The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It 
 ## What Works
 
 - Text-topic podcast creation with an interview-guided writing flow.
+- Chat sending becomes available as soon as a reply completes or Stop is pressed; animation and background session refresh do not block the next message.
+- Chat attachments: paste, drop, or pick images (PNG/JPEG/WebP/GIF) and documents (TXT/Markdown/CSV/JSON/PDF, up to 10 MB each, 8 per message). Images go to the model as image input; document text is extracted locally and sent as text.
 - Markdown-first creation from a local `.md` file or pasted text, with source preview, podcast adaptation or faithful narration, target-length guidance, optional source discussion, and versioned source replacement.
 - Multiple independent script snapshots per episode, regardless of whether it started from an interview or Markdown.
 - Script generation uses Podcast Editor behavior to write clean, listenable narration with deliberate sentence length, punctuation, and paragraph rhythm—without manufacturing filler words or stage directions.
@@ -341,6 +343,8 @@ API keys are stored as local user-managed configuration. Aodcast does not curren
 For ChatGPT subscription access, Codex owns OAuth storage and token refresh. Aodcast receives only account status, plan labels, model metadata, rate-limit summaries, and the generated model output; OAuth tokens and browser cookies are never copied into Aodcast configuration or bridge payloads.
 
 Imported Markdown is snapshotted under `.local-data/sessions/<session-id>/source.json`. Script generation sends the normalized article, generation preferences, and any supplemental source discussion to the configured LLM provider. When that provider is remote, this content leaves the device and is handled under the provider's terms. Imported source text is not converted into transcript turns and is never written into Aodcast long-term memory; only later user-authored conversation turns may be eligible for memory when memory is enabled.
+
+Chat attachments are stored as immutable content-hashed files under `.local-data/sessions/<session-id>/attachments/`. Each interview turn re-sends the conversation's attachments (the six most recent images and up to 40k characters of document text) to the configured LLM provider. Attachments never become long-term memories. If the selected model cannot accept images, the reply fails with an explicit error instead of silently dropping them.
 
 Long-term memory is local-only. When enabled, Aodcast saves a small set of reusable user knowledge as Markdown files under `.local-data/memory/` so interviews and scripts can stay consistent across episodes. Memory is opt-in (first-run notice), can be turned off per episode or globally, and is fully viewable and deletable. High-sensitivity secrets (passwords, API keys, payment credentials, full ID numbers, precise addresses) are never saved, even on request.
 

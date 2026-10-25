@@ -17,6 +17,8 @@ Aodcast 是一个开源、本地优先的 macOS 桌面应用，用于把一个�
 ## 当前可用能力
 
 - 基于文本主题的访谈式播客创作流程。
+- 对话回复完成或点击停止后即可继续发送；文字动画和后台会话刷新不会阻塞下一条消息。
+- 对话附件：可粘贴、拖放或选择图片（PNG/JPEG/WebP/GIF）和文档（TXT/Markdown/CSV/JSON/PDF，单个不超过 10 MB，每条消息最多 8 个）。图片以图像输入发送给模型；文档在本地提取文本后以文本发送。
 - 支持导入本地 `.md` 文件或粘贴 Markdown，通过来源预览、播客化改写或忠实朗读、目标时长、可选来源讨论和版本化替换来创建播客。
 - 每个 episode 都可以生成多个独立脚本快照，无论它来自访谈还是 Markdown。
 - 脚本生成采用 Podcast Editor 行为，生成干净、适合听觉理解的口播稿，通过句子长短、标点和段落节奏安排呼吸，不人为制造 filler 或舞台指令。
@@ -341,6 +343,8 @@ API key 作为本地用户配置保存。Aodcast 目前没有 macOS Keychain 或
 使用 ChatGPT 订阅时，OAuth 存储和 token 刷新由 Codex 自己管理。Aodcast 只接收账户连接状态、计划标签、模型元数据、额度摘要和生成结果；OAuth token 与浏览器 Cookie 不会进入 Aodcast 配置或 bridge payload。
 
 导入的 Markdown 快照保存在 `.local-data/sessions/<session-id>/source.json`。生成脚本时，规范化文章、生成偏好以及后续来源讨论会发送给用户配置的 LLM provider；如果使用远程 provider，这些内容会离开本机并受相应 provider 条款约束。导入来源不会被转换成 transcript turn，也不会写入 Aodcast 长期记忆；只有用户后续主动输入的对话 turn 在启用记忆时可能成为记忆候选。
+
+对话附件以不可变、按内容 hash 命名的文件保存在 `.local-data/sessions/<session-id>/attachments/`。每轮访谈都会把对话中的附件（最近 6 张图片和最多 4 万字符的文档文本）重新发送给配置的 LLM provider。附件不会成为长期记忆。如果所选模型不支持图片输入，回复会明确报错，而不会静默丢弃图片。
 
 长期记忆仅保存在本地。启用后，Aodcast 会把少量可复用的用户知识以 Markdown 文件形式保存在 `.local-data/memory/`，以便采访和脚本在不同 Episode 之间保持一致。记忆是可选的（首次使用会提示），可以按 Episode 或全局关闭，并且可以完整查看和删除。高敏感秘密（密码、API key、支付凭据、完整证件号、精确住址）即使用户要求也永不保存。
 

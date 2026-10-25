@@ -115,6 +115,10 @@ class MockLLMProvider:
                 "C. Neither fits — tell me in your own words"
             )
 
+        if request.images:
+            # The mock cannot see pixels; say so instead of pretending.
+            names = ", ".join(image.name for image in request.images)
+            reflection += f" (I received {len(request.images)} image(s) but cannot view them: {names}.)"
         return f"{reflection} {question}\n\n{options}"
 
     def stream_interview_question(self, request: InterviewQuestionRequest) -> Iterator[str]:

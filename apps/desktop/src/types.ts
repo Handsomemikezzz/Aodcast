@@ -42,6 +42,18 @@ export type TranscriptTurnMetadata = {
   prompt_section_ids?: string[];
 };
 
+/** Mirrors packages/shared-schemas/attachment.schema.json. */
+export type ChatAttachment = {
+  attachment_id: string;
+  session_id: string;
+  kind: "image" | "document";
+  mime_type: string;
+  name: string;
+  size_bytes: number;
+  sha256: string;
+  created_at: string;
+};
+
 export type TranscriptTurn = {
   speaker: Speaker;
   content: string;
@@ -49,6 +61,8 @@ export type TranscriptTurn = {
   turn_id?: string;
   /** Optional — absent on turns saved before metadata support was added. */
   metadata?: TranscriptTurnMetadata;
+  /** User turns only. */
+  attachments?: ChatAttachment[];
 };
 
 export type TranscriptRecord = {

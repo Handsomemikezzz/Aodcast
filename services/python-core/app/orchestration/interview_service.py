@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterator, Union
 
+from app.domain.attachment import MAX_ATTACHMENTS_PER_TURN, Attachment
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
-from app.domain.transcript import Speaker, TranscriptRecord
+from app.domain.transcript import Speaker, TranscriptRecord, TranscriptTurn
+from app.orchestration.attachment_context import build_attachment_context
 from app.orchestration.prompts import (
     InterviewPromptInput,
     build_interview_prompt_plan,
@@ -22,8 +24,15 @@ if TYPE_CHECKING:
     from app.orchestration.memory_service import MemoryService
 
 
+def _turn_text(turn: TranscriptTurn) -> str:
+    if not turn.attachments:
+        return turn.content
+    names = ", ".join(f"{item.name} ({item.kind.value})" for item in turn.attachments)
+    return f"{turn.content}\n[Attached: {names}]".strip()
+
+
 def _transcript_text(transcript: TranscriptRecord) -> str:
-    return "\n".join(f"{turn.speaker.value}: {turn.content}" for turn in transcript.turns)
+    return "\n".join(f"{turn.speaker.value}: {_turn_text(turn)}" for turn in transcript.turns)
 
 
 def _detect_language_is_zh(topic: str, transcript: TranscriptRecord) -> bool:
@@ -261,6 +270,10 @@ class InterviewOrchestrator:
             except Exception:
                 memory_context = ""
 
+        # Attachment read failures (missing blob, hash mismatch) must surface, not
+        # silently drop what the user sent.
+        attachments = build_attachment_context(self.store, transcript)
+
         # Build the PromptPlan for this turn.  Falls back gracefully when
         # readiness is not supplied (e.g. start_interview before first user reply).
         try:
@@ -273,6 +286,7 @@ class InterviewOrchestrator:
                 script_exists=(project.script is not None),
                 memory_context=memory_context,
                 source_context=_source_context(project),
+                attachment_context=attachments.prompt_block,
                 transcript_text=_transcript_text(transcript),
             )
         except Exception:
@@ -291,6 +305,7 @@ class InterviewOrchestrator:
             script_exists=(project.script is not None),
             memory_context=memory_context,
             prompt_plan=prompt_plan,
+            images=attachments.images,
         )
         try:
             yield from provider.stream_interview_question(request)
@@ -362,7 +377,11 @@ class InterviewOrchestrator:
         content: str,
         *,
         user_requested_finish: bool = False,
+        attachment_ids: list[str] | None = None,
     ) -> Iterator[Union[str, InterviewTurnResult]]:
+        attachments = self._load_turn_attachments(session_id, attachment_ids or [])
+        if not content.strip() and not attachments:
+            raise ValueError("A reply needs a message or at least one attachment.")
         project = self.store.load_project(session_id)
         transcript = project.transcript or TranscriptRecord(session_id=session_id)
         project.transcript = transcript
@@ -375,7 +394,7 @@ class InterviewOrchestrator:
         user_turn = transcript.append(Speaker.USER, content, metadata={
             "interview_focus": preceding_focus,
             "turn_role": "answer",
-        })
+        }, attachments=attachments)
         # Persist the user turn before streaming provider output so partial failures
         # still leave the user's message visible when reopening the session.
         self.store.save_project(project)
@@ -450,6 +469,12 @@ class InterviewOrchestrator:
             memory_action=detected_action,
             memory_action_candidates=action_candidates,
         )
+
+    def _load_turn_attachments(self, session_id: str, attachment_ids: list[str]) -> list[Attachment]:
+        unique_ids = list(dict.fromkeys(item.strip() for item in attachment_ids if item.strip()))
+        if len(unique_ids) > MAX_ATTACHMENTS_PER_TURN:
+            raise ValueError(f"A reply may carry at most {MAX_ATTACHMENTS_PER_TURN} attachments.")
+        return [self.store.load_attachment(session_id, item) for item in unique_ids]
 
     def request_finish(self, session_id: str) -> InterviewTurnResult:
         project = self.store.load_project(session_id)

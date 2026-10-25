@@ -14,12 +14,21 @@
         "properties": {
           "turn_id": { "type": "string" },
           "speaker": { "type": "string", "enum": ["agent", "user"] },
-          "content": { "type": "string", "minLength": 1 },
+          "content": {
+            "type": "string",
+            "description": "Turn text. May be empty only on a user turn that carries attachments."
+          },
           "created_at": { "type": "string", "format": "date-time" },
           "metadata": {
             "type": "object",
             "description": "Non-sensitive prompt assembly metadata attached by interview orchestration (interview_focus, turn_role, prompt_version, prompt_section_ids).",
             "additionalProperties": true
+          },
+          "attachments": {
+            "type": "array",
+            "description": "User turns only. Attachments sent with this message; never a source of long-term memory.",
+            "maxItems": 8,
+            "items": { "$ref": "attachment.schema.json" }
           }
         },
         "additionalProperties": false

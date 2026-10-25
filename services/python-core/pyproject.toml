@@ -10,6 +10,7 @@ dependencies = [
   "miniaudio>=1.61",
   "numpy>=2.0",
   "openai>=1.0.0",
+  "pypdf>=5",
 ]
 
 [project.optional-dependencies]

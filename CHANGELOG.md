@@ -16,6 +16,7 @@ All notable changes to Aodcast will be documented in this file.
 - Localhost HTTP runtime bridge between the Tauri/web UI and Python orchestration core.
 - Mock LLM provider path for smoke tests and development fallback.
 - ChatGPT subscription LLM provider through the official Codex app-server, including browser sign-in, dynamic account model discovery, streaming interview output, structured JSON generation, and Codex usage-window status.
+- Chat composer attachments (images and TXT/Markdown/CSV/JSON/PDF documents) with paste, drag-and-drop, file picker, previews, and transcript display; images reach OpenAI-compatible and Codex models as image input, and document text is extracted by the Python runtime.
 - Shared request-state contracts for long-running operations, script-scoped audio task ids, run-token-safe cancellation, and stale-poll rejection.
 
 ### Changed
@@ -32,6 +33,7 @@ All notable changes to Aodcast will be documented in this file.
 
 ### Fixed
 
+- Chat no longer waits for suspended text animations, stream cancellation, or a background session refresh before restoring Send after completion or Stop.
 - Native runtime readiness probes the built-in voice-preset endpoint instead of a removed model-storage route. Desktop/web launchers separately ensure the speech HTTP service is online before starting the shell.
 
 ### Removed

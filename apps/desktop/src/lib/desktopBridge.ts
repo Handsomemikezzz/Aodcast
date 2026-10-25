@@ -1,5 +1,6 @@
 import {
   AudioRenderResult,
+  ChatAttachment,
   GenerationResult,
   InterviewTurnResult,
   LLMConfigPreflight,
@@ -35,6 +36,13 @@ export type ListMemoriesOptions = {
 export type ListProjectsOptions = {
   search?: string;
   includeDeleted?: boolean;
+};
+
+export type SubmitReplyOptions = {
+  userRequestedFinish?: boolean;
+  signal?: AbortSignal;
+  /** Ids returned by uploadAttachment for this reply. */
+  attachmentIds?: string[];
 };
 
 export type ShowSessionOptions = {
@@ -144,13 +152,16 @@ export interface DesktopBridge {
   restoreSession(sessionId: string): Promise<SessionProject>;
   /** Start the guided interview for a session and return the next prompt plus readiness metadata. */
   startInterview(sessionId: string): Promise<InterviewTurnResult>;
+  /** Upload one image or document for the next reply; the runtime validates type/size and extracts document text. */
+  uploadAttachment(sessionId: string, file: Blob, fileName: string): Promise<ChatAttachment>;
+  /** Read an uploaded attachment's original bytes (for transcript thumbnails). */
+  readAttachment(sessionId: string, attachmentId: string): Promise<Blob>;
   /** Stream the assistant reply token-by-token while preserving the final bridge envelope. */
   submitReplyStream(
     sessionId: string,
     message: string,
     onChunk: (delta: string) => void,
-    userRequestedFinish?: boolean,
-    signal?: AbortSignal,
+    options?: SubmitReplyOptions,
   ): Promise<InterviewTurnResult>;
   /** Ask the orchestrator to finish the interview and move into readiness evaluation. */
   requestFinish(sessionId: string): Promise<InterviewTurnResult>;

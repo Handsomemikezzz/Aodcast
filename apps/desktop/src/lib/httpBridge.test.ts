@@ -8,6 +8,33 @@ afterEach(() => {
 });
 
 describe("HTTP reply streaming", () => {
+  it("stops a suspended read without waiting for stream cancellation", async () => {
+    const encoder = new TextEncoder();
+    const abort = new AbortController();
+    let cancelStarted = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: chunk\ndata: {"ok":true,"type":"chunk","delta":"Hello"}\n\n'));
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise<void>(() => undefined);
+      },
+    });
+    // Simulate a WebView that does not propagate fetch abort to reader.read().
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(stream)));
+    const bridge = createHttpBridge({ baseUrl: "http://127.0.0.1:8765" });
+    let receivedChunk: () => void = () => undefined;
+    const chunkReceived = new Promise<void>((resolve) => { receivedChunk = resolve; });
+    const reply = bridge.submitReplyStream("session-1", "Hi", receivedChunk, { signal: abort.signal });
+    const rejected = expect(reply).rejects.toMatchObject({ name: "AbortError" });
+    await chunkReceived;
+    abort.abort();
+
+    await rejected;
+    expect(cancelStarted).toBe(true);
+  });
+
   it("resolves on the final SSE event without waiting for reader cancellation", async () => {
     const encoder = new TextEncoder();
     const finalResult = { next_question: "Done" } as unknown as InterviewTurnResult;
@@ -41,6 +68,42 @@ describe("HTTP reply streaming", () => {
     expect(outcome).toEqual(finalResult);
     expect(deltas).toEqual(["Hello"]);
     expect(cancelStarted).toBe(true);
+  });
+});
+
+describe("HTTP chat attachments", () => {
+  it("uploads multipart files and sends attachment ids with the reply", async () => {
+    const attachment = {
+      attachment_id: "att_0123456789abcdef0123456789abcdef", session_id: "session-1", kind: "image",
+      mime_type: "image/png", name: "cat.png", size_bytes: 3, sha256: "a".repeat(64), created_at: "2026-10-25T00:00:00Z",
+    };
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/attachments")) {
+        expect(init?.method).toBe("POST");
+        const body = init?.body as FormData;
+        expect((body.get("file") as File).name).toBe("cat.png");
+        return new Response(JSON.stringify({ ok: true, data: { attachment } }));
+      }
+      expect(String(url)).toContain("/interview:reply-stream");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        message: "",
+        user_requested_finish: false,
+        attachment_ids: [attachment.attachment_id],
+      });
+      const final = `event: final\ndata: ${JSON.stringify({ ok: true, data: { next_question: "A cat." } })}\n\n`;
+      return new Response(new ReadableStream({ start(c) { c.enqueue(encoder.encode(final)); } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const bridge = createHttpBridge({ baseUrl: "http://127.0.0.1:8765" });
+
+    const uploaded = await bridge.uploadAttachment("session-1", new Blob(["png"]), "cat.png");
+    const result = await bridge.submitReplyStream("session-1", "", () => undefined, {
+      attachmentIds: [uploaded.attachment_id],
+    });
+
+    expect(uploaded).toEqual(attachment);
+    expect(result.next_question).toBe("A cat.");
   });
 });
 

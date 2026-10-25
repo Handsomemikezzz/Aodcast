@@ -36,29 +36,44 @@ describe("createSmoothTextBuffer", () => {
     expect(updates[updates.length - 1].length).toBeLessThan(10);
   });
 
-  it("drains every pushed character and never splits emoji", async () => {
+  it("reveals every pushed character and never splits emoji", () => {
     const { scheduler, frame, hasPending } = manualScheduler();
     const updates: string[] = [];
     const buffer = createSmoothTextBuffer((text) => updates.push(text), scheduler);
 
     buffer.push("你好😀");
     buffer.push("世界");
-    const drained = buffer.drain();
     while (hasPending()) frame();
-    await drained;
 
     expect(updates[updates.length - 1]).toBe("你好😀世界");
     expect(updates.every((text) => !/[\uD800-\uDBFF]$/.test(text))).toBe(true);
   });
 
-  it("cancel releases a pending drain", async () => {
-    const { scheduler } = manualScheduler();
-    const buffer = createSmoothTextBuffer(() => {}, scheduler);
+  it("finishes immediately when animation frames are suspended", () => {
+    const { scheduler, hasPending } = manualScheduler();
+    const updates: string[] = [];
+    const buffer = createSmoothTextBuffer((text) => updates.push(text), scheduler);
 
     buffer.push("还没显示完的内容");
-    const drained = buffer.drain();
-    buffer.cancel();
+    buffer.finish();
+    buffer.push("迟到的内容");
 
-    await expect(drained).resolves.toBeUndefined();
+    expect(updates).toEqual(["还没显示完的内容"]);
+    expect(hasPending()).toBe(false);
+  });
+
+  it("cancel discards queued and late deltas", () => {
+    const { scheduler, frame, hasPending } = manualScheduler();
+    const updates: string[] = [];
+    const buffer = createSmoothTextBuffer((text) => updates.push(text), scheduler);
+
+    buffer.push("还没显示完的内容");
+    buffer.cancel();
+    buffer.push("迟到的内容");
+    buffer.finish();
+    frame();
+
+    expect(updates).toEqual([]);
+    expect(hasPending()).toBe(false);
   });
 });

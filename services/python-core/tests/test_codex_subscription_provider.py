@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from app.domain.provider_config import LLMProviderConfig
 from app.providers.llm.base import (
+    ImageInput,
     InterviewQuestionRequest,
     MemoryExtractionRequest,
     MemoryRerankRequest,
@@ -77,6 +78,7 @@ class FakeCodexClient:
         developer_instructions: str,
         user_content: str,
         output_schema: dict[str, Any] | None = None,
+        image_urls: tuple[str, ...] = (),
     ) -> Iterator[str]:
         del output_schema
         self.calls.append(
@@ -85,6 +87,7 @@ class FakeCodexClient:
                 "reasoning_effort": reasoning_effort,
                 "developer_instructions": developer_instructions,
                 "user_content": user_content,
+                "image_urls": image_urls,
             }
         )
         yield "What changed "
@@ -134,6 +137,24 @@ class CodexSubscriptionProviderTests(unittest.TestCase):
         )
 
         self.assertEqual(chunks, ["What changed ", "your mind?"])
+        self.assertEqual(self.client.calls[0]["image_urls"], ())
+
+    def test_streams_interview_images_as_data_urls(self) -> None:
+        list(
+            self.provider.stream_interview_question(
+                InterviewQuestionRequest(
+                    session_id="s1",
+                    topic="A topic",
+                    creation_intent="Explore it",
+                    transcript_text="User: look",
+                    suggested_focus="example_or_detail",
+                    missing_dimensions=[],
+                    images=(ImageInput(name="cat.png", mime_type="image/png", data=b"\x89PNG"),),
+                )
+            )
+        )
+
+        self.assertEqual(self.client.calls[0]["image_urls"], ("data:image/png;base64,iVBORw==",))
 
     def test_uses_output_schema_for_memory_extraction(self) -> None:
         response = self.provider.extract_memories(
@@ -236,6 +257,34 @@ class CodexAccountModeTests(unittest.TestCase):
                 self.assertEqual(client.resolve_reasoning_effort("gpt-test", "high"), "high")
                 with self.assertRaises(CodexAppServerError):
                     client.resolve_reasoning_effort("gpt-test", "ultra")
+        finally:
+            client.close()
+
+    def test_text_only_model_rejects_image_input_explicitly(self) -> None:
+        client = CodexAppServerClient("/usr/bin/true")
+        model = CodexModelInfo(
+            id="gpt-text",
+            display_name="GPT Text",
+            is_default=True,
+            default_reasoning_effort="low",
+            supported_reasoning_efforts=("low",),
+            input_modalities=("text",),
+        )
+        try:
+            with (
+                patch.object(client, "require_chatgpt_subscription"),
+                patch.object(client, "list_models", return_value=(model,)),
+            ):
+                with self.assertRaisesRegex(CodexAppServerError, "does not accept image input"):
+                    list(
+                        client.stream_turn(
+                            model="gpt-text",
+                            reasoning_effort="auto",
+                            developer_instructions="",
+                            user_content="hi",
+                            image_urls=("data:image/png;base64,AAAA",),
+                        )
+                    )
         finally:
             client.close()
 

@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
+from app.domain.attachment import Attachment
 from app.domain.common import utc_now_iso
 
 
@@ -40,6 +41,8 @@ class TranscriptTurn:
     # Keys: interview_focus, turn_role, prompt_version, prompt_section_ids.
     # Optional — legacy turns without this field remain fully readable.
     metadata: dict[str, Any] = field(default_factory=dict)
+    # User turns only; attachment text never feeds long-term memory.
+    attachments: list[Attachment] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -51,6 +54,8 @@ class TranscriptTurn:
         # Omit empty metadata to keep legacy-compatible JSON compact.
         if self.metadata:
             payload["metadata"] = dict(self.metadata)
+        if self.attachments:
+            payload["attachments"] = [attachment.to_dict() for attachment in self.attachments]
         return payload
 
     @classmethod
@@ -68,6 +73,7 @@ class TranscriptTurn:
             turn_id=turn_id,
             # Existing saved transcripts without metadata load as empty dict (backward compat).
             metadata=dict(payload.get("metadata") or {}),
+            attachments=[Attachment.from_dict(item) for item in payload.get("attachments") or []],
         )
 
 
@@ -81,11 +87,15 @@ class TranscriptRecord:
         speaker: Speaker,
         content: str,
         metadata: dict[str, Any] | None = None,
+        attachments: list[Attachment] | None = None,
     ) -> TranscriptTurn:
+        if attachments and speaker != Speaker.USER:
+            raise ValueError("Only user turns may carry attachments.")
         turn = TranscriptTurn(
             speaker=speaker,
             content=content,
             metadata=dict(metadata) if metadata else {},
+            attachments=list(attachments or []),
         )
         self.turns.append(turn)
         return turn

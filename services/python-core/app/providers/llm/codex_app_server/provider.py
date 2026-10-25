@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from typing import Any, Iterator
 
@@ -302,6 +303,10 @@ class CodexSubscriptionProvider:
             reasoning_effort=self.config.reasoning_effort,
             developer_instructions=system_content,
             user_content=user_content,
+            image_urls=tuple(
+                f"data:{image.mime_type};base64,{base64.b64encode(image.data).decode('ascii')}"
+                for image in request.images
+            ),
         )
 
     def extract_memories(self, request: MemoryExtractionRequest) -> MemoryExtractionResponse:

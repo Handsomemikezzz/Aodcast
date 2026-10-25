@@ -47,6 +47,8 @@ HTTP_ONLY_BRIDGE_OPERATIONS = (
     "delete_speaker_reference",
     "select_speaker_reference",
     "regenerate_audio_window",
+    "upload_attachment",
+    "show_attachment",
 )
 
 
@@ -70,6 +72,8 @@ HTTP_BRIDGE_CONTRACTS: tuple[BridgeContract, ...] = (
     BridgeContract("restoreSession", "POST", "/api/v1/sessions/{session_id}:restore", "restore_session", ("--restore-session", "session-123")),
     BridgeContract("startInterview", "POST", "/api/v1/sessions/{session_id}/interview:start", "start_interview", ("--start-interview", "session-123")),
     BridgeContract("submitReplyStream", "POST", "/api/v1/sessions/{session_id}/interview:reply-stream", "submit_reply", ("--reply-session", "session-123", "--message", "hello"), streaming=True),
+    BridgeContract("uploadAttachment", "POST", "/api/v1/sessions/{session_id}/attachments", "upload_attachment", ()),
+    BridgeContract("readAttachment", "GET", "/api/v1/sessions/{session_id}/attachments/{attachment_id}/content", "show_attachment", ()),
     BridgeContract("requestFinish", "POST", "/api/v1/sessions/{session_id}/interview:finish", "request_finish", ("--finish-session", "session-123")),
     BridgeContract("generateScript", "POST", "/api/v1/sessions/{session_id}/script:generate", "generate_script", ("--generate-script", "session-123")),
     BridgeContract("showLatestScript", "GET", "/api/v1/sessions/{session_id}/scripts/latest", "show_latest_script", ("--show-session", "session-123")),

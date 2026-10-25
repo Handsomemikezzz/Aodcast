@@ -14,10 +14,12 @@ import type {
   RenderAudioOptions,
   RenderVoicePreviewOptions,
   ShowSessionOptions,
+  SubmitReplyOptions,
 } from "./desktopBridge";
 import { asRequestState } from "./requestState";
 import type {
   AudioRenderResult,
+  ChatAttachment,
   GenerationResult,
   InterviewTurnResult,
   LLMConfigPreflight,
@@ -374,8 +376,7 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     sessionId: string,
     message: string,
     onChunk: (delta: string) => void,
-    userRequestedFinish = false,
-    signal?: AbortSignal,
+    options: SubmitReplyOptions = {},
   ): Promise<InterviewTurnResult> {
     const runtime = await getRuntime();
     const response = await fetch(buildUrl(runtime.base_url, `/api/v1/sessions/${encodeURIComponent(sessionId)}/interview:reply-stream`), {
@@ -385,9 +386,10 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
       },
       body: JSON.stringify({
         message,
-        user_requested_finish: userRequestedFinish,
+        user_requested_finish: options.userRequestedFinish ?? false,
+        attachment_ids: options.attachmentIds ?? [],
       }),
-      signal,
+      signal: options.signal,
     });
     if (!response.ok || !response.body) {
       let payload: BridgeEnvelope<InterviewTurnResult> | null = null;
@@ -406,6 +408,13 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     const reader = response.body.getReader();
     let buffer = "";
     let finalPayload: BridgeEnvelope<InterviewTurnResult> | null = null;
+    let rejectAborted: (reason: Error) => void = () => undefined;
+    const aborted = new Promise<never>((_, reject) => { rejectAborted = reject; });
+    const onAbort = () => {
+      const error = new Error("Reply stream was interrupted.");
+      error.name = "AbortError";
+      rejectAborted(error);
+    };
 
     const flushEvent = (chunk: string): boolean => {
       const lines = chunk.split("\n");
@@ -432,9 +441,12 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
     };
 
     try {
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
       readLoop:
       while (true) {
-        const { done, value } = await reader.read();
+        // Do not rely on the WebView rejecting a suspended read after Stop.
+        const { done, value } = await Promise.race([reader.read(), aborted]);
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         let separatorIndex = buffer.indexOf("\n\n");
@@ -443,22 +455,17 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
           buffer = buffer.slice(separatorIndex + 2);
           const reachedFinalEvent = flushEvent(eventChunk);
           if (reachedFinalEvent) {
-            // The final SSE payload completes the application protocol. Some
-            // WebView stream implementations delay reader.cancel(), so cleanup
-            // must not hold the caller in its Stop state after the result exists.
-            void reader.cancel().catch(() => undefined);
             break readLoop;
           }
           separatorIndex = buffer.indexOf("\n\n");
         }
       }
     } catch (err) {
-      try {
-        await reader.cancel();
-      } catch {
-        /* ignore */
-      }
       throw normalizeError(err);
+    } finally {
+      options.signal?.removeEventListener("abort", onAbort);
+      // Stream cleanup must never hold the composer in its Stop state.
+      void reader.cancel().catch(() => undefined);
     }
     if (!finalPayload) {
       throw new Error("Streaming reply finished without a final payload.");
@@ -549,8 +556,30 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
         body: JSON.stringify({}),
       });
     },
-    async submitReplyStream(sessionId, message, onChunk, userRequestedFinish = false, signal?: AbortSignal) {
-      return streamReply(sessionId, message, onChunk, userRequestedFinish, signal);
+    async uploadAttachment(sessionId: string, file: Blob, fileName: string) {
+      const formData = new FormData();
+      formData.set("file", file, fileName);
+      const response = await callHttp<{ attachment?: ChatAttachment }>(
+        `/api/v1/sessions/${encodeURIComponent(sessionId)}/attachments`,
+        { method: "POST", body: formData },
+      );
+      if (!response.attachment) throw new Error("Upload attachment response was missing the attachment.");
+      return response.attachment;
+    },
+    async readAttachment(sessionId: string, attachmentId: string) {
+      const runtime = await getRuntime();
+      const path = `/api/v1/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}/content`;
+      let response: Response;
+      try {
+        response = await fetch(buildUrl(runtime.base_url, path));
+      } catch (error) {
+        throw normalizeError(error);
+      }
+      if (!response.ok) throw new Error(`Attachment could not be loaded (HTTP ${response.status}).`);
+      return response.blob();
+    },
+    async submitReplyStream(sessionId, message, onChunk, options?: SubmitReplyOptions) {
+      return streamReply(sessionId, message, onChunk, options);
     },
     async requestFinish(sessionId: string) {
       return callHttp<InterviewTurnResult>(`/api/v1/sessions/${encodeURIComponent(sessionId)}/interview:finish`, {
