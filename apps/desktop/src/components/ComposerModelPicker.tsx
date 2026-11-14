@@ -257,7 +257,7 @@ export function ComposerModelPicker({
                             disabled={saving}
                             onClick={() => void persist({ model: model.id })}
                             className={cn(
-                              "w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-meta transition-colors",
+                              "w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-meta transition-colors",
                               selected
                                 ? "bg-accent-amber/10 text-accent-amber"
                                 : "text-primary hover:bg-surface-container-high/80",
@@ -284,7 +284,7 @@ export function ComposerModelPicker({
                           disabled={saving}
                           onClick={() => void persist({ model: modelId })}
                           className={cn(
-                            "w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-meta transition-colors",
+                            "w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-meta transition-colors",
                             selected
                               ? "bg-accent-amber/10 text-accent-amber"
                               : "text-primary hover:bg-surface-container-high/80",
