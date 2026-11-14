@@ -915,6 +915,28 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(speaker_reference["audio_path"], reference.audio_path)
         self.assertEqual(speaker_reference["reference_text"], reference.reference_text)
 
+    def test_voice_preview_with_deleted_reference_fails_with_choose_another_voice(self) -> None:
+        reference = self.create_speaker_reference()
+        self.speaker_reference_store.delete_reference(reference.speaker_reference_id)
+
+        result = self.context.start_render_voice_preview(
+            VoiceRenderSettings(preview_text="试听。"),
+            speaker_reference_id=reference.speaker_reference_id,
+        )
+
+        task_id = str(result["data"]["task_id"])
+        deadline = time.time() + 2.0
+        state: dict[str, object] | None = None
+        while time.time() < deadline:
+            loaded_state = self.request_state_store.load(task_id)
+            if isinstance(loaded_state, dict) and str(loaded_state.get("phase")) == "failed":
+                state = loaded_state
+                break
+            time.sleep(0.02)
+
+        self.assertIsNotNone(state)
+        self.assertIn("was deleted. Choose another voice", str(state["message"]))
+
     def test_speaker_references_route_lists_builtins(self) -> None:
         status, _, payload = self.request_json("GET", "/api/v1/speaker-references")
 

@@ -34,6 +34,7 @@ from app.api.serializers import (
     voice_settings_from_payload,
 )
 from app.config import AppConfig
+from app.domain.speaker_reference import DELETED_VOICE_MESSAGE
 from app.domain.artifact import ArtifactRecord
 from app.domain.attachment import ATTACHMENT_MAX_BYTES
 from app.domain.episode_source import (
@@ -578,7 +579,18 @@ class RuntimeContext:
             try:
                 speaker_reference: dict[str, object] | None = None
                 if speaker_reference_id.strip():
-                    speaker_reference = self.get_speaker_reference_store().get_reference(speaker_reference_id).to_dict()
+                    wanted = speaker_reference_id.strip()
+                    match = next(
+                        (
+                            item
+                            for item in self.get_speaker_reference_store().list_references()
+                            if item.speaker_reference_id == wanted
+                        ),
+                        None,
+                    )
+                    if match is None:
+                        raise ValueError(DELETED_VOICE_MESSAGE)
+                    speaker_reference = match.to_dict()
                 return self.audio_rendering.render_voice_preview_with_cancellation(
                     settings,
                     override_provider=override_provider,

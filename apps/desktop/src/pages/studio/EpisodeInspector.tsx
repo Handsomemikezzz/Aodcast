@@ -158,7 +158,7 @@ export function EpisodeInspector({
 
   const missing = [
     !readiness.scriptReady && { label: "Script has issues to fix", action: null },
-    !readiness.voiceReady && { label: voiceDeleted ? DELETED_VOICE_MESSAGE : "No voice selected", action: { label: "Choose voice", run: () => setVoicePickerOpen(true) } },
+    !readiness.voiceReady && { label: voiceDeleted ? "Voice was deleted" : "No voice selected", action: { label: "Choose voice", run: () => setVoicePickerOpen(true) } },
     !readiness.ttsReady && {
       label: cloning
         ? "Voice cloning model isn't ready"
