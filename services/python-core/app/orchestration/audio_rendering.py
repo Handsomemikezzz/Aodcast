@@ -355,7 +355,7 @@ class AudioRenderingService:
         return VoicePreviewResult(
             provider=response.provider_name,
             model=response.model_name,
-            audio_path=str(audio_path),
+            audio_path=self.artifact_store.stored_path(audio_path),
             settings=normalized,
         )
 
@@ -468,18 +468,15 @@ class AudioRenderingService:
     def _validate_reference_audio_path(self, path: str) -> Path:
         if not path.strip():
             raise ValueError("Speaker Reference has no audio path.")
-        data_dir = self.artifact_store.exports_dir.parent.resolve()
-        target = Path(path).expanduser().resolve()
+        target = self.artifact_store.resolve_stored(path)
         if not target.is_file():
             raise ValueError(DELETED_VOICE_MESSAGE)
-        if not _is_allowed_speaker_reference_path(target, data_dir):
-            raise ValueError("Speaker reference audio must be inside the app data directory or packaged reference assets.")
         return target
 
     def _delete_artifact_file(self, path: str) -> None:
         if not path.strip():
             return
-        self.artifact_store.delete_export_file(Path(path))
+        self.artifact_store.delete_export_file(path)
 
     def _publish_render_result(
         self,
@@ -542,17 +539,3 @@ def _resolve_post_render_state(previous_state: SessionState) -> SessionState:
 def _validate_local_settings(settings: VoiceRenderSettings) -> None:
     if settings.speed != 1.0 or settings.style_id != "natural" or settings.audio_format != "wav":
         raise ValueError("The local speech service supports natural delivery, normal speed, and WAV output only.")
-
-
-def _is_allowed_speaker_reference_path(target: Path, data_dir: Path) -> bool:
-    try:
-        target.relative_to(data_dir)
-        return True
-    except ValueError:
-        pass
-    assets_dir = Path(__file__).resolve().parents[1] / "assets" / "speaker-references"
-    try:
-        target.relative_to(assets_dir)
-        return True
-    except ValueError:
-        return False

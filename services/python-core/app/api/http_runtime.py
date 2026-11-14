@@ -65,7 +65,7 @@ from app.providers.local_speech.capabilities import detect_local_speech_capabili
 from app.runtime.long_task_state import LongTaskStateManager
 from app.runtime.request_state_store import RequestStateStore
 from app.runtime.task_cancellation import TaskCancellationRequested
-from app.storage.artifact_store import ArtifactStore
+from app.storage.artifact_store import BUILTIN_REFERENCE_ASSETS_DIR, ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 from app.storage.speaker_reference_store import SpeakerReferenceStore
@@ -1604,7 +1604,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
 
             # Check safety
             exports_dir = self.context.artifact_store.exports_dir.resolve()
-            source_path = Path(audio_path_str).resolve(strict=True)
+            source_path = self.context.artifact_store.resolve_stored(audio_path_str).resolve(strict=True)
             if not _path_is_within(source_path, exports_dir):
                 raise ValueError("Source audio file must be inside the exports directory.")
             if not source_path.is_file():
@@ -1629,7 +1629,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             # Keep the delivery file next to the WAV take and overwrite on repeat export.
             target_path = source_path.parent / output_filename
             if target_path.resolve() == source_path:
-                audio_url = f"/api/v1/artifacts/audio?path={quote(str(source_path))}"
+                audio_url = f"/api/v1/artifacts/audio?path={quote(self.context.artifact_store.stored_path(source_path))}"
                 self._send_bridge_envelope(
                     success_envelope(
                         {
@@ -1697,7 +1697,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                                 "Please install FFmpeg to enable audio compression."
                             )
 
-            audio_url = f"/api/v1/artifacts/audio?path={quote(str(target_path))}"
+            audio_url = f"/api/v1/artifacts/audio?path={quote(self.context.artifact_store.stored_path(target_path))}"
 
             self._send_bridge_envelope(
                 success_envelope(
@@ -2062,8 +2062,8 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("Query parameter 'path' is required.")
 
         exports_dir = self.context.artifact_store.exports_dir.resolve()
-        builtin_reference_dir = Path(__file__).resolve().parents[1] / "assets" / "speaker-references"
-        audio_path = Path(raw_path).resolve(strict=True)
+        builtin_reference_dir = BUILTIN_REFERENCE_ASSETS_DIR.resolve()
+        audio_path = self.context.artifact_store.resolve_stored(raw_path).resolve(strict=True)
         if not _path_is_within(audio_path, exports_dir) and not _path_is_within(audio_path, builtin_reference_dir):
             raise ValueError("Artifact audio path must be inside the exports directory or packaged speaker reference assets.")
         if not audio_path.is_file():
@@ -2085,7 +2085,7 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
         raw_path = (query.get("path") or [""])[-1].strip()
         if not raw_path:
             raise ValueError("Query parameter 'path' is required.")
-        target = Path(raw_path).expanduser().resolve()
+        target = self.context.artifact_store.resolve_stored(raw_path)
         previews_dir = (self.context.artifact_store.exports_dir / "_previews").resolve()
         if not _path_is_within(target, previews_dir):
             raise ValueError(

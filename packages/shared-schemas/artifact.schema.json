@@ -6,8 +6,8 @@
   "required": ["session_id", "transcript_path", "audio_path", "provider", "created_at"],
   "properties": {
     "session_id": { "type": "string" },
-    "transcript_path": { "type": "string" },
-    "audio_path": { "type": "string" },
+    "transcript_path": { "type": "string", "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
+    "audio_path": { "type": "string", "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
     "provider": { "type": "string" },
     "created_at": { "type": "string", "format": "date-time" },
     "final_take_id": { "type": "string" },
@@ -51,8 +51,8 @@
         "script_id": { "type": "string" },
         "speech_plan_id": { "type": "string" },
         "render_id": { "type": "string" },
-        "audio_path": { "type": "string" },
-        "transcript_path": { "type": "string" },
+        "audio_path": { "type": "string", "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
+        "transcript_path": { "type": "string", "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
         "provider": { "type": "string" },
         "model": { "type": "string" },
         "voice_id": { "type": "string" },
@@ -69,8 +69,8 @@
     "scriptArtifact": {
       "type": "object",
       "properties": {
-        "transcript_path": { "type": "string" },
-        "audio_path": { "type": "string" },
+        "transcript_path": { "type": "string", "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
+        "audio_path": { "type": "string", "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
         "provider": { "type": "string" },
         "final_take_id": { "type": "string" },
         "voice_settings": { "$ref": "#/$defs/voiceSettings" },

@@ -260,7 +260,7 @@ class HttpRuntimeTests(unittest.TestCase):
 
     def test_artifact_audio_route_streams_export_audio_for_browser_playback(self) -> None:
         audio_path = _write_export(self.artifact_store, "session-a", "audio.wav", b"RIFF-audio-bytes")
-        encoded_path = urllib_parse.quote(str(audio_path), safe="")
+        encoded_path = urllib_parse.quote(self.artifact_store.stored_path(audio_path), safe="")
 
         status, headers, body = self.request_bytes(
             "GET",
@@ -276,7 +276,7 @@ class HttpRuntimeTests(unittest.TestCase):
     def test_artifact_audio_route_serves_mp4_as_audio_mp4(self) -> None:
         audio_path = self.artifact_store.exports_dir / "sample.mp4"
         audio_path.write_bytes(b"fake-mp4-audio")
-        encoded_path = urllib_parse.quote(str(audio_path), safe="")
+        encoded_path = urllib_parse.quote(self.artifact_store.stored_path(audio_path), safe="")
 
         status, headers, body = self.request_bytes(
             "GET",
@@ -291,7 +291,7 @@ class HttpRuntimeTests(unittest.TestCase):
 
     def test_delete_artifact_audio_route_removes_preview_file(self) -> None:
         audio_path = self.artifact_store.write_preview_audio(b"preview", "wav")
-        encoded_path = urllib_parse.quote(str(audio_path), safe="")
+        encoded_path = urllib_parse.quote(self.artifact_store.stored_path(audio_path), safe="")
 
         status, _, payload = self.request_json(
             "DELETE",
@@ -311,7 +311,7 @@ class HttpRuntimeTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["data"]["deleted"])
-        self.assertFalse(Path(reference.audio_path).exists())
+        self.assertFalse(self.artifact_store.resolve_stored(reference.audio_path).exists())
         reloaded = self.store.load_project_for_script(session_id, script_id)
         assert reloaded.artifact is not None
         self.assertEqual(
@@ -337,7 +337,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(payload["ok"])
         self.assertIn("Only disposable", payload["error"]["message"])
-        self.assertTrue(Path(reference.audio_path).is_file())
+        self.assertTrue(self.artifact_store.resolve_stored(reference.audio_path).is_file())
         reloaded = self.store.load_project_for_script(session_id, script_id)
         assert reloaded.artifact is not None
         self.assertEqual(
@@ -351,8 +351,8 @@ class HttpRuntimeTests(unittest.TestCase):
         assert project.artifact is not None
         audio_path = _write_export(self.artifact_store, session_id, "audio.wav", b"audio")
         transcript_path = _write_export(self.artifact_store, session_id, "transcript.txt", b"transcript\n")
-        project.artifact.audio_path = str(audio_path)
-        project.artifact.transcript_path = str(transcript_path)
+        project.artifact.audio_path = self.artifact_store.stored_path(audio_path)
+        project.artifact.transcript_path = self.artifact_store.stored_path(transcript_path)
         project.artifact.provider = "openai_compatible"
         self.store.save_project(project)
 
@@ -822,7 +822,7 @@ class HttpRuntimeTests(unittest.TestCase):
             assert isinstance(task_state, dict)
             self.assertEqual(task_state["phase"], "succeeded")
             self.assertEqual(task_state["settings"]["preview_text"], "自定义试音文本。")
-            self.assertTrue(Path(str(task_state["audio_path"])).exists())
+            self.assertTrue(self.artifact_store.resolve_stored(str(task_state["audio_path"])).exists())
 
 
     def test_voice_preview_route_passes_provider_override_to_runtime_context(self) -> None:
@@ -946,7 +946,7 @@ class HttpRuntimeTests(unittest.TestCase):
         references = payload["data"]["speaker_references"]
         built_ins = [reference for reference in references if reference["source"] == "built_in"]
         self.assertEqual(len(built_ins), 2)
-        self.assertTrue(all(Path(reference["audio_path"]).exists() for reference in built_ins))
+        self.assertTrue(all(self.artifact_store.resolve_stored(reference["audio_path"]).exists() for reference in built_ins))
 
     def test_create_speaker_reference_accepts_single_multipart_request(self) -> None:
         status, _, payload = self.request_multipart(
@@ -969,7 +969,7 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertEqual(reference["source"], "user_saved")
         self.assertEqual(reference["reference_text"], "这是一段用于克隆音色的参考文本。")
         self.assertEqual(reference["duration_ms"], 2000)
-        self.assertTrue(Path(reference["audio_path"]).exists())
+        self.assertTrue(self.artifact_store.resolve_stored(reference["audio_path"]).exists())
 
     def test_patch_speaker_reference_updates_metadata(self) -> None:
         reference = self.create_speaker_reference(name="待编辑音色", reference_text="原始参考文本。")
@@ -1300,7 +1300,7 @@ class HttpRuntimeTests(unittest.TestCase):
             "POST",
             "/api/v1/artifacts/audio/export",
             body={
-                "audio_path": str(audio_path),
+                "audio_path": self.artifact_store.stored_path(audio_path),
                 "format": "wav",
                 "filename": "my-podcast-episode",
             },
@@ -1321,7 +1321,7 @@ class HttpRuntimeTests(unittest.TestCase):
                 "POST",
                 "/api/v1/artifacts/audio/export",
                 body={
-                    "audio_path": str(audio_path),
+                    "audio_path": self.artifact_store.stored_path(audio_path),
                     "format": "mp3",
                     "bitrate": "192k",
                 },
@@ -1342,7 +1342,7 @@ class HttpRuntimeTests(unittest.TestCase):
             "POST",
             "/api/v1/artifacts/audio/export",
             body={
-                "audio_path": str(audio_path),
+                "audio_path": self.artifact_store.stored_path(audio_path),
                 "format": "flac",
             },
             token="runtime-token",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +22,11 @@ from app.storage.artifact_store import ArtifactStore
 from app.storage.config_store import ConfigStore
 from app.storage.project_store import ProjectStore
 from tests.tts_test_fakes import SineWaveTTSProvider
+
+
+def data_file(temp: tempfile.TemporaryDirectory, stored: str) -> Path:
+    """Absolute file for a data-dir-relative stored path."""
+    return (Path(temp.name) / ".local-data" / stored).resolve()
 
 
 class PodcastRenderingTests(unittest.TestCase):
@@ -71,14 +77,15 @@ class PodcastRenderingTests(unittest.TestCase):
         script_id: str,
     ) -> dict[str, str]:
         audio_bytes = synthesize_sine_wave_bytes(2, frequency=330.0)
-        audio_path = root / "speaker-reference.wav"
+        audio_path = root / ".local-data" / "exports" / "_speaker_references" / "speaker-reference.wav"
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
         audio_path.write_bytes(audio_bytes)
         audio_hash = sha256_bytes(audio_bytes)
         reference_text = "这是原始说话人的准确参考文本。"
         language = "zh"
         reference = {
             "speaker_reference_id": "speaker-test",
-            "audio_path": str(audio_path),
+            "audio_path": "exports/_speaker_references/speaker-reference.wav",
             "audio_hash": audio_hash,
             "reference_text": reference_text,
             "language": language,
@@ -104,7 +111,8 @@ class PodcastRenderingTests(unittest.TestCase):
         result = service.render_audio(session_id, script_id=script_id, settings=VoiceRenderSettings())
         loaded = store.load_project_for_script(session_id, script_id)
 
-        self.assertTrue(Path(result.audio_path).is_file())
+        self.assertFalse(Path(result.audio_path).is_absolute())
+        self.assertTrue(data_file(temp, result.audio_path).is_file())
         self.assertIsNotNone(loaded.speech_plan)
         self.assertIsNotNone(loaded.render_manifest)
         assert loaded.artifact and loaded.speech_plan and loaded.render_manifest
@@ -160,7 +168,54 @@ class PodcastRenderingTests(unittest.TestCase):
                 before.render_manifest.render_id,
             ).is_file()
         )
-        self.assertTrue(all(Path(item.audio_path).is_file() for item in before.render_manifest.segments))
+        self.assertTrue(all(data_file(temp, item.audio_path).is_file() for item in before.render_manifest.segments))
+
+    def test_stored_paths_are_relative_and_survive_moving_the_data_dir(self) -> None:
+        temp, store, configs, _, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        session_id, script_id = self.seed_project(store)
+        self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
+        service.render_audio(
+            session_id,
+            script_id=script_id,
+            override_provider="local_http",
+            override_model=DEFAULT_LOCAL_CLONE_MODEL,
+            settings=VoiceRenderSettings(),
+            require_speaker_reference=True,
+        )
+        before = store.load_project_for_script(session_id, script_id)
+        assert before.speech_plan and before.render_manifest
+        stored = [
+            before.render_manifest.output.audio_path,
+            before.render_manifest.output.transcript_path,
+            before.render_manifest.speaker_reference["audio_path"],
+            before.artifact.audio_path,
+            *(item.audio_path for item in before.render_manifest.segments),
+        ]
+        self.assertTrue(all(not Path(item).is_absolute() for item in stored))
+
+        moved = tempfile.TemporaryDirectory()
+        self.addCleanup(moved.cleanup)
+        new_data_dir = Path(moved.name) / ".local-data"
+        shutil.copytree(Path(temp.name) / ".local-data", new_data_dir)
+        shutil.rmtree(Path(temp.name) / ".local-data")  # nothing may still read the old location
+
+        moved_store = ProjectStore(new_data_dir)
+        moved_artifacts = ArtifactStore(new_data_dir)
+        moved_service = AudioRenderingService(moved_store, ConfigStore(new_data_dir / "config"), moved_artifacts)
+        moved_service.regenerate_audio_window_with_cancellation(
+            session_id,
+            script_id=script_id,
+            target_segment_id=before.speech_plan.segments[2].segment_id,
+            expected_plan_id=before.speech_plan.plan_id,
+            expected_render_id=before.render_manifest.render_id,
+        )
+        after = moved_store.load_project_for_script(session_id, script_id)
+        assert after.render_manifest
+        self.assertTrue(moved_artifacts.resolve_stored(after.render_manifest.output.audio_path).is_file())
+        self.assertTrue(
+            str(moved_artifacts.resolve_stored(after.render_manifest.output.audio_path)).startswith(str(new_data_dir.resolve()))
+        )
 
     def test_script_edit_keeps_old_audio_visible_but_blocks_local_regeneration(self) -> None:
         temp, store, _, _, service = self.build_environment()
@@ -175,7 +230,7 @@ class PodcastRenderingTests(unittest.TestCase):
         stale = store.load_project_for_script(session_id, script_id)
         assert stale.speech_plan and stale.render_manifest
         self.assertFalse(stale.speech_plan.is_current_for(stale.script.final))
-        self.assertTrue(Path(stale.render_manifest.output.audio_path).is_file())
+        self.assertTrue(data_file(temp, stale.render_manifest.output.audio_path).is_file())
         with self.assertRaisesRegex(ValueError, "script changed"):
             service.regenerate_audio_window_with_cancellation(
                 session_id,
@@ -243,7 +298,7 @@ class PodcastRenderingTests(unittest.TestCase):
         before = store.load_project_for_script(session_id, script_id)
         assert before.speech_plan and before.render_manifest
         parent_render_id = before.render_manifest.render_id
-        Path(before.render_manifest.segments[0].audio_path).write_bytes(
+        data_file(temp, before.render_manifest.segments[0].audio_path).write_bytes(
             synthesize_sine_wave_bytes(1, frequency=880.0)
         )
 
@@ -354,7 +409,7 @@ class PodcastRenderingTests(unittest.TestCase):
         self.assertEqual(result.model, DEFAULT_LOCAL_CLONE_MODEL)
         self.assertGreater(len(requests), 1)
         for current in requests:
-            self.assertEqual(current.reference_audio_path, reference["audio_path"])
+            self.assertEqual(current.reference_audio_path, str(data_file(temp, reference["audio_path"])))
             self.assertEqual(current.reference_text, reference["reference_text"])
             self.assertEqual(current.context_audio_path, "")
             self.assertEqual(current.style_prompt, "")
@@ -398,14 +453,14 @@ class PodcastRenderingTests(unittest.TestCase):
         after = store.load_project_for_script(session_id, script_id).render_manifest
         assert after
         self.assertEqual(after.pipeline[0].model, LOCAL_CLONE_MODELS[-1])
-        self.assertTrue(all(r.reference_audio_path == reference["audio_path"] for r in requests[before:]))
+        self.assertTrue(all(r.reference_audio_path == str(data_file(temp, reference["audio_path"])) for r in requests[before:]))
 
     def test_render_with_deleted_reference_audio_fails_with_choose_another_voice(self) -> None:
         temp, store, _, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
         reference = self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
-        Path(reference["audio_path"]).unlink()
+        data_file(temp, reference["audio_path"]).unlink()
         requests = self.capture_clone_requests()
         with self.assertRaisesRegex(ValueError, "was deleted. Choose another voice"):
             service.render_audio(
@@ -442,7 +497,7 @@ class PodcastRenderingTests(unittest.TestCase):
         rendered = service.render_audio(session_id, script_id=script_id, settings=VoiceRenderSettings())
         self.assertIsNone(rendered.project.render_manifest.speaker_reference)
         self.assertIsNone(store.load_project_for_script(session_id, script_id).artifact.speaker_reference)
-        self.assertTrue(Path(reference["audio_path"]).is_file())
+        self.assertTrue(data_file(temp, reference["audio_path"]).is_file())
 
     def test_local_override_uses_service_url_instead_of_saved_cloud_url(self) -> None:
         temp, store, configs, _, service = self.build_environment()

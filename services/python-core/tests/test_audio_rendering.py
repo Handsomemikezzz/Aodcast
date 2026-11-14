@@ -56,7 +56,7 @@ class AudioRenderingTests(unittest.TestCase):
         return session.session_id, script.script_id
 
     def test_final_render_writes_manifest_and_final_wav_take(self) -> None:
-        temp, store, _, _, service = self.build_environment()
+        temp, store, _, artifacts, service = self.build_environment()
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
 
@@ -64,7 +64,8 @@ class AudioRenderingTests(unittest.TestCase):
         loaded = store.load_project_for_script(session_id, script_id)
 
         self.assertEqual(result.provider, "test_sine")
-        self.assertTrue(Path(result.audio_path).is_file())
+        self.assertFalse(Path(result.audio_path).is_absolute())
+        self.assertTrue(artifacts.resolve_stored(result.audio_path).is_file())
         self.assertEqual(loaded.session.state, SessionState.COMPLETED)
         self.assertIsNotNone(loaded.speech_plan)
         self.assertIsNotNone(loaded.render_manifest)
@@ -87,7 +88,7 @@ class AudioRenderingTests(unittest.TestCase):
         self.assertIsNone(loaded.render_manifest)
 
     def test_voice_preview_is_temporary_and_does_not_change_final_settings(self) -> None:
-        temp, store, _, _, service = self.build_environment()
+        temp, store, _, artifacts, service = self.build_environment()
         self.addCleanup(temp.cleanup)
         session_id, script_id = self.seed_project(store)
         before = store.load_project_for_script(session_id, script_id)
@@ -97,7 +98,7 @@ class AudioRenderingTests(unittest.TestCase):
         )
         after = store.load_project_for_script(session_id, script_id)
 
-        self.assertTrue(Path(preview.audio_path).is_file())
+        self.assertTrue(artifacts.resolve_stored(preview.audio_path).is_file())
         assert before.artifact and after.artifact
         self.assertEqual(before.artifact.voice_settings, after.artifact.voice_settings)
         self.assertEqual(after.artifact.audio_path, "")

@@ -236,7 +236,7 @@ class PodcastRenderingPipeline:
                         position=segment.position,
                         text_hash=segment.text_hash,
                         segment_hash=segment.segment_hash,
-                        audio_path=str(audio_path),
+                        audio_path=self.artifact_store.stored_path(audio_path),
                         audio_hash=sha256_bytes(normalized.audio_bytes),
                         duration_ms=normalized.duration_ms,
                         generated_by_render_id=render_id,
@@ -274,9 +274,9 @@ class PodcastRenderingPipeline:
                 segments=tuple(rendered),
                 assembly=assembler.spec,
                 output=RenderOutput(
-                    audio_path=str(audio_path),
+                    audio_path=self.artifact_store.stored_path(audio_path),
                     audio_hash=sha256_bytes(master.audio_bytes),
-                    transcript_path=str(transcript_path),
+                    transcript_path=self.artifact_store.stored_path(transcript_path),
                     duration_ms=master.duration_ms,
                 ),
             )
@@ -296,8 +296,8 @@ class PodcastRenderingPipeline:
             script_id=project.script.script_id,
             speech_plan_id=plan.plan_id,
             render_id=render_id,
-            audio_path=str(audio_path),
-            transcript_path=str(transcript_path),
+            audio_path=self.artifact_store.stored_path(audio_path),
+            transcript_path=self.artifact_store.stored_path(transcript_path),
             provider=provider_name,
             model=model_name,
             voice_id=settings.voice_id,
@@ -328,8 +328,8 @@ class PodcastRenderingPipeline:
             project=project,
             provider=provider_name,
             model=model_name,
-            audio_path=str(audio_path),
-            transcript_path=str(transcript_path),
+            audio_path=take.audio_path,
+            transcript_path=take.transcript_path,
             affected_segment_ids=affected_ids,
         )
 
@@ -346,7 +346,7 @@ class PodcastRenderingPipeline:
     ) -> TTSGenerationResponse:
         provider_text, provider_breaks = _apply_pronunciations(segment)
         style_prompt = "" if provider_name == "local_http" else _delivery_prompt(segment, settings.style_prompt)
-        reference_audio = speaker_reference["audio_path"] if speaker_reference else ""
+        reference_audio = str(self.artifact_store.resolve_stored(speaker_reference["audio_path"])) if speaker_reference else ""
         reference_text = speaker_reference["reference_text"] if speaker_reference else ""
         if provider_name == "local_http" and provider_breaks:
             # Natural punctuation approximates editorial pauses; exact durations
@@ -449,17 +449,17 @@ class PodcastRenderingPipeline:
             channels=1,
         )
 
-    @staticmethod
-    def _speaker_reference_snapshot(payload: dict[str, Any] | None) -> dict[str, str] | None:
+    def _speaker_reference_snapshot(self, payload: dict[str, Any] | None) -> dict[str, str] | None:
         if not payload:
             return None
         required = ("speaker_reference_id", "reference_hash", "audio_path", "audio_hash", "reference_text", "language")
         snapshot = {key: str(payload.get(key) or "") for key in required}
         if any(not value for value in snapshot.values()):
             raise ValueError("Selected speaker reference is incomplete. Select it again in Voice Studio.")
-        if not Path(snapshot["audio_path"]).is_file():
+        audio_file = self.artifact_store.resolve_stored(snapshot["audio_path"])
+        if not audio_file.is_file():
             raise ValueError(DELETED_VOICE_MESSAGE)
-        audio_hash = sha256_bytes(Path(snapshot["audio_path"]).read_bytes())
+        audio_hash = sha256_bytes(audio_file.read_bytes())
         if audio_hash != snapshot["audio_hash"]:
             raise ValueError("Selected speaker reference audio changed after it was saved. Select it again in Voice Studio.")
         reference_hash = sha256_json(
@@ -473,9 +473,8 @@ class PodcastRenderingPipeline:
             raise ValueError("Selected speaker reference metadata does not match its hash.")
         return snapshot
 
-    @staticmethod
-    def _verified_segment_audio(segment: RenderedSegment) -> bytes:
-        path = Path(segment.audio_path)
+    def _verified_segment_audio(self, segment: RenderedSegment) -> bytes:
+        path = self.artifact_store.resolve_stored(segment.audio_path)
         if not path.is_file():
             raise ValueError(f"Rendered segment audio is missing: {segment.segment_id}")
         audio_bytes = path.read_bytes()

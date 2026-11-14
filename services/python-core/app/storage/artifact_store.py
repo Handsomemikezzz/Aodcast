@@ -4,9 +4,45 @@ from pathlib import Path
 from uuid import uuid4
 
 
+BUILTIN_REFERENCE_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "speaker-references"
+_BUILTIN_PREFIX = "builtin:"
+
+
 class ArtifactStore:
+    """Owns file locations. Persisted paths are POSIX paths relative to the data dir
+    (packaged reference assets are `builtin:<file>`); they are resolved only at the point of use."""
+
     def __init__(self, data_dir: Path) -> None:
+        self.data_dir = data_dir
         self.exports_dir = data_dir / "exports"
+
+    def stored_path(self, path: str | Path) -> str:
+        """Persistent form of a file inside the data dir or the packaged reference assets."""
+        target = Path(path).resolve()
+        try:
+            return _BUILTIN_PREFIX + target.relative_to(BUILTIN_REFERENCE_ASSETS_DIR.resolve()).as_posix()
+        except ValueError:
+            pass
+        try:
+            return target.relative_to(self.data_dir.resolve()).as_posix()
+        except ValueError as exc:
+            raise ValueError("Path must be inside the app data directory or packaged reference assets.") from exc
+
+    def resolve_stored(self, stored: str | Path) -> Path:
+        """Absolute path for a persisted path; refuses anything outside the data dir or packaged assets."""
+        text = str(stored).strip()
+        if not text:
+            raise ValueError("Path is empty.")
+        if text.startswith(_BUILTIN_PREFIX):
+            base, relative = BUILTIN_REFERENCE_ASSETS_DIR.resolve(), text[len(_BUILTIN_PREFIX):]
+        else:
+            base, relative = self.data_dir.resolve(), text
+        target = (base / relative).resolve()
+        try:
+            target.relative_to(base)
+        except ValueError as exc:
+            raise ValueError("Path must be inside the app data directory or packaged reference assets.") from exc
+        return target
 
     def bootstrap(self) -> None:
         self.exports_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +95,7 @@ class ArtifactStore:
 
     def delete_export_file(self, path: str | Path) -> bool:
         exports_dir = self.exports_dir.resolve()
-        target = Path(path).expanduser().resolve()
+        target = self.resolve_stored(path)
         try:
             target.relative_to(exports_dir)
         except ValueError as exc:

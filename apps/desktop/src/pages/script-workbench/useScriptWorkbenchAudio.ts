@@ -547,7 +547,9 @@ export function useScriptWorkbenchAudio({
   const handleRevealInFinder = async () => {
     if (!audioPath) return;
     try {
-      await revealInFinder(audioPath);
+      // Stored paths are data-dir-relative; a same-format export resolves the absolute file without copying.
+      const resolved = await bridge.exportPodcastAudio(audioPath, "wav", EXPORT_MP3_BITRATE, "");
+      await revealInFinder(resolved.audio_path);
     } catch (err: unknown) {
       setAudioError(getErrorMessage(err, "Failed to reveal audio in Finder."));
     }

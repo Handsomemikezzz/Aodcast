@@ -24,7 +24,7 @@
     "speaker_reference_id": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1 },
     "source": { "type": "string", "enum": ["built_in", "user_saved"] },
-    "audio_path": { "type": "string", "minLength": 1 },
+    "audio_path": { "type": "string", "minLength": 1, "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
     "audio_hash": { "$ref": "#/$defs/sha256" },
     "audio_format": { "type": "string", "minLength": 1 },
     "duration_ms": { "type": "integer", "minimum": 1 },

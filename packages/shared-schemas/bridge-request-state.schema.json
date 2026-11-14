@@ -25,7 +25,8 @@
       "minLength": 1
     },
     "audio_path": {
-      "type": "string"
+      "type": "string",
+      "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use."
     },
     "provider": {
       "type": "string"

@@ -84,7 +84,7 @@
       "properties": {
         "speaker_reference_id": { "type": "string", "minLength": 1 },
         "reference_hash": { "$ref": "#/$defs/sha256" },
-        "audio_path": { "type": "string", "minLength": 1 },
+        "audio_path": { "type": "string", "minLength": 1, "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
         "audio_hash": { "$ref": "#/$defs/sha256" },
         "reference_text": { "type": "string", "minLength": 1 },
         "language": { "type": "string", "minLength": 1 }
@@ -137,7 +137,7 @@
         "position": { "type": "integer", "minimum": 0 },
         "text_hash": { "$ref": "#/$defs/sha256" },
         "segment_hash": { "$ref": "#/$defs/sha256" },
-        "audio_path": { "type": "string", "minLength": 1 },
+        "audio_path": { "type": "string", "minLength": 1, "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
         "audio_hash": { "$ref": "#/$defs/sha256" },
         "duration_ms": { "type": "integer", "minimum": 1 },
         "generated_by_render_id": { "type": "string", "minLength": 1 },
@@ -186,9 +186,9 @@
       "type": "object",
       "required": ["audio_path", "audio_hash", "transcript_path", "duration_ms"],
       "properties": {
-        "audio_path": { "type": "string", "minLength": 1 },
+        "audio_path": { "type": "string", "minLength": 1, "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
         "audio_hash": { "$ref": "#/$defs/sha256" },
-        "transcript_path": { "type": "string", "minLength": 1 },
+        "transcript_path": { "type": "string", "minLength": 1, "description": "POSIX path relative to the app data dir (or builtin:<file> for packaged reference assets); resolve at use." },
         "duration_ms": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false

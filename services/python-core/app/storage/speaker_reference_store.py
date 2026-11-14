@@ -9,11 +9,10 @@ from uuid import uuid4
 
 from app.domain.common import sha256_bytes, utc_now_iso
 from app.domain.speaker_reference import SpeakerReference
-from app.storage.artifact_store import ArtifactStore
+from app.storage.artifact_store import BUILTIN_REFERENCE_ASSETS_DIR, ArtifactStore
 
 
 BUILTIN_REFERENCE_TEXT = "Hello, welcome to use Aodcast. What shall we talk about today?"
-BUILTIN_REFERENCE_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "speaker-references"
 MAX_REFERENCE_AUDIO_BYTES = 100 * 1024 * 1024
 MAX_REFERENCE_AUDIO_SECONDS = 10 * 60.0
 REFERENCE_SAMPLE_RATE_HZ = 48_000
@@ -110,7 +109,7 @@ class SpeakerReferenceStore:
         current = self.get_reference(reference_id)
         if current.source != "user_saved":
             raise ValueError("Only user-saved speaker references can be updated.")
-        target = Path(current.audio_path)
+        target = self.artifact_store.resolve_stored(current.audio_path)
         if source_audio_path is not None:
             source = self._validate_source_audio(source_audio_path)
             target = self._write_canonical_audio_blob(
@@ -143,7 +142,7 @@ class SpeakerReferenceStore:
             reference_id=current.speaker_reference_id,
             name=current.name,
             source=current.source,
-            audio_path=Path(current.audio_path),
+            audio_path=self.artifact_store.resolve_stored(current.audio_path),
             reference_text=current.reference_text,
             language=current.language,
             description=current.description,
@@ -203,7 +202,7 @@ class SpeakerReferenceStore:
             speaker_reference_id=reference_id,
             name=name,
             source=source,
-            audio_path=str(audio_path.resolve()),
+            audio_path=self.artifact_store.stored_path(audio_path),
             audio_hash=sha256_bytes(audio_bytes),
             audio_format=audio_path.suffix.lower().lstrip(".") or "wav",
             duration_ms=self._probe_duration_ms(audio_path),

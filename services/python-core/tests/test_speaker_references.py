@@ -36,7 +36,7 @@ class SpeakerReferenceTests(unittest.TestCase):
             self.assertEqual(payload["duration_ms"], 1000)
             self.assertEqual(payload["audio_format"], "wav")
             self.assertEqual(Path(reference.audio_path).suffix, ".wav")
-            with wave.open(reference.audio_path, "rb") as wav_file:
+            with wave.open(str(artifacts.resolve_stored(reference.audio_path)), "rb") as wav_file:
                 self.assertEqual(wav_file.getframerate(), 48_000)
                 self.assertEqual(wav_file.getnchannels(), 1)
                 self.assertEqual(wav_file.getsampwidth(), 2)
@@ -62,7 +62,7 @@ class SpeakerReferenceTests(unittest.TestCase):
                 source_audio_path=first,
                 reference_text="第一版参考文本。",
             )
-            original_path = Path(created.audio_path)
+            original_path = artifacts.resolve_stored(created.audio_path)
             original_bytes = original_path.read_bytes()
 
             updated = store.update_reference(
@@ -74,7 +74,7 @@ class SpeakerReferenceTests(unittest.TestCase):
             self.assertNotEqual(updated.audio_path, created.audio_path)
             self.assertEqual(original_path.read_bytes(), original_bytes)
             self.assertEqual(created.audio_hash, sha256_bytes(original_bytes))
-            self.assertEqual(updated.audio_hash, sha256_bytes(Path(updated.audio_path).read_bytes()))
+            self.assertEqual(updated.audio_hash, sha256_bytes(artifacts.resolve_stored(updated.audio_path).read_bytes()))
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg is required for MP4 normalization")
     def test_mp4_reference_is_normalized_before_provider_use(self) -> None:
@@ -112,7 +112,7 @@ class SpeakerReferenceTests(unittest.TestCase):
 
             self.assertEqual(reference.audio_format, "wav")
             self.assertEqual(Path(reference.audio_path).suffix, ".wav")
-            with wave.open(reference.audio_path, "rb") as wav_file:
+            with wave.open(str(artifacts.resolve_stored(reference.audio_path)), "rb") as wav_file:
                 self.assertEqual(wav_file.getframerate(), 48_000)
                 self.assertEqual(wav_file.getnchannels(), 1)
                 self.assertEqual(wav_file.getsampwidth(), 2)

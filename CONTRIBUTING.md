@@ -158,6 +158,15 @@ TTS:
 
 Aodcast does not require a `.env` file for normal development. `.env.example` documents `VITE_AODCAST_RUNTIME_URL` for pointing a parallel worktree's Vite shell at its own local runtime. `AODCAST_SPEECH_URL` supplies the default speech endpoint when provider settings have no saved base URL; a saved `--tts-base-url` takes priority. Export this variable before starting the app: the Python core reads process environment variables and does not automatically load `.env`. Speech-model settings and optional Hugging Face mirror/token/cache overrides belong in `speech-service/.env`, which that service loads itself. Weights stay in the external Hugging Face cache and are never committed. If Codex is installed outside `PATH`, `/opt/homebrew/bin`, or `/usr/local/bin`, set `AODCAST_CODEX_BIN` to the absolute official Codex executable path.
 
+## Moving a checkout or upgrading old local data
+
+Local data stores paths relative to `.local-data`, so a checkout can be moved freely. Data written by older versions contains absolute paths; after moving or upgrading, rewrite them once (dry run first, then `--apply`; changed files are backed up inside the data dir):
+
+```bash
+python3 scripts/maintenance/relativize-local-data.py --data-dir .local-data
+python3 scripts/maintenance/relativize-local-data.py --data-dir .local-data --apply
+```
+
 ## Exporting MP3
 
 Final renders stay WAV. After audio exists, use **Export** next to the final render. MP3 conversion requires FFmpeg on the local machine.
