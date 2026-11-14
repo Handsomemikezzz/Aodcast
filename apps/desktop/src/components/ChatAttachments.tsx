@@ -35,8 +35,8 @@ export function PendingAttachmentTray({
             <div className="flex items-center gap-2 pl-3 pr-7 py-2 max-w-[220px]">
               <FileText className="w-4 h-4 text-accent-amber shrink-0" />
               <div className="min-w-0">
-                <p className="truncate text-[12px] text-primary">{item.name}</p>
-                <p className="text-[10px] text-secondary">{formatAttachmentSize(item.file.size)}</p>
+                <p className="truncate text-meta text-primary">{item.name}</p>
+                <p className="text-caption text-secondary">{formatAttachmentSize(item.file.size)}</p>
               </div>
             </div>
           )}
@@ -86,7 +86,7 @@ function AttachmentImage({ sessionId, attachment }: { sessionId: string; attachm
 
   if (failed) {
     return (
-      <div className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-lg border border-outline text-[10px] text-secondary">
+      <div className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-lg border border-outline text-caption text-secondary">
         <ImageOff className="w-4 h-4" />
         <span className="max-w-[88px] truncate px-1">{attachment.name}</span>
       </div>
@@ -133,8 +133,8 @@ export function TurnAttachments({
           className="flex max-w-[260px] items-center gap-2 rounded-lg border border-outline bg-surface-container-low/70 px-2.5 py-1.5"
         >
           <FileText className="w-3.5 h-3.5 text-accent-amber shrink-0" />
-          <span className="truncate text-[12px] text-primary">{item.name}</span>
-          <span className="shrink-0 text-[10px] text-secondary">{formatAttachmentSize(item.size_bytes)}</span>
+          <span className="truncate text-meta text-primary">{item.name}</span>
+          <span className="shrink-0 text-caption text-secondary">{formatAttachmentSize(item.size_bytes)}</span>
         </div>
       ))}
     </div>

@@ -79,13 +79,13 @@ export function SessionTopicEditor({
 
   const titleClass =
     density === "header"
-      ? "truncate text-[14px] font-semibold text-primary leading-tight"
-      : "font-medium text-[14px] text-primary truncate";
+      ? "truncate text-body font-semibold text-primary leading-tight"
+      : "font-medium text-body text-primary truncate";
 
   const inputClass =
     density === "header"
-      ? "min-w-0 w-full max-w-[420px] bg-background text-[14px] font-semibold text-primary border border-accent-amber/40 rounded-lg px-2 py-1 outline-none focus:border-accent-amber/70"
-      : "min-w-0 flex-1 bg-background text-[14px] font-medium text-primary border border-accent-amber/40 rounded-lg px-2 py-1.5 outline-none focus:border-accent-amber/70";
+      ? "min-w-0 w-full max-w-[420px] bg-background text-body font-semibold text-primary border border-accent-amber/40 rounded-lg px-2 py-1 outline-none focus:border-accent-amber/70"
+      : "min-w-0 flex-1 bg-background text-body font-medium text-primary border border-accent-amber/40 rounded-lg px-2 py-1.5 outline-none focus:border-accent-amber/70";
 
   if (editing) {
     return (
@@ -118,7 +118,7 @@ export function SessionTopicEditor({
           />
           {saving ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-amber" /> : null}
         </div>
-        {error ? <p className="mt-1 text-[11px] text-red-300">{error}</p> : null}
+        {error ? <p className="mt-1 text-caption text-danger">{error}</p> : null}
       </div>
     );
   }
@@ -147,7 +147,7 @@ export function SessionTopicEditor({
         disabled={disabled}
         aria-label={`Rename "${topic || "Untitled Episode"}"`}
         className={cn(
-          "no-drag inline-flex shrink-0 items-center justify-center rounded-md text-secondary transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-50",
+          "no-drag inline-flex shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-50",
           density === "list"
             ? "h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
             : "h-7 w-7 opacity-0 group-hover/topic:opacity-100 focus-visible:opacity-100",

@@ -101,11 +101,11 @@ export function EpisodesPage({
       <div className="flex flex-col h-full w-full overflow-y-auto px-6 lg:px-10 py-8">
         <div className="max-w-3xl mx-auto w-full">
           <div className="mb-6 flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-headline font-semibold text-primary">Episodes</h1>
+            <h1 className="text-heading font-headline font-semibold text-primary">Episodes</h1>
             <button
               type="button"
               onClick={handleNewEpisode}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity hover:opacity-90 shrink-0"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity hover:opacity-90 shrink-0"
             >
               <Plus className="w-4 h-4" />
               New episode
@@ -113,21 +113,21 @@ export function EpisodesPage({
           </div>
 
           {listError ? (
-            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+            <div className="mb-4 rounded-lg border border-danger/20 bg-danger-container px-4 py-3 text-body text-danger">
               {listError}
             </div>
           ) : null}
 
           {sorted.length === 0 ? (
             <div className="rounded-xl border border-dashed border-outline px-6 py-14 text-center">
-              <p className="text-sm font-medium text-primary">No episodes yet</p>
-              <p className="mt-1 text-[13px] text-secondary">
+              <p className="text-body font-medium text-primary">No episodes yet</p>
+              <p className="mt-1 text-body text-secondary">
                 Start from an idea you want to talk through, or import an article you have written.
               </p>
               <button
                 type="button"
                 onClick={handleNewEpisode}
-                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg border border-outline px-3.5 text-[13px] font-medium text-primary hover:bg-primary/5"
+                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg border border-outline px-3.5 text-body font-medium text-primary hover:bg-primary/5"
               >
                 <Plus className="w-4 h-4" />
                 New episode
@@ -184,7 +184,7 @@ export function EpisodesPage({
                           }
                         }}
                       />
-                      <div className="mt-0.5 flex items-center gap-1.5 truncate text-[12px] text-secondary">
+                      <div className="mt-0.5 flex items-center gap-1.5 truncate text-meta text-secondary">
                         <span className={episodeStatusTone(status.kind)}>{status.label}</span>
                         {duration ? <><span aria-hidden>·</span><span className="tabular-nums">{duration}</span></> : null}
                         {updated ? <><span aria-hidden>·</span><span>{updated}</span></> : null}
@@ -199,7 +199,7 @@ export function EpisodesPage({
                         event.stopPropagation();
                         setDeleteTarget({ project: displayProject, kind: hasScript ? "script" : "session" });
                       }}
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 disabled:opacity-50 dark:hover:text-red-300"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary opacity-0 transition hover:bg-danger-container hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 disabled:opacity-50"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

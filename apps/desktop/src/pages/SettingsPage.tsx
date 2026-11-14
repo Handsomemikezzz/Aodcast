@@ -499,20 +499,20 @@ export function SettingsPage() {
   const ttsUsesLocalModels = ttsForm.provider === "local_http";
 
   const inputClass =
-    "h-9 w-full rounded-lg border border-outline bg-transparent px-3 text-[13px] text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25 disabled:opacity-50";
-  const labelClass = "mb-1.5 block text-[13px] font-medium text-primary";
+    "h-9 w-full rounded-lg border border-outline bg-transparent px-3 text-body text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25 disabled:opacity-50";
+  const labelClass = "mb-1.5 block text-body font-medium text-primary";
   const primaryButtonClass =
-    "inline-flex h-9 items-center rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-40";
+    "inline-flex h-9 items-center rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity disabled:opacity-40";
   const secondaryButtonClass =
-    "inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-40";
+    "inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-40";
 
   const renderTestResult = (result: { success: boolean; message: string } | null) =>
     result ? (
       <p
         role="status"
         className={cn(
-          "flex items-start gap-2 text-[13px] leading-relaxed",
-          result.success ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300",
+          "flex items-start gap-2 text-body leading-relaxed",
+          result.success ? "text-success" : "text-danger",
         )}
       >
         {result.success ? <Check className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
@@ -523,27 +523,27 @@ export function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto px-6 py-8 lg:px-10 mac-scrollbar">
       <div className="mx-auto w-full max-w-2xl">
-        <h1 className="text-2xl font-headline font-semibold text-primary">Settings</h1>
-        <p className="mt-1 text-sm text-secondary">
+        <h1 className="text-heading font-headline font-semibold text-primary">Settings</h1>
+        <p className="mt-1 text-body text-secondary">
           Choose the language model that runs interviews and scripts, and the speech engine that reads them.
         </p>
 
         {error ? (
-          <div role="alert" className="mt-6 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] text-red-700 dark:text-red-300">
+          <div role="alert" className="mt-6 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger-container px-4 py-3 text-body text-danger">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
         ) : null}
 
         {loading ? (
-          <div className="flex items-center gap-2 py-16 text-sm text-secondary">
+          <div className="flex items-center gap-2 py-16 text-body text-secondary">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading settings…
           </div>
         ) : (
           <>
             <section className="mt-8 space-y-5 border-t border-outline pt-6">
-              <h2 className="text-[15px] font-semibold text-primary">Language model</h2>
+              <h2 className="text-title font-semibold text-primary">Language model</h2>
 
               <label className="block">
                 <span className={labelClass}>Provider</span>
@@ -557,7 +557,7 @@ export function SettingsPage() {
               {isCodexSubscription && (
                 <div className="space-y-3 rounded-xl border border-outline p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 text-[13px]">
+                    <div className="min-w-0 text-body">
                       <p className="font-medium text-primary">
                         {llmProviderStatus?.authenticated
                           ? `ChatGPT ${llmProviderStatus.plan_type || "connected"}`
@@ -565,7 +565,7 @@ export function SettingsPage() {
                             ? "Codex CLI not installed"
                             : "ChatGPT not connected"}
                       </p>
-                      <p className="mt-0.5 truncate text-[12px] text-secondary">
+                      <p className="mt-0.5 truncate text-meta text-secondary">
                         {[
                           llmProviderStatus?.account_email,
                           llmProviderStatus?.installed ? `Codex ${llmProviderStatus.version || "installed"}` : null,
@@ -575,15 +575,15 @@ export function SettingsPage() {
                     {loadingLlmProviderStatus ? (
                       <Loader2 className="h-4 w-4 shrink-0 animate-spin text-secondary" />
                     ) : llmProviderStatus?.authenticated ? (
-                      <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <Check className="h-4 w-4 shrink-0 text-success" />
                     ) : (
-                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <AlertCircle className="h-4 w-4 shrink-0 text-warning" />
                     )}
                   </div>
 
                   {llmProviderStatus?.rate_limit && (
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[12px] text-secondary">
+                      <div className="flex justify-between text-meta text-secondary">
                         <span>Codex usage window</span>
                         <span>{Math.round(llmProviderStatus.rate_limit.used_percent)}% used</span>
                       </div>
@@ -596,12 +596,12 @@ export function SettingsPage() {
                     </div>
                   )}
 
-                  <p className="text-[12px] leading-relaxed text-secondary">
+                  <p className="text-meta leading-relaxed text-secondary">
                     Uses the ChatGPT account signed in to the official Codex CLI and its plan allowance — never API billing.
                     Aodcast doesn't read or store Codex tokens.
                   </p>
                   {!llmProviderStatus?.installed && !loadingLlmProviderStatus && (
-                    <code className="block rounded-lg bg-primary/5 px-3 py-2 font-mono text-[12px] text-primary select-all">
+                    <code className="block rounded-lg bg-primary/5 px-3 py-2 font-mono text-meta text-primary select-all">
                       npm install -g @openai/codex
                     </code>
                   )}
@@ -661,7 +661,7 @@ export function SettingsPage() {
                     className={cn(inputClass, "font-mono")}
                   />
                   {selectedLlmPreset !== "custom" ? (
-                    <span className="mt-1.5 block text-[12px] text-secondary">
+                    <span className="mt-1.5 block text-meta text-secondary">
                       Endpoint: <code className="font-mono select-all">{llmForm.base_url}</code>
                     </span>
                   ) : null}
@@ -671,7 +671,7 @@ export function SettingsPage() {
               {selectedLlmPreset !== "mock" && (
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
-                    <label htmlFor="llm-model" className="text-[13px] font-medium text-primary">Model</label>
+                    <label htmlFor="llm-model" className="text-body font-medium text-primary">Model</label>
                     {!isCodexSubscription && currentPresetConfig && currentPresetConfig.defaultModels.length > 0 && (
                       <button
                         type="button"
@@ -681,7 +681,7 @@ export function SettingsPage() {
                           setCustomModelActive(nextState);
                           updateLlm("model", nextState ? "" : currentPresetConfig.defaultModels[0]);
                         }}
-                        className="text-[12px] text-secondary underline-offset-2 hover:text-primary hover:underline"
+                        className="text-meta text-secondary underline-offset-2 hover:text-primary hover:underline"
                       >
                         {customModelActive ? "Choose from list" : "Enter a model ID"}
                       </button>
@@ -768,7 +768,7 @@ export function SettingsPage() {
                       <option key={effort} value={effort}>{reasoningEffortLabel(effort)}</option>
                     ))}
                   </select>
-                  <span className="mt-1.5 block text-[12px] leading-relaxed text-secondary">
+                  <span className="mt-1.5 block text-meta leading-relaxed text-secondary">
                     Higher effort can help hard outputs but is slower and uses more of your plan.
                   </span>
                 </label>
@@ -800,7 +800,7 @@ export function SettingsPage() {
             </section>
 
             <section className="mt-10 space-y-5 border-t border-outline pt-6">
-              <h2 className="text-[15px] font-semibold text-primary">Speech</h2>
+              <h2 className="text-title font-semibold text-primary">Speech</h2>
 
               <label className="block">
                 <span className={labelClass}>Engine</span>
@@ -824,7 +824,7 @@ export function SettingsPage() {
                 <input type="url" autoComplete="off" value={ttsForm.base_url}
                   onChange={(e) => updateTts("base_url", e.target.value)} className={inputClass} />
                 {ttsUsesLocalModels ? (
-                  <span className="mt-1.5 block text-[12px] leading-relaxed text-secondary">
+                  <span className="mt-1.5 block text-meta leading-relaxed text-secondary">
                     The speech service manages its models: preset voices, plus voice cloning with Qwen3 Base models. Pick a voice per episode.{" "}
                     <button type="button" onClick={() => navigate("/models")} className="text-primary underline underline-offset-2">
                       View service status
@@ -880,7 +880,7 @@ export function SettingsPage() {
               </div>
             </section>
 
-            <p className="mt-10 border-t border-outline pt-4 text-[12px] leading-relaxed text-secondary">
+            <p className="mt-10 border-t border-outline pt-4 text-meta leading-relaxed text-secondary">
               Settings and API keys are saved unencrypted in <code className="font-mono">.local-data/config/</code> on this device.
               Changing them doesn't alter existing episodes or audio.
             </p>

@@ -40,21 +40,21 @@ export function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center theme-modal-overlay px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-outline bg-surface shadow-2xl shadow-black/30">
+      <div className="w-full max-w-md rounded-xl border border-outline bg-surface shadow-xl shadow-black/30">
         <div className="flex items-start justify-between gap-3 border-b border-outline px-5 py-4">
           <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-full border border-amber-500/20 bg-amber-500/10 p-2 text-amber-300">
+            <div className="mt-0.5 rounded-full border border-warning/20 bg-warning-container p-2 text-warning">
               <AlertTriangle className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-primary">{title}</h2>
-              <p className="mt-1 text-sm leading-relaxed text-secondary">{message}</p>
+              <h2 className="text-body font-semibold text-primary">{title}</h2>
+              <p className="mt-1 text-body leading-relaxed text-secondary">{message}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-secondary transition-colors hover:bg-surface-container-high hover:text-primary"
+            className="rounded-lg p-1.5 text-secondary transition-colors hover:bg-surface-container-high hover:text-primary"
             aria-label="Close dialog"
           >
             <X className="h-4 w-4" />
@@ -68,9 +68,9 @@ export function ConfirmDialog({
               onClick={action.onClick}
               disabled={action.disabled}
               className={cn(
-                "rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "rounded-lg px-3 py-2 text-body font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 action.variant === "danger" &&
-                  "bg-red-500/12 text-red-300 hover:bg-red-500/18 border border-red-500/20",
+                  "bg-danger-container text-danger hover:bg-danger-container border border-danger/20",
                 action.variant === "primary" &&
                   "bg-primary/12 text-primary hover:bg-primary/18 border border-primary/20",
                 (!action.variant || action.variant === "secondary") &&

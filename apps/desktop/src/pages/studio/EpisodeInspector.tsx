@@ -23,7 +23,7 @@ import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWork
 import type { EpisodeRenderReadiness } from "./studioWorkflow";
 
 function InspectorTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-[12px] font-semibold text-primary">{children}</h2>;
+  return <h2 className="text-meta font-semibold text-primary">{children}</h2>;
 }
 
 function formatSeconds(durationMs: number): string {
@@ -105,7 +105,7 @@ export function EpisodeInspector({
     if (!items.length) return null;
     return (
       <div>
-        <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-secondary/60">{label}</p>
+        <p className="mb-1.5 px-1 text-caption font-bold uppercase tracking-[0.1em] text-secondary/60">{label}</p>
         <div className="space-y-1">
           {items.map((reference) => {
             const selected = reference.speaker_reference_id === selectedReferenceId;
@@ -130,8 +130,8 @@ export function EpisodeInspector({
                     <Mic2 className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-semibold text-primary">{reference.name}</span>
-                    <span className="mt-0.5 block truncate text-[10px] text-secondary">
+                    <span className="block truncate text-meta font-semibold text-primary">{reference.name}</span>
+                    <span className="mt-0.5 block truncate text-caption text-secondary">
                       {reference.language || "Voice sample"} · {formatSeconds(reference.duration_ms)}
                     </span>
                   </span>
@@ -178,13 +178,13 @@ export function EpisodeInspector({
           <InspectorTitle>Before generating</InspectorTitle>
           <ul className="mt-2 space-y-2">
             {missing.map((item) => (
-              <li key={item.label} className="flex items-center justify-between gap-2 text-[13px] text-amber-700 dark:text-amber-300">
+              <li key={item.label} className="flex items-center justify-between gap-2 text-body text-warning">
                 <span>{item.label}</span>
                 {item.action ? (
                   <button
                     type="button"
                     onClick={item.action.run}
-                    className="shrink-0 rounded-md px-2 py-1 text-[12px] font-medium text-primary hover:bg-primary/5"
+                    className="shrink-0 rounded-lg px-2 py-1 text-meta font-medium text-primary hover:bg-primary/5"
                   >
                     {item.action.label}
                   </button>
@@ -199,13 +199,13 @@ export function EpisodeInspector({
         <InspectorTitle>Voice</InspectorTitle>
         {localHttp ? (
           <>
-            <label htmlFor="episode-local-model" className="mt-2 block text-[12px] text-secondary">Model</label>
+            <label htmlFor="episode-local-model" className="mt-2 block text-meta text-secondary">Model</label>
             <select
               id="episode-local-model"
               value={workbench.selectedModelId}
               onChange={(event) => workbench.setSelectedModelId(event.target.value)}
               disabled={workbench.generating}
-              className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
+              className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-body text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
             >
               {!workbench.selectedModelId ? <option value="">No ready model</option> : null}
               {([
@@ -223,9 +223,9 @@ export function EpisodeInspector({
               ) : null)}
             </select>
             {selectedModel?.recommendation ? (
-              <p className="mt-1.5 text-[12px] leading-5 text-secondary">{selectedModel.recommendation}</p>
+              <p className="mt-1.5 text-meta leading-5 text-secondary">{selectedModel.recommendation}</p>
             ) : null}
-            <p className="mt-3 text-[12px] text-secondary">{cloning ? "Cloned voice" : "Built-in voice"}</p>
+            <p className="mt-3 text-meta text-secondary">{cloning ? "Cloned voice" : "Built-in voice"}</p>
           </>
         ) : null}
         {localHttp && !cloning ? (
@@ -236,14 +236,14 @@ export function EpisodeInspector({
               value={workbench.selectedPresetVoiceId}
               onChange={(event) => workbench.setSelectedPresetVoiceId(event.target.value)}
               disabled={workbench.generating}
-              className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
+              className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-body text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
             >
               {!workbench.voicePresets.some((voice) => voice.voice_id === workbench.selectedPresetVoiceId) && (
                 <option value={workbench.selectedPresetVoiceId}>{workbench.selectedPresetVoiceId}</option>
               )}
               {workbench.voicePresets.map((voice) => <option key={voice.voice_id} value={voice.voice_id}>{voice.name}</option>)}
             </select>
-            <p className="mt-2 text-[12px] leading-5 text-secondary">
+            <p className="mt-2 text-meta leading-5 text-secondary">
               This model speaks built-in voices only. Choose a cloning model above to use your own voice.
             </p>
           </>
@@ -254,7 +254,7 @@ export function EpisodeInspector({
               onClick={() => setVoicePickerOpen((open) => !open)}
               aria-expanded={voicePickerOpen}
               aria-label={`Change voice (current: ${selectedVoiceLabel})`}
-              className={cn(localHttp ? "mt-1" : "mt-2", "inline-flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-outline px-2.5 text-[13px] text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50")}
+              className={cn(localHttp ? "mt-1" : "mt-2", "inline-flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-outline px-2.5 text-body text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50")}
             >
               <span className="truncate">{selectedVoiceLabel}</span>
               <ChevronDown className={cn("h-4 w-4 shrink-0 text-secondary transition-transform", voicePickerOpen && "rotate-180")} />
@@ -265,12 +265,12 @@ export function EpisodeInspector({
                 {renderReferenceGroup("Your voices", yourReferences)}
                 {renderReferenceGroup(cloning ? "Built-in samples" : "Built in", builtInReferences)}
                 {!references.length ? (
-                  <p className="px-2 py-4 text-center text-xs leading-5 text-secondary">No saved voices yet.</p>
+                  <p className="px-2 py-4 text-center text-meta leading-5 text-secondary">No saved voices yet.</p>
                 ) : null}
                 <button
                   type="button"
                   onClick={() => workbench.navigate(`${voiceLibraryPath}&create=1`)}
-                  className="inline-flex h-9 w-full items-center justify-between rounded-lg px-2 text-[13px] text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
+                  className="inline-flex h-9 w-full items-center justify-between rounded-lg px-2 text-body text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
                 >
                   {cloning ? "Clone a new voice from a recording" : "Create or clone a voice"}
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -278,17 +278,17 @@ export function EpisodeInspector({
               </div>
             ) : null}
             {cloning && !selectedReferenceId ? (
-              <p className="mt-2 text-[12px] leading-5 text-secondary">
+              <p className="mt-2 text-meta leading-5 text-secondary">
                 Pick a saved voice, or clone a new one from a 5–15 second recording and its exact transcript.
               </p>
             ) : null}
             {durationIssue ? (
-              <p className="mt-2 text-[12px] leading-5 text-amber-700 dark:text-amber-300">{durationIssue}</p>
+              <p className="mt-2 text-meta leading-5 text-warning">{durationIssue}</p>
             ) : null}
           </>
         )}
         {workbench.voiceSelectionError ? (
-          <p className="mt-2 text-xs leading-5 text-red-700 dark:text-red-300" role="alert">
+          <p className="mt-2 text-meta leading-5 text-danger" role="alert">
             {workbench.voiceSelectionError}
           </p>
         ) : null}
@@ -297,13 +297,13 @@ export function EpisodeInspector({
       {!localHttp ? (
         <section className="border-b border-outline px-4 py-4">
           <InspectorTitle>Delivery</InspectorTitle>
-          <label htmlFor="episode-delivery-style" className="mt-3 block text-[12px] text-secondary">Style</label>
+          <label htmlFor="episode-delivery-style" className="mt-3 block text-meta text-secondary">Style</label>
           <select
             id="episode-delivery-style"
             value={workbench.selectedStyleId}
             onChange={(event) => workbench.setSelectedStyleId(event.target.value)}
             disabled={workbench.generating}
-            className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
+            className="mt-1 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-body text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:opacity-45"
           >
             {!workbench.voiceStyles.length ? <option value="natural">Natural</option> : null}
             {workbench.voiceStyles.map((style) => (
@@ -312,8 +312,8 @@ export function EpisodeInspector({
           </select>
 
           <div className="mt-4 flex items-center justify-between gap-3">
-            <label htmlFor="episode-delivery-speed" className="text-[12px] text-secondary">Speed</label>
-            <span className="text-[12px] tabular-nums text-secondary">{workbench.deliverySpeed.toFixed(2)}×</span>
+            <label htmlFor="episode-delivery-speed" className="text-meta text-secondary">Speed</label>
+            <span className="text-meta tabular-nums text-secondary">{workbench.deliverySpeed.toFixed(2)}×</span>
           </div>
           <input
             id="episode-delivery-speed"
@@ -324,13 +324,13 @@ export function EpisodeInspector({
             value={workbench.deliverySpeed}
             onChange={(event) => workbench.setDeliverySpeed(Number(event.target.value))}
             disabled={workbench.generating}
-            className="premium-slider mt-2 w-full disabled:opacity-45"
+            className="audio-slider mt-2 w-full disabled:opacity-45"
           />
         </section>
       ) : null}
 
       <details className="group px-4 py-3">
-        <summary className="flex h-9 cursor-pointer list-none items-center justify-between text-[12px] font-medium text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
+        <summary className="flex h-9 cursor-pointer list-none items-center justify-between text-meta font-medium text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
           Advanced
           <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
         </summary>
@@ -347,7 +347,7 @@ export function EpisodeInspector({
                 disabled={workbench.generating}
                 aria-pressed={workbench.selectedEngine === engine}
                 className={cn(
-                  "inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-[12px] font-medium transition-colors disabled:opacity-45",
+                  "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-meta font-medium transition-colors disabled:opacity-45",
                   workbench.selectedEngine === engine
                     ? "bg-primary/[0.07] text-primary"
                     : "text-secondary hover:text-primary",
@@ -358,9 +358,9 @@ export function EpisodeInspector({
             ))}
           </div>
           {localHttp ? (
-            <p className="text-[12px] leading-5 text-secondary">Local speech service · model chosen under Voice</p>
+            <p className="text-meta leading-5 text-secondary">Local speech service · model chosen under Voice</p>
           ) : (
-            <p className="text-[12px] leading-5 text-secondary">{`${workbench.cloudProvider} · configured in Settings`}</p>
+            <p className="text-meta leading-5 text-secondary">{`${workbench.cloudProvider} · configured in Settings`}</p>
           )}
         </div>
       </details>

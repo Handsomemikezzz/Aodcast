@@ -704,10 +704,10 @@ export function VoiceStudioPage() {
   };
   const canPreview = !previewing && previewEngineReady && (isLocalEngine || Boolean(selectedReferenceId && selectedVoice && selectedStyle));
   const fieldClass =
-    "w-full rounded-lg border border-outline bg-transparent px-3 text-[13px] text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25";
+    "w-full rounded-lg border border-outline bg-transparent px-3 text-body text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25";
   const segmentClass = (active: boolean) =>
     cn(
-      "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+      "inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-meta font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
       active ? "bg-primary/[0.07] text-primary" : "text-secondary hover:text-primary",
     );
 
@@ -718,41 +718,41 @@ export function VoiceStudioPage() {
           <button
             type="button"
             onClick={backToEpisode}
-            className="-ml-2 mb-4 inline-flex h-9 w-fit items-center gap-1.5 rounded-lg px-2 text-[13px] text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
+            className="-ml-2 mb-4 inline-flex h-9 w-fit items-center gap-1.5 rounded-lg px-2 text-body text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to episode
           </button>
         ) : null}
         <header className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-headline font-semibold text-primary">Voice</h1>
+          <h1 className="text-heading font-headline font-semibold text-primary">Voice</h1>
           <button
             type="button"
             onClick={openCreateReferenceDialog}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity hover:opacity-90"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity hover:opacity-90"
           >
             <Plus className="h-4 w-4" /> New voice
           </button>
         </header>
-        <p className="mt-1 text-sm text-secondary">
+        <p className="mt-1 text-body text-secondary">
           {scriptBoundMode
             ? `Choose or create a voice for “${scriptTitle}”. Full audio is generated back in the episode.`
             : "Reusable voice samples. Open an episode to apply one to its script."}
         </p>
 
         {isLocalEngine ? (
-          <p className="mt-4 rounded-lg bg-primary/[0.04] px-3 py-2.5 text-[12px] leading-5 text-secondary">
+          <p className="mt-4 rounded-lg bg-primary/[0.04] px-3 py-2.5 text-meta leading-5 text-secondary">
             The local speech service clones a saved voice with Qwen3 Base models: 0.6B by default, 1.7B selectable as the
             episode&apos;s model. Use {cloneWindow} of one person&apos;s clean speech and its exact transcript.
           </p>
         ) : null}
 
-        {error ? <p role="alert" className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2.5 text-[13px] text-red-700 dark:text-red-300">{error}</p> : null}
+        {error ? <p role="alert" className="mt-4 rounded-lg border border-danger/20 bg-danger-container px-3 py-2.5 text-body text-danger">{error}</p> : null}
 
         {speakerReferences.length === 0 ? (
           <div className="mt-6 rounded-xl border border-dashed border-outline p-8 text-center">
-            <p className="text-sm font-medium text-primary">No voices yet</p>
-            <p className="mt-1 text-[13px] text-secondary">Upload or record a short sample to create your first voice.</p>
+            <p className="text-body font-medium text-primary">No voices yet</p>
+            <p className="mt-1 text-body text-secondary">Upload or record a short sample to create your first voice.</p>
           </div>
         ) : (
           <ul className="mt-6 divide-y divide-outline rounded-xl border border-outline">
@@ -763,20 +763,20 @@ export function VoiceStudioPage() {
               return (
                 <li key={reference.speaker_reference_id} className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center">
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-1.5 text-[14px] font-medium text-primary">
+                    <p className="flex items-center gap-1.5 text-body font-medium text-primary">
                       <span className="truncate">{reference.name}</span>
                       {isSelected ? (
-                        <span className="inline-flex shrink-0 items-center gap-0.5 text-[12px] font-normal text-emerald-700 dark:text-emerald-300">
+                        <span className="inline-flex shrink-0 items-center gap-0.5 text-meta font-normal text-success">
                           <Check className="h-3.5 w-3.5" /> In use
                         </span>
                       ) : null}
                     </p>
-                    <p className="mt-0.5 truncate text-[12px] text-secondary" title={reference.description || reference.reference_text}>
+                    <p className="mt-0.5 truncate text-meta text-secondary" title={reference.description || reference.reference_text}>
                       {reference.source === "built_in" ? "Built in" : "Yours"} · {reference.language} · {formatReferenceDuration(reference.duration_ms)}
                       {reference.description || reference.reference_text ? ` · ${reference.description || reference.reference_text}` : ""}
                     </p>
-                    {referenceAudioError ? <p className="mt-1 text-[12px] text-red-700 dark:text-red-300">{referenceAudioError}</p> : null}
-                    {durationIssue ? <p className="mt-1 text-[12px] text-amber-700 dark:text-amber-300">{durationIssue}</p> : null}
+                    {referenceAudioError ? <p className="mt-1 text-meta text-danger">{referenceAudioError}</p> : null}
+                    {durationIssue ? <p className="mt-1 text-meta text-warning">{durationIssue}</p> : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <div className="w-56">
@@ -790,7 +790,7 @@ export function VoiceStudioPage() {
                       <button
                         type="button"
                         onClick={() => void handleSelectSpeakerReference(reference)}
-                        className="inline-flex h-8 items-center rounded-lg border border-outline px-2.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/5"
+                        className="inline-flex h-8 items-center rounded-lg border border-outline px-2.5 text-meta font-medium text-primary transition-colors hover:bg-primary/5"
                       >
                         Use
                       </button>
@@ -817,8 +817,8 @@ export function VoiceStudioPage() {
           <section className="mt-8 border-t border-outline pt-6">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-[15px] font-semibold text-primary">Preview</h2>
-                <p className="mt-0.5 truncate text-[12px] text-secondary">
+                <h2 className="text-title font-semibold text-primary">Preview</h2>
+                <p className="mt-0.5 truncate text-meta text-secondary">
                   {localCloning && selectedReference
                     ? `${selectedReference.name} · cloned by ${currentModel?.display_name ?? "a Qwen3 Base model"}`
                     : isLocalEngine
@@ -832,7 +832,7 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={() => void handleCancelPreview()}
-                  className="inline-flex h-9 shrink-0 items-center rounded-lg border border-outline px-3 text-[13px] font-medium text-primary hover:bg-primary/5"
+                  className="inline-flex h-9 shrink-0 items-center rounded-lg border border-outline px-3 text-body font-medium text-primary hover:bg-primary/5"
                 >
                   Cancel
                 </button>
@@ -841,7 +841,7 @@ export function VoiceStudioPage() {
                   type="button"
                   onClick={() => void handlePreview()}
                   disabled={!canPreview}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-35"
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity disabled:opacity-35"
                 >
                   {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Generate preview
@@ -877,11 +877,11 @@ export function VoiceStudioPage() {
                 className={cn(fieldClass, "mt-3 resize-none py-2")}
               />
             ) : (
-              <p className="mt-3 line-clamp-2 text-[13px] leading-relaxed text-secondary">{effectivePreviewText || "—"}</p>
+              <p className="mt-3 line-clamp-2 text-body leading-relaxed text-secondary">{effectivePreviewText || "—"}</p>
             )}
 
             {previewRequestState && previewRequestState.phase !== "succeeded" ? (
-              <p className="mt-3 flex items-center gap-2 text-[13px] text-secondary" aria-live="polite">
+              <p className="mt-3 flex items-center gap-2 text-body text-secondary" aria-live="polite">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                 {Math.round(previewRequestState.progress_percent)}% · {previewRequestState.message}
               </p>
@@ -896,7 +896,7 @@ export function VoiceStudioPage() {
                   onClick={() => void handleDeletePreview()}
                   aria-label="Delete preview"
                   title="Delete preview"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-300"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-danger-container hover:text-danger"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -905,8 +905,8 @@ export function VoiceStudioPage() {
           </section>
         ) : null}
 
-        <p className="mt-8 flex flex-wrap items-center gap-1.5 border-t border-outline pt-4 text-[12px] text-secondary">
-          <span className={cn("h-2 w-2 shrink-0 rounded-full", localEngineReady ? "bg-emerald-500" : "bg-amber-500")} aria-hidden />
+        <p className="mt-8 flex flex-wrap items-center gap-1.5 border-t border-outline pt-4 text-meta text-secondary">
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", localEngineReady ? "bg-success" : "bg-warning")} aria-hidden />
           <span className="min-w-0 truncate">Speech engine: {engineLabel} · {engineStatus}</span>
           <button type="button" onClick={() => navigate("/models")} className="text-primary underline underline-offset-2">
             Models
@@ -920,14 +920,14 @@ export function VoiceStudioPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="speaker-reference-dialog-title"
-            className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-outline theme-modal-surface shadow-xl"
+            className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-xl border border-outline theme-modal-surface shadow-xl"
           >
             <div className="flex shrink-0 items-start justify-between gap-4 border-b border-outline px-6 py-4">
               <div className="min-w-0">
-                <h2 id="speaker-reference-dialog-title" className="text-[16px] font-semibold text-primary">
+                <h2 id="speaker-reference-dialog-title" className="text-title font-semibold text-primary">
                   {referenceDialogMode === "create" ? "New voice" : "Edit voice"}
                 </h2>
-                <p className="mt-1 text-[12px] leading-relaxed text-secondary">
+                <p className="mt-1 text-meta leading-relaxed text-secondary">
                   {referenceDialogMode === "create"
                     ? `Add ${cloneWindow} of one person's clean speech and type exactly what is said in it.`
                     : "Change the name, language, or transcript. Upload or record again to replace the sample."}
@@ -946,14 +946,14 @@ export function VoiceStudioPage() {
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 mac-scrollbar">
               <div className="grid gap-4">
                 {referenceDialogMode === "create" ? (
-                  <ul className="list-disc space-y-0.5 rounded-lg bg-primary/[0.04] py-2.5 pl-7 pr-3 text-[12px] leading-5 text-secondary">
+                  <ul className="list-disc space-y-0.5 rounded-lg bg-primary/[0.04] py-2.5 pl-7 pr-3 text-meta leading-5 text-secondary">
                     <li>One person speaking, in a quiet room, with no music or other voices.</li>
                     <li>5–15 seconds of natural, steady speech works best{isLocalEngine ? ` (local cloning accepts ${cloneWindow})` : ""}.</li>
                     <li>The transcript must match the recording word for word. Recording the suggested passage does this for you.</li>
                   </ul>
                 ) : null}
                 <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
-                  <label className="flex flex-col gap-1.5 text-[13px] font-medium text-primary">
+                  <label className="flex flex-col gap-1.5 text-body font-medium text-primary">
                     Name
                     <input
                       value={newReferenceName}
@@ -962,7 +962,7 @@ export function VoiceStudioPage() {
                       placeholder="My storytelling voice"
                     />
                   </label>
-                  <label className="flex flex-col gap-1.5 text-[13px] font-medium text-primary">
+                  <label className="flex flex-col gap-1.5 text-body font-medium text-primary">
                     Language
                     <input
                       value={newReferenceLanguage}
@@ -975,7 +975,7 @@ export function VoiceStudioPage() {
 
                 <div>
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[13px] font-medium text-primary">Sample</p>
+                    <p className="text-body font-medium text-primary">Sample</p>
                     <div className="inline-flex rounded-lg border border-outline p-0.5" role="group" aria-label="Sample source">
                       {([
                         { id: "upload", label: "Upload", icon: Upload },
@@ -1006,42 +1006,42 @@ export function VoiceStudioPage() {
                       <button
                         type="button"
                         onClick={() => referenceFileInputRef.current?.click()}
-                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-outline px-3 text-[13px] font-medium text-primary transition-colors hover:bg-primary/5"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-outline px-3 text-body font-medium text-primary transition-colors hover:bg-primary/5"
                       >
                         <Upload className="h-4 w-4" />
                         Choose audio file
                       </button>
-                      <p className="mt-2 text-[12px] text-secondary">WAV, MP3, M4A, MP4, AAC, FLAC, WebM or OGG · up to 10 minutes</p>
+                      <p className="mt-2 text-meta text-secondary">WAV, MP3, M4A, MP4, AAC, FLAC, WebM or OGG · up to 10 minutes</p>
                     </div>
                   ) : (
                     <div className="mt-2 flex flex-col items-center gap-2 rounded-lg border border-outline px-4 py-4">
                       <div className="w-full rounded-lg bg-primary/[0.04] px-3 py-2.5">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[12px] font-medium text-primary">Read this aloud at a natural pace</p>
+                          <p className="text-meta font-medium text-primary">Read this aloud at a natural pace</p>
                           <button
                             type="button"
                             onClick={() => setNewReferenceText(suggestedPassage(newReferenceLanguage))}
-                            className="shrink-0 text-[12px] text-primary underline underline-offset-2"
+                            className="shrink-0 text-meta text-primary underline underline-offset-2"
                           >
                             Use as transcript
                           </button>
                         </div>
-                        <p className="mt-1 text-[13px] leading-relaxed text-primary">{suggestedPassage(newReferenceLanguage)}</p>
+                        <p className="mt-1 text-body leading-relaxed text-primary">{suggestedPassage(newReferenceLanguage)}</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => (recordingReferenceSample ? handleStopReferenceRecording() : void handleStartReferenceRecording())}
                         className={cn(
-                          "inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-semibold transition-colors",
+                          "inline-flex h-9 items-center gap-1.5 rounded-lg px-3.5 text-body font-semibold transition-colors",
                           recordingReferenceSample
-                            ? "bg-red-500/10 text-red-700 dark:text-red-300"
+                            ? "bg-danger-container text-danger"
                             : "bg-primary text-background",
                         )}
                       >
                         {recordingReferenceSample ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-4 w-4" />}
                         {recordingReferenceSample ? "Stop recording" : "Start recording"}
                       </button>
-                      <p className="text-[12px] tabular-nums text-secondary" aria-live="polite">
+                      <p className="text-meta tabular-nums text-secondary" aria-live="polite">
                         {recordingReferenceSample
                           ? `Recording… ${formatReferenceDuration(recordingElapsedMs)}${isLocalEngine && ttsCapability?.max_reference_duration_ms ? ` / stops at ${formatReferenceDuration(ttsCapability.max_reference_duration_ms)}` : ""}`
                           : "The recording becomes the sample when you stop. If the transcript is empty, it is filled with the passage above."}
@@ -1050,31 +1050,31 @@ export function VoiceStudioPage() {
                   )}
                   {referenceDialogMode === "edit" && existingReferenceAudioUrl && !newReferenceAudioPreviewUrl ? (
                     <div className="mt-2">
-                      <p className="mb-1 text-[12px] text-secondary">Current sample</p>
+                      <p className="mb-1 text-meta text-secondary">Current sample</p>
                       <audio controls src={existingReferenceAudioUrl} className="w-full" />
                     </div>
                   ) : null}
                   {newReferenceAudioPreviewUrl ? (
                     <div className="mt-2">
-                      <p className="mb-1 truncate text-[12px] text-secondary">
+                      <p className="mb-1 truncate text-meta text-secondary">
                         {newReferenceAudioFileName || "New sample"}
                         {newReferenceDurationMs ? ` · ${formatReferenceDuration(newReferenceDurationMs)}` : ""}
                       </p>
                       <audio controls src={newReferenceAudioPreviewUrl} className="w-full" />
                       {isLocalEngine && newReferenceDurationMs ? (
                         referenceDurationIssue(newReferenceDurationMs, cloneLimits) ? (
-                          <p className="mt-1 text-[12px] text-amber-700 dark:text-amber-300">
+                          <p className="mt-1 text-meta text-warning">
                             {referenceDurationIssue(newReferenceDurationMs, cloneLimits)}
                           </p>
                         ) : (
-                          <p className="mt-1 text-[12px] text-emerald-700 dark:text-emerald-300">Good length for local cloning.</p>
+                          <p className="mt-1 text-meta text-success">Good length for local cloning.</p>
                         )
                       ) : null}
                     </div>
                   ) : null}
                 </div>
 
-                <label className="flex flex-col gap-1.5 text-[13px] font-medium text-primary">
+                <label className="flex flex-col gap-1.5 text-body font-medium text-primary">
                   Transcript
                   <textarea
                     value={newReferenceText}
@@ -1083,14 +1083,14 @@ export function VoiceStudioPage() {
                     className={cn(fieldClass, "resize-none py-2 font-normal leading-relaxed")}
                     placeholder="Exactly what is said in the sample"
                   />
-                  <span className="text-[12px] font-normal leading-5 text-secondary">
+                  <span className="text-meta font-normal leading-5 text-secondary">
                     Cloning reads the sample word for word against this text, punctuation included. A mismatch makes the
                     voice drift or mispronounce.
                   </span>
                 </label>
 
                 {referenceDialogMode === "create" ? (
-                  <label className="flex items-start gap-2 text-[13px] text-primary">
+                  <label className="flex items-start gap-2 text-body text-primary">
                     <input
                       type="checkbox"
                       checked={consentConfirmed}
@@ -1114,7 +1114,7 @@ export function VoiceStudioPage() {
                     if (reference) setReferenceToDelete(reference);
                   }}
                   disabled={savingReference}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-red-700 transition-colors hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-body font-medium text-danger transition-colors hover:bg-danger-container disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
@@ -1126,7 +1126,7 @@ export function VoiceStudioPage() {
                 <button
                   type="button"
                   onClick={resetReferenceDialog}
-                  className="inline-flex h-9 items-center rounded-lg px-3 text-[13px] font-medium text-primary transition-colors hover:bg-primary/5"
+                  className="inline-flex h-9 items-center rounded-lg px-3 text-body font-medium text-primary transition-colors hover:bg-primary/5"
                 >
                   Cancel
                 </button>
@@ -1135,7 +1135,7 @@ export function VoiceStudioPage() {
                   onClick={() => void handleSaveSpeakerReference()}
                   disabled={savingReference || recordingReferenceSample || (referenceDialogMode === "create" && !consentConfirmed)}
                   title={referenceDialogMode === "create" && !consentConfirmed ? "Confirm permission to clone this voice first." : undefined}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-40"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity disabled:opacity-40"
                 >
                   {savingReference ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {referenceDialogMode === "create"
@@ -1176,7 +1176,7 @@ export function VoiceStudioPage() {
           <p
             role="status"
             aria-live="polite"
-            className="max-w-md rounded-xl border border-outline bg-modal px-4 py-2.5 text-[13px] font-medium text-primary shadow-lg"
+            className="max-w-md rounded-xl border border-outline bg-modal px-4 py-2.5 text-body font-medium text-primary shadow-lg"
           >
             {message}
           </p>

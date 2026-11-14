@@ -71,9 +71,9 @@ export function OverflowMenu({
                 onSelect();
               }}
               className={cn(
-                "flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                "flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-body transition-colors disabled:cursor-not-allowed disabled:opacity-40",
                 danger
-                  ? "text-red-600 hover:bg-red-500/10 dark:text-red-300"
+                  ? "text-danger hover:bg-danger-container"
                   : "text-primary hover:bg-primary/5",
               )}
             >

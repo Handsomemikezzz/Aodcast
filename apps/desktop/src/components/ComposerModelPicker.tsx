@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
 import { LLMProviderConfig, LLMProviderModel, LLMProviderStatus } from "../types";
@@ -181,7 +180,7 @@ export function ComposerModelPicker({
         disabled={disabled || loading}
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "inline-flex max-w-[220px] items-center gap-1 rounded-lg px-1.5 py-1 text-[12px] text-secondary",
+          "inline-flex max-w-[220px] items-center gap-1 rounded-lg px-1.5 py-1 text-meta text-secondary",
           "hover:bg-surface-container-high/70 hover:text-primary transition-colors",
           "disabled:opacity-40 disabled:pointer-events-none",
           open && "bg-surface-container-high/70 text-primary",
@@ -203,35 +202,33 @@ export function ComposerModelPicker({
         )}
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.98 }}
-            transition={{ duration: 0.14, ease: "easeOut" }}
-            className="absolute bottom-full right-0 mb-2 w-[260px] rounded-2xl border border-outline theme-modal-surface backdrop-blur-2xl p-3 shadow-2xl z-40"
-            role="listbox"
-          >
+      <div
+        className={cn(
+          "absolute bottom-full right-0 z-40 mb-2 w-[260px] rounded-xl border border-outline theme-modal-surface p-3 shadow-lg backdrop-blur-2xl transition duration-150 ease-out",
+          open ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none invisible translate-y-1.5 scale-95 opacity-0",
+        )}
+        role="listbox"
+        aria-hidden={!open}
+      >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-outline">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-secondary">
+              <span className="text-caption font-semibold uppercase tracking-wider text-secondary">
                 Model
               </span>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-amber" /> : null}
             </div>
 
             {error ? (
-              <p className="mb-2 text-[11px] leading-relaxed text-red-300">{error}</p>
+              <p className="mb-2 text-caption leading-relaxed text-danger">{error}</p>
             ) : null}
 
             {loading ? (
-              <div className="py-6 text-center text-xs text-secondary">Loading…</div>
+              <div className="py-6 text-center text-meta text-secondary">Loading…</div>
             ) : !config ? (
               <div className="space-y-2 py-2">
-                <p className="text-[12px] text-secondary leading-relaxed">No language model is set up yet.</p>
+                <p className="text-meta text-secondary leading-relaxed">No language model is set up yet.</p>
                 <button
                   type="button"
-                  className="inline-flex text-[12px] font-medium text-accent-amber hover:underline"
+                  className="inline-flex text-meta font-medium text-accent-amber hover:underline"
                   onClick={() => {
                     setOpen(false);
                     navigate("/settings");
@@ -245,7 +242,7 @@ export function ComposerModelPicker({
                 <div className="max-h-44 overflow-y-auto space-y-0.5 mac-scrollbar">
                   {isCodex ? (
                     codexModels.length === 0 ? (
-                      <p className="px-2 py-3 text-[12px] text-secondary leading-relaxed">
+                      <p className="px-2 py-3 text-meta text-secondary leading-relaxed">
                         {codexStatus?.authenticated
                           ? "No models available."
                           : "Connect your ChatGPT subscription in Settings first."}
@@ -260,7 +257,7 @@ export function ComposerModelPicker({
                             disabled={saving}
                             onClick={() => void persist({ model: model.id })}
                             className={cn(
-                              "w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-[12px] transition-colors",
+                              "w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-meta transition-colors",
                               selected
                                 ? "bg-accent-amber/10 text-accent-amber"
                                 : "text-primary hover:bg-surface-container-high/80",
@@ -269,7 +266,7 @@ export function ComposerModelPicker({
                             <span className="truncate">
                               {model.display_name || model.id}
                               {model.is_default ? (
-                                <span className="ml-1 text-[10px] text-secondary">Recommended</span>
+                                <span className="ml-1 text-caption text-secondary">Recommended</span>
                               ) : null}
                             </span>
                             {selected ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
@@ -287,7 +284,7 @@ export function ComposerModelPicker({
                           disabled={saving}
                           onClick={() => void persist({ model: modelId })}
                           className={cn(
-                            "w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-[12px] transition-colors",
+                            "w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-meta transition-colors",
                             selected
                               ? "bg-accent-amber/10 text-accent-amber"
                               : "text-primary hover:bg-surface-container-high/80",
@@ -303,7 +300,7 @@ export function ComposerModelPicker({
 
                 {showReasoning ? (
                   <div className="border-t border-outline pt-2.5 space-y-1.5">
-                    <span className="px-1 text-[11px] font-semibold uppercase tracking-wider text-secondary">
+                    <span className="px-1 text-caption font-semibold uppercase tracking-wider text-secondary">
                       Reasoning effort
                     </span>
                     <div className="flex flex-wrap gap-1.5">
@@ -312,7 +309,7 @@ export function ComposerModelPicker({
                         disabled={saving}
                         onClick={() => void persist({ reasoning_effort: "auto" })}
                         className={cn(
-                          "rounded-lg px-2 py-1 text-[11px] font-medium transition-colors",
+                          "rounded-lg px-2 py-1 text-caption font-medium transition-colors",
                           effortValue === "auto"
                             ? "bg-accent-amber/15 text-accent-amber"
                             : "bg-surface-container-high/70 text-secondary hover:text-primary",
@@ -327,7 +324,7 @@ export function ComposerModelPicker({
                           disabled={saving}
                           onClick={() => void persist({ reasoning_effort: effort })}
                           className={cn(
-                            "rounded-lg px-2 py-1 text-[11px] font-medium transition-colors",
+                            "rounded-lg px-2 py-1 text-caption font-medium transition-colors",
                             effortValue === effort
                               ? "bg-accent-amber/15 text-accent-amber"
                               : "bg-surface-container-high/70 text-secondary hover:text-primary",
@@ -341,9 +338,7 @@ export function ComposerModelPicker({
                 ) : null}
               </div>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
     </div>
   );
 }

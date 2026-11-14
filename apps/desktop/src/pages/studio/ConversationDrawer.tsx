@@ -30,7 +30,7 @@ function TranscriptView({ sessionId, turns }: { sessionId: string; turns: Transc
         >
           <div
             className={cn(
-              "max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed",
+              "max-w-[85%] rounded-xl px-3 py-2 text-meta leading-relaxed",
               turn.speaker === "user"
                 ? "bg-accent-amber/10 border border-accent-amber/20 text-primary"
                 : "bg-primary/4 border border-outline text-secondary",
@@ -228,15 +228,15 @@ export function ConversationDrawer({
       >
         {/* Header */}
         <div className="px-4 py-3 border-b border-outline shrink-0 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-primary">
+          <div className="flex items-center gap-2 text-body font-semibold text-primary">
             <MessageSquare className="w-4 h-4 text-secondary" />
             <span>{isSourceDiscussion ? "Source discussion" : "Conversation"}</span>
-            <span className="text-[12px] font-normal tabular-nums text-secondary">{turns.length}</span>
+            <span className="text-meta font-normal tabular-nums text-secondary">{turns.length}</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-md text-secondary hover:text-primary hover:bg-surface-container-high/60 transition-colors cursor-pointer"
+            className="p-1 rounded-lg text-secondary hover:text-primary hover:bg-surface-container-high/60 transition-colors cursor-pointer"
             aria-label="Close transcript"
           >
             <X className="w-3.5 h-3.5" />
@@ -244,7 +244,7 @@ export function ConversationDrawer({
         </div>
 
         {/* Memory status + per-episode toggle */}
-        <div className="px-4 py-2 border-b border-outline shrink-0 flex items-center justify-between gap-2 text-[11px]">
+        <div className="px-4 py-2 border-b border-outline shrink-0 flex items-center justify-between gap-2 text-caption">
           <span className="flex items-center gap-1.5 text-secondary/80 min-w-0">
             <Brain className="w-3 h-3 text-accent-amber shrink-0" />
             {memoryDisabled ? (
@@ -259,7 +259,7 @@ export function ConversationDrawer({
             type="button"
             onClick={() => void handleToggleMemory()}
             disabled={memoryBusy}
-            className="shrink-0 rounded-md border border-outline px-2 py-0.5 text-[10px] font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
+            className="shrink-0 rounded-lg border border-outline px-2 py-0.5 text-caption font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
           >
             {memoryBusy ? "…" : memoryDisabled ? "Turn on" : "Turn off for this episode"}
           </button>
@@ -268,7 +268,7 @@ export function ConversationDrawer({
         {/* Transcript scroll area */}
         <div className="flex-1 overflow-y-auto min-h-0 mac-scrollbar">
           {turns.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-secondary text-xs px-4 text-center">
+            <div className="flex items-center justify-center h-full text-secondary text-meta px-4 text-center">
               {isSourceDiscussion ? "No source discussion yet." : "No conversation yet."}
             </div>
           ) : (
@@ -281,7 +281,7 @@ export function ConversationDrawer({
         {followUpState.kind === "choice" ? (
           <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-accent-amber">
+              <p className="text-caption font-bold uppercase tracking-wider text-accent-amber">
                 Follow-up added
               </p>
               <button
@@ -293,7 +293,7 @@ export function ConversationDrawer({
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <p className="text-xs text-secondary leading-relaxed">
+            <p className="text-meta text-secondary leading-relaxed">
               What would you like to do with this new material?
             </p>
             <div className="flex flex-col gap-2">
@@ -301,7 +301,7 @@ export function ConversationDrawer({
                 type="button"
                 onClick={() => void handleGenerateSnapshot()}
                 disabled={generatingSnapshot}
-                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-sm font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-body font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {generatingSnapshot ? (
                   <Loader2 className="w-4 h-4 animate-spin shrink-0" />
@@ -314,7 +314,7 @@ export function ConversationDrawer({
                 type="button"
                 onClick={handleKeepAsSource}
                 disabled={generatingSnapshot}
-                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl border border-outline bg-surface-container-low text-sm font-medium text-secondary hover:bg-primary/8 hover:text-primary transition-colors disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl border border-outline bg-surface-container-low text-body font-medium text-secondary hover:bg-primary/8 hover:text-primary transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <Check className="w-4 h-4 shrink-0" />
                 Keep as source material
@@ -327,7 +327,7 @@ export function ConversationDrawer({
         {followUpState.kind === "authorize" ? (
           <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-accent-amber">
+              <p className="text-caption font-bold uppercase tracking-wider text-accent-amber">
                 Use these past experiences in the script?
               </p>
               <button
@@ -339,7 +339,7 @@ export function ConversationDrawer({
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <p className="text-xs text-secondary leading-relaxed">
+            <p className="text-meta text-secondary leading-relaxed">
               They are only used in this episode’s script if you allow it.
             </p>
             <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
@@ -351,18 +351,18 @@ export function ConversationDrawer({
                     className="flex items-start justify-between gap-2 rounded-xl border border-outline bg-surface-container-low px-3 py-2.5"
                   >
                     <div className="min-w-0">
-                      <p className="text-[13px] font-medium text-primary truncate">
+                      <p className="text-body font-medium text-primary truncate">
                         {candidate.sensitive ? "(Sensitive) " : ""}
                         {candidate.name}
                       </p>
-                      <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
+                      <p className="text-caption text-secondary/70 truncate">{candidate.description}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => void handleAuthorize(candidate.id)}
                       disabled={authorized}
                       className={
-                        "shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors cursor-pointer disabled:cursor-default " +
+                        "shrink-0 rounded-lg border px-2 py-1 text-caption font-medium transition-colors cursor-pointer disabled:cursor-default " +
                         (authorized
                           ? "border-accent-amber/25 bg-accent-amber/10 text-accent-amber"
                           : "border-outline text-secondary hover:bg-primary/5 hover:text-primary")
@@ -375,7 +375,7 @@ export function ConversationDrawer({
               })}
             </div>
             {followUpError ? (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              <div className="rounded-lg border border-danger/20 bg-danger-container px-3 py-2 text-meta text-danger">
                 {followUpError}
               </div>
             ) : null}
@@ -384,7 +384,7 @@ export function ConversationDrawer({
                 type="button"
                 onClick={() => void doGenerateSnapshot()}
                 disabled={generatingSnapshot}
-                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-sm font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl bg-accent-amber/10 border border-accent-amber/25 text-body font-medium text-accent-amber hover:bg-accent-amber/15 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {generatingSnapshot ? (
                   <Loader2 className="w-4 h-4 animate-spin shrink-0" />
@@ -401,7 +401,7 @@ export function ConversationDrawer({
         {followUpState.kind === "forget" ? (
           <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-red-400">
+              <p className="text-caption font-bold uppercase tracking-wider text-danger">
                 Which memory should be forgotten?
               </p>
               <button
@@ -413,7 +413,7 @@ export function ConversationDrawer({
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <p className="text-xs text-secondary leading-relaxed">
+            <p className="text-meta text-secondary leading-relaxed">
               Choose the memory to delete. This can’t be undone.
             </p>
             <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
@@ -423,16 +423,16 @@ export function ConversationDrawer({
                   className="flex items-start justify-between gap-2 rounded-xl border border-outline bg-surface-container-low px-3 py-2.5"
                 >
                   <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-primary truncate">
+                    <p className="text-body font-medium text-primary truncate">
                       {candidate.sensitive ? "(Sensitive) " : ""}
                       {candidate.name}
                     </p>
-                    <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
+                    <p className="text-caption text-secondary/70 truncate">{candidate.description}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => void handleForgetConfirm(candidate.id)}
-                    className="shrink-0 rounded-md border border-red-500/25 px-2 py-1 text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    className="shrink-0 rounded-lg border border-danger/25 px-2 py-1 text-caption font-medium text-danger hover:bg-danger-container transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -440,7 +440,7 @@ export function ConversationDrawer({
               ))}
             </div>
             {followUpError ? (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              <div className="rounded-lg border border-danger/20 bg-danger-container px-3 py-2 text-meta text-danger">
                 {followUpError}
               </div>
             ) : null}
@@ -451,7 +451,7 @@ export function ConversationDrawer({
         {followUpState.kind === "correct" ? (
           <div className="shrink-0 border-t border-outline bg-surface-container-high p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-accent-amber">
+              <p className="text-caption font-bold uppercase tracking-wider text-accent-amber">
                 Which memory does this replace?
               </p>
               <button
@@ -463,7 +463,7 @@ export function ConversationDrawer({
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <p className="text-xs text-secondary leading-relaxed">
+            <p className="text-meta text-secondary leading-relaxed">
               The new memory is being saved. Choose the older one to move to history.
             </p>
             <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto mac-scrollbar">
@@ -473,15 +473,15 @@ export function ConversationDrawer({
                   className="flex items-start justify-between gap-2 rounded-xl border border-outline bg-surface-container-low px-3 py-2.5"
                 >
                   <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-primary truncate">
+                    <p className="text-body font-medium text-primary truncate">
                       {candidate.name}
                     </p>
-                    <p className="text-[11px] text-secondary/70 truncate">{candidate.description}</p>
+                    <p className="text-caption text-secondary/70 truncate">{candidate.description}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => void handleSupersedeConfirm(candidate.id)}
-                    className="shrink-0 rounded-md border border-outline px-2 py-1 text-[11px] font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer"
+                    className="shrink-0 rounded-lg border border-outline px-2 py-1 text-caption font-medium text-secondary hover:bg-primary/5 hover:text-primary transition-colors cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />
                   </button>
@@ -489,7 +489,7 @@ export function ConversationDrawer({
               ))}
             </div>
             {followUpError ? (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              <div className="rounded-lg border border-danger/20 bg-danger-container px-3 py-2 text-meta text-danger">
                 {followUpError}
               </div>
             ) : null}
@@ -503,7 +503,7 @@ export function ConversationDrawer({
           followUpState.kind !== "correct" && (
           <div className="shrink-0 border-t border-outline p-3 space-y-2">
             {followUpError ? (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              <div className="rounded-lg border border-danger/20 bg-danger-container px-3 py-2 text-meta text-danger">
                 {followUpError}
               </div>
             ) : null}
@@ -520,7 +520,7 @@ export function ConversationDrawer({
                 placeholder="Add detail or ask a follow-up…"
                 rows={2}
                 disabled={followUpState.kind === "submitting"}
-                className="flex-1 bg-transparent text-[13px] text-primary placeholder:text-outline/60 outline-none resize-none leading-relaxed disabled:opacity-50"
+                className="flex-1 bg-transparent text-body text-primary placeholder:text-outline/60 outline-none resize-none leading-relaxed disabled:opacity-50"
               />
               <button
                 type="button"

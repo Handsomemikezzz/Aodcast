@@ -82,20 +82,20 @@ export function EpisodeAudioDock({
             ? workbench.outputFilename
             : `Preview plays the ${previewLabel.toLowerCase()} with the selected voice.`;
   const secondaryButtonClass =
-    "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-body font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50 disabled:cursor-not-allowed disabled:opacity-40";
   const primaryButtonClass =
-    "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/60 disabled:cursor-not-allowed disabled:opacity-35";
+    "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/60 disabled:cursor-not-allowed disabled:opacity-35";
 
   return (
     <>
     <footer className="shrink-0 border-t border-outline bg-surface-container-low px-4 py-2.5">
       <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center">
         <div className={cn("min-w-0", hasAudio || hasPreview ? "xl:w-[220px]" : "xl:max-w-[50%]")} aria-live="polite">
-          <p className={cn("flex items-center gap-1.5 text-[13px] font-semibold", episodeStatusTone(status.kind))}>
+          <p className={cn("flex items-center gap-1.5 text-body font-semibold", episodeStatusTone(status.kind))}>
             {workbench.generating || workbench.previewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             {isCancelling ? "Cancelling render" : workbench.previewing ? "Rendering preview" : status.label}
           </p>
-          <p className="mt-0.5 truncate text-[12px] text-secondary" title={statusDetail}>{statusDetail}</p>
+          <p className="mt-0.5 truncate text-meta text-secondary" title={statusDetail}>{statusDetail}</p>
         </div>
 
         <div className="min-w-0 flex-1">
@@ -110,7 +110,7 @@ export function EpisodeAudioDock({
                       onClick={() => setActiveTrack(track)}
                       aria-pressed={activeTrack === track}
                       className={cn(
-                        "h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors",
+                        "h-7 rounded-lg px-2.5 text-meta font-medium transition-colors",
                         activeTrack === track ? "bg-primary/[0.07] text-primary" : "text-secondary hover:text-primary",
                       )}
                     >
@@ -129,7 +129,7 @@ export function EpisodeAudioDock({
                       aria-pressed={activeTakeId === take.modelId}
                       title={take.modelId}
                       className={cn(
-                        "h-7 rounded-md px-2.5 text-[12px] font-medium tabular-nums transition-colors",
+                        "h-7 rounded-lg px-2.5 text-meta font-medium tabular-nums transition-colors",
                         activeTakeId === take.modelId ? "bg-primary/[0.07] text-primary" : "text-secondary hover:text-primary",
                       )}
                     >
@@ -156,7 +156,7 @@ export function EpisodeAudioDock({
             <div className="mt-2"><ProgressBar value={activeRequest.progress_percent} /></div>
           ) : null}
           {workbench.previewError || (workbench.audioError && !generationFailed) ? (
-            <p className="mt-1 text-[12px] text-red-700 dark:text-red-300" role="alert">
+            <p className="mt-1 text-meta text-danger" role="alert">
               {workbench.previewError || workbench.audioError}
             </p>
           ) : null}
@@ -226,7 +226,7 @@ export function EpisodeAudioDock({
           ) : null}
         </div>
       </div>
-      {workbench.audioMessage ? <p className="mt-1.5 text-[12px] text-secondary">{workbench.audioMessage}</p> : null}
+      {workbench.audioMessage ? <p className="mt-1.5 text-meta text-secondary">{workbench.audioMessage}</p> : null}
     </footer>
     <ConfirmDialog
       open={deleteConfirmOpen}

@@ -102,10 +102,10 @@ export function deriveEpisodeProductStatus({
 }
 
 export function episodeStatusTone(kind: EpisodeProductStatusKind): string {
-  if (kind === "audio_ready") return "text-emerald-700 dark:text-emerald-300";
-  if (kind === "audio_needs_update") return "text-amber-700 dark:text-amber-300";
+  if (kind === "audio_ready") return "text-success";
+  if (kind === "audio_needs_update") return "text-warning";
   if (kind === "generating") return "text-accent-amber";
-  if (kind === "failed") return "text-red-700 dark:text-red-300";
+  if (kind === "failed") return "text-danger";
   return "text-secondary";
 }
 

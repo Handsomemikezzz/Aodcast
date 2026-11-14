@@ -15,7 +15,6 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("lucide-react")) return "icons";
-          if (id.includes("framer-motion")) return "motion";
           if (
             id.includes("react-markdown") ||
             id.includes("remark-") ||

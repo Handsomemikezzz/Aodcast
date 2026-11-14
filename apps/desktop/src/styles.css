@@ -1,17 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 :root {
-  /* Premium Light Theme (Default, Claude-inspired) */
-  --font-headline: "Outfit", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-body: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Light theme (default) */
+  --font-headline: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "PingFang SC", sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", sans-serif;
 
   --color-primary: #1c1c1f;
-  --color-primary-container: #f4f2ed;
   --color-on-primary: #ffffff;
 
   --color-secondary: #6e6e73;
-  --color-tertiary: #a17b43;
 
   /* Layered Depth */
   --color-background: #fbfaf7;
@@ -19,21 +16,23 @@
   --color-surface-container: rgba(247, 245, 240, 0.85);
   --color-surface-container-low: rgba(251, 250, 247, 0.9);
   --color-surface-container-high: rgba(242, 240, 235, 0.95);
-  --color-surface-container-highest: rgba(235, 232, 225, 0.98);
 
   --color-on-surface: #1c1c1f;
   --color-on-surface-variant: #2c2c2f;
 
   --color-outline: rgba(0, 0, 0, 0.06);
-  --color-outline-variant: rgba(0, 0, 0, 0.03);
 
   --color-accent-amber: #a17b43;
-  --color-accent-amber-container: rgba(161, 123, 67, 0.08);
 
+  --color-danger: #b42318;
+  --color-danger-container: #fcebe9;
+  --color-warning: #8a5a12;
+  --color-warning-container: #f6ecd8;
+  --color-success: #1d6b45;
+  --color-success-container: #e2f2e9;
 
   --overlay-bg: rgba(15, 15, 17, 0.28);
   --modal-bg: rgba(255, 255, 255, 0.92);
-  --panel-bg: rgba(255, 255, 255, 0.78);
   --panel-bg-elevated: rgba(247, 245, 240, 0.95);
   --scrollbar-thumb: rgba(0, 0, 0, 0.14);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.24);
@@ -44,13 +43,11 @@
 }
 
 html.dark-theme {
-  /* Dark Premium Palette (Slate & Warm Amber) */
+  /* Dark theme (slate and warm amber) */
   --color-primary: #f7f1e4;
-  --color-primary-container: #22201e;
   --color-on-primary: #000000;
 
   --color-secondary: #9f9b93;
-  --color-tertiary: #f2bf57;
 
   /* Layered Depth */
   --color-background: #0f0f11;
@@ -58,21 +55,23 @@ html.dark-theme {
   --color-surface-container: rgba(30, 30, 35, 0.88);
   --color-surface-container-low: rgba(18, 18, 22, 0.95);
   --color-surface-container-high: rgba(42, 42, 48, 0.9);
-  --color-surface-container-highest: rgba(55, 55, 62, 0.95);
 
   --color-on-surface: #f7f1e4;
   --color-on-surface-variant: #e1d8c4;
 
   --color-outline: rgba(255, 243, 215, 0.08);
-  --color-outline-variant: rgba(255, 243, 215, 0.04);
 
   --color-accent-amber: #f2bf57;
-  --color-accent-amber-container: rgba(242, 191, 87, 0.12);
 
+  --color-danger: #ff9d92;
+  --color-danger-container: #3a1d1b;
+  --color-warning: #f2bf57;
+  --color-warning-container: #35290f;
+  --color-success: #6fd3a0;
+  --color-success-container: #14301f;
 
   --overlay-bg: rgba(0, 0, 0, 0.45);
   --modal-bg: rgba(20, 20, 24, 0.9);
-  --panel-bg: rgba(20, 20, 24, 0.55);
   --panel-bg-elevated: rgba(26, 26, 30, 0.85);
   --scrollbar-thumb: rgba(255, 255, 255, 0.08);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
@@ -87,31 +86,41 @@ html.dark-theme {
   --font-body: var(--font-body);
 
   --color-primary: var(--color-primary);
-  --color-primary-container: var(--color-primary-container);
   --color-on-primary: var(--color-on-primary);
   --color-secondary: var(--color-secondary);
-  --color-tertiary: var(--color-tertiary);
 
   --color-background: var(--color-background);
   --color-surface: var(--color-surface);
   --color-surface-container: var(--color-surface-container);
   --color-surface-container-low: var(--color-surface-container-low);
   --color-surface-container-high: var(--color-surface-container-high);
-  --color-surface-container-highest: var(--color-surface-container-highest);
 
   --color-on-surface: var(--color-on-surface);
-  --color-on-surface-variant: var(--color-on-surface-variant);
 
   --color-outline: var(--color-outline);
-  --color-outline-variant: var(--color-outline-variant);
 
   --color-accent-amber: var(--color-accent-amber);
-  --color-accent-amber-container: var(--color-accent-amber-container);
+  --color-danger: var(--color-danger);
+  --color-danger-container: var(--color-danger-container);
+  --color-warning: var(--color-warning);
+  --color-warning-container: var(--color-warning-container);
+  --color-success: var(--color-success);
+  --color-success-container: var(--color-success-container);
 
-  --color-overlay: var(--overlay-bg);
+  --text-caption: 11px;
+  --text-caption--line-height: 1.4;
+  --text-meta: 12px;
+  --text-meta--line-height: 1.4;
+  --text-body: 13px;
+  --text-body--line-height: 1.5;
+  --text-title: 15px;
+  --text-title--line-height: 1.4;
+  --text-heading: 24px;
+  --text-heading--line-height: 1.25;
+  --text-display: 30px;
+  --text-display--line-height: 1.2;
+
   --color-modal: var(--modal-bg);
-  --color-panel: var(--panel-bg);
-  --color-panel-elevated: var(--panel-bg-elevated);
 }
 
 @layer base {
@@ -181,30 +190,30 @@ html.dark-theme {
   border-radius: 10px;
 }
 
-/* Premium Audio Sliders styling */
-input[type="range"].premium-slider {
+/* Audio sliders */
+input[type="range"].audio-slider {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
   cursor: pointer;
 }
 
-input[type="range"].premium-slider:focus {
+input[type="range"].audio-slider:focus {
   outline: none;
 }
 
-input[type="range"].premium-slider::-webkit-slider-runnable-track {
+input[type="range"].audio-slider::-webkit-slider-runnable-track {
   background: var(--slider-track);
   border-radius: 4px;
   height: 4px;
   transition: background 0.15s ease;
 }
 
-input[type="range"].premium-slider:hover::-webkit-slider-runnable-track {
+input[type="range"].audio-slider:hover::-webkit-slider-runnable-track {
   background: var(--slider-track-hover);
 }
 
-input[type="range"].premium-slider::-webkit-slider-thumb {
+input[type="range"].audio-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   background: var(--color-accent-amber);
@@ -216,7 +225,7 @@ input[type="range"].premium-slider::-webkit-slider-thumb {
   transition: transform 0.1s ease;
 }
 
-input[type="range"].premium-slider:hover::-webkit-slider-thumb {
+input[type="range"].audio-slider:hover::-webkit-slider-thumb {
   transform: scale(1.2);
 }
 

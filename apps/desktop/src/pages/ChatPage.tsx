@@ -544,7 +544,7 @@ export function ChatPage({
 
   if (loading && sessionId) {
     return (
-      <div className="flex h-full items-center justify-center text-secondary text-sm">
+      <div className="flex h-full items-center justify-center text-secondary text-body">
         <Loader2 className="w-4 h-4 animate-spin mr-2" />
         Loading conversation…
       </div>
@@ -555,19 +555,19 @@ export function ChatPage({
     return (
       <div className="flex h-full w-full flex-col items-center justify-center px-6 py-10">
         <div className="w-full max-w-2xl flex flex-col items-center gap-8">
-          <h1 className="text-3xl font-headline font-semibold text-center text-primary select-none">
+          <h1 className="text-display font-headline font-semibold text-center text-primary select-none">
             What’s this episode about?
           </h1>
 
           <div className="w-full flex flex-col gap-3">
             {landingError ? (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-center text-sm text-red-700 dark:text-red-300">
+              <div className="rounded-xl border border-danger/20 bg-danger-container px-4 py-3 text-center text-body text-danger">
                 <p>{landingError}</p>
                 {showLlmSetupAction ? (
                   <button
                     type="button"
                     onClick={() => navigate("/settings")}
-                    className="mt-3 rounded-lg border border-outline px-3 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/5"
+                    className="mt-3 rounded-lg border border-outline px-3 py-1.5 text-meta font-medium text-primary hover:bg-primary/5"
                   >
                     Open Settings
                   </button>
@@ -576,7 +576,7 @@ export function ChatPage({
             ) : null}
             <div
               {...attachmentDropProps("landing")}
-              className="flex flex-col gap-2 rounded-2xl border border-outline bg-surface-container-low px-3.5 pt-3 pb-2 transition-colors focus-within:border-primary/20"
+              className="flex flex-col gap-2 rounded-xl border border-outline bg-surface-container-low px-3.5 pt-3 pb-2 transition-colors focus-within:border-primary/20"
             >
               <PendingAttachmentTray
                 items={landingAttachments}
@@ -597,10 +597,10 @@ export function ChatPage({
                 onPaste={handlePaste("landing")}
                 data-placeholder="An idea, a story, or a question you want to talk through"
                 aria-label="Episode idea"
-                className="w-full min-h-[52px] max-h-[200px] overflow-y-auto bg-transparent border-none focus:ring-0 text-[15px] text-primary py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
+                className="w-full min-h-[52px] max-h-[200px] overflow-y-auto bg-transparent border-none focus:ring-0 text-title text-primary py-1 px-1 outline-none leading-normal composer-editable select-text text-left"
               />
               {attachmentError ? (
-                <p className="px-1 text-[12px] text-red-600 dark:text-red-400">{attachmentError}</p>
+                <p className="px-1 text-meta text-danger">{attachmentError}</p>
               ) : null}
               <div className="flex items-center justify-between gap-2">
                 <input
@@ -648,7 +648,7 @@ export function ChatPage({
             <button
               type="button"
               onClick={() => navigate("/episodes/new/markdown")}
-              className="mx-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
+              className="mx-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-body text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
             >
               <FileText className="h-4 w-4" />
               Already written it? Import Markdown
@@ -664,22 +664,22 @@ export function ChatPage({
       <div className="flex h-full flex-col items-center justify-center text-secondary gap-4 px-6">
         {error ? (
           <>
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className="text-body text-danger">{error}</p>
             <button
               type="button"
               onClick={() => void fetchProject()}
-              className="text-sm font-medium text-primary hover:underline"
+              className="text-body font-medium text-primary hover:underline"
             >
               Retry
             </button>
           </>
         ) : (
           <>
-            <p className="text-sm">Episode not found.</p>
+            <p className="text-body">Episode not found.</p>
             <button
               type="button"
               onClick={() => navigate("/episodes")}
-              className="text-sm font-medium text-primary hover:underline"
+              className="text-body font-medium text-primary hover:underline"
             >
               Back to Episodes
             </button>
@@ -766,7 +766,7 @@ export function ChatPage({
         </div>
         {coverage.length ? (
           <span
-            className="hidden shrink-0 items-center gap-1.5 text-[12px] text-secondary sm:inline-flex"
+            className="hidden shrink-0 items-center gap-1.5 text-meta text-secondary sm:inline-flex"
             title={coverage.map((item) => `${item.done ? "✓" : "·"} ${item.label}`).join("\n")}
           >
             <span className="flex gap-0.5" aria-hidden="true">
@@ -786,14 +786,14 @@ export function ChatPage({
         <div ref={scrollRef} className="h-full overflow-y-auto w-full px-6 lg:px-12 scroll-smooth chat-container">
           <div className="max-w-3xl flex flex-col pt-6 gap-6 pb-56 mx-auto">
             {project.source ? (
-              <details className="rounded-xl border border-outline px-3 py-2 text-xs text-secondary">
+              <details className="rounded-xl border border-outline px-3 py-2 text-meta text-secondary">
                 <summary className="flex min-h-7 cursor-pointer items-center gap-1.5 font-medium text-primary">
                   <FileText className="h-3.5 w-3.5 text-secondary" />
                   Source: {project.source.title} · v{project.source.version}
                   <span className="font-normal text-secondary">(the script stays faithful to it)</span>
                 </summary>
                 <div className="mt-2 max-h-64 overflow-y-auto border-t border-outline pt-3 mac-scrollbar">
-                  <div className="prose prose-sm prose-theme max-w-none text-[12px] leading-5">
+                  <div className="prose prose-sm prose-theme max-w-none text-meta leading-5">
                     <SafeMarkdown>{project.source.raw_markdown}</SafeMarkdown>
                   </div>
                 </div>
@@ -805,7 +805,7 @@ export function ChatPage({
                 <button
                   onClick={handleStart}
                   disabled={submitting}
-                  className="px-5 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold transition-opacity disabled:opacity-50"
+                  className="px-5 py-2.5 bg-primary text-background rounded-xl text-body font-semibold transition-opacity disabled:opacity-50"
                 >
                   Start interview
                 </button>
@@ -815,13 +815,13 @@ export function ChatPage({
             {/* Chat History: user bubbles right, assistant plain left */}
             <div className="flex flex-col gap-6">
               {error && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                <div className="rounded-xl border border-danger/20 bg-danger-container px-4 py-3 text-body text-danger">
                   {error}
                   {showLlmSetupAction ? (
                     <button
                       type="button"
                       onClick={() => navigate("/settings")}
-                      className="ml-3 rounded-md border border-outline px-2 py-1 text-[12px] font-medium text-primary hover:bg-primary/5"
+                      className="ml-3 rounded-lg border border-outline px-2 py-1 text-meta font-medium text-primary hover:bg-primary/5"
                     >
                       Open Settings
                     </button>
@@ -842,12 +842,12 @@ export function ChatPage({
                 if (!isAgent) {
                   return (
                     <div key={i} className="flex w-full justify-end">
-                      <div className="max-w-[min(85%,32rem)] rounded-2xl rounded-tr-md bg-primary/[0.05] px-4 py-2.5">
+                      <div className="max-w-[min(85%,32rem)] rounded-xl rounded-tr-lg bg-primary/[0.05] px-4 py-2.5">
                         <TurnAttachments sessionId={project.session.session_id} attachments={turn.attachments} />
                         {cleanContent ? (
                           <div
                             className={cn(
-                              "text-[14px] leading-relaxed text-primary prose prose-sm prose-theme max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
+                              "text-body leading-relaxed text-primary prose prose-sm prose-theme max-w-none [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
                               turn.attachments?.length ? "mt-2" : "",
                             )}
                           >
@@ -861,11 +861,11 @@ export function ChatPage({
 
                 return (
                   <div key={i} className="w-full">
-                    <div className="text-[14px] leading-relaxed text-on-surface prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                    <div className="text-body leading-relaxed text-on-surface prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
                       <SafeMarkdown>{cleanContent}</SafeMarkdown>
                     </div>
                     {insight ? (
-                      <p className="mt-3 border-l-2 border-accent-amber/50 pl-3 text-[13px] text-secondary">{insight}</p>
+                      <p className="mt-3 border-l-2 border-accent-amber/50 pl-3 text-body text-secondary">{insight}</p>
                     ) : null}
                   </div>
                 );
@@ -873,7 +873,7 @@ export function ChatPage({
 
               {/* Streaming Content */}
               {streamingMessage !== null && (
-                <div className="w-full text-[14px] leading-relaxed text-on-surface prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+                <div className="w-full text-body leading-relaxed text-on-surface prose prose-sm prose-theme max-w-none [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
                   {streamingMessage ? (
                     <SafeMarkdown>{streamingMessage}</SafeMarkdown>
                   ) : (
@@ -890,7 +890,7 @@ export function ChatPage({
             {/* Soft script offer and post-generation hint; generation itself stays in the composer. */}
             {scriptOffered || (isFinished && !isDeletedSession) ? (
               <div className="flex flex-wrap items-center gap-3 border-t border-outline pt-4">
-                <p className="text-xs text-secondary flex-1 min-w-[200px]">
+                <p className="text-meta text-secondary flex-1 min-w-[200px]">
                   {scriptOffered
                     ? "There’s enough here for a script. Keep talking to go deeper, or generate it now."
                     : state === "ready_to_generate"
@@ -901,7 +901,7 @@ export function ChatPage({
                   <button
                     type="button"
                     onClick={() => void openLatestScript()}
-                    className="px-3 py-1.5 border border-outline rounded-lg text-xs font-semibold text-primary hover:bg-primary/5 transition-colors shrink-0"
+                    className="px-3 py-1.5 border border-outline rounded-lg text-meta font-semibold text-primary hover:bg-primary/5 transition-colors shrink-0"
                   >
                     Open script
                   </button>
@@ -916,7 +916,7 @@ export function ChatPage({
           <div className="absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-background via-background to-transparent px-4 pb-5 pt-6">
             <div
               {...attachmentDropProps("composer")}
-              className="mx-auto flex max-w-3xl flex-col gap-2 rounded-2xl border border-outline bg-surface-container-low p-3 shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition-colors focus-within:border-primary/20"
+              className="mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border border-outline bg-surface-container-low p-3 shadow-sm transition-colors focus-within:border-primary/20"
             >
               <PendingAttachmentTray
                 items={pendingAttachments}
@@ -937,13 +937,13 @@ export function ChatPage({
                   }
                 }}
                 onPaste={handlePaste("composer")}
-                className="w-full bg-transparent border-none focus:ring-0 overflow-y-auto text-[14px] text-primary py-1 px-1.5 max-h-[160px] min-h-[28px] outline-none leading-relaxed composer-editable select-text text-left"
+                className="w-full bg-transparent border-none focus:ring-0 overflow-y-auto text-body text-primary py-1 px-1.5 max-h-[160px] min-h-[28px] outline-none leading-relaxed composer-editable select-text text-left"
                 data-placeholder="Reply… (Shift+Enter for a new line)"
                 aria-label="Reply"
               />
 
               {attachmentError ? (
-                <p className="px-2 text-[12px] text-red-600 dark:text-red-400">{attachmentError}</p>
+                <p className="px-2 text-meta text-danger">{attachmentError}</p>
               ) : null}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1">
@@ -974,7 +974,7 @@ export function ChatPage({
                     disabled={submitting || !canGenerateScript}
                     title={!canGenerateScript ? "Answer a few questions before generating a script" : undefined}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-30",
+                      "px-3 py-1.5 rounded-lg text-meta font-semibold transition-colors disabled:opacity-30",
                       scriptOffered || state === "ready_to_generate"
                         ? "bg-accent-amber/12 text-accent-amber hover:bg-accent-amber/18"
                         : "text-secondary hover:text-primary hover:bg-primary/5",

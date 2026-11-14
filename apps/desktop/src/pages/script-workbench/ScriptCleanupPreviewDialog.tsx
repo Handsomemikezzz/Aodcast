@@ -18,18 +18,18 @@ export function ScriptCleanupPreviewDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center theme-modal-overlay px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-outline bg-surface shadow-2xl shadow-black/30">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-outline bg-surface shadow-xl shadow-black/30">
         <div className="flex items-start justify-between gap-3 border-b border-outline px-5 py-4">
           <div>
-            <h2 className="text-sm font-semibold text-primary">Preview cleanup changes</h2>
-            <p className="mt-1 text-sm leading-relaxed text-secondary">
+            <h2 className="text-body font-semibold text-primary">Preview cleanup changes</h2>
+            <p className="mt-1 text-body leading-relaxed text-secondary">
               Review the proposed edits before applying them to the current script. Changes are not saved until you click Save.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-secondary transition-colors hover:bg-surface-container-high hover:text-primary"
+            className="rounded-lg p-1.5 text-secondary transition-colors hover:bg-surface-container-high hover:text-primary"
             aria-label="Close dialog"
           >
             <X className="h-4 w-4" />
@@ -42,10 +42,10 @@ export function ScriptCleanupPreviewDialog({
               {preview.changes.map((change, index) => (
                 <li
                   key={`${change.description}-${index}`}
-                  className="rounded-xl border border-outline bg-surface-container-low px-4 py-3 text-sm"
+                  className="rounded-xl border border-outline bg-surface-container-low px-4 py-3 text-body"
                 >
                   <p className="font-medium text-primary">{change.description}</p>
-                  <div className="mt-2 grid gap-2 text-xs">
+                  <div className="mt-2 grid gap-2 text-meta">
                     <div>
                       <span className="font-semibold uppercase tracking-wide text-secondary/70">Before</span>
                       <pre className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-surface-container-low px-3 py-2 text-secondary">
@@ -63,7 +63,7 @@ export function ScriptCleanupPreviewDialog({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-secondary">No cleanup changes were detected.</p>
+            <p className="text-body text-secondary">No cleanup changes were detected.</p>
           )}
         </div>
 
@@ -71,7 +71,7 @@ export function ScriptCleanupPreviewDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-outline bg-surface-container px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high"
+            className="rounded-lg border border-outline bg-surface-container px-3 py-2 text-body font-medium text-primary transition-colors hover:bg-surface-container-high"
           >
             Cancel
           </button>
@@ -79,7 +79,7 @@ export function ScriptCleanupPreviewDialog({
             type="button"
             onClick={onApply}
             disabled={!preview.hasChanges}
-            className="rounded-md border border-primary/20 bg-primary/12 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/18 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-primary/20 bg-primary/12 px-3 py-2 text-body font-medium text-primary transition-colors hover:bg-primary/18 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Apply cleanup
           </button>

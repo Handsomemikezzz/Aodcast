@@ -48,11 +48,11 @@ function Toggle({
 
 function TypeBadge({ entry }: { entry: MemoryEntry }) {
   return (
-    <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-secondary">
+    <div className="flex items-center gap-1.5 shrink-0 text-caption text-secondary">
       <span className="capitalize">{entry.type}</span>
       {entry.origin === "explicit" ? <span>· Saved on request</span> : null}
       {entry.sensitive ? (
-        <span className="inline-flex items-center gap-0.5 text-amber-700 dark:text-amber-300">
+        <span className="inline-flex items-center gap-0.5 text-warning">
           · <Lock className="h-3 w-3" /> Sensitive
         </span>
       ) : null}
@@ -78,17 +78,17 @@ function MemoryCard({
           className="min-w-0 flex-1 text-left"
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="font-medium text-[14px] text-primary truncate">{entry.name}</p>
+            <p className="font-medium text-body text-primary truncate">{entry.name}</p>
             <TypeBadge entry={entry} />
           </div>
-          <p className="mt-0.5 text-[12px] text-secondary leading-relaxed">{entry.description}</p>
+          <p className="mt-0.5 text-meta text-secondary leading-relaxed">{entry.description}</p>
         </button>
         <button
           type="button"
           aria-label={`Delete memory ${entry.name}`}
           title="Delete"
           onClick={() => onDelete(entry)}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary opacity-0 transition hover:bg-red-500/10 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:text-red-300"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary opacity-0 transition hover:bg-danger-container hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -96,28 +96,28 @@ function MemoryCard({
       {expanded && (
         <div className="space-y-3 px-4 pb-4">
           {entry.sensitive ? (
-            <p className="text-[12px] text-amber-700 dark:text-amber-300">Sensitive — the full text is only shown on this device.</p>
+            <p className="text-meta text-warning">Sensitive — the full text is only shown on this device.</p>
           ) : null}
           {entry.body ? (
-            <p className="text-[13px] text-primary leading-relaxed whitespace-pre-wrap">{entry.body}</p>
+            <p className="text-body text-primary leading-relaxed whitespace-pre-wrap">{entry.body}</p>
           ) : null}
           {entry.keywords && entry.keywords.length > 0 ? (
-            <p className="text-[12px] text-secondary">{entry.keywords.join(" · ")}</p>
+            <p className="text-meta text-secondary">{entry.keywords.join(" · ")}</p>
           ) : null}
           {entry.evidence && entry.evidence.length > 0 ? (
             <div className="space-y-1.5">
-              <p className="text-[12px] font-medium text-secondary">From your words ({entry.source_count})</p>
+              <p className="text-meta font-medium text-secondary">From your words ({entry.source_count})</p>
               {entry.evidence.map((ev, i) => (
                 <blockquote
                   key={`${ev.turn_id}-${i}`}
-                  className="border-l-2 border-outline pl-2.5 text-[12px] text-secondary"
+                  className="border-l-2 border-outline pl-2.5 text-meta text-secondary"
                 >
                   “{ev.quote}”
                 </blockquote>
               ))}
             </div>
           ) : null}
-          <p className="text-[11px] text-secondary">
+          <p className="text-caption text-secondary">
             Used {entry.use_count} time{entry.use_count === 1 ? "" : "s"}
             {entry.last_used_at ? ` · last ${new Date(entry.last_used_at).toLocaleDateString()}` : ""}
           </p>
@@ -241,7 +241,7 @@ export function MemoryPage() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-secondary text-sm">
+      <div className="flex h-full items-center justify-center text-secondary text-body">
         <Loader2 className="w-4 h-4 animate-spin mr-2" />
         Loading memory…
       </div>
@@ -254,7 +254,7 @@ export function MemoryPage() {
       <div className="flex flex-col h-full w-full overflow-y-auto px-6 lg:px-10 py-8 mac-scrollbar">
         <div className="max-w-3xl mx-auto w-full">
           <div className="mb-1 flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-headline font-semibold text-primary">Memory</h1>
+            <h1 className="text-heading font-headline font-semibold text-primary">Memory</h1>
             {entries.length > 0 ? (
               <OverflowMenu
                 label="More memory actions"
@@ -262,12 +262,12 @@ export function MemoryPage() {
               />
             ) : null}
           </div>
-          <p className="mb-6 text-sm text-secondary">
+          <p className="mb-6 text-body text-secondary">
             Reusable facts from your own words, kept on this device so interviews and scripts stay consistent.
           </p>
 
           {error ? (
-            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+            <div className="mb-4 rounded-lg border border-danger/20 bg-danger-container px-4 py-3 text-body text-danger">
               {error}
             </div>
           ) : null}
@@ -275,7 +275,7 @@ export function MemoryPage() {
           {needsFirstRun ? (
             <div className="mb-6 rounded-xl border border-outline p-5">
               <p className="font-semibold text-primary">Turn on long-term memory?</p>
-              <ul className="mt-2 mb-4 list-disc space-y-1 pl-5 text-[13px] leading-relaxed text-secondary">
+              <ul className="mt-2 mb-4 list-disc space-y-1 pl-5 text-body leading-relaxed text-secondary">
                 <li>Memory is stored only on this machine.</li>
                 <li>Aodcast saves information you share that is reusable across episodes.</li>
                 <li>You can view, delete, or clear it at any time, and turn it off globally or per episode.</li>
@@ -285,7 +285,7 @@ export function MemoryPage() {
                 type="button"
                 onClick={() => void handleAcknowledge()}
                 disabled={busy}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity disabled:opacity-50"
               >
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Turn on memory
@@ -295,8 +295,8 @@ export function MemoryPage() {
             <div className="mb-6 divide-y divide-outline border-y border-outline">
               <div className={toggleRowClass}>
                 <div>
-                  <p className="text-[13px] font-medium text-primary">Learn from new conversations</p>
-                  <p className="text-[12px] text-secondary">Save reusable facts from what you say in interviews.</p>
+                  <p className="text-body font-medium text-primary">Learn from new conversations</p>
+                  <p className="text-meta text-secondary">Save reusable facts from what you say in interviews.</p>
                 </div>
                 <Toggle
                   checked={Boolean(settings?.writing_enabled)}
@@ -306,8 +306,8 @@ export function MemoryPage() {
               </div>
               <div className={toggleRowClass}>
                 <div>
-                  <p className="text-[13px] font-medium text-primary">Use memory</p>
-                  <p className="text-[12px] text-secondary">Bring saved facts into interviews and script generation.</p>
+                  <p className="text-body font-medium text-primary">Use memory</p>
+                  <p className="text-meta text-secondary">Bring saved facts into interviews and script generation.</p>
                 </div>
                 <Toggle
                   checked={Boolean(settings?.usage_enabled)}
@@ -315,9 +315,9 @@ export function MemoryPage() {
                   onChange={(next) => void handleToggle("usage", next)}
                 />
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-[12px] text-secondary">
+              <div className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-meta text-secondary">
                 <span className="flex items-center gap-1.5">
-                  {worker?.status === "error" ? <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> : null}
+                  {worker?.status === "error" ? <AlertTriangle className="w-3.5 h-3.5 text-warning" /> : null}
                   {overview?.entry_count ?? 0} memories · {workerLabel}
                   {overview && overview.pending_job_count > 0 ? ` · ${overview.pending_job_count} queued` : ""}
                   {settings?.last_maintenance_at
@@ -329,7 +329,7 @@ export function MemoryPage() {
                   onClick={() => void handleMaintain()}
                   disabled={maintaining || busy}
                   title="Merge duplicates and remove stale memories"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-meta font-medium text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
                 >
                   {maintaining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
                   Tidy up
@@ -344,7 +344,7 @@ export function MemoryPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search memories…"
               aria-label="Search memories"
-              className="h-9 w-full rounded-lg border border-outline bg-transparent px-3 text-[13px] text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25 sm:flex-1"
+              className="h-9 w-full rounded-lg border border-outline bg-transparent px-3 text-body text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25 sm:flex-1"
             />
             <div className="inline-flex shrink-0 rounded-lg border border-outline p-0.5" role="group" aria-label="Filter by type">
               {TYPE_TABS.map((tab) => (
@@ -354,7 +354,7 @@ export function MemoryPage() {
                   onClick={() => setTypeFilter(tab.key)}
                   aria-pressed={typeFilter === tab.key}
                   className={cn(
-                    "h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors",
+                    "h-7 rounded-lg px-2.5 text-meta font-medium transition-colors",
                     typeFilter === tab.key ? "bg-primary/[0.07] text-primary" : "text-secondary hover:text-primary",
                   )}
                 >
@@ -365,7 +365,7 @@ export function MemoryPage() {
           </div>
 
           {entries.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-outline p-8 text-center text-secondary text-sm">
+            <div className="rounded-xl border border-dashed border-outline p-8 text-center text-secondary text-body">
               {search || typeFilter !== "all"
                 ? "No memories match this filter."
                 : "No memories yet. They form as you talk through episodes."}
@@ -380,16 +380,16 @@ export function MemoryPage() {
 
           {usage.length > 0 || superseded.length > 0 ? (
             <details className="group mt-6">
-              <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[13px] text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-body text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
                 History
                 <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
               </summary>
               {usage.length > 0 ? (
                 <>
-                  <p className="mt-3 mb-1.5 text-[12px] font-medium text-secondary">Recently used</p>
+                  <p className="mt-3 mb-1.5 text-meta font-medium text-secondary">Recently used</p>
                   <ul className="divide-y divide-outline rounded-xl border border-outline">
                     {usage.slice(0, 10).map((event, i) => (
-                      <li key={`${event.session_id}-${i}`} className="flex items-center justify-between gap-3 px-4 py-2 text-[12px]">
+                      <li key={`${event.session_id}-${i}`} className="flex items-center justify-between gap-3 px-4 py-2 text-meta">
                         <span className="text-primary truncate">{event.session_topic || "Untitled"}</span>
                         <span className="text-secondary shrink-0">
                           {event.memory_ids.length} memor{event.memory_ids.length === 1 ? "y" : "ies"} · {event.operation}
@@ -401,10 +401,10 @@ export function MemoryPage() {
               ) : null}
               {superseded.length > 0 ? (
                 <>
-                  <p className="mt-4 mb-1.5 text-[12px] font-medium text-secondary">Replaced by newer memories</p>
+                  <p className="mt-4 mb-1.5 text-meta font-medium text-secondary">Replaced by newer memories</p>
                   <ul className="divide-y divide-outline rounded-xl border border-outline">
                     {superseded.slice(0, 10).map((entry) => (
-                      <li key={entry.id} className="flex items-center justify-between gap-3 px-4 py-2 text-[12px]">
+                      <li key={entry.id} className="flex items-center justify-between gap-3 px-4 py-2 text-meta">
                         <span className="text-secondary truncate">{entry.name}</span>
                         <span className="text-secondary shrink-0 capitalize">{entry.type}</span>
                       </li>

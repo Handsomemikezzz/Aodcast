@@ -145,13 +145,13 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
         <button
           type="button"
           onClick={() => navigate("/episodes/new")}
-          className="-ml-2 mb-4 inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-[13px] text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
+          className="-ml-2 mb-4 inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-body text-secondary transition-colors hover:bg-primary/5 hover:text-primary"
         >
           <ArrowLeft className="h-4 w-4" />
           New episode
         </button>
-        <h1 className="text-2xl font-headline font-semibold text-primary">Import a Markdown article</h1>
-        <p className="mt-1.5 text-sm text-secondary">
+        <h1 className="text-heading font-headline font-semibold text-primary">Import a Markdown article</h1>
+        <p className="mt-1.5 text-body text-secondary">
           The original is kept as the episode source; the draft is written from it.
         </p>
 
@@ -178,13 +178,13 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
               setError(null);
             }}
             placeholder={"Paste Markdown here, or drop a .md file\n\n# Article title\n\nBody…"}
-            className="block min-h-[320px] w-full resize-y rounded-t-xl bg-transparent px-4 py-4 font-mono text-[13px] leading-6 text-primary outline-none placeholder:text-secondary/60"
+            className="block min-h-[320px] w-full resize-y rounded-t-xl bg-transparent px-4 py-4 font-mono text-body leading-6 text-primary outline-none placeholder:text-secondary/60"
           />
           <div className="flex items-center gap-3 border-t border-outline px-3 py-2">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-primary transition-colors hover:bg-primary/5"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-body font-medium text-primary transition-colors hover:bg-primary/5"
             >
               <Upload className="h-4 w-4" />
               Choose file
@@ -196,17 +196,17 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
               onChange={handleFileChange}
               className="hidden"
             />
-            <p className="min-w-0 flex-1 truncate text-xs text-secondary" title={importKind === "file" ? sourceName : undefined}>
+            <p className="min-w-0 flex-1 truncate text-meta text-secondary" title={importKind === "file" ? sourceName : undefined}>
               {importKind === "file" ? sourceName : ""}
             </p>
-            <span className="text-xs tabular-nums text-secondary">
+            <span className="text-meta tabular-nums text-secondary">
               {readableCharacters.toLocaleString()} / 300,000
             </span>
           </div>
         </div>
 
         {rawMarkdown.trim() ? (
-          <p className="mt-3 truncate text-[13px] text-secondary" title={title}>
+          <p className="mt-3 truncate text-body text-secondary" title={title}>
             <span className="font-medium text-primary">{title}</span>
             <span className="tabular-nums"> · ≈ {minutes.toFixed(1)} min source</span>
           </p>
@@ -214,13 +214,13 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
 
         <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_200px]">
           <div>
-            <p id="conversion-style-label" className="text-[13px] font-medium text-primary">Style</p>
+            <p id="conversion-style-label" className="text-body font-medium text-primary">Style</p>
             <div className="mt-2 inline-flex rounded-lg border border-outline p-0.5" role="radiogroup" aria-labelledby="conversion-style-label">
               {CONVERSION_MODES.map(({ value, label }) => (
                 <label
                   key={value}
                   className={cn(
-                    "cursor-pointer rounded-md px-3 py-1.5 text-[13px] transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-amber/50",
+                    "cursor-pointer rounded-lg px-3 py-1.5 text-body transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-amber/50",
                     conversionMode === value ? "bg-primary/[0.07] font-medium text-primary" : "text-secondary hover:text-primary",
                   )}
                 >
@@ -239,18 +239,18 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
                 </label>
               ))}
             </div>
-            <p className="mt-1.5 text-xs leading-5 text-secondary">{modeDescription}</p>
+            <p className="mt-1.5 text-meta leading-5 text-secondary">{modeDescription}</p>
           </div>
 
           <div>
-            <label htmlFor="target-length" className="block text-[13px] font-medium text-primary">Length</label>
+            <label htmlFor="target-length" className="block text-body font-medium text-primary">Length</label>
             <select
               id="target-length"
               value={targetLength}
               disabled={conversionMode === "narrate"}
               onChange={(event) => setTargetLength(event.target.value as TargetLength)}
               title={conversionMode === "narrate" ? "Faithful narration keeps the source's natural length." : undefined}
-              className="mt-2 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-[13px] text-primary outline-none focus:border-primary/25 disabled:cursor-not-allowed disabled:opacity-55"
+              className="mt-2 h-9 w-full rounded-lg border border-outline bg-transparent px-2.5 text-body text-primary outline-none focus:border-primary/25 disabled:cursor-not-allowed disabled:opacity-55"
             >
               <option value="auto">Follow the source</option>
               <option value="short">Short · 3–5 min</option>
@@ -261,7 +261,7 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
         </div>
 
         <details className="group mt-4">
-          <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[13px] text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-body text-secondary outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-accent-amber/50 [&::-webkit-details-marker]:hidden">
             Add a focus for listeners
             <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
           </summary>
@@ -271,26 +271,26 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
             value={focusInstructions}
             onChange={(event) => setFocusInstructions(event.target.value.slice(0, 1000))}
             placeholder="What should listeners remember? For example: the practical lesson in the final section."
-            className="mt-2 min-h-[72px] w-full resize-y rounded-lg border border-outline bg-transparent px-3 py-2 text-[13px] leading-5 text-primary outline-none placeholder:text-secondary/60 focus:border-primary/25"
+            className="mt-2 min-h-[72px] w-full resize-y rounded-lg border border-outline bg-transparent px-3 py-2 text-body leading-5 text-primary outline-none placeholder:text-secondary/60 focus:border-primary/25"
           />
         </details>
 
         {error ? (
-          <div role="alert" className="mt-5 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          <div role="alert" className="mt-5 rounded-xl border border-danger/25 bg-danger-container px-4 py-3 text-body text-danger">
             <p>{error}</p>
             {savedSessionId ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => navigate(`/studio/${savedSessionId}`)}
-                  className="rounded-lg border border-outline px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5"
+                  className="rounded-lg border border-outline px-3 py-1.5 text-meta font-semibold text-primary hover:bg-primary/5"
                 >
                   Open saved source
                 </button>
                 <button
                   type="button"
                   onClick={() => navigate("/settings")}
-                  className="rounded-lg border border-outline px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5"
+                  className="rounded-lg border border-outline px-3 py-1.5 text-meta font-semibold text-primary hover:bg-primary/5"
                 >
                   Open Settings
                 </button>
@@ -304,7 +304,7 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
             type="button"
             disabled={!canContinue || submitting !== null}
             onClick={() => void createEpisode("generate")}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-background transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-body font-semibold text-background transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
           >
             {submitting === "generate" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {submitting === "generate" ? "Creating draft…" : "Create draft"}
@@ -313,12 +313,12 @@ export function NewEpisodePage({ onRefresh }: { onRefresh: () => Promise<void> }
             type="button"
             disabled={!canContinue || submitting !== null}
             onClick={() => void createEpisode("discuss")}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-body font-medium text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-30"
           >
             {submitting === "discuss" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Discuss it first
           </button>
-          <p className="ml-auto text-xs text-secondary">
+          <p className="ml-auto text-meta text-secondary">
             {lengthHint ?? "Saved locally; generation uses your configured language model."}
           </p>
         </div>

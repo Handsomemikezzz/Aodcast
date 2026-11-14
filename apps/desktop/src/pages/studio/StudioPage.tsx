@@ -62,7 +62,7 @@ function StudioSessionResolve({
   }
 
   return (
-    <div className="flex h-full items-center justify-center text-secondary text-sm">
+    <div className="flex h-full items-center justify-center text-secondary text-body">
       <Loader2 className="w-4 h-4 animate-spin mr-2" />
       Opening episode…
     </div>
@@ -230,7 +230,7 @@ function StudioWorkspace({
 
   if (workbench.loading) {
     return (
-      <div className="flex h-full items-center justify-center text-secondary text-sm">
+      <div className="flex h-full items-center justify-center text-secondary text-body">
         <Loader2 className="w-4 h-4 animate-spin mr-2" />
         Loading episode…
       </div>
@@ -239,7 +239,7 @@ function StudioWorkspace({
 
   if (!workbench.project) {
     return (
-      <div className="flex h-full items-center justify-center text-secondary text-sm">
+      <div className="flex h-full items-center justify-center text-secondary text-body">
         {workbench.loadingError || "This episode workspace is unavailable."}
       </div>
     );
@@ -298,18 +298,18 @@ function StudioWorkspace({
           <div className="flex flex-col w-full lg:flex-1 min-w-0 min-h-[560px] lg:min-h-0 overflow-hidden">
             {/* Deleted session / script warnings */}
             {(workbench.isSessionDeleted || workbench.isScriptDeleted) && (
-              <div className="mx-4 mt-3 rounded-xl border border-outline bg-surface-container-low px-4 py-3 text-sm text-primary shrink-0">
+              <div className="mx-4 mt-3 rounded-xl border border-outline bg-surface-container-low px-4 py-3 text-body text-primary shrink-0">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     {workbench.isSessionDeleted ? (
                       <>
                         <p className="font-medium">This session is in trash.</p>
-                        <p className="mt-1 text-xs text-secondary">Restore it before editing the script or rendering audio.</p>
+                        <p className="mt-1 text-meta text-secondary">Restore it before editing the script or rendering audio.</p>
                       </>
                     ) : (
                       <>
                         <p className="font-medium">This script snapshot is in trash.</p>
-                        <p className="mt-1 text-xs text-secondary">Restore it to resume editing or render audio.</p>
+                        <p className="mt-1 text-meta text-secondary">Restore it to resume editing or render audio.</p>
                       </>
                     )}
                   </div>
@@ -324,7 +324,7 @@ function StudioWorkspace({
                       workbench.busyAction === "restore-session" ||
                       workbench.busyAction === "restore-script"
                     }
-                    className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-background transition-opacity disabled:opacity-50 shrink-0"
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-3.5 text-body font-semibold text-background transition-opacity disabled:opacity-50 shrink-0"
                   >
                     {workbench.isSessionDeleted ? "Restore Session" : "Restore Script"}
                   </button>
@@ -471,7 +471,7 @@ export function StudioPage({
 
   if (!sessionId) {
     return (
-      <div className="flex h-full items-center justify-center text-secondary text-sm">
+      <div className="flex h-full items-center justify-center text-secondary text-body">
         No episode selected. Open an episode from the Episodes list.
       </div>
     );

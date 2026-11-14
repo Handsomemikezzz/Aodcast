@@ -6,7 +6,7 @@ export function SafeMarkdown({ children }: { children: string }) {
       skipHtml
       components={{
         img: ({ alt }) => (
-          <span className="inline-flex rounded-md border border-outline bg-surface-container px-2 py-1 text-xs text-secondary">
+          <span className="inline-flex rounded-lg border border-outline bg-surface-container px-2 py-1 text-meta text-secondary">
             Image omitted{alt ? `: ${alt}` : ""}
           </span>
         ),

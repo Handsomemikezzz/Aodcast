@@ -103,7 +103,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/60",
             hasError
-              ? "bg-red-500/10 text-red-600 dark:text-red-300 cursor-not-allowed"
+              ? "bg-danger-container text-danger cursor-not-allowed"
               : !src
                 ? "bg-primary/5 text-secondary/40 cursor-not-allowed"
                 : "bg-accent-amber text-on-primary hover:opacity-90",
@@ -118,7 +118,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
           )}
         </button>
 
-        <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-secondary">{formatTime(currentTime)}</span>
+        <span className="w-9 shrink-0 text-right text-caption tabular-nums text-secondary">{formatTime(currentTime)}</span>
         <input
           type="range"
           min={0}
@@ -128,10 +128,10 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
           onChange={handleSeekChange}
           disabled={hasError || !src || duration === 0}
           aria-label="Seek audio"
-          className="premium-slider h-1 min-w-0 flex-1"
+          className="audio-slider h-1 min-w-0 flex-1"
           style={{ background: accentRangeBackground(seekPercent) }}
         />
-        <span className="w-9 shrink-0 text-[11px] tabular-nums text-secondary">{formatTime(duration)}</span>
+        <span className="w-9 shrink-0 text-caption tabular-nums text-secondary">{formatTime(duration)}</span>
       </div>
     );
   }

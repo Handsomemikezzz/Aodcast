@@ -17,7 +17,7 @@ const MemoryPage = lazy(() => import("./pages/MemoryPage").then((module) => ({ d
 const NewEpisodePage = lazy(() => import("./pages/NewEpisodePage").then((module) => ({ default: module.NewEpisodePage })));
 
 function RouteFallback() {
-  return <div className="flex h-full items-center justify-center text-secondary text-sm">Loading workspace…</div>;
+  return <div className="flex h-full items-center justify-center text-secondary text-body">Loading workspace…</div>;
 }
 
 export default function App() {
@@ -52,7 +52,7 @@ export default function App() {
 
   const navItemClass = (active: boolean) =>
     cn(
-      "w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg transition-colors text-[13px] font-medium select-none",
+      "w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg transition-colors text-body font-medium select-none",
       active
         ? "bg-primary/[0.06] text-primary"
         : "text-secondary hover:bg-primary/[0.04] hover:text-primary",
@@ -76,7 +76,7 @@ export default function App() {
         <div className="h-14 flex items-center px-4 drag-region select-none">
           <div className="flex items-center gap-2 text-primary">
             <Mic className="w-4.5 h-4.5 text-accent-amber" />
-            <span className="hidden lg:inline font-headline font-semibold text-[15px]">Aodcast</span>
+            <span className="hidden lg:inline font-headline font-semibold text-title">Aodcast</span>
           </div>
         </div>
 
@@ -116,7 +116,7 @@ export default function App() {
 
       <main className="flex-1 flex flex-col min-w-0 bg-background relative">
         {bridgeError ? (
-          <div className="shrink-0 px-4 py-2.5 text-[13px] leading-snug bg-amber-500/15 border-b border-amber-500/25 text-primary">
+          <div className="shrink-0 px-4 py-2.5 text-body leading-snug bg-warning-container border-b border-warning/25 text-primary">
             {bridgeError}
           </div>
         ) : null}

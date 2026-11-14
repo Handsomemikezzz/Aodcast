@@ -4,7 +4,7 @@ import { SessionTopicEditor } from "../../components/SessionTopicEditor";
 import type { UseScriptWorkbenchResult } from "../script-workbench/useScriptWorkbench";
 
 const headerButtonClass =
-  "inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-secondary transition-colors hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50";
+  "inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-body font-medium text-secondary transition-colors hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50";
 
 export function StudioHeader({
   workbench,
@@ -45,7 +45,7 @@ export function StudioHeader({
             onRenamed={workbench.handleRenameTopic}
           />
         ) : (
-          <h1 className="truncate text-sm font-semibold text-primary">{topic}</h1>
+          <h1 className="truncate text-body font-semibold text-primary">{topic}</h1>
         )}
       </div>
 
@@ -59,7 +59,7 @@ export function StudioHeader({
         <button type="button" onClick={onConversationOpen} className={headerButtonClass}>
           <MessageSquare className="h-4 w-4" />
           <span className="hidden sm:inline">Conversation</span>
-          {turnCount ? <span className="text-[11px] tabular-nums text-secondary/70">{turnCount}</span> : null}
+          {turnCount ? <span className="text-caption tabular-nums text-secondary/70">{turnCount}</span> : null}
         </button>
         <OverflowMenu
           label="More script actions"

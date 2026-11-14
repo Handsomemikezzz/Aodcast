@@ -5,15 +5,15 @@ import type { UseScriptWorkbenchResult } from "./useScriptWorkbench";
 import type { ScriptIssue } from "./spokenScriptTypes";
 
 function issueTone(level: ScriptIssue["level"]): string {
-  if (level === "blocking") return "text-red-700 dark:text-red-300";
-  if (level === "warning") return "text-amber-700 dark:text-amber-200";
+  if (level === "blocking") return "text-danger";
+  if (level === "warning") return "text-warning";
   return "text-secondary";
 }
 
 function statusTone(workbench: UseScriptWorkbenchResult): string {
-  if (workbench.scriptCheck.blockingCount > 0) return "text-red-700 dark:text-red-300";
-  if (workbench.scriptCheck.warningCount > 0) return "text-amber-700 dark:text-amber-200";
-  return "text-emerald-700 dark:text-emerald-300";
+  if (workbench.scriptCheck.blockingCount > 0) return "text-danger";
+  if (workbench.scriptCheck.warningCount > 0) return "text-warning";
+  return "text-success";
 }
 
 function SaveState({
@@ -29,7 +29,7 @@ function SaveState({
 }) {
   if (editorError) {
     return (
-      <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-300">
+      <span className="inline-flex items-center gap-1 text-danger">
         <AlertCircle className="h-3 w-3" />
         Save failed
         <button type="button" onClick={onRetry} className="underline underline-offset-2 hover:no-underline">
@@ -67,7 +67,7 @@ export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchR
         spellCheck={false}
         placeholder="Write the narration for this episode."
         aria-label="Episode script"
-        className="min-h-0 flex-1 w-full resize-none bg-transparent px-[max(1.5rem,calc((100%-44rem)/2))] py-8 text-[16px] leading-[2rem] text-primary outline-none placeholder:text-secondary/50 disabled:opacity-40 mac-scrollbar"
+        className="min-h-0 flex-1 w-full resize-none bg-transparent px-[max(1.5rem,calc((100%-44rem)/2))] py-8 text-title leading-[2rem] text-primary outline-none placeholder:text-secondary/50 disabled:opacity-40 mac-scrollbar"
       />
 
       {showIssuePanel ? (
@@ -75,19 +75,19 @@ export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchR
           {visibleIssues.length ? (
             <ul className="space-y-1.5">
               {visibleIssues.map((issue) => (
-                <li key={issue.id} className={cn("text-[13px] leading-relaxed", issueTone(issue.level))}>
+                <li key={issue.id} className={cn("text-body leading-relaxed", issueTone(issue.level))}>
                   {issue.line ? `Line ${issue.line}: ` : ""}
                   {issue.message}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-[13px] text-emerald-700 dark:text-emerald-300">Ready for speech. Nothing to fix.</p>
+            <p className="text-body text-success">Ready for speech. Nothing to fix.</p>
           )}
           {infoIssues.length ? (
             <div className="border-t border-outline pt-2">
               {infoIssues.map((issue) => (
-                <p key={issue.id} className="text-xs text-secondary">
+                <p key={issue.id} className="text-meta text-secondary">
                   {issue.message}
                 </p>
               ))}
@@ -96,13 +96,13 @@ export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchR
         </div>
       ) : null}
 
-      <div className="flex h-10 shrink-0 items-center gap-3 border-t border-outline px-4 text-[12px] text-secondary">
+      <div className="flex h-10 shrink-0 items-center gap-3 border-t border-outline px-4 text-meta text-secondary">
         <button
           type="button"
           onClick={() => setIssuesExpanded((expanded) => !expanded)}
           aria-expanded={issuesExpanded}
           className={cn(
-            "inline-flex items-center gap-1 rounded-md font-medium hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
+            "inline-flex items-center gap-1 rounded-lg font-medium hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-amber/50",
             statusTone(workbench),
           )}
         >
@@ -127,7 +127,7 @@ export function ScriptEditorPane({ workbench }: { workbench: UseScriptWorkbenchR
             type="button"
             onClick={workbench.handleOpenCleanupPreview}
             disabled={locked}
-            className="inline-flex h-7 items-center gap-1 rounded-md px-2 font-medium text-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 font-medium text-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-30"
           >
             <Wand2 className="h-3.5 w-3.5" />
             Clean up
