@@ -79,3 +79,14 @@ Manifest-driven assembly in Aodcast normalizes paragraph WAVs, applies one edge 
 - Model loading/downloading may make the first request slower. Idle unloading releases model weights and caches; the service process still uses memory.
 - A full podcast render still saves an editorial Speech Plan, renders paragraph WAVs, and publishes the assembled `podcast.wav`. MP3 export remains an optional FFmpeg conversion.
 - `.mp4` is accepted only as a Speaker Reference audio-container input and normalized to WAV; Aodcast does not generate video MP4.
+
+## Data and privacy details
+
+Aodcast is local-first. Generated sessions, imported source snapshots, scripts, Speech Plans, Render Manifests, Speaker References, transcripts, audio artifacts, provider configuration, and request-state files are stored under `.local-data/`, which is ignored by Git and must not be committed.
+
+- **Imported Markdown** is snapshotted under `.local-data/sessions/<session-id>/source.json`. Script generation sends the normalized article, generation preferences, and any supplemental source discussion to the configured LLM provider; when that provider is remote, this content leaves the device and is handled under the provider's terms. Imported source text is not converted into transcript turns and is never written into long-term memory; only later user-authored conversation turns may be eligible for memory when memory is enabled.
+- **Chat attachments** are stored as immutable content-hashed files under `.local-data/sessions/<session-id>/attachments/`. Each interview turn re-sends the conversation's attachments (the six most recent images and up to 40k characters of document text) to the configured LLM provider. Attachments never become long-term memories. If the selected model cannot accept images, the reply fails with an explicit error instead of silently dropping them.
+- **Long-term memory** is local-only, stored as Markdown files under `.local-data/memory/`. It is opt-in (first-run notice), can be turned off per episode or globally, and is fully viewable and deletable. High-sensitivity secrets (passwords, API keys, payment credentials, full ID numbers, precise addresses) are never saved, even on request.
+- **ChatGPT subscription via Codex:** Codex owns OAuth storage and token refresh. Aodcast receives only account status, plan labels, model metadata, rate-limit summaries, and the generated model output; OAuth tokens and browser cookies are never copied into Aodcast configuration or bridge payloads.
+- **API keys** are local user-managed configuration; there is no macOS Keychain integration or secrets vault. Protect local config files, shell history, logs, screenshots, backups, synced folders, generated transcripts, and generated audio.
+- Do not open public issues or pull requests containing API keys, private prompts, imported source text, private generated content, local data paths, transcripts, or audio artifacts.

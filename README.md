@@ -80,6 +80,7 @@ Open **Settings** and choose how Aodcast writes your scripts. Full CLI flags are
 - With a remote LLM provider, your conversation, imported article and attachments are sent to that provider under its terms.
 - Memory is opt-in and local. You can view, switch off and delete it, and it never stores secrets such as passwords or API keys.
 - Chat attachments and imported articles never become memory.
+- Full details: [ARCHITECTURE.md](ARCHITECTURE.md#data-and-privacy-details).
 
 ## More
 

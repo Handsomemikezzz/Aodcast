@@ -80,6 +80,7 @@ cd ../..
 - 使用远程 LLM 时，你的对话、导入的文章和附件会按该服务商的条款发送给它。
 - 记忆功能默认需主动开启，数据只在本地，可查看、关闭和删除，且不会保存密码、API key 等敏感信息。
 - 对话附件和导入的文章不会成为记忆。
+- 完整说明见 [ARCHITECTURE.md](ARCHITECTURE.md#data-and-privacy-details)。
 
 ## 更多
 
