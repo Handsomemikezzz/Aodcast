@@ -8,57 +8,36 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Aodcast is an open-source, local-first macOS desktop app for turning a text idea or an existing Markdown article into a solo podcast script and final audio.
-
-The app runs as a Tauri desktop shell backed by a local Python HTTP runtime. It guides the user through an interview, generates editable script snapshots, and renders final audio through local or remote speech providers. Local synthesis runs in the bundled `speech-service` process and either speaks a preset voice or zero-shot clones a Speaker Reference (a recording plus its exact transcript) with a Qwen3 TTS Base model.
-
-> Status: source-code alpha. Aodcast is usable for local development, but it is not yet a hardened packaged desktop distribution. Provider keys and generated content are stored locally; there is no Keychain or dedicated secret vault integration yet.
-
-## What Works
-
-- Text-topic podcast creation with an interview-guided writing flow.
-- Chat sending becomes available as soon as a reply completes or Stop is pressed; animation and background session refresh do not block the next message.
-- Chat attachments: paste, drop, or pick images (PNG/JPEG/WebP/GIF) and documents (TXT/Markdown/CSV/JSON/PDF, up to 10 MB each, 8 per message). Images go to the model as image input; document text is extracted locally and sent as text.
-- Markdown-first creation from a local `.md` file or pasted text, with source preview, podcast adaptation or faithful narration, target-length guidance, optional source discussion, and versioned source replacement.
-- Multiple independent script snapshots per episode, regardless of whether it started from an interview or Markdown.
-- Script generation uses Podcast Editor behavior to write clean, listenable narration with deliberate sentence length, punctuation, and paragraph rhythm—without manufacturing filler words or stage directions.
-- An internal Speech Director that creates a versioned, provider-neutral Speech Plan with stable segments, structured pauses, emphasis, pronunciation, and delivery guidance for the exact script hash without exposing those engineering concepts in the main UI.
-- A script-first Episode Workspace for editing, contextual Voice and Delivery selection, short passage previews, full audio rendering, non-destructive audio updates, playback, and export.
-- Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, asset previews, and reference management; existing voices are selected directly inside an episode.
-- Local voice cloning: one Speaker Reference can be cloned by `Qwen3-TTS-12Hz-0.6B-Base-8bit` (default) or `1.7B-Base-8bit`, with short passage previews kept per model for A/B comparison before a full render.
-- A bundled native `speech-service` for local TTS/ASR, accessed through a lightweight `local_http` client, plus OpenAI-compatible remote TTS providers. Model loading and downloads stay inside the service process and its isolated environment.
-- Manifest-driven WAV assembly with explicit pauses, consistent format/loudness, render lineage, and reusable per-segment audio assets.
-- Models page for local speech-service status, the active preset model reported by that service, and the readiness of both voice-cloning models.
-- A mock LLM provider for interview and script smoke testing without paid provider access; audio rendering still requires a running local speech service or a configured remote TTS provider.
-- ChatGPT subscription LLM access through the official local Codex app-server, with browser sign-in, account model discovery, and Codex usage-window reporting.
-- Local-first development storage under `.local-data/`.
-
-## Screenshots
-
-### Episodes
-
-Create and manage podcast episodes from the home screen.
+**Turn an idea, or an article you already wrote, into a solo podcast — script and voice — on your own Mac.**
 
 ![Episodes](images/episodes.png)
 
-To refresh screenshots later: run `./scripts/dev/run-dev-all.sh`, capture the current UI, save stable filenames under `images/`, and update both `README.md` and `README.zh-CN.md`. Do not include API keys, local paths, private prompts, or user data.
+> Status: source-code alpha. It runs from source today; there is no packaged release yet.
+
+## Why Aodcast
+
+- **Write by talking.** An interviewer asks one question at a time and helps you draw out what you actually think, then turns the conversation into a script you can edit.
+- **Start from an article.** Bring a Markdown file and get a podcast adaptation or a faithful narration, at the length you want.
+- **Local voice, including your own.** Speech runs on your Apple Silicon Mac. Pick a built-in voice, or clone one from a short recording of the speaker.
+- **Local-first and private.** Your episodes, scripts, voices and audio stay on your machine.
+
+## How it works
+
+1. **Start** with an idea or import a Markdown article.
+2. **Talk it through.** Answer the interviewer, or pick one of its suggested answers.
+3. **Get a script.** Generate as many drafts as you like and edit them freely.
+4. **Pick a voice.** Choose a built-in voice or a voice you cloned, and preview a passage.
+5. **Render the audio** and export it as WAV or MP3.
 
 ## Requirements
 
-- Apple Silicon macOS for the desktop app and MLX speech service
-- Python 3.13+ for orchestration; Python 3.12 for `speech-service` (managed separately by `uv`)
-- `uv`
-- Node.js
-- `pnpm`
-- Rust and Cargo
-- `curl` and `lsof` for the development launcher
-- FFmpeg for the bundled speech service and optional MP3 export (`brew install ffmpeg`)
+- Apple Silicon macOS
+- Python 3.13+ (the bundled speech service uses its own Python 3.12, managed by `uv`)
+- `uv`, Node.js, `pnpm`, Rust and Cargo
+- `curl` and `lsof`
+- FFmpeg (`brew install ffmpeg`)
 
-Check the local toolchain:
-
-```bash
-./scripts/dev/check-toolchain.sh
-```
+Check your toolchain with `./scripts/dev/check-toolchain.sh`.
 
 ## Quick Start
 
@@ -79,357 +58,39 @@ cd ../..
 ./scripts/dev/run-dev-all.sh
 ```
 
-`run-dev-all.sh` starts `speech-service`, waits for `http://127.0.0.1:8090/health`, then starts the Python runtime on `127.0.0.1:8765` and launches Tauri with Vite on `http://localhost:1420`. `./scripts/dev/run-web-with-runtime.sh` follows the same order for the browser shell. The health check does not warm up models; weights load on the first synthesis or transcription request.
-
-### Daily start and stop
-
-After installing dependencies, run this one command from the repository root:
-
-```bash
-./scripts/dev/run-dev-all.sh
-```
-
-The local folder layout is `AudioS/Aodcast/`, with the service in `Aodcast/speech-service/`. The checkout can live elsewhere; launchers resolve paths relative to the repository.
-
-Direct `pnpm --dir apps/desktop tauri:dev` also runs the speech-service health prerequisite before starting its web shell.
-
-Press `Ctrl+C` in the launcher terminal to stop the development app and the runtime owned by that launcher. An explicitly reused runtime is left running. The shared speech process remains available to other clients; stop it explicitly:
+This starts the local speech service, the Python runtime and the desktop app. Press `Ctrl+C` to stop the app; the shared speech service keeps running until you stop it:
 
 ```bash
 ./speech-service/service.sh stop
 ```
 
-For manual speech management, use `./speech-service/service.sh start|stop|restart|status|logs` (choose one action). `start` installs/enables the current user's LaunchAgent `com.aodcast.speech-service`, including login startup; `stop` disables it. Logs are under `~/Library/Logs/Aodcast/speech-service/`. Closing Aodcast does not stop speech. Idle unloading releases model weights while leaving HTTP running.
+## Configure a model
 
-| Component | Address | Ownership / check |
-| --- | --- | --- |
-| Aodcast UI | Development: `http://localhost:1420` | Tauri + Vite; terminal launcher |
-| Aodcast Python runtime | `http://127.0.0.1:8765` | Interviews, scripts, tasks, artifacts; `GET /healthz` |
-| Bundled speech service | `http://127.0.0.1:8090` | TTS/ASR models and GPU memory; `GET /health` |
+Open **Settings** and choose how Aodcast writes your scripts. Full CLI flags are in [CONTRIBUTING.md](CONTRIBUTING.md#provider-setup).
 
-```bash
-curl --fail http://127.0.0.1:8765/healthz
-curl --fail http://127.0.0.1:8090/health
-```
+- **Mock** — no account needed, for trying the interview and script flow. Audio still needs the local speech service or a remote TTS provider.
+- **ChatGPT subscription (via Codex)** — install the official Codex CLI (`npm install -g @openai/codex`) and sign in from Settings. Your plan allowance is used; Aodcast never falls back to API-key billing.
+- **OpenAI-compatible** — any compatible endpoint with a base URL, model and API key.
 
-A speech health response with `loaded: false` is normal before the first request or after idle unloading. The Models page shows the service's configured model and readiness; the orchestration UI does not install or switch model weights.
+## Data & Privacy
 
-## First Smoke Test
+- Everything lives under `.local-data/` in the repository, which Git ignores. Never commit it.
+- There is no Keychain integration yet: API keys are stored as local configuration, so protect your config files, logs, backups and synced folders.
+- For ChatGPT subscription access, Codex owns sign-in and tokens. Aodcast never reads or stores them.
+- With a remote LLM provider, your conversation, imported article and attachments are sent to that provider under its terms.
+- Memory is opt-in and local. You can view, switch off and delete it, and it never stores secrets such as passwords or API keys.
+- Chat attachments and imported articles never become memory.
 
-Use the mock LLM provider first to verify interview and script generation without paid API access. From the repository root:
+## More
 
-```bash
-./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider local_http
-./scripts/dev/run-python-core.sh --create-demo-session
-./scripts/dev/run-dev-all.sh
-```
-
-In the app, create or open an episode, continue its conversation, create a draft, and preview or render audio from the Episode Workspace.
-
-## Provider Setup
-
-Provider settings are stored locally under `.local-data/` and are not intended for version control.
-
-### Development Mock LLM
-
-Use the mock LLM provider for smoke testing interview and script generation without paid API access:
-
-```bash
-./scripts/dev/run-python-core.sh --configure-llm-provider mock
-./scripts/dev/run-python-core.sh --configure-tts-provider local_http
-```
-
-Check whether the saved LLM configuration is ready for interview and script generation:
-
-```bash
-./scripts/dev/run-python-core.sh --check-llm-config
-```
-
-### ChatGPT Subscription Through Codex
-
-Install the official Codex CLI, then select **ChatGPT subscription (via Codex)** in Settings:
-
-```bash
-npm install -g @openai/codex
-```
-
-Aodcast starts the official local `codex app-server`, opens the ChatGPT browser sign-in flow, and discovers models available to that account. Interview, summary, script, Speech Plan, and memory calls use ephemeral Codex threads and consume the signed-in account's Codex plan allowance. Aodcast never reads or stores Codex access or refresh tokens and never silently falls back to API-key billing. The sign-in is shared with the official Codex CLI on the same machine.
-
-Settings also exposes one global **Reasoning effort** selector for every Codex-backed LLM task. `Auto` omits the turn override and uses the selected model's reported default. Explicit choices are populated from that model's live `supportedReasoningEfforts`; switching models resets an unsupported saved choice to `Auto`. Higher effort can increase response time and consume the plan allowance faster.
-
-For CLI-only configuration after the account is already signed in with `codex login`:
-
-```bash
-./scripts/dev/run-python-core.sh \
-  --configure-llm-provider codex_subscription \
-  --llm-model "gpt-5.6-sol" \
-  --llm-reasoning-effort auto
-```
-
-### OpenAI-Compatible Providers
-
-Configure an OpenAI-compatible LLM provider:
-
-```bash
-./scripts/dev/run-python-core.sh \
-  --configure-llm-provider openai_compatible \
-  --llm-base-url "https://api.openai.com/v1" \
-  --llm-model "gpt-4o-mini" \
-  --llm-api-key "<your-key>"
-```
-
-Configure an OpenAI-compatible TTS provider:
-
-```bash
-./scripts/dev/run-python-core.sh \
-  --configure-tts-provider openai_compatible \
-  --tts-base-url "https://api.openai.com/v1" \
-  --tts-model "gpt-4o-mini-tts" \
-  --tts-api-key "<your-key>" \
-  --tts-voice "alloy" \
-  --tts-audio-format "wav"
-```
-
-### Environment Variables
-
-Aodcast does not require a `.env` file for normal development. `.env.example` documents `VITE_AODCAST_RUNTIME_URL` for pointing a parallel worktree's Vite shell at its own local runtime. `AODCAST_SPEECH_URL` supplies the default speech endpoint when provider settings have no saved base URL; a saved `--tts-base-url` takes priority. Export this variable before starting the app: the Python core reads process environment variables and does not automatically load `.env`. Speech-model settings and optional Hugging Face mirror/token/cache overrides belong in `speech-service/.env`, which that service loads itself. Weights stay in the external Hugging Face cache and are never committed. If Codex is installed outside `PATH`, `/opt/homebrew/bin`, or `/usr/local/bin`, set `AODCAST_CODEX_BIN` to the absolute official Codex executable path.
-
-### Exporting MP3
-
-Final renders stay WAV. After audio exists, use **Export** next to the final render. MP3 conversion requires FFmpeg on the local machine.
-
-- Aodcast writes a 192 kbps MP3 beside the WAV, for example `.local-data/exports/<session-id>/renders/<render-id>/podcast.mp3`.
-- Finder opens on the MP3 so you can upload it to Xiaoyuzhou or any other host.
-- Aodcast does not store platform credentials, upload audio, generate RSS, or track remote publication state.
-
-### Bundled Local Speech Service
-
-Aodcast's default TTS provider is `local_http`. It uses `httpx` to call the bundled native macOS `speech-service` at `http://127.0.0.1:8090/v1`. Source code ships in this repository; inference stays in a separate process and Python 3.12 `.venv`. The orchestration core uses its own Python 3.13+ environment and does not import inference libraries. See the [service README](speech-service/README.md) for configuration and memory limits.
-
-The desktop/web launchers start speech automatically. To manage it alone from the repository root:
-
-```bash
-./speech-service/service.sh start
-curl http://127.0.0.1:8090/health
-```
-
-Configure Aodcast from its repository root:
-
-```bash
-./scripts/dev/run-python-core.sh \
-  --configure-tts-provider local_http \
-  --tts-base-url http://127.0.0.1:8090/v1 \
-  --tts-voice "默认中文音色" \
-  --tts-audio-format wav
-./scripts/dev/run-python-core.sh --show-local-tts-capability
-```
-
-| Request | Contract |
-| --- | --- |
-| `POST /v1/audio/speech` | JSON with `input`, `voice`, and `response_format: "wav"`; returns PCM WAV bytes. `默认中文音色` selects the service default voice. |
-| `POST /v1/audio/transcriptions` | Multipart `file` upload (WAV, MP3, M4A); JSON response with `text`. |
-| `GET /health` | Loaded model state and process memory. |
-
-The service's default models are `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit` (TTS) and `mlx-community/Qwen3-ASR-0.6B-8bit` (ASR). To use `mlx-community/Kokoro-82M-bf16`, change `TTS_MODEL`, `TTS_VOICE=zf_xiaobei`, and `TTS_LANGUAGE=z` in `speech-service/.env`, run `(cd speech-service && uv sync --frozen --extra kokoro)`, then `./speech-service/service.sh restart`. Optional `HF_ENDPOINT=https://hf-mirror.com` also belongs in that service environment. The orchestration core has no model downloader, weight-path setting, or model-directory migration; the bundled service owns model acquisition and cache use.
-
-Aodcast sends complete natural paragraphs, including paragraphs longer than 1,000 characters. The service owns memory-safe text slicing, serial GPU inference, silence trimming, crossfades, cache cleanup, and idle model unloading. Aodcast retains Speech Plans, immutable paragraph audio, and Render Manifests for editorial assembly and local regeneration; these are publishing assets, not GPU-memory slices. The HTTP client uses a 1,800-second read timeout and a 30-second connect timeout. A stopped service produces an actionable error directing you to `./speech-service/service.sh start`.
-
-#### Transcription from Python
-
-Run from `services/python-core` after `uv sync --extra test`:
-
-```python
-from app.providers.local_speech.client import LocalSpeechClient
-
-client = LocalSpeechClient()
-text = client.transcribe("/absolute/path/to/audio.wav", language="zh")
-print(text)
-```
-
-ASR is a new Python client capability; it is not a microphone-input or subtitle-editing UI workflow.
-
-#### Capabilities and limits
-
-- The current local service supports preset voices, zero-shot voice cloning with two Qwen3 TTS Base models, WAV output, normal speed (`1.0`), and transcription.
-- Cloning uses in-context learning: the Speaker Reference audio and its exact transcript condition every inference slice. The service trims edge silence and accepts 3–30 seconds of reference speech by default (`CLONE_MIN/MAX_REFERENCE_SECONDS`); longer clips are rejected with an explicit message rather than truncated, because a truncated clip no longer matches its transcript. A clean 5–15 second clip of one speaker with a word-for-word transcript (punctuation included) gives the most stable result.
-- Voice Studio keeps uploads/recordings up to 10 minutes as assets, but only references inside the cloning window can be cloned locally; the UI flags longer or shorter samples.
-- Fine-tuning, voice conversion, other model families, style instructions, precise Speech Plan breaks, and preceding-audio conditioning are unsupported and produce explicit capability feedback. Each segment is cloned from the same reference rather than from previously generated audio. Use natural punctuation for rhythm; punctuation is not a precise pause contract.
-- Model loading/downloading may make the first request slower. Idle unloading releases model weights and caches; the service process still uses memory.
-- A full podcast render still saves an editorial Speech Plan, renders paragraph WAVs, and publishes the assembled `podcast.wav`. MP3 export remains an optional FFmpeg conversion.
-- `.mp4` is accepted only as a Speaker Reference audio-container input and normalized to WAV; Aodcast does not generate video MP4.
-
-#### Real-model verification
-
-Run the real TTS→ASR loopback and 1,246-character podcast pipeline from `services/python-core`:
-
-```bash
-uv run --extra test python ../../scripts/verification/verify-local-speech.py
-```
-
-The script writes WAV files, `results.json`, and per-second `memory.jsonl` into a new `.local-data/speech-verification/<timestamp>/` directory. It uses real speech models and a deterministic mock LLM only for editorial planning. It checks the spoken closing marker to detect truncated long audio.
-
-On 2026-10-15, the 16 GiB Apple M4 run produced a 9.04-second short WAV in 51.00 seconds (first load), recognized it in 9.20 seconds with 0% normalized character error, and rendered the 1,246-character paragraph in 207.94 seconds into 266.31 seconds of audio. The service handled all 11 inference slices. Service RSS peaked at 2.07 GiB and Metal allocation at 6.68 GiB; those counters use different accounting and must not be added. These are measurements of the earlier decoupling acceptance run, not a new migration benchmark or performance guarantees.
-
-Voice cloning has its own real-model check, which reuses one Speaker Reference for both Base models (pass `--reference /path/to/friend.wav --reference-text "exact transcript"` to use your own recording):
-
-```bash
-uv run --extra test python ../../scripts/verification/verify-local-clone.py
-```
-
-On 2026-10-25 (16 GiB M4, 8.2-second generated reference, about 18 GiB of macOS swap in use from other apps), both models passed. Each one rendered a short clone that ASR read back with 0% character error, a 4-segment episode with its closing marker intact, and a 3-segment context-window regeneration. The 0.6B episode was 38.2 s of audio in 96.6 s; the 1.7B episode was 37.1 s in 132.8 s. Metal peak allocation reached 6.27 GiB with 0.6B and 7.25 GiB after 1.7B; the counter is cumulative for the service process. Because the service keeps one model resident, alternating between 0.6B and 1.7B reloads weights each time, and under heavy swap a single 1.7B slice can take minutes. Compare by previewing one passage per model rather than interleaving full renders.
-
-## Development Commands
-
-Run the desktop app with the local runtime:
-
-```bash
-./scripts/dev/run-dev-all.sh
-```
-
-Run the Python runtime directly:
-
-```bash
-./scripts/dev/run-python-core.sh --serve-http --host 127.0.0.1 --port 8765
-```
-
-Run frontend checks:
-
-```bash
-pnpm --dir apps/desktop check
-pnpm --dir apps/desktop test
-pnpm --dir apps/desktop build:web
-```
-
-Run Rust checks for the Tauri shell:
-
-```bash
-cd apps/desktop/src-tauri
-cargo check
-```
-
-Run Python tests:
-
-```bash
-cd services/python-core
-uv sync --extra test
-uv run ruff check .
-uv run python -m unittest discover -s tests -v
-```
-
-Run the repository hygiene check:
-
-```bash
-./scripts/maintenance/run-repo-hygiene-check.sh
-```
-
-## Repository Layout
-
-- `apps/desktop`: Tauri UI, React routes, desktop shell commands, and frontend bridge code.
-- `speech-service`: bundled MLX TTS/ASR HTTP service, Python 3.12 environment, and launchd lifecycle scripts.
-- `services/python-core`: interview orchestration, script generation, provider dispatch, local storage, artifacts, and HTTP runtime.
-- `packages/shared-schemas`: shared frontend/backend contract schemas.
-- `scripts`: development and maintenance helpers.
-- `docs`: gitignored local scratch (for example `tmp.md`, `plan.md`); human setup lives in README; agent constraints live in AGENTS.md.
-
-Useful docs:
-
-- [Agent collaboration contract](AGENTS.md)
-- [Contributing guide](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-
-## Data And Privacy
-
-Aodcast is local-first. During development, generated sessions, imported source snapshots, scripts, Speech Plans, Render Manifests, Speaker References, transcripts, audio artifacts, provider configuration, and request-state files are stored under:
-
-```text
-.local-data/
-```
-
-This directory is ignored by Git and must not be committed.
-
-API keys are stored as local user-managed configuration. Aodcast does not currently provide macOS Keychain integration or a dedicated secrets vault. Protect local config files, shell history, logs, screenshots, backups, synced folders, generated transcripts, and generated audio.
-
-For ChatGPT subscription access, Codex owns OAuth storage and token refresh. Aodcast receives only account status, plan labels, model metadata, rate-limit summaries, and the generated model output; OAuth tokens and browser cookies are never copied into Aodcast configuration or bridge payloads.
-
-Imported Markdown is snapshotted under `.local-data/sessions/<session-id>/source.json`. Script generation sends the normalized article, generation preferences, and any supplemental source discussion to the configured LLM provider. When that provider is remote, this content leaves the device and is handled under the provider's terms. Imported source text is not converted into transcript turns and is never written into Aodcast long-term memory; only later user-authored conversation turns may be eligible for memory when memory is enabled.
-
-Chat attachments are stored as immutable content-hashed files under `.local-data/sessions/<session-id>/attachments/`. Each interview turn re-sends the conversation's attachments (the six most recent images and up to 40k characters of document text) to the configured LLM provider. Attachments never become long-term memories. If the selected model cannot accept images, the reply fails with an explicit error instead of silently dropping them.
-
-Long-term memory is local-only. When enabled, Aodcast saves a small set of reusable user knowledge as Markdown files under `.local-data/memory/` so interviews and scripts can stay consistent across episodes. Memory is opt-in (first-run notice), can be turned off per episode or globally, and is fully viewable and deletable. High-sensitivity secrets (passwords, API keys, payment credentials, full ID numbers, precise addresses) are never saved, even on request.
-
-Do not open public issues or pull requests containing API keys, private prompts, imported source text, private generated content, local data paths, transcripts, or audio artifacts.
-
-## Current Scope
-
-Aodcast currently focuses on local-first solo podcast creation:
-
-- platform: macOS desktop (Tauri) + local Python orchestration core
-- input: a text topic or one local/pasted Markdown source per episode
-- output: solo podcast script plus final audio from Episode Workspace
-- LLM: mock, OpenAI-compatible, or ChatGPT subscription through Codex
-- local speech identity: a preset voice, or a Speaker Reference cloned by a Qwen3 Base model, selected per script
-- TTS: bundled local HTTP `speech-service` in an isolated process, or remote API providers
-- memory: file-native, local-only long-term user memory across episodes
-
-The Python speech client also supports file transcription. Speech-to-text UI input, multi-host formats, and a required cloud backend remain out of scope.
-
-The app can serve common audio suffixes and validate uploaded Speaker Reference duration through local decoders or `ffprobe`. Export to compressed audio formats depends on local conversion tools. True video MP4 output is out of scope.
-
-## Architecture And Behavior Notes
-
-These notes describe current product behavior for humans and operators. Agent coding constraints live in [AGENTS.md](AGENTS.md).
-
-### Interview and script offer
-
-Offering script generation requires both content-dimension readiness and a minimum number of user answers (`MIN_USER_TURNS_FOR_SCRIPT_OFFER`, default 4). Each interview turn asks one follow-up and offers two grounded answer candidates (A/B) plus a free-answer option (C); the interview keeps going and presents script generation only as a secondary option until the user explicitly finishes or chooses to generate.
-
-### Memory
-
-Long-term memory is file-native under `.local-data/memory/`. `entries/*.md` is the source of truth; `catalog.json` and `MEMORY.md` are rebuildable indexes. Only user turns become memories. Interview/script flows use read-only retrieval and do not block on background memory work.
-
-### Podcast Editor and Speech Director
-
-The Podcast Editor keeps generated scripts as plain spoken text while improving listening structure, sentence length, punctuation, and paragraph breathing. It does not add provider tags, stage directions, or synthetic filler. At the start of a full render, the Speech Director creates a versioned Speech Plan bound to the exact script hash. Editing the script makes the prior plan and render stale; generate the full audio again before local regeneration.
-
-### Desktop bridge and long tasks
-
-UI calls go through the desktop HTTP bridge to the local Python runtime. Long operations (audio render, voice preview, and similar) persist pollable `request_state`, expose progress, support cancel, and use `run_token` so retriggered runs do not show stale UI state. Full render and context-window regeneration share the script-scoped task id `render_audio:<session_id>:<script_id>`; cancellation must carry that run's token, so different scripts do not collide. Stateful long-task operations should otherwise be sequenced unless concurrency is under test.
-
-### Episode Workspace and Voice Studio
-
-- Episode Workspace keeps the script as the primary canvas, with Sources and Conversation in contextual drawers, Voice and Delivery in a lightweight inspector, and Preview/full audio controls in a persistent bottom dock.
-- A full render saves immutable segment WAVs and a Render Manifest, then assembles the manifest's final WAV. MP3 is an on-demand sibling export next to that final render.
-- Preview uses selected text, the current paragraph, or the script opening and creates disposable audio without replacing the current episode render.
-- Existing audio remains playable after script, source, voice, or delivery changes and is labeled `Audio needs update` until a replacement render succeeds.
-- Voice Studio owns reusable Speaker Reference assets. With the local engine, the inspector's Voice section starts with **Model**, grouped into *Built-in voices* (CustomVoice) and *Clone a voice* (`Qwen3 TTS 0.6B Base`, the default when a reference is selected, and `1.7B Base`). The voice control below follows the model's declared cloning capability: preset models offer only built-in voices, cloning models offer your saved voices and built-in samples plus a link to clone a new one. The same reference serves both cloning models without duplicating assets. Previews of the same passage are kept per model, and the audio dock switches between them; changing the model marks existing audio `Audio needs update`. Explicitly rendering with a local preset detaches an earlier cloning selection without deleting its source audio or older Render Manifests.
-- Cloning a new voice in Voice Studio: tips on recording conditions, a ~10 second read-aloud passage that fills the transcript exactly, a recording timer that stops at the local cloning limit, a length check for uploaded or recorded samples, and a required confirmation that the speaker consented. Created from an episode, the voice is applied to that script and the app returns to the episode, ready to preview.
-- Built-in reference audio lives under `services/python-core/app/assets/speaker-references/` (tracked for now). User metadata lives in `.local-data/speaker-references/`; uploaded or recorded audio is normalized to immutable 48 kHz mono 16-bit PCM WAV under `.local-data/exports/_speaker_references/`. Creation requires the matching reference text; system audio capture is not available yet.
-- The local speech service loads the preset model from its `.env` and the clone model named by each request, keeping one model resident at a time. Aodcast records the selected provider, model, and Speaker Reference hash in each manifest, so context-window regeneration reuses the model and reference of the render it replaces. Speech Plan and context-window regeneration contracts remain internal rather than appearing in the primary UI.
-- Artifact audio playback uses the localhost HTTP route `/api/v1/artifacts/audio` in both Web and Tauri shells.
-- Tauri-only helpers such as Reveal in Finder live in shell helpers and are not part of the HTTP `DesktopBridge` surface.
-
-### Local speech boundary
-
-Aodcast's orchestration core contains no speech-model worker or in-process inference. `LocalSpeechClient` preserves the synchronous TTS provider contract while performing cancellable HTTP requests. The bundled `speech-service` process controls model loading, GPU concurrency, inference slicing, and ASR decoding. Preset voice selection remains stable across requests. Clone requests upload the selected Speaker Reference WAV and transcript with every segment; preceding generated audio is never sent as a continuity condition.
-
-Manifest-driven assembly in Aodcast normalizes paragraph WAVs, applies one edge fade per segment, matches audible-sample RMS level, inserts editorial pauses, enforces a sample-peak ceiling, and writes `podcast.wav`. This publication stage remains separate from the service's inference-slice crossfades.
-
-### Development operators
-
-- `./scripts/dev/run-dev-all.sh` starts speech and waits for its health check before restarting the Python runtime on port `8765`; use `--reuse-runtime` only when process continuity is intentional.
-- For audio-render debugging: check `/healthz` runtime metadata first, then `.local-data/runtime/request-state/*`, then frontend `run_token` filtering.
-- `run-python-core.sh` is an operator CLI only: `--serve-http`, `--configure-llm-provider`/`--configure-tts-provider`, `--show-llm-config`/`--show-tts-config`, `--check-llm-config`, `--show-local-tts-capability`, `--list-models-status`, and `--create-demo-session`. Each prints one JSON object. Interviews, scripts, and audio run through the HTTP runtime.
-- Desktop package validation: `pnpm --dir apps/desktop tauri:build` (do not forward extra cargo-style flags after `--`). Non-interactive DMG builds rely on `CI=true` so Finder AppleScript styling is skipped.
-- Apply `chmod +x` before running a newly created script; do not race permission and execution.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — how the product behaves and where its limits are
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development commands, provider setup, speech service, verification
+- [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md)
+- [AGENTS.md](AGENTS.md) — collaboration contract for coding agents
 
 ## Contributing
 
-Contributions are welcome. Keep changes small, update docs when behavior changes, and run the relevant verification commands before opening a pull request.
-
-Do not commit `.local-data/`, `.env`, model weights, generated audio, transcripts, virtual environments, `node_modules`, build outputs, or private credentials.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
+Contributions are welcome. Keep changes small, update docs when behavior changes, and never commit `.local-data/`, `.env`, model weights, generated audio or credentials. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 

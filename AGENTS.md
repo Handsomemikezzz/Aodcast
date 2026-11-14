@@ -66,10 +66,11 @@ Update this file when ownership boundaries, shared contracts, core product flow,
 ## Documentation Rules
 
 - Code is the primary architecture reference.
-- Human setup and product/status notes belong in `README.md` and `README.zh-CN.md`.
+- `README.md` and `README.zh-CN.md` are the short product/setup entry point; keep them aligned and brief.
+- Human-facing architecture and behavior notes belong in `ARCHITECTURE.md`; development commands, provider CLI setup, and verification belong in `CONTRIBUTING.md`.
 - Agent constraints belong in `AGENTS.md`.
 - Do not add tracked documentation under `docs/`; that directory is gitignored local scratch.
-- Keep public release docs (`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, README pair) aligned when install, provider, or release behavior changes.
+- Keep public release docs (`LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, README pair, `ARCHITECTURE.md`) aligned when install, provider, or release behavior changes.
 
 ## Delivery Workflow
 
