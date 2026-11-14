@@ -302,6 +302,23 @@ class HttpRuntimeTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertFalse(audio_path.exists())
 
+    def test_delete_speaker_reference_succeeds_while_a_script_selects_it(self) -> None:
+        session_id, script_id = self.seed_renderable_project()
+        reference = self.create_speaker_reference()
+        self.context.audio_rendering.select_speaker_reference(session_id, script_id=script_id, reference=reference)
+
+        status, _, payload = self.request_json("DELETE", f"/api/v1/speaker-references/{reference.speaker_reference_id}")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["data"]["deleted"])
+        self.assertFalse(Path(reference.audio_path).exists())
+        reloaded = self.store.load_project_for_script(session_id, script_id)
+        assert reloaded.artifact is not None
+        self.assertEqual(
+            reloaded.artifact.speaker_reference["speaker_reference_id"],
+            reference.speaker_reference_id,
+        )
+
     def test_delete_artifact_audio_route_rejects_persistent_speaker_reference(self) -> None:
         session_id, script_id = self.seed_renderable_project()
         reference = self.create_speaker_reference()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { modelMode, readyModelForMode, readySpeechModel, referenceDurationIssue } from "./voiceSettings";
-import type { ModelStatus } from "../types";
+import { isSelectedVoiceDeleted, modelMode, readyModelForMode, readySpeechModel, referenceDurationIssue } from "./voiceSettings";
+import type { ModelStatus, SessionProject, SpeakerReference } from "../types";
 
 const qwen: ModelStatus = { model_name: "qwen", display_name: "Qwen", hf_repo_id: "service/qwen", available: true, active: true, ready: false };
 const kokoro: ModelStatus = { model_name: "kokoro", display_name: "Kokoro", hf_repo_id: "service/kokoro", available: true, active: false, ready: true };
@@ -43,5 +43,20 @@ describe("local voice modes", () => {
     expect(referenceDurationIssue(45000, limits)).toContain("at most 30 s");
     expect(referenceDurationIssue(2000, limits)).toContain("at least 3 s");
     expect(referenceDurationIssue(600000, {})).toBe("");
+  });
+});
+
+describe("deleted voice detection", () => {
+  const ref = (id: string) => ({ speaker_reference_id: id }) as unknown as SpeakerReference;
+  const project = (id: string) =>
+    ({ artifact: { script_artifacts: { s1: { speaker_reference: ref(id) } } } }) as unknown as SessionProject;
+
+  it("flags a selected voice that is no longer in the list", () => {
+    expect(isSelectedVoiceDeleted(project("gone"), "s1", [ref("builtin_clear_broadcast")])).toBe(true);
+  });
+  it("accepts an existing voice, no selection, and a not-yet-loaded list", () => {
+    expect(isSelectedVoiceDeleted(project("mine"), "s1", [ref("mine")])).toBe(false);
+    expect(isSelectedVoiceDeleted({ artifact: {} } as unknown as SessionProject, "s1", [ref("mine")])).toBe(false);
+    expect(isSelectedVoiceDeleted(project("gone"), "s1", [])).toBe(false);
   });
 });

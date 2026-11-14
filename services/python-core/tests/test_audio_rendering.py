@@ -136,6 +136,17 @@ class AudioRenderingTests(unittest.TestCase):
                 speaker_reference={"audio_path": str(outside), "reference_text": "x"},
             )
 
+    def test_preview_with_deleted_reference_audio_asks_for_another_voice(self) -> None:
+        temp, _, _, artifacts, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        gone = artifacts.exports_dir / "_speaker_references" / "gone.wav"
+        with self.assertRaisesRegex(ValueError, "was deleted. Choose another voice"):
+            service.render_voice_preview_with_cancellation(
+                VoiceRenderSettings(preview_text="试听"),
+                override_provider="local_http",
+                speaker_reference={"audio_path": str(gone), "reference_text": "x"},
+            )
+
     def test_local_final_render_requires_speaker_reference_when_requested(self) -> None:
         temp, store, configs, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)

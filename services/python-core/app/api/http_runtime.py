@@ -1144,13 +1144,6 @@ class RuntimeRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
             if self.command == "DELETE":
-                reference = reference_store.get_reference(reference_id)
-                dependent_count = self.context.store.count_speaker_reference_dependencies(reference_id)
-                if dependent_count:
-                    raise ValueError(
-                        f"Speaker Reference is still used by {dependent_count} script selection(s) or render(s). "
-                        "Select another reference and delete dependent audio first."
-                    )
                 deleted = reference_store.delete_reference(reference_id)
                 self._send_bridge_envelope(
                     success_envelope(

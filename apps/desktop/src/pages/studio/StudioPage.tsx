@@ -26,6 +26,7 @@ import {
   isProjectSourceOutOfDate,
   projectHasSelectedVoice,
 } from "../../lib/episodeStatus";
+import { isSelectedVoiceDeleted } from "../../lib/voiceSettings";
 
 // Resolves /studio/:sessionId (no scriptId) to the latest script, then redirects
 function StudioSessionResolve({
@@ -198,9 +199,13 @@ function StudioWorkspace({
     prevAudioSrcRef.current = workbench.audioSrc;
   }, [persistedAudioOutOfDate, serverScript, sourceOutOfDate, voiceFreshnessKey, workbench.audioSrc]);
 
+  // Local preset voices ignore Speaker References, so only cloning and cloud care about a deleted one.
+  const usesSpeakerReference = workbench.selectedEngine !== "local_http" || workbench.localVoiceMode === "clone";
+  const voiceDeleted = usesSpeakerReference
+    && isSelectedVoiceDeleted(workbench.project, scriptId, workbench.speakerReferences);
   const readiness = deriveEpisodeRenderReadiness({
     scriptReady: workbench.scriptCheck.canRender,
-    hasSelectedVoice: projectHasSelectedVoice(workbench.project, scriptId),
+    hasSelectedVoice: projectHasSelectedVoice(workbench.project, scriptId) && !voiceDeleted,
     selectedEngine: workbench.selectedEngine,
     localVoiceMode: workbench.localVoiceMode,
     selectedModelId: workbench.selectedModelId,
@@ -215,6 +220,7 @@ function StudioWorkspace({
     generationFailed: workbench.audioRequestState?.phase === "failed",
     audioOutOfDate: audioOutOfDate || persistedAudioOutOfDate,
     readyToGenerate: readiness.ready && !sourceOutOfDate,
+    needsVoice: voiceDeleted,
   });
 
   const handlePreview = () => {
@@ -343,6 +349,7 @@ function StudioWorkspace({
               workbench={workbench}
               scriptId={scriptId}
               readiness={readiness}
+              voiceDeleted={voiceDeleted}
             />
           </div>
         </div>

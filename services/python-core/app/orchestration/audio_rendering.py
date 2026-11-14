@@ -9,7 +9,7 @@ from app.domain.artifact import ArtifactRecord
 from app.domain.common import sha256_text
 from app.domain.project import SessionProject
 from app.domain.session import SessionState
-from app.domain.speaker_reference import SpeakerReference
+from app.domain.speaker_reference import DELETED_VOICE_MESSAGE, SpeakerReference
 from app.domain.tts_config import TTSProviderConfig
 from app.domain.voice_studio import STANDARD_PREVIEW_TEXT, clamp_speed, resolve_style_preset, resolve_voice_preset
 from app.orchestration.podcast_rendering import (
@@ -471,7 +471,7 @@ class AudioRenderingService:
         data_dir = self.artifact_store.exports_dir.parent.resolve()
         target = Path(path).expanduser().resolve()
         if not target.is_file():
-            raise ValueError("Speaker Reference audio is missing. Upload or record it again in Voice Studio.")
+            raise ValueError(DELETED_VOICE_MESSAGE)
         if not _is_allowed_speaker_reference_path(target, data_dir):
             raise ValueError("Speaker reference audio must be inside the app data directory or packaged reference assets.")
         return target

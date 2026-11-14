@@ -3,6 +3,7 @@ import type { SessionProject } from "../types";
 export type EpisodeProductStatusKind =
   | "draft"
   | "ready_to_generate"
+  | "needs_voice"
   | "generating"
   | "audio_ready"
   | "audio_needs_update"
@@ -16,6 +17,7 @@ export type EpisodeProductStatus = {
 const STATUS_LABELS: Record<EpisodeProductStatusKind, string> = {
   draft: "Draft",
   ready_to_generate: "Ready to generate",
+  needs_voice: "Needs a voice",
   generating: "Generating audio",
   audio_ready: "Audio ready",
   audio_needs_update: "Audio needs update",
@@ -72,6 +74,7 @@ export function deriveEpisodeProductStatus({
   generationFailed = false,
   audioOutOfDate,
   readyToGenerate,
+  needsVoice = false,
 }: {
   project: SessionProject | null;
   scriptId?: string;
@@ -80,6 +83,7 @@ export function deriveEpisodeProductStatus({
   generationFailed?: boolean;
   audioOutOfDate?: boolean;
   readyToGenerate?: boolean;
+  needsVoice?: boolean;
 }): EpisodeProductStatus {
   let kind: EpisodeProductStatusKind;
   const hasScript = Boolean(project?.script && !project.script.deleted_at);
@@ -90,6 +94,7 @@ export function deriveEpisodeProductStatus({
   else if (hasAudio && (audioOutOfDate ?? isProjectAudioOutOfDate(project, scriptId, isDirty))) {
     kind = "audio_needs_update";
   } else if (hasAudio) kind = "audio_ready";
+  else if (needsVoice) kind = "needs_voice";
   else if (!hasScript && project?.session.state === "completed") kind = "audio_ready";
   else if (
     !hasScript
@@ -103,7 +108,7 @@ export function deriveEpisodeProductStatus({
 
 export function episodeStatusTone(kind: EpisodeProductStatusKind): string {
   if (kind === "audio_ready") return "text-success";
-  if (kind === "audio_needs_update") return "text-warning";
+  if (kind === "audio_needs_update" || kind === "needs_voice") return "text-warning";
   if (kind === "generating") return "text-accent-amber";
   if (kind === "failed") return "text-danger";
   return "text-secondary";

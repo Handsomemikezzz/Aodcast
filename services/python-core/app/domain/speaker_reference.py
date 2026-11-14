@@ -9,6 +9,9 @@ from app.domain.common import sha256_json, utc_now_iso
 SPEAKER_REFERENCE_SCHEMA_VERSION = 1
 
 
+DELETED_VOICE_MESSAGE = "The voice selected for this script was deleted. Choose another voice."
+
+
 @dataclass(frozen=True, slots=True)
 class SpeakerReference:
     speaker_reference_id: str

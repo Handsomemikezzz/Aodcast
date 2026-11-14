@@ -298,38 +298,6 @@ class ProjectStore:
         manifests.sort(key=lambda item: item.created_at)
         return manifests
 
-    def count_speaker_reference_dependencies(self, speaker_reference_id: str) -> int:
-        cleaned = speaker_reference_id.strip()
-        if not cleaned:
-            return 0
-        dependencies: set[tuple[str, str, str]] = set()
-        for artifact_path in self.sessions_dir.glob("*/artifact.json"):
-            try:
-                artifact = ArtifactRecord.from_dict(self._read_json(artifact_path))
-            except (OSError, KeyError, TypeError, ValueError):
-                continue
-            session_id = artifact.session_id
-            matched_script_selection = False
-            for script_id, payload in artifact.script_artifacts.items():
-                reference = payload.get("speaker_reference")
-                if isinstance(reference, dict) and str(reference.get("speaker_reference_id") or "") == cleaned:
-                    dependencies.add(("selection", session_id, script_id))
-                    matched_script_selection = True
-            top_reference = artifact.speaker_reference or {}
-            if not matched_script_selection and str(top_reference.get("speaker_reference_id") or "") == cleaned:
-                dependencies.add(("selection", session_id, "current"))
-        for path in self.sessions_dir.glob("*/render-manifests/*/*.json"):
-            if path.name == "current.json":
-                continue
-            try:
-                manifest = RenderManifest.from_dict(self._read_json(path))
-            except (OSError, KeyError, TypeError, ValueError):
-                continue
-            reference = manifest.speaker_reference or {}
-            if str(reference.get("speaker_reference_id") or "") == cleaned:
-                dependencies.add(("render", manifest.session_id, manifest.render_id))
-        return len(dependencies)
-
     def delete_render_manifest(self, session_id: str, script_id: str) -> None:
         directory = self.render_manifest_script_dir(session_id, script_id)
         if directory.exists():

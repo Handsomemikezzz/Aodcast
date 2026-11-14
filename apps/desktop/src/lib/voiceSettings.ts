@@ -57,6 +57,24 @@ export function selectedSpeakerReferenceLabel(
 }
 
 
+export const DELETED_VOICE_MESSAGE = "The voice for this script was deleted. Choose another voice.";
+
+/** True when the script selects a Speaker Reference that no longer exists (deleted in Voice Studio). */
+export function isSelectedVoiceDeleted(
+  project: SessionProject | null | undefined,
+  scriptId: string | undefined,
+  references: SpeakerReference[],
+): boolean {
+  // An empty list means references have not loaded yet; built-ins are always present once they have.
+  if (!references.length) return false;
+  const selected = scriptId
+    ? project?.artifact?.script_artifacts?.[scriptId]?.speaker_reference ?? project?.artifact?.speaker_reference
+    : project?.artifact?.speaker_reference;
+  const id = selected?.speaker_reference_id;
+  if (!id) return false;
+  return !filterActiveSpeakerReferences(references).some((reference) => reference.speaker_reference_id === id);
+}
+
 export function modelId(model: ModelStatus): string {
   return model.hf_repo_id || model.model_name;
 }

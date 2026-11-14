@@ -18,6 +18,7 @@ from app.domain.render_manifest import (
     RenderedSegment,
     SpeechPlanReference,
 )
+from app.domain.speaker_reference import DELETED_VOICE_MESSAGE
 from app.domain.speech_plan import SpeechBreak as PlannedBreak, SpeechPlan, SpeechSegment
 from app.domain.voice_studio import resolve_style_preset
 from app.domain.tts_config import TTSProviderConfig
@@ -457,7 +458,7 @@ class PodcastRenderingPipeline:
         if any(not value for value in snapshot.values()):
             raise ValueError("Selected speaker reference is incomplete. Select it again in Voice Studio.")
         if not Path(snapshot["audio_path"]).is_file():
-            raise ValueError("Selected speaker reference audio is missing.")
+            raise ValueError(DELETED_VOICE_MESSAGE)
         audio_hash = sha256_bytes(Path(snapshot["audio_path"]).read_bytes())
         if audio_hash != snapshot["audio_hash"]:
             raise ValueError("Selected speaker reference audio changed after it was saved. Select it again in Voice Studio.")

@@ -12,6 +12,7 @@ import {
 import { resolveAudioFileUrl } from "../../lib/audioFile";
 import { cn } from "../../lib/utils";
 import {
+  DELETED_VOICE_MESSAGE,
   filterActiveSpeakerReferences,
   modelId,
   modelMode,
@@ -41,10 +42,12 @@ export function EpisodeInspector({
   workbench,
   scriptId,
   readiness,
+  voiceDeleted,
 }: {
   workbench: UseScriptWorkbenchResult;
   scriptId: string;
   readiness: EpisodeRenderReadiness;
+  voiceDeleted: boolean;
 }) {
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const [playingReferenceId, setPlayingReferenceId] = useState("");
@@ -68,7 +71,7 @@ export function EpisodeInspector({
     || "";
   const localHttp = workbench.selectedEngine === "local_http";
   const cloning = localHttp && workbench.localVoiceMode === "clone";
-  const selectedVoiceLabel = selectedSpeakerReferenceLabel(workbench.project, scriptId) || "Choose a voice";
+  const selectedVoiceLabel = (!voiceDeleted && selectedSpeakerReferenceLabel(workbench.project, scriptId)) || "Choose a voice";
   const presetModels = workbench.models.filter((model) => modelMode(model) === "preset");
   const cloneModels = workbench.models.filter((model) => modelMode(model) === "clone");
   const selectedModel = workbench.models.find((model) => modelId(model) === workbench.selectedModelId);
@@ -155,7 +158,7 @@ export function EpisodeInspector({
 
   const missing = [
     !readiness.scriptReady && { label: "Script has issues to fix", action: null },
-    !readiness.voiceReady && { label: "No voice selected", action: { label: "Choose voice", run: () => setVoicePickerOpen(true) } },
+    !readiness.voiceReady && { label: voiceDeleted ? DELETED_VOICE_MESSAGE : "No voice selected", action: { label: "Choose voice", run: () => setVoicePickerOpen(true) } },
     !readiness.ttsReady && {
       label: cloning
         ? "Voice cloning model isn't ready"
@@ -259,6 +262,11 @@ export function EpisodeInspector({
               <span className="truncate">{selectedVoiceLabel}</span>
               <ChevronDown className={cn("h-4 w-4 shrink-0 text-secondary transition-transform", voicePickerOpen && "rotate-180")} />
             </button>
+            {voiceDeleted ? (
+              <p role="alert" className="mt-2 rounded-lg bg-warning-container px-2.5 py-2 text-meta text-warning">
+                {DELETED_VOICE_MESSAGE}
+              </p>
+            ) : null}
             {voicePickerOpen ? (
               <div className="mt-2 space-y-3 rounded-xl border border-outline p-2">
                 {renderReferenceGroup("Recent", recentReferences)}

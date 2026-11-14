@@ -400,6 +400,24 @@ class PodcastRenderingTests(unittest.TestCase):
         self.assertEqual(after.pipeline[0].model, LOCAL_CLONE_MODELS[-1])
         self.assertTrue(all(r.reference_audio_path == reference["audio_path"] for r in requests[before:]))
 
+    def test_render_with_deleted_reference_audio_fails_with_choose_another_voice(self) -> None:
+        temp, store, _, _, service = self.build_environment()
+        self.addCleanup(temp.cleanup)
+        session_id, script_id = self.seed_project(store)
+        reference = self.attach_speaker_reference(Path(temp.name), store, session_id, script_id)
+        Path(reference["audio_path"]).unlink()
+        requests = self.capture_clone_requests()
+        with self.assertRaisesRegex(ValueError, "was deleted. Choose another voice"):
+            service.render_audio(
+                session_id,
+                script_id=script_id,
+                override_provider="local_http",
+                override_model=DEFAULT_LOCAL_CLONE_MODEL,
+                settings=VoiceRenderSettings(),
+                require_speaker_reference=True,
+            )
+        self.assertFalse(requests)
+
     def test_clone_render_without_reference_fails_before_synthesis(self) -> None:
         temp, store, _, _, service = self.build_environment()
         self.addCleanup(temp.cleanup)

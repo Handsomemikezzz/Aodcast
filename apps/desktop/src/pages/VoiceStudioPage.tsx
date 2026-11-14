@@ -1154,7 +1154,7 @@ export function VoiceStudioPage() {
         title="Delete this voice?"
         message={
           referenceToDelete
-            ? `Delete “${referenceToDelete.name}”? Voices still used by a script or rendered audio can't be deleted.`
+            ? `Delete “${referenceToDelete.name}”? Scripts that use this voice will ask for a new one. Existing audio stays playable.`
             : ""
         }
         onClose={() => setReferenceToDelete(null)}
