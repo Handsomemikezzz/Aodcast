@@ -3,12 +3,11 @@ import { Routes, Route, NavLink, useNavigate, useLocation, Navigate } from "reac
 import { useBridge } from "./lib/BridgeContext";
 import { SessionProject } from "./types";
 import { cn } from "./lib/utils";
-import { List, Mic, AudioLines, Package, Settings, Sun, Moon, Brain } from "lucide-react";
+import { List, Mic, AudioLines, Settings, Sun, Moon, Brain } from "lucide-react";
 import { HTTP_BACKEND_UNAVAILABLE } from "./lib/httpBridge";
 import { applyTheme, readStoredTheme, type AppTheme } from "./lib/theme";
 
 const ChatPage = lazy(() => import("./pages/ChatPage").then((module) => ({ default: module.ChatPage })));
-const ModelsPage = lazy(() => import("./pages/ModelsPage").then((module) => ({ default: module.ModelsPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const VoiceStudioPage = lazy(() => import("./pages/VoiceStudioPage").then((module) => ({ default: module.VoiceStudioPage })));
 const EpisodesPage = lazy(() => import("./pages/EpisodesPage").then((module) => ({ default: module.EpisodesPage })));
@@ -66,7 +65,6 @@ export default function App() {
       active: pathSegment === "episodes" || pathSegment === "studio",
     },
     { to: "/voice-studio", label: "Voice", icon: AudioLines, active: pathSegment === "voice-studio" },
-    { to: "/models", label: "Models", icon: Package, active: pathSegment === "models" },
     { to: "/memory", label: "Memory", icon: Brain, active: pathSegment === "memory" },
   ];
 
@@ -130,7 +128,6 @@ export default function App() {
               <Route path="/episodes/new/markdown" element={<NewEpisodePage onRefresh={fetchProjects} />} />
               <Route path="/studio/:sessionId" element={<StudioPage projects={projects} onRefresh={fetchProjects} />} />
               <Route path="/studio/:sessionId/:scriptId" element={<StudioPage projects={projects} onRefresh={fetchProjects} />} />
-              <Route path="/models" element={<ModelsPage />} />
               <Route path="/memory" element={<MemoryPage />} />
               <Route path="/voice-studio" element={<VoiceStudioPage />} />
               <Route path="/voice-studio/:sessionId/:scriptId" element={<VoiceStudioPage />} />

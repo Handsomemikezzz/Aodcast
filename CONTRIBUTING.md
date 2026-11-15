@@ -62,7 +62,7 @@ curl --fail http://127.0.0.1:8765/healthz
 curl --fail http://127.0.0.1:8090/health
 ```
 
-A speech health response with `loaded: false` is normal before the first request or after idle unloading. The Models page shows the service's configured model and readiness; the orchestration UI does not install or switch model weights.
+A speech health response with `loaded: false` is normal before the first request or after idle unloading. Settings → Speech shows the service's configured model and readiness; the orchestration UI does not install or switch model weights.
 
 Run pieces individually:
 

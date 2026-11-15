@@ -163,7 +163,7 @@ export function EpisodeInspector({
       label: cloning
         ? "Voice cloning model isn't ready"
         : localHttp ? "Local speech service isn't ready" : "Cloud voice isn't configured",
-      action: { label: localHttp ? "Open Models" : "Open Settings", run: () => workbench.navigate(localHttp ? "/models" : "/settings") },
+      action: { label: "Open Settings", run: () => workbench.navigate("/settings#speech") },
     },
   ].filter(Boolean) as { label: string; action: { label: string; run: () => void } | null }[];
 

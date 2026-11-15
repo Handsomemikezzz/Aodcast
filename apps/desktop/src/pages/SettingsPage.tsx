@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Check, AlertCircle, RotateCw } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Loader2, Check, AlertCircle, RotateCw, RefreshCw } from "lucide-react";
 import { useBridge } from "../lib/BridgeContext";
-import { LLMProviderConfig, LLMProviderStatus, RequestState, TTSProviderConfig } from "../types";
+import { LLMProviderConfig, LLMProviderStatus, ModelStatus, RequestState, TTSCapability, TTSProviderConfig } from "../types";
 import { cn } from "../lib/utils";
 import { openExternalUrl } from "../lib/shellOps";
+import { modelMode } from "../lib/voiceSettings";
 import {
   buildRequestState,
   getErrorMessage,
@@ -138,7 +138,6 @@ function toTTSForm(config: TTSProviderConfig): TTSForm {
 
 export function SettingsPage() {
   const bridge = useBridge();
-  const navigate = useNavigate();
 
   const [llmForm, setLlmForm] = useState<LLMForm>({
     provider: "openai_compatible",
@@ -179,9 +178,38 @@ export function SettingsPage() {
   const [testingTts, setTestingTts] = useState(false);
   const [ttsTestResult, setTtsTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Local speech service status (loaded independently of the settings forms)
+  const [speechModels, setSpeechModels] = useState<ModelStatus[]>([]);
+  const [capability, setCapability] = useState<TTSCapability | null>(null);
+  const [speechLoading, setSpeechLoading] = useState(true);
+  const [speechError, setSpeechError] = useState("");
+
   // Preset & Dual-mode custom state
   const [selectedLlmPreset, setSelectedLlmPreset] = useState("custom");
   const [customModelActive, setCustomModelActive] = useState(false);
+
+  const refreshSpeechStatus = useCallback(async () => {
+    setSpeechLoading(true);
+    try {
+      const [catalog, status] = await Promise.all([bridge.listModelsStatus(), bridge.getLocalTTSCapability()]);
+      setSpeechModels(catalog);
+      setCapability(status);
+      setSpeechError("");
+    } catch (e) {
+      setSpeechError(getErrorMessage(e, "Could not read the speech service status."));
+    } finally {
+      setSpeechLoading(false);
+    }
+  }, [bridge]);
+
+  useEffect(() => {
+    void refreshSpeechStatus();
+  }, [refreshSpeechStatus]);
+
+  useEffect(() => {
+    if (loading || window.location.hash !== "#speech") return;
+    document.getElementById("speech")?.scrollIntoView({ block: "start" });
+  }, [loading]);
 
   useEffect(() => {
     let active = true;
@@ -497,6 +525,7 @@ export function SettingsPage() {
     (model) => model.id === llmForm.model,
   ) ?? null;
   const ttsUsesLocalModels = ttsForm.provider === "local_http";
+  const speechAvailable = Boolean(capability?.available);
 
   const inputClass =
     "h-9 w-full rounded-lg border border-outline bg-transparent px-3 text-body text-primary placeholder:text-secondary/60 outline-none focus:border-primary/25 disabled:opacity-50";
@@ -799,7 +828,7 @@ export function SettingsPage() {
               </div>
             </section>
 
-            <section className="mt-10 space-y-5 border-t border-outline pt-6">
+            <section id="speech" className="mt-10 space-y-5 border-t border-outline pt-6">
               <h2 className="text-title font-semibold text-primary">Speech</h2>
 
               <label className="block">
@@ -825,13 +854,75 @@ export function SettingsPage() {
                   onChange={(e) => updateTts("base_url", e.target.value)} className={inputClass} />
                 {ttsUsesLocalModels ? (
                   <span className="mt-1.5 block text-meta leading-relaxed text-secondary">
-                    The speech service manages its models: preset voices, plus voice cloning with Qwen3 Base models. Pick a voice per episode.{" "}
-                    <button type="button" onClick={() => navigate("/models")} className="text-primary underline underline-offset-2">
-                      View service status
-                    </button>
+                    The speech service manages its models: preset voices, plus voice cloning with Qwen3 Base models. Pick a voice per episode.
                   </span>
                 ) : null}
               </label>
+
+              {ttsUsesLocalModels ? (
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 text-body">
+                      <p className="flex items-center gap-2 font-medium text-primary">
+                        <span className={cn("h-2 w-2 shrink-0 rounded-full", speechAvailable ? "bg-success" : "bg-warning")} aria-hidden />
+                        Local speech service · {speechLoading && !capability ? "Checking…" : speechAvailable ? "Running" : "Not available"}
+                      </p>
+                      <p className="mt-0.5 break-all text-meta text-secondary">
+                        Active model: {capability?.current_model || "—"}
+                      </p>
+                      {capability?.reasons.map((reason) => (
+                        <p key={reason} className="mt-1 text-meta text-warning">{reason}</p>
+                      ))}
+                      {!speechAvailable && !speechLoading ? (
+                        <p className="mt-1 text-meta text-secondary">
+                          Start it from the repository root with <code className="font-mono">./speech-service/service.sh start</code>.
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void refreshSpeechStatus()}
+                      disabled={speechLoading}
+                      aria-label="Refresh speech service status"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-secondary transition-colors hover:bg-primary/5 hover:text-primary disabled:opacity-50"
+                    >
+                      <RefreshCw className={cn("h-3.5 w-3.5", speechLoading && "animate-spin")} />
+                    </button>
+                  </div>
+                  {speechError ? <p role="alert" className="text-body text-danger">{speechError}</p> : null}
+
+                  {speechModels.length > 0 ? (
+                    <ul className="divide-y divide-outline rounded-xl border border-outline">
+                      {speechModels.map((model) => (
+                        <li key={model.model_name} className="flex items-start justify-between gap-4 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="text-body font-medium text-primary">
+                              {model.display_name}
+                              <span className="ml-2 text-meta font-normal text-secondary">
+                                {modelMode(model) === "clone" ? "Voice cloning" : "Preset voices"}
+                              </span>
+                            </p>
+                            <p className="mt-0.5 break-all text-meta text-secondary">{model.hf_repo_id || model.model_name}</p>
+                            {model.recommendation ? <p className="mt-1 text-meta text-secondary">{model.recommendation}</p> : null}
+                          </div>
+                          {model.ready ? (
+                            <span className="shrink-0 rounded-lg bg-success-container px-2 py-0.5 text-meta font-medium text-success">
+                              {modelMode(model) === "clone" ? "Ready" : "Active"}
+                            </span>
+                          ) : model.unavailable_reason && speechAvailable ? (
+                            <span className="max-w-[45%] shrink-0 text-right text-meta text-warning">{model.unavailable_reason}</span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p className="text-meta leading-relaxed text-secondary">
+                    The speech service picks its preset-voice model from <code className="font-mono">speech-service/.env</code> and handles
+                    downloads itself. Both Qwen3 Base models clone a saved voice from Voice; choose a model per episode in its Voice
+                    section. Styles and speed changes are not supported locally.
+                  </p>
+                </div>
+              ) : null}
 
               {!ttsUsesLocalModels ? (
                 <>

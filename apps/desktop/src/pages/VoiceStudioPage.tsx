@@ -908,8 +908,8 @@ export function VoiceStudioPage() {
         <p className="mt-8 flex flex-wrap items-center gap-1.5 border-t border-outline pt-4 text-meta text-secondary">
           <span className={cn("h-2 w-2 shrink-0 rounded-full", localEngineReady ? "bg-success" : "bg-warning")} aria-hidden />
           <span className="min-w-0 truncate">Speech engine: {engineLabel} · {engineStatus}</span>
-          <button type="button" onClick={() => navigate("/models")} className="text-primary underline underline-offset-2">
-            Models
+          <button type="button" onClick={() => navigate("/settings#speech")} className="text-primary underline underline-offset-2">
+            Settings
           </button>
         </p>
       </div>

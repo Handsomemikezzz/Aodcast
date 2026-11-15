@@ -28,7 +28,7 @@ The app can serve common audio suffixes and validate uploaded Speaker Reference 
 - Voice Studio for built-in and user-created Speaker References, sample upload/recording up to 10 minutes, asset previews, and reference management.
 - Local voice cloning with `Qwen3-TTS-12Hz-0.6B-Base-8bit` (default) or `1.7B-Base-8bit`, with short passage previews kept per model for A/B comparison before a full render.
 - A bundled native `speech-service` for local TTS/ASR (accessed through the lightweight `local_http` client), plus OpenAI-compatible remote TTS providers.
-- Models page for local speech-service status, the active preset model reported by that service, and readiness of both cloning models.
+- Settings → Speech section for local speech-service status, the active preset model reported by that service, and readiness of both cloning models.
 - A mock LLM provider for interview and script smoke testing without paid access; audio rendering still needs a running local speech service or a configured remote TTS provider.
 - ChatGPT subscription LLM access through the official local Codex app-server, with browser sign-in, account model discovery, and Codex usage-window reporting.
 - Local-first storage under `.local-data/`.
