@@ -852,11 +852,6 @@ export function SettingsPage() {
                 <span className={labelClass}>{ttsUsesLocalModels ? "Service address" : "Base URL"}</span>
                 <input type="url" autoComplete="off" value={ttsForm.base_url}
                   onChange={(e) => updateTts("base_url", e.target.value)} className={inputClass} />
-                {ttsUsesLocalModels ? (
-                  <span className="mt-1.5 block text-meta leading-relaxed text-secondary">
-                    The speech service manages its models: preset voices, plus voice cloning with Qwen3 Base models. Pick a voice per episode.
-                  </span>
-                ) : null}
               </label>
 
               {ttsUsesLocalModels ? (
