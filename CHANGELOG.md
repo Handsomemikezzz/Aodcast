@@ -2,7 +2,7 @@
 
 All notable changes to Aodcast will be documented in this file.
 
-## [0.1.0-alpha] - Unreleased
+## [0.1.0-alpha] - 2026-11-15
 
 ### Added
 
@@ -24,7 +24,7 @@ All notable changes to Aodcast will be documented in this file.
 ### Changed
 
 - Consolidated the checkout into `AudioS/Aodcast/` and bundled local speech under `speech-service/`; launchers resolve paths relative to the repository.
-- Desktop/web launchers now start speech, wait for `8090/health`, then start the orchestration runtime and UI. Health readiness does not warm up models.
+- Source launchers start speech and wait for `8090/health`; the desktop shell (`run-dev-all.sh` → `tauri:dev`, and the installed app) then spawns its own runtime on a free localhost port, while only the web launcher starts the runtime on 8765. Health readiness does not warm up models.
 - Relaxed local speech connection and health probe timeout from 5s to 30s, distinguished detailed timeout exceptions (connect, probe, synthesis, transcription), increased default speech-service idle unload timeout to 3,600s, and enabled offline mode (`HF_HUB_OFFLINE=1`) to prevent Hugging Face remote metadata checks during model loading.
 - LLM providers now consume only the orchestration-built `PromptPlan`; the legacy string-prompt fallbacks and the interview's silent plan-build fallback are gone, so a prompt assembly error surfaces instead of degrading the prompt.
 - Full render, segment regeneration, and voice preview share one long-task launcher in the HTTP runtime; a lost cancel/succeed race now ends in an explicit `cancelled` or `failed` state for previews too.
@@ -37,7 +37,10 @@ All notable changes to Aodcast will be documented in this file.
 - Editorial Speech Plans and Render Manifests remain in Aodcast for paragraph reuse, regeneration, and podcast assembly.
 - Final `podcast.wav` is assembled from the Render Manifest with explicit pauses, format normalization, one edge fade per segment, audible-sample RMS matching, and a sample-peak ceiling.
 - Default TTS provider is `local_http`; cloud TTS remains OpenAI-compatible only.
-- Simplified the desktop UI: no global title bar, a single "New episode" entry that opens the idea composer (Markdown import is a secondary link), one Workspace header with script actions in an overflow menu, engine-aware Voice controls, and leaner Voice, Models, Memory, and Settings pages.
+- Simplified the desktop UI: no global title bar, a single "New episode" entry that opens the idea composer (Markdown import is a secondary link), one Workspace header with script actions in an overflow menu, engine-aware Voice controls, and leaner Voice, Memory, and Settings pages.
+- Folded the Models page into Settings → Speech, which shows speech-service status and the model catalog.
+- Stored artifact, Render Manifest, Speaker Reference, and preview paths are relative to the data directory, so the data folder can move. `scripts/maintenance/relativize-local-data.py` repairs older absolute paths.
+- Deleting a Speaker Reference that a script uses now always succeeds; the script shows a warning and asks for a new voice, and Preview/Render stay blocked until one is chosen.
 - The desktop UI, preset voice names, and user-facing runtime errors are now English. Speech sample text, voice IDs, and model-generated interview content are unchanged.
 
 ### Fixed
@@ -60,8 +63,8 @@ All notable changes to Aodcast will be documented in this file.
 
 ### Notes
 
-- This release is intended as a GitHub source-code alpha, not a polished packaged desktop app distribution.
-- Local audio uses the bundled speech service in a separate process, started automatically by desktop/web launchers. It supports preset voices and Qwen3 Base reference cloning, WAV at normal speed; it does not support style, exact pauses, or continuity conditioning.
+- This is the first installable alpha: an unsigned (ad-hoc signed) Apple Silicon DMG on GitHub Releases. Aodcast can also run from source.
+- Local audio uses the bundled speech service in a separate process. It is not included in the DMG: installed-app users run it from source, and the source launchers start it automatically. It supports preset voices and Qwen3 Base reference cloning, WAV at normal speed; it does not support style, exact pauses, or continuity conditioning.
 - ASR is exposed through the Python speech client; microphone input and subtitle-editing UI are not included.
 - Model quality and performance claims require real-model measurements; client unit tests alone are insufficient.
 - API keys are stored and managed locally by users at their own risk.
