@@ -86,17 +86,12 @@ class StartupLifecycleTests(unittest.TestCase):
             )
             return events.read_text().splitlines()
 
-    def test_desktop_starts_speech_then_runtime_then_ui(self):
+    def test_desktop_starts_speech_then_ui_and_leaves_runtime_to_tauri(self):
         for name in ("run-dev-all.sh", "run-desktop.sh"):
             with self.subTest(launcher=name):
                 self.assertEqual(
                     self.launcher(name, 0),
-                    [
-                        "speech:start",
-                        "runtime-start",
-                        "runtime-ready",
-                        "shell:tauri:dev",
-                    ],
+                    ["speech:start", "shell:tauri:dev"],
                 )
 
     def test_web_starts_speech_then_runtime_then_ui(self):

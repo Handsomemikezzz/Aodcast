@@ -47,9 +47,9 @@ cd ../..
 ./scripts/dev/run-dev-all.sh
 ```
 
-Both desktop and web launchers (`run-dev-all.sh`, `run-web-with-runtime.sh`) start the bundled `speech-service`, wait for `http://127.0.0.1:8090/health`, then start the orchestration runtime (`8765`) and UI (`1420`). Health checks do not download or warm up models; weights load on the first synthesis or transcription request. The native runtime readiness probe uses the built-in voice-preset API and must not load models or call speech. Direct `pnpm --dir apps/desktop tauri:dev` also runs the speech-service health prerequisite before starting its web shell. The checkout can live in any folder; launchers resolve paths relative to the repository.
+Both desktop and web launchers (`run-dev-all.sh`, `run-web-with-runtime.sh`) start the bundled `speech-service` and wait for `http://127.0.0.1:8090/health`. The web launcher then starts the orchestration runtime (`8765`) and UI (`1420`); the desktop launcher starts the UI, and the Tauri shell spawns its own runtime on a free localhost port. Health checks do not download or warm up models; weights load on the first synthesis or transcription request. The native runtime readiness probe uses the built-in voice-preset API and must not load models or call speech. Direct `pnpm --dir apps/desktop tauri:dev` also runs the speech-service health prerequisite before starting its web shell. The checkout can live in any folder; launchers resolve paths relative to the repository.
 
-Use `Ctrl+C` in the launcher terminal to stop development processes it owns. An explicitly reused runtime is left running. Speech remains shared and runs until explicitly stopped.
+Use `Ctrl+C` in the launcher terminal to stop development processes it owns. Speech remains shared and runs until explicitly stopped.
 
 | Component | Address | Ownership / check |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ Run pieces individually:
 
 ## Development operators
 
-- `run-dev-all.sh` starts speech and waits for its health check before restarting the Python runtime on port `8765`; use `--reuse-runtime` only when process continuity is intentional.
+- `run-dev-all.sh` starts speech and waits for its health check, then runs `tauri:dev`; the Tauri shell owns the runtime process.
 - For audio-render debugging: check `/healthz` runtime metadata first, then `.local-data/runtime/request-state/*`, then frontend `run_token` filtering.
 - `run-python-core.sh` is an operator CLI only: `--serve-http`, `--configure-llm-provider`/`--configure-tts-provider`, `--show-llm-config`/`--show-tts-config`, `--check-llm-config`, `--show-local-tts-capability`, `--list-models-status`, and `--create-demo-session`. Each prints one JSON object. Interviews, scripts, and audio run through the HTTP runtime.
 - Desktop package validation: `pnpm --dir apps/desktop tauri:build` (do not forward extra cargo-style flags after `--`). Non-interactive DMG builds rely on `CI=true` so Finder AppleScript styling is skipped.
