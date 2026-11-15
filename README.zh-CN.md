@@ -12,7 +12,15 @@
 
 ![Episodes 列表](images/episodes.png)
 
-> 当前状态：源码级 alpha。目前需从源码运行，尚无打包发行版。
+> 当前状态：alpha。可在 Apple Silicon Mac 上安装使用，也可从源码运行。
+
+## 安装
+
+1. 从 [GitHub Releases](https://github.com/Handsomemikezzz/Aodcast/releases) 下载 DMG（macOS，Apple Silicon），把 Aodcast 拖进“应用程序”。
+2. 这个 alpha 版本未签名。首次打开请右键应用 → 打开，或运行 `xattr -dr com.apple.quarantine /Applications/Aodcast.app`。
+3. 安装 FFmpeg（`brew install ffmpeg`）。
+
+数据保存在 `~/Library/Application Support/Aodcast`。要沿用源码运行时的数据，把其 `.local-data/` 里的内容复制到该目录即可。本地语音（预置与克隆）依赖 speech service，它不在 DMG 里，需从源码运行（见快速开始）；云端 TTS 无需它。
 
 ## 为什么用 Aodcast
 
@@ -74,7 +82,7 @@ cd ../..
 
 ## 数据与隐私
 
-- 所有数据都保存在仓库内的 `.local-data/` 目录，已被 Git 忽略，请勿提交。
+- 所有数据都保存在 `~/Library/Application Support/Aodcast`（安装版），或仓库内的 `.local-data/`（源码运行，已被 Git 忽略，请勿提交）。
 - 目前没有 Keychain 集成：API key 以本地配置形式保存，请妥善保管配置文件、日志、备份和同步目录。
 - 使用 ChatGPT 订阅时，登录和令牌由 Codex 管理，Aodcast 不会读取或保存。
 - 使用远程 LLM 时，你的对话、导入的文章和附件会按该服务商的条款发送给它。

@@ -6,6 +6,7 @@ All notable changes to Aodcast will be documented in this file.
 
 ### Added
 
+- Installable macOS (Apple Silicon) DMG built by `scripts/release/build-macos.sh`: a PyInstaller-frozen runtime shipped inside the app, started on a free localhost port, with data in `~/Library/Application Support/Aodcast` (`--data-dir`). The app is unsigned (ad-hoc); the local speech service is not bundled. Copy an old `.local-data/` into the data folder to keep existing episodes.
 - Local-first macOS desktop workflow for AI-guided solo podcast creation.
 - Interview-driven session flow, Podcast Editor rhythm guidance, script generation, script snapshots, and script editing.
 - Versioned, provider-neutral Speech Plans with stable segments, structured breaks, emphasis, pronunciation, delivery metadata, and exact script-hash binding.

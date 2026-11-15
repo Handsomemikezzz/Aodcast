@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "resources": {
+      "resources/aodcast-runtime": "aodcast-runtime"
+    },
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  }
+}

@@ -15,6 +15,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--cwd", type=Path, default=Path.cwd(), help="Project root")
 
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Data directory (default: <cwd>/.local-data).",
+    )
+
     parser.add_argument("--serve-http", action="store_true", help="Run the stdlib localhost HTTP runtime.")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host for --serve-http.")
     parser.add_argument("--port", type=int, default=8765, help="Bind port for --serve-http.")

@@ -167,6 +167,14 @@ python3 scripts/maintenance/relativize-local-data.py --data-dir .local-data
 python3 scripts/maintenance/relativize-local-data.py --data-dir .local-data --apply
 ```
 
+## Building the macOS DMG
+
+```bash
+./scripts/release/build-macos.sh
+```
+
+This freezes the orchestration runtime with PyInstaller (`scripts/release/build-runtime.sh`, build-time only), builds the Tauri bundle with `src-tauri/tauri.release.conf.json`, ad-hoc signs the app, and prints the DMG path under `apps/desktop/src-tauri/target/release/bundle/dmg/`. Release builds spawn the bundled runtime on a free localhost port with `--data-dir ~/Library/Application Support/Aodcast`; debug builds keep running the repository script against `.local-data`. The speech service is not bundled.
+
 ## Exporting MP3
 
 Final renders stay WAV. After audio exists, use **Export** next to the final render. MP3 conversion requires FFmpeg on the local machine.

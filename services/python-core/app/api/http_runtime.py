@@ -2385,6 +2385,7 @@ def serve_http(
     cwd: Path,
     host: str,
     port: int,
+    data_dir: Path | None = None,
     runtime_token: str | None = None,
     allowed_origins: str | None = None,
     bootstrap_nonce: str | None = None,
@@ -2392,7 +2393,7 @@ def serve_http(
     if host not in {"127.0.0.1", "::1"}:
         raise ValueError("HTTP runtime must bind to 127.0.0.1 or ::1 only.")
 
-    config = AppConfig.from_cwd(cwd)
+    config = AppConfig.from_cwd(cwd, data_dir)
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
     artifact_store = ArtifactStore(config.data_dir)

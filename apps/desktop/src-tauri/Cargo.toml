@@ -1,6 +1,6 @@
 [package]
 name = "aodcast-desktop"
-version = "0.1.0"
+version = "0.1.0-alpha"
 description = "Aodcast desktop shell"
 authors = ["Aodcast contributors"]
 license = "MIT"

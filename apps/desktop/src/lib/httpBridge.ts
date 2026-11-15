@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { setAudioRuntimeBaseUrl } from "./audioFile";
+
 import type {
   ConfigureLLMInput,
   ConfigureTTSInput,
@@ -296,9 +298,13 @@ export function createHttpBridge(options?: HttpBridgeOptions): DesktopBridge {
   async function getRuntime(): Promise<RuntimeContext> {
     if (!runtimePromise) {
       runtimePromise = (async () => {
-        if (options?.ensureRuntime) return options.ensureRuntime();
-        if (isTauriRuntime()) return ensureDesktopRuntime();
-        return ({ base_url: fallbackBaseUrl });
+        const runtime = options?.ensureRuntime
+          ? await options.ensureRuntime()
+          : isTauriRuntime()
+            ? await ensureDesktopRuntime()
+            : { base_url: fallbackBaseUrl };
+        setAudioRuntimeBaseUrl(runtime.base_url);
+        return runtime;
       })();
     }
     return runtimePromise;

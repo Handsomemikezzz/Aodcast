@@ -3,6 +3,8 @@
 mod commands;
 mod errors;
 
+use tauri::Manager;
+
 fn main() {
     tauri::Builder::default()
         .manage(commands::DesktopRuntimeState::default())
@@ -11,6 +13,11 @@ fn main() {
             commands::reveal_in_finder,
             commands::open_external_url,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<commands::DesktopRuntimeState>().stop();
+            }
+        });
 }

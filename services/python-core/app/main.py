@@ -90,6 +90,7 @@ def run(argv: list[str] | None = None) -> int:
     if args.serve_http:
         return serve_http(
             cwd=Path(args.cwd),
+            data_dir=args.data_dir,
             host=args.host,
             port=args.port,
             runtime_token=args.runtime_token.strip() or None,
@@ -97,7 +98,7 @@ def run(argv: list[str] | None = None) -> int:
             bootstrap_nonce=args.bootstrap_nonce.strip() or None,
         )
 
-    config = AppConfig.from_cwd(args.cwd)
+    config = AppConfig.from_cwd(args.cwd, args.data_dir)
     store = ProjectStore(config.data_dir)
     config_store = ConfigStore(config.config_dir)
     store.bootstrap()

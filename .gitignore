@@ -32,3 +32,7 @@ voicebox
 /models/
 
 .ruff_cache/
+
+# Release build output
+services/python-core/build/
+apps/desktop/src-tauri/resources/

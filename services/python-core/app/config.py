@@ -11,8 +11,8 @@ class AppConfig:
     config_dir: Path
 
     @classmethod
-    def from_cwd(cls, cwd: Path | None = None) -> "AppConfig":
+    def from_cwd(cls, cwd: Path | None = None, data_dir: Path | None = None) -> "AppConfig":
         project_root = (cwd or Path.cwd()).resolve()
-        data_dir = project_root / ".local-data"
+        data_dir = data_dir.expanduser().resolve() if data_dir else project_root / ".local-data"
         config_dir = data_dir / "config"
         return cls(project_root=project_root, data_dir=data_dir, config_dir=config_dir)

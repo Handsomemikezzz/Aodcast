@@ -1,5 +1,6 @@
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -7,155 +8,188 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::errors::BridgeError;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
-const DEFAULT_PORT: u16 = 8765;
-const READY_TIMEOUT: Duration = Duration::from_secs(20);
+const READY_TIMEOUT: Duration = Duration::from_secs(30);
 const READY_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const REQUIRED_RUNTIME_ROUTE: &str = "/api/v1/voice-studio/presets";
+/// Finder-launched apps do not inherit the shell PATH; ffmpeg/ffprobe/codex live here.
+const EXTRA_PATH: &str = "/opt/homebrew/bin:/usr/local/bin";
+
+struct RuntimeProcess {
+    child: Child,
+    port: u16,
+}
 
 #[derive(Default)]
 pub struct DesktopRuntimeState {
-    child: Mutex<Option<Child>>,
+    runtime: Mutex<Option<RuntimeProcess>>,
 }
 
-fn repo_root() -> Result<PathBuf, BridgeError> {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .ancestors()
-        .nth(3)
-        .map(Path::to_path_buf)
-        .ok_or_else(|| BridgeError::new("repo_root_not_found", "Failed to locate repository root."))
-}
-
-fn runner_script(repo_root: &Path) -> PathBuf {
-    repo_root.join("scripts/dev/run-python-core.sh")
-}
-
-fn base_url() -> String {
-    format!("http://{DEFAULT_HOST}:{DEFAULT_PORT}")
-}
-
-fn http_status(path: &str) -> Option<u16> {
-    let address = format!("{DEFAULT_HOST}:{DEFAULT_PORT}");
-    let mut stream = match TcpStream::connect(address) {
-        Ok(stream) => stream,
-        Err(_) => return None,
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
-
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {DEFAULT_HOST}:{DEFAULT_PORT}\r\nConnection: close\r\n\r\n"
-    );
-    if stream.write_all(request.as_bytes()).is_err() {
-        return None;
-    }
-
-    let mut response = String::new();
-    if stream.read_to_string(&mut response).is_err() {
-        return None;
-    }
-    let status = response
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .and_then(|code| code.parse::<u16>().ok());
-    status
-}
-
-fn healthz_ready() -> bool {
-    http_status("/healthz") == Some(200)
-}
-
-fn runtime_contract_ready() -> bool {
-    http_status(REQUIRED_RUNTIME_ROUTE) == Some(200)
-}
-
-fn stop_runtime_on_port() {
-    #[cfg(target_family = "unix")]
-    {
-        let output = Command::new("lsof")
-            .args(["-ti", &format!("tcp:{DEFAULT_PORT}")])
-            .output();
-        let Ok(output) = output else {
-            return;
-        };
-        if !output.status.success() {
-            return;
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for pid in stdout.lines().map(str::trim).filter(|pid| !pid.is_empty()) {
-            let _ = Command::new("kill")
-                .arg(pid)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-        for _ in 0..50 {
-            if !healthz_ready() {
-                return;
-            }
-            sleep(Duration::from_millis(100));
-        }
-        let output = Command::new("lsof")
-            .args(["-ti", &format!("tcp:{DEFAULT_PORT}")])
-            .output();
-        if let Ok(output) = output {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for pid in stdout.lines().map(str::trim).filter(|pid| !pid.is_empty()) {
-                let _ = Command::new("kill")
-                    .args(["-9", pid])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
+impl DesktopRuntimeState {
+    pub fn stop(&self) {
+        if let Ok(mut guard) = self.runtime.lock() {
+            if let Some(mut process) = guard.take() {
+                let _ = process.child.kill();
+                let _ = process.child.wait();
             }
         }
     }
 }
 
-fn spawn_runtime_process(repo_root: &Path) -> Result<Child, BridgeError> {
-    let script_path = runner_script(repo_root);
-    if !script_path.exists() {
-        return Err(BridgeError::new(
-            "python_runtime_script_missing",
-            format!(
-                "Python runner script was not found at {}",
-                script_path.display()
-            ),
-        ));
+impl Drop for DesktopRuntimeState {
+    fn drop(&mut self) {
+        self.stop();
     }
+}
 
-    Command::new(&script_path)
-        .args([
-            "--serve-http",
-            "--host",
-            DEFAULT_HOST,
-            "--port",
-            &DEFAULT_PORT.to_string(),
-        ])
-        .current_dir(repo_root)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
+fn base_url(port: u16) -> String {
+    format!("http://{DEFAULT_HOST}:{port}")
+}
+
+fn pick_free_port() -> Result<u16, BridgeError> {
+    TcpListener::bind((DEFAULT_HOST, 0))
+        .and_then(|listener| listener.local_addr())
+        .map(|address| address.port())
         .map_err(|error| {
-            BridgeError::with_details(
-                "python_runtime_spawn_failed",
-                format!("Failed to spawn HTTP runtime: {error}"),
-                json!({
-                    "script_path": script_path.display().to_string(),
-                }),
+            BridgeError::new(
+                "python_runtime_port_unavailable",
+                format!("Failed to reserve a localhost port: {error}"),
             )
         })
 }
 
-fn wait_for_runtime_ready(child: &mut Child) -> Result<(), BridgeError> {
+fn http_status(port: u16, path: &str) -> Option<u16> {
+    let mut stream = TcpStream::connect((DEFAULT_HOST, port)).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
+
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: {DEFAULT_HOST}:{port}\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).ok()?;
+
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    response
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+}
+
+fn runtime_ready(port: u16) -> bool {
+    http_status(port, "/healthz") == Some(200) && http_status(port, REQUIRED_RUNTIME_ROUTE) == Some(200)
+}
+
+fn runtime_path_env() -> String {
+    match std::env::var("PATH") {
+        Ok(existing) if !existing.is_empty() => format!("{EXTRA_PATH}:{existing}"),
+        _ => EXTRA_PATH.to_string(),
+    }
+}
+
+/// Release builds run the frozen runtime shipped in the app bundle against the
+/// per-user data directory; debug builds run the repository script against `.local-data`.
+fn runtime_command(app: &AppHandle, port: u16) -> Result<(Command, PathBuf), BridgeError> {
+    let port_arg = port.to_string();
+    let common = ["--serve-http", "--host", DEFAULT_HOST, "--port", port_arg.as_str()];
+
+    if cfg!(debug_assertions) {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .map(Path::to_path_buf)
+            .ok_or_else(|| {
+                BridgeError::new("repo_root_not_found", "Failed to locate repository root.")
+            })?;
+        let script = repo_root.join("scripts/dev/run-python-core.sh");
+        if !script.exists() {
+            return Err(BridgeError::new(
+                "python_runtime_script_missing",
+                format!("Python runner script was not found at {}", script.display()),
+            ));
+        }
+        let mut command = Command::new(&script);
+        command.args(common).current_dir(&repo_root);
+        return Ok((command, script));
+    }
+
+    let resource_dir = app.path().resource_dir().map_err(|error| {
+        BridgeError::new(
+            "python_runtime_binary_missing",
+            format!("Failed to locate the app resources: {error}"),
+        )
+    })?;
+    let binary = resource_dir.join("aodcast-runtime/aodcast-runtime");
+    if !binary.exists() {
+        return Err(BridgeError::new(
+            "python_runtime_binary_missing",
+            format!("Bundled runtime was not found at {}", binary.display()),
+        ));
+    }
+    let data_dir = app
+        .path()
+        .data_dir()
+        .map_err(|error| {
+            BridgeError::new(
+                "data_dir_unavailable",
+                format!("Failed to locate the user data directory: {error}"),
+            )
+        })?
+        .join("Aodcast");
+    fs::create_dir_all(&data_dir).map_err(|error| {
+        BridgeError::new(
+            "data_dir_create_failed",
+            format!("Failed to create {}: {error}", data_dir.display()),
+        )
+    })?;
+
+    let mut command = Command::new(&binary);
+    command
+        .args(common)
+        .arg("--cwd")
+        .arg(&data_dir)
+        .arg("--data-dir")
+        .arg(&data_dir)
+        .current_dir(&data_dir);
+    Ok((command, binary))
+}
+
+fn spawn_runtime_process(app: &AppHandle, port: u16) -> Result<Child, BridgeError> {
+    let (mut command, program) = runtime_command(app, port)?;
+    command.env("PATH", runtime_path_env());
+
+    let log = if cfg!(debug_assertions) {
+        None
+    } else {
+        app.path()
+            .data_dir()
+            .ok()
+            .map(|dir| dir.join("Aodcast/logs"))
+            .and_then(|dir| fs::create_dir_all(&dir).ok().map(|_| dir.join("runtime.log")))
+            .and_then(|path| OpenOptions::new().create(true).append(true).open(path).ok())
+    };
+    match log.and_then(|file| file.try_clone().ok().map(|clone| (file, clone))) {
+        Some((out, err)) => command.stdout(Stdio::from(out)).stderr(Stdio::from(err)),
+        None => command.stdout(Stdio::null()).stderr(Stdio::null()),
+    };
+
+    command.spawn().map_err(|error| {
+        BridgeError::with_details(
+            "python_runtime_spawn_failed",
+            format!("Failed to spawn HTTP runtime: {error}"),
+            json!({ "program": program.display().to_string() }),
+        )
+    })
+}
+
+fn wait_for_runtime_ready(child: &mut Child, port: u16) -> Result<(), BridgeError> {
     let started = Instant::now();
     while started.elapsed() < READY_TIMEOUT {
-        if healthz_ready() && runtime_contract_ready() {
+        if runtime_ready(port) {
             return Ok(());
         }
         if let Ok(Some(status)) = child.try_wait() {
@@ -176,58 +210,37 @@ fn wait_for_runtime_ready(child: &mut Child) -> Result<(), BridgeError> {
     ))
 }
 
-impl Drop for DesktopRuntimeState {
-    fn drop(&mut self) {
-        if let Ok(mut guard) = self.child.lock() {
-            if let Some(child) = guard.as_mut() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-            *guard = None;
-        }
-    }
-}
-
 #[tauri::command]
-pub fn ensure_http_runtime(state: State<'_, DesktopRuntimeState>) -> Result<Value, BridgeError> {
-    if healthz_ready() && runtime_contract_ready() {
-        return Ok(json!({ "base_url": base_url() }));
-    }
-
-    let repo_root = repo_root()?;
-    let mut guard = state.child.lock().map_err(|_| {
+pub fn ensure_http_runtime(
+    app: AppHandle,
+    state: State<'_, DesktopRuntimeState>,
+) -> Result<Value, BridgeError> {
+    let mut guard = state.runtime.lock().map_err(|_| {
         BridgeError::new(
             "python_runtime_lock_failed",
             "Failed to lock runtime state.",
         )
     })?;
 
-    if let Some(existing_child) = guard.as_mut() {
-        match existing_child.try_wait() {
-            Ok(None) => {
-                if runtime_contract_ready() {
-                    wait_for_runtime_ready(existing_child)?;
-                    return Ok(json!({ "base_url": base_url() }));
-                }
-                let _ = existing_child.kill();
-                let _ = existing_child.wait();
-                *guard = None;
-            }
-            Ok(Some(_)) | Err(_) => {
-                *guard = None;
-            }
+    if let Some(process) = guard.as_mut() {
+        if matches!(process.child.try_wait(), Ok(None)) && runtime_ready(process.port) {
+            return Ok(json!({ "base_url": base_url(process.port) }));
         }
+        let _ = process.child.kill();
+        let _ = process.child.wait();
+        *guard = None;
     }
 
-    if healthz_ready() && !runtime_contract_ready() {
-        stop_runtime_on_port();
+    let port = pick_free_port()?;
+    let mut child = spawn_runtime_process(&app, port)?;
+    if let Err(error) = wait_for_runtime_ready(&mut child, port) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
     }
+    *guard = Some(RuntimeProcess { child, port });
 
-    let mut child = spawn_runtime_process(&repo_root)?;
-    wait_for_runtime_ready(&mut child)?;
-    *guard = Some(child);
-
-    Ok(json!({ "base_url": base_url() }))
+    Ok(json!({ "base_url": base_url(port) }))
 }
 
 #[tauri::command]

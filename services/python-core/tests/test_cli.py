@@ -33,6 +33,16 @@ class OperatorCliTests(unittest.TestCase):
             assert payload is not None
             self.assertEqual(payload["llm_config"]["model"], "mock-x")
 
+    def test_data_dir_overrides_default_location(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_dir = Path(tmp_dir) / "elsewhere"
+            code, _, _ = self.run_cli(
+                "--cwd", tmp_dir, "--data-dir", str(data_dir), "--configure-llm-provider", "mock"
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue((data_dir / "config").is_dir())
+            self.assertFalse((Path(tmp_dir) / ".local-data").exists())
+
     def test_configure_local_tts_defaults_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             code, payload, _ = self.run_cli("--cwd", tmp_dir, "--configure-tts-provider", "local_http")

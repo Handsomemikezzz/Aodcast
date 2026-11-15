@@ -12,7 +12,15 @@ English | [简体中文](README.zh-CN.md)
 
 ![Episodes](images/episodes.png)
 
-> Status: source-code alpha. It runs from source today; there is no packaged release yet.
+> Status: alpha. Installable on Apple Silicon Macs, or run from source.
+
+## Install
+
+1. Download the DMG from [GitHub Releases](https://github.com/Handsomemikezzz/Aodcast/releases) (macOS, Apple Silicon) and drag Aodcast to Applications.
+2. The alpha is unsigned. On first launch, right-click the app → Open, or run `xattr -dr com.apple.quarantine /Applications/Aodcast.app`.
+3. Install FFmpeg (`brew install ffmpeg`).
+
+Your data lives in `~/Library/Application Support/Aodcast`. To bring over data from a source checkout, copy the contents of its `.local-data/` there. Local voice (preset and cloned) needs the speech service, which is not in the DMG: run it from source (see Quick Start). Cloud TTS works without it.
 
 ## Why Aodcast
 
@@ -74,7 +82,7 @@ Open **Settings** and choose how Aodcast writes your scripts. Full CLI flags are
 
 ## Data & Privacy
 
-- Everything lives under `.local-data/` in the repository, which Git ignores. Never commit it.
+- Everything lives under `~/Library/Application Support/Aodcast` (installed app) or `.local-data/` in the repository (source runs, ignored by Git; never commit it).
 - There is no Keychain integration yet: API keys are stored as local configuration, so protect your config files, logs, backups and synced folders.
 - For ChatGPT subscription access, Codex owns sign-in and tokens. Aodcast never reads or stores them.
 - With a remote LLM provider, your conversation, imported article and attachments are sent to that provider under its terms.
